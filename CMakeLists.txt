@@ -18,6 +18,7 @@ add_library(ronin_kernel SHARED
     src/graph_storage.cpp
     src/memory_manager.cpp
     src/long_term_memory.cpp
+    src/capability_graph.cpp
 )
 
 # Platform Libraries
