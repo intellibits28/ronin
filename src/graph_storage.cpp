@@ -48,7 +48,7 @@ bool GraphStorage::loadGraph(CapabilityGraph& graph) {
     sqlite3_finalize(n_stmt);
 
     const char* edge_sql = "SELECT source_id, target_id, success_count, failure_count, base_weight FROM edges;";
-    sqlite3_stmt* e_stmt;
+    sqlite3_stmt* e_stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, edge_sql, -1, &e_stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(e_stmt) == SQLITE_ROW) {
             uint32_t src = sqlite3_column_int(e_stmt, 0);
@@ -83,7 +83,7 @@ bool GraphStorage::saveGraph(const CapabilityGraph& graph) {
     sqlite3_prepare_v2(m_db, n_sql, -1, &n_stmt, nullptr);
 
     const char* e_sql = "INSERT OR REPLACE INTO edges (source_id, target_id, success_count, failure_count, base_weight) VALUES (?, ?, ?, ?, ?);";
-    sqlite3_stmt* e_stmt;
+    sqlite3_stmt* e_stmt = nullptr;
     sqlite3_prepare_v2(m_db, e_sql, -1, &e_stmt, nullptr);
 
     for (const auto& [id, node] : graph.getNodes()) {

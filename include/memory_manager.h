@@ -4,6 +4,7 @@
 #include <string>
 #include <cstdint>
 #include <mutex>
+#include "long_term_memory.h"
 
 namespace Ronin::Kernel::Memory {
 
@@ -44,12 +45,16 @@ public:
     // Returns current memory pressure score (0-100)
     int getPressureScore() const;
 
+    // Link with L3 Deep-store for consolidation
+    void setLongTermMemory(LongTermMemory* ltm) { m_l3_store = ltm; }
+
     // LMK Signal: Force aggressive compression of Anchor 2
     void onMemoryPressure();
 
 private:
     size_t m_recent_window_size;
     std::mutex m_mutex;
+    LongTermMemory* m_l3_store = nullptr;
 
     // Anchor 1: Pinned Prefix (RAM)
     std::vector<Token> m_anchor1_prefix;

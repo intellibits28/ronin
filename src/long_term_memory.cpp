@@ -179,7 +179,7 @@ void LongTermMemory::applyDecay(uint64_t current_timestamp) {
     sqlite3_finalize(stmt);
 
     const char* up_sql = "UPDATE facts SET stability = ?, last_accessed = ? WHERE key = ?;";
-    sqlite3_stmt* up_stmt;
+    sqlite3_stmt* up_stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, up_sql, -1, &up_stmt, nullptr) == SQLITE_OK) {
         sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
         for (const auto& entry : updates) {
@@ -192,6 +192,12 @@ void LongTermMemory::applyDecay(uint64_t current_timestamp) {
         sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
         sqlite3_finalize(up_stmt);
     }
+}
+
+} // namespace Ronin::Kernel::Memory
+y
+emory
+}
 }
 
 } // namespace Ronin::Kernel::Memory

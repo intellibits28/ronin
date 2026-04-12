@@ -90,7 +90,20 @@ int MemoryManager::getPressureScore() const {
 
 void MemoryManager::onMemoryPressure() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Critical Memory Pressure: Reducing Anchor 2 footprint.");
+    LOGI(TAG, "Critical Memory Pressure: Consolidation triggered for Anchor 2.");
+
+    if (!m_anchor2_compressed.empty() && m_l3_store) {
+        // Simple mock: Reconstruct IDs as a summary string for consolidation
+        std::string summary = "Context Summary (IDs): ";
+        for (const auto& t : m_anchor2_compressed) {
+            summary += std::to_string(t.id) + ",";
+        }
+
+        if (m_l3_store->consolidate(summary)) {
+            LOGI(TAG, "Consolidation successful. Freeing %zu items from RAM.", m_anchor2_compressed.size());
+            m_anchor2_compressed.clear();
+        }
+    }
 }
 
 CompressedToken MemoryManager::quantize(const Token& token) {
