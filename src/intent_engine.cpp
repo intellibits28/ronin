@@ -1,5 +1,9 @@
 #include "intent_engine.h"
+
+#ifdef __aarch64__
 #include <arm_neon.h>
+#endif
+
 #include <iostream>
 
 namespace Ronin::Kernel::Intent {
@@ -9,6 +13,7 @@ ThermalState g_thermal_state = ThermalState::NORMAL;
 
 /**
  * Scalar fallback: Calculating dot product to minimize power usage in SEVERE thermal state.
+ * Also used as host-side implementation for CI/CD on x86_64.
  */
 static float compute_similarity_scalar(const int8_t* a, const int8_t* b) {
     int32_t dot_product = 0;
@@ -20,11 +25,14 @@ static float compute_similarity_scalar(const int8_t* a, const int8_t* b) {
 }
 
 /**
- * NEON SIMD Implementation: 128-dim INT8 dot product.
- * Uses Dot Product extensions (vdotq_s32) for maximum efficiency on Snapdragon 778G.
+ * Intent Similarity calculation.
+ * Uses ARM64 NEON SIMD on mobile, with a scalar fallback for thermal throttling or non-ARM hosts.
  */
 float compute_intent_similarity_neon(const int8_t* a, const int8_t* b) {
-    // Thermal-aware fallback: In SEVERE thermal states, switch to scalar to throttle core usage.
+    // Thermal-aware fallback or Non-ARM host fallback
+#ifndef __aarch64__
+    return compute_similarity_scalar(a, b);
+#else
     if (g_thermal_state == ThermalState::SEVERE) {
         return compute_similarity_scalar(a, b);
     }
@@ -36,19 +44,16 @@ float compute_intent_similarity_neon(const int8_t* a, const int8_t* b) {
     for (int i = 0; i < 128; i += 16) {
         int8x16_t va = vld1q_s8(a + i);
         int8x16_t vb = vld1q_s8(b + i);
-        // vdotq_s32 is extremely efficient on modern ARMv8-A (Cortex-A78/A55)
+        // vdotq_s32 is extremely efficient on modern ARMv8-A
         acc = vdotq_s32(acc, va, vb);
     }
 
-    // Convert int32x4_t to float32x4_t
+    // Convert int32x4_t to float32x4_t and perform final reduction
     float32x4_t f_acc = vcvtq_f32_s32(acc);
-
-    // Perform the requested horizontal addition using vaddvq_f32
-    // Sum the 4 lanes of the float vector into a single scalar value.
     float final_sum = vaddvq_f32(f_acc);
 
-    // Final normalization to floating point range [-1, 1]
     return final_sum / 16129.0f;
+#endif
 }
 
 } // namespace Ronin::Kernel::Intent

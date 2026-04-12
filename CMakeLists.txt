@@ -17,6 +17,7 @@ add_library(ronin_kernel SHARED
     src/graph_executor.cpp
     src/graph_storage.cpp
     src/memory_manager.cpp
+    src/long_term_memory.cpp
 )
 
 # Platform Libraries
@@ -25,6 +26,7 @@ if(ANDROID)
     find_library(android-lib android)
     target_link_libraries(ronin_kernel ${log-lib} ${android-lib} sqlite3)
 else()
+    # Host build needs rt and sqlite3
     target_link_libraries(ronin_kernel rt sqlite3)
 endif()
 
