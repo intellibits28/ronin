@@ -47,7 +47,11 @@ JNIEXPORT jint JNICALL
 Java_com_ronin_kernel_NativeEngine_getLMKPressure(
     JNIEnv *env, jobject thiz);
 
-} // extern "C"
-is_charging);
+/**
+ * Triggers Natural Forgetting background maintenance.
+ */
+JNIEXPORT jint JNICALL
+Java_com_ronin_kernel_NativeEngine_runMaintenance(
+    JNIEnv *env, jobject thiz, jboolean is_charging);
 
 } // extern "C"
