@@ -46,10 +46,11 @@ fun RoninChatUI(engine: NativeEngine) {
     val reasoningLogs = remember { mutableStateListOf<String>() }
     
     // Kernel State Metrics
-    var lmkPressure by remember { mutableIntStateOf(0) }
-    var l1Count by remember { mutableIntStateOf(12) } // Pinned
-    var l2Count by remember { mutableIntStateOf(45) } // Compressed
-    var l3Count by remember { mutableIntStateOf(128) } // Deep-store
+    var lmkPressure by remember { mutableStateOf(0) }
+    var stability by remember { mutableStateOf(1.0f) } // 0.0 to 1.0
+    var l1Count by remember { mutableStateOf(12) } // Pinned
+    var l2Count by remember { mutableStateOf(45) } // Compressed
+    var l3Count by remember { mutableStateOf(128) } // Deep-store
     
     val scope = rememberCoroutineScope()
 
@@ -57,6 +58,7 @@ fun RoninChatUI(engine: NativeEngine) {
     LaunchedEffect(Unit) {
         while (true) {
             lmkPressure = engine.getLMKPressure()
+            stability = (100 - lmkPressure) / 100.0f
             // Randomly simulate cache movement for the demo
             if (lmkPressure > 70) {
                 reasoningLogs.add(0, "KV-cache compressed 40% due to LMK pressure.")
@@ -76,6 +78,9 @@ fun RoninChatUI(engine: NativeEngine) {
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
+                },
+                actions = {
+                    StabilityMeter(stability)
                 },
                 backgroundColor = Color(0xFF121212),
                 contentColor = Color.White,
