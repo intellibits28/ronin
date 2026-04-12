@@ -1,6 +1,10 @@
 package com.ronin.kernel
 
 import android.os.Bundle
+import android.os.Environment
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
@@ -33,8 +37,20 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         nativeEngine.initializeKernel(filesDir.absolutePath)
+        
+        checkAndRequestStoragePermission()
+
         setContent {
             RoninChatUI(nativeEngine)
+        }
+    }
+
+    private fun checkAndRequestStoragePermission() {
+        if (!Environment.isExternalStorageManager()) {
+            val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+            intent.addCategory("android.intent.category.DEFAULT")
+            intent.data = Uri.parse("package:${applicationContext.packageName}")
+            startActivity(intent)
         }
     }
 }
