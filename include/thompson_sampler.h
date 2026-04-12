@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <random>
-#include <map>
+#include <unordered_map>
 
 namespace Ronin::Kernel::Reasoning {
 
@@ -26,8 +26,15 @@ private:
         std::vector<uint32_t> alias;
     };
 
+    struct PairHash {
+        template <class T1, class T2>
+        std::size_t operator() (const std::pair<T1, T2> &pair) const {
+            return std::hash<T1>()(pair.first) ^ std::hash<T2>()(pair.second);
+        }
+    };
+
     // Pre-computed Alias Tables indexed by (alpha, beta) pairs
-    std::map<std::pair<uint32_t, uint32_t>, AliasTable> m_precomputed_tables;
+    std::unordered_map<std::pair<uint32_t, uint32_t>, AliasTable, PairHash> m_precomputed_tables;
 
     void precomputeBetaTables(uint32_t max_param);
     void buildAliasTable(const std::vector<float>& distribution, AliasTable& table);

@@ -39,17 +39,36 @@ void MemoryManager::addRecentToken(const Token& token) {
 }
 
 void MemoryManager::pruneAndCompress() {
-    LOGI(TAG, "Triggering saliency-based pruning for Anchor 3.");
-    std::sort(m_anchor3_recent.begin(), m_anchor3_recent.end(), 
-              [](const Token& a, const Token& b) {
-                  return a.saliency_score > b.saliency_score;
-              });
+    if (m_anchor3_recent.size() <= m_recent_window_size) return;
 
-    while (m_anchor3_recent.size() > m_recent_window_size) {
-        Token low_saliency_token = m_anchor3_recent.back();
-        m_anchor3_recent.pop_back();
-        m_anchor2_compressed.push_back(quantize(low_saliency_token));
+    LOGI(TAG, "Triggering saliency-based pruning. Preserving chronological order.");
+
+    // 1. Create a list of indices and sort them by saliency
+    std::vector<size_t> indices(m_anchor3_recent.size());
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+        return m_anchor3_recent[a].saliency_score > m_anchor3_recent[b].saliency_score;
+    });
+
+    // 2. Identify the indices to keep (top-K salient) and to prune
+    std::vector<bool> keep(m_anchor3_recent.size(), false);
+    for (size_t i = 0; i < m_recent_window_size; ++i) {
+        keep[indices[i]] = true;
     }
+
+    // 3. Separate tokens
+    std::vector<Token> next_recent;
+    for (size_t i = 0; i < m_anchor3_recent.size(); ++i) {
+        if (keep[i]) {
+            next_recent.push_back(std::move(m_anchor3_recent[i]));
+        } else {
+            // Move low-saliency tokens to Anchor 2 (Compressed History)
+            m_anchor2_compressed.push_back(quantize(m_anchor3_recent[i]));
+        }
+    }
+
+    m_anchor3_recent = std::move(next_recent);
 }
 
 std::vector<uint32_t> MemoryManager::reconstructContext() {

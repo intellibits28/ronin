@@ -4,6 +4,7 @@
 #include <string>
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 
 namespace Ronin::Kernel::Reasoning {
 
@@ -31,11 +32,11 @@ public:
     void addEdge(uint32_t source_id, uint32_t target_id, float weight);
     
     Node* getNode(uint32_t id);
-    std::vector<Node>& getNodes() { return m_nodes; }
-    const std::vector<Node>& getNodes() const { return m_nodes; }
+    std::unordered_map<uint32_t, Node>& getNodes() { return m_nodes; }
+    const std::unordered_map<uint32_t, Node>& getNodes() const { return m_nodes; }
 
 private:
-    std::vector<Node> m_nodes;
+    std::unordered_map<uint32_t, Node> m_nodes;
 };
 
 } // namespace Ronin::Kernel::Reasoning

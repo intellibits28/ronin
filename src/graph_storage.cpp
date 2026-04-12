@@ -86,7 +86,7 @@ bool GraphStorage::saveGraph(const CapabilityGraph& graph) {
     sqlite3_stmt* e_stmt;
     sqlite3_prepare_v2(m_db, e_sql, -1, &e_stmt, nullptr);
 
-    for (const auto& node : graph.getNodes()) {
+    for (const auto& [id, node] : graph.getNodes()) {
         sqlite3_bind_int(n_stmt, 1, node.id);
         sqlite3_bind_text(n_stmt, 2, node.capability_name.c_str(), -1, SQLITE_STATIC);
         sqlite3_step(n_stmt);

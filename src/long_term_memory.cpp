@@ -178,15 +178,18 @@ void LongTermMemory::applyDecay(uint64_t current_timestamp) {
     }
     sqlite3_finalize(stmt);
 
-    for (const auto& entry : updates) {
-        const char* up_sql = "UPDATE facts SET stability = ?, last_accessed = ? WHERE key = ?;";
-        sqlite3_stmt* up_stmt;
-        if (sqlite3_prepare_v2(m_db, up_sql, -1, &up_stmt, nullptr) == SQLITE_OK) {
+    const char* up_sql = "UPDATE facts SET stability = ?, last_accessed = ? WHERE key = ?;";
+    sqlite3_stmt* up_stmt;
+    if (sqlite3_prepare_v2(m_db, up_sql, -1, &up_stmt, nullptr) == SQLITE_OK) {
+        sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+        for (const auto& entry : updates) {
             sqlite3_bind_double(up_stmt, 1, entry.new_stability);
             sqlite3_bind_int64(up_stmt, 2, current_timestamp);
             sqlite3_bind_text(up_stmt, 3, entry.key.c_str(), -1, SQLITE_STATIC);
             sqlite3_step(up_stmt);
+            sqlite3_reset(up_stmt);
         }
+        sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
         sqlite3_finalize(up_stmt);
     }
 }
