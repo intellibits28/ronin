@@ -14,7 +14,7 @@ public:
     bool saveGraph(const CapabilityGraph& graph);
 
 private:
-    sqlite3* m_db;
+    sqlite3* m_db = nullptr;
     bool initSchema();
 };
 

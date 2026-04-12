@@ -9,6 +9,14 @@
 
 #define TAG "RoninSurvivalCore"
 
+// Fallback for memfd_create flags
+#ifndef MFD_CLOEXEC
+#define MFD_CLOEXEC 0x0001U
+#endif
+#ifndef MFD_ALLOW_SEALING
+#define MFD_ALLOW_SEALING 0x0002U
+#endif
+
 namespace Ronin::Kernel::Checkpoint {
 
 CheckpointEngine::CheckpointEngine(const std::string& checkpoint_path)
@@ -110,6 +118,10 @@ void CheckpointEngine::onLMKSignal() {
     if (!persistToStorage()) {
         LOGE(TAG, "Critical Failure: LMK-triggered flush failed.");
     }
+}
+
+} // namespace Ronin::Kernel::Checkpoint
+
 }
 
 } // namespace Ronin::Kernel::Checkpoint

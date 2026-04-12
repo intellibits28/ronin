@@ -59,8 +59,8 @@ bool LongTermMemory::storeFact(const std::string& key, const std::string& value,
 }
 
 int LongTermMemory::runMaintenance(bool is_charging) {
-    if (!is_charging) {
-        LOGI(TAG, "Maintenance skipped: Device is not charging.");
+    if (!is_charging || !m_db) {
+        LOGI(TAG, "Maintenance skipped: Device not charging or DB not open.");
         return 0;
     }
 
@@ -192,3 +192,5 @@ void LongTermMemory::applyDecay(uint64_t current_timestamp) {
 }
 
 } // namespace Ronin::Kernel::Memory
+y
+emory

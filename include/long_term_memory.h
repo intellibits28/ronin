@@ -45,7 +45,7 @@ public:
     bool consolidate(const std::string& summary_text);
 
 private:
-    sqlite3* m_db;
+    sqlite3* m_db = nullptr;
     std::mutex m_mutex;
     double m_lambda = 0.000001; // Slower decay for long-term storage
 

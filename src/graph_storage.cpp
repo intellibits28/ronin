@@ -37,6 +37,7 @@ bool GraphStorage::initSchema() {
 }
 
 bool GraphStorage::loadGraph(CapabilityGraph& graph) {
+    if (!m_db) return false;
     const char* node_sql = "SELECT id, name FROM nodes;";
     sqlite3_stmt* n_stmt;
     if (sqlite3_prepare_v2(m_db, node_sql, -1, &n_stmt, nullptr) == SQLITE_OK) {
