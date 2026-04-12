@@ -55,10 +55,10 @@ jobs:
           flatc --cpp -o generated/ checkpoint_schema.fbs
 
       - name: Build Android APK
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
+        uses: gradle/gradle-build-action@v2
+        with:
+          build-root-directory: android
+          arguments: assembleDebug
 
       - name: Upload Ronin APK
         uses: actions/upload-artifact@v4

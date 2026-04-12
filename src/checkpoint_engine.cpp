@@ -36,7 +36,14 @@ bool CheckpointEngine::initializeShadowBuffer(size_t size) {
     }
 
 #ifdef __linux__
+    // Use syscall directly for better compatibility
+#if defined(SYS_memfd_create)
     m_memfd = syscall(SYS_memfd_create, "ronin_shadow", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+#elif defined(__NR_memfd_create)
+    m_memfd = syscall(__NR_memfd_create, "ronin_shadow", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+#else
+    m_memfd = -1;
+#endif
 #else
     m_memfd = -1; 
 #endif
