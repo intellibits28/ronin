@@ -7,6 +7,7 @@
 #include "checkpoint_schema_generated.h"
 #include <cstdint>
 #include <memory>
+#include <string>
 
 #define TAG "RoninNativeEngine"
 
