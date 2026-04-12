@@ -32,6 +32,7 @@ public:
     void addEdge(uint32_t source_id, uint32_t target_id, float weight);
     
     Node* getNode(uint32_t id);
+    Node* getNodeByID(const std::string& name);
     std::unordered_map<uint32_t, Node>& getNodes() { return m_nodes; }
     const std::unordered_map<uint32_t, Node>& getNodes() const { return m_nodes; }
 

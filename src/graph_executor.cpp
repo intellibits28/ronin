@@ -3,54 +3,96 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <cctype>
 #include "ronin_log.h"
 
 #define TAG "RoninGraphExecutor"
 
 namespace Ronin::Kernel::Reasoning {
 
+// --- Helpers for String Normalization ---
+
+static std::string lowercase(const std::string& s) {
+    std::string out = s;
+    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return std::tolower(c); });
+    return out;
+}
+
+static std::string trim(const std::string& s) {
+    auto start = s.begin();
+    while (start != s.end() && std::isspace(*start)) {
+        start++;
+    }
+    auto end = s.end();
+    do {
+        end--;
+    } while (std::distance(start, end) > 0 && std::isspace(*end));
+    return std::string(start, end + 1);
+}
+
+// --- GraphExecutor Implementation ---
+
 GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage) 
     : m_graph(graph), m_storage(storage) {}
 
 GraphExecutor::~GraphExecutor() {
-    // Wait for any active sync to finish before destruction
-    while (m_is_syncing.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (m_sync_thread.joinable()) {
+        m_sync_thread.join();
     }
 }
 
-uint32_t GraphExecutor::selectNextNode(uint32_t current_node_id, float divergence_score, const std::string& input_text) {
-    // 1. HARD-CODED PRIORITY BYPASS (Absolute Entry Point)
-    std::string input_lower = input_text;
-    std::transform(input_lower.begin(), input_lower.end(), input_lower.begin(), ::tolower);
-
-    if (input_lower.find("search") != std::string::npos || input_lower.find("find") != std::string::npos) {
-        LOGI(TAG, "> Bypass: Forcing FileSearchNode due to keyword match");
-        return 2; // ID for File_Search capability
+/**
+ * Foolproof Version: Explicit Keyword Bypass + Thompson Sampling
+ */
+Node* GraphExecutor::selectNextNode(const std::string& input) {
+    // 1. Exact Log: See what C++ receives
+    // We use our unified LOGI or the requested __android_log_print
+#ifdef ANDROID
+    __android_log_print(ANDROID_LOG_DEBUG, "RONIN_KERN", "Raw Input: '%s'", input.c_str());
+#else
+    printf("[RONIN_KERN] DEBUG: Raw Input: '%s'\n", input.c_str());
+#endif
+    
+    // 2. Normalize: Trim and Lowercase
+    std::string clean_input = trim(lowercase(input));
+    
+    // 3. Absolute Override (The Nuclear Path)
+    if (clean_input.find("search") != std::string::npos || 
+        clean_input.find("find") != std::string::npos) {
+        
+        LOGI(TAG, "> CRITICAL BYPASS: Forced FileSearchNode");
+        return m_graph.getNodeByID("FileSearchNode");
     }
 
+    // 4. Only if no keywords, proceed to Thompson Sampling
     std::lock_guard<std::mutex> lock(m_mutex);
     
-    Node* current = m_graph.getNode(current_node_id);
+    // Default to Reasoning_Engine (ID 1) as entry point
+    Node* current = m_graph.getNode(1); 
     if (!current) {
-        LOGE(TAG, "selectNextNode: Current node ID %u not found in graph.", current_node_id);
-        return 0;
+        LOGE(TAG, "Thompson Sampling: Root node (ID 1) not found.");
+        return nullptr;
     }
-    if (current->outgoing_edges.empty()) return 0;
 
-    uint32_t best_node = 0;
+    if (current->outgoing_edges.empty()) return current;
+
+    uint32_t best_node_id = 0;
     float max_sample = -1.0f;
 
     for (auto& edge : current->outgoing_edges) {
         float sample = m_sampler.sampleBeta(edge.success_count, edge.failure_count);
-        float adjusted_score = (sample * edge.base_weight) * (1.0f + divergence_score);
+        
+        // Use a static divergence score for now
+        float adjusted_score = (sample * edge.base_weight) * 1.5f;
 
         if (adjusted_score > max_sample) {
             max_sample = adjusted_score;
-            best_node = edge.target_node_id;
+            best_node_id = edge.target_node_id;
         }
     }
-    return best_node;
+
+    Node* result = m_graph.getNode(best_node_id);
+    return result ? result : current;
 }
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {

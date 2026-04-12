@@ -26,4 +26,11 @@ Node* CapabilityGraph::getNode(uint32_t id) {
     return nullptr;
 }
 
+Node* CapabilityGraph::getNodeByID(const std::string& name) {
+    for (auto& [id, node] : m_nodes) {
+        if (node.capability_name == name) return &node;
+    }
+    return nullptr;
+}
+
 } // namespace Ronin::Kernel::Reasoning

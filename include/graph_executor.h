@@ -22,8 +22,8 @@ public:
     GraphExecutor(CapabilityGraph& graph, GraphStorage& storage);
     ~GraphExecutor();
 
-    // Selects the next node ID to execute
-    uint32_t selectNextNode(uint32_t current_node_id, float divergence_score, const std::string& input_text);
+    // Selects the next node to execute (Foolproof Version)
+    Node* selectNextNode(const std::string& input_text);
 
     // Feedback loop with dynamic learning rate based on risk level
     void reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk);
