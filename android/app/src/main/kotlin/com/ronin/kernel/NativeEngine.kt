@@ -23,7 +23,7 @@ class NativeEngine {
     /**
      * Initializes and links kernel components.
      */
-    external fun initializeKernel()
+    external fun initializeKernel(filesDir: String)
 
     /**
      * Native call to process intent vectors using NEON SIMD.

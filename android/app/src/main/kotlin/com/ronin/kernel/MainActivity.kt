@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        nativeEngine.initializeKernel()
+        nativeEngine.initializeKernel(filesDir.absolutePath)
         setContent {
             RoninChatUI(nativeEngine)
         }

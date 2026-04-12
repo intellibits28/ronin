@@ -9,7 +9,7 @@ extern "C" {
  */
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_initializeKernel(
-    JNIEnv *env, jobject thiz);
+    JNIEnv *env, jobject thiz, jstring files_dir);
 
 /**
  * JNI wrapper for calculating similarity between two pre-normalized INT8 vectors.
