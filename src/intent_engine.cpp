@@ -2,9 +2,14 @@
 
 #ifdef __aarch64__
 #include <arm_neon.h>
+#include <sys/auxv.h>
+#include <asm/hwcap.h>
 #endif
 
 #include <iostream>
+#include "ronin_log.h"
+
+#define TAG "RoninIntentEngine"
 
 namespace Ronin::Kernel::Intent {
 
@@ -13,7 +18,7 @@ ThermalState g_thermal_state = ThermalState::NORMAL;
 
 /**
  * Scalar fallback: Calculating dot product to minimize power usage in SEVERE thermal state.
- * Also used as host-side implementation for CI/CD on x86_64.
+ * Also used as host-side implementation for CI/CD on x86_64 or older ARM devices.
  */
 static float compute_similarity_scalar(const int8_t* a, const int8_t* b) {
     int32_t dot_product = 0;
@@ -24,16 +29,40 @@ static float compute_similarity_scalar(const int8_t* a, const int8_t* b) {
     return static_cast<float>(dot_product) / 16129.0f;
 }
 
+#ifdef __aarch64__
+/**
+ * Internal helper to check if the current CPU supports ARMv8.2 Dot Product extension.
+ */
+static bool supports_dot_product() {
+    static bool checked = false;
+    static bool supported = false;
+    if (!checked) {
+        unsigned long hwcaps = getauxval(AT_HWCAP);
+        supported = (hwcaps & HWCAP_ASIMDDP);
+        checked = true;
+        if (supported) {
+            LOGI(TAG, "Hardware support detected: ASIMD Dot Product extension active.");
+        } else {
+            LOGI(TAG, "Hardware support not found: ASIMD Dot Product extension disabled.");
+        }
+    }
+    return supported;
+}
+#endif
+
 /**
  * Intent Similarity calculation.
- * Uses ARM64 NEON SIMD on mobile, with a scalar fallback for thermal throttling or non-ARM hosts.
+ * Uses ARM64 NEON SIMD on mobile, with a scalar fallback for thermal throttling,
+ * older hardware, or non-ARM hosts.
  */
 float compute_intent_similarity_neon(const int8_t* a, const int8_t* b) {
-    // Thermal-aware fallback or Non-ARM host fallback
+    // 1. Non-ARM host fallback
 #ifndef __aarch64__
     return compute_similarity_scalar(a, b);
 #else
-    if (g_thermal_state == ThermalState::SEVERE) {
+    // 2. Runtime Hardware Check: vdotq_s32 requires ARMv8.2-A DotProd
+    // 3. Thermal Check: Fallback if SEVERE
+    if (!supports_dot_product() || g_thermal_state == ThermalState::SEVERE) {
         return compute_similarity_scalar(a, b);
     }
 
@@ -44,7 +73,7 @@ float compute_intent_similarity_neon(const int8_t* a, const int8_t* b) {
     for (int i = 0; i < 128; i += 16) {
         int8x16_t va = vld1q_s8(a + i);
         int8x16_t vb = vld1q_s8(b + i);
-        // vdotq_s32 is extremely efficient on modern ARMv8-A
+        // vdotq_s32 is extremely efficient on modern ARMv8-A (Cortex-A78/A55)
         acc = vdotq_s32(acc, va, vb);
     }
 
