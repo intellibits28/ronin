@@ -49,24 +49,18 @@ class MainActivity : ComponentActivity() {
 
     private fun checkAndRequestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11+ logic
             if (!Environment.isExternalStorageManager()) {
+                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                val uri = Uri.fromParts("package", packageName, null)
+                intent.data = uri
                 try {
-                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    intent.addCategory("android.intent.category.DEFAULT")
-                    intent.data = Uri.parse("package:${applicationContext.packageName}")
                     startActivity(intent)
                 } catch (e: Exception) {
-                    Log.e("MainActivity", "Failed to launch manage all files settings: ${e.message}")
-                    // Fallback to general settings
-                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    startActivity(intent)
+                    // Fallback for older devices or if the intent fails
+                    val genericIntent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivity(genericIntent)
                 }
             }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            // Fallback for Android 6.0 - 10 (needs dynamic permission request for READ_EXTERNAL_STORAGE)
-            // For now, we'll just log this as the kernel focus is modern Snapdragon devices
-            Log.i("MainActivity", "Legacy device detected. Using standard storage model.")
         }
     }
 }
