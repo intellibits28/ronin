@@ -6,6 +6,7 @@
 #include <future>
 #include <atomic>
 #include <mutex>
+#include <thread>
 
 namespace Ronin::Kernel::Reasoning {
 

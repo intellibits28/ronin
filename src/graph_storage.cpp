@@ -82,11 +82,20 @@ bool GraphStorage::saveGraph(const CapabilityGraph& graph) {
 
     const char* n_sql = "INSERT OR REPLACE INTO nodes (id, name) VALUES (?, ?);";
     sqlite3_stmt* n_stmt = nullptr;
-    sqlite3_prepare_v2(m_db, n_sql, -1, &n_stmt, nullptr);
+    if (sqlite3_prepare_v2(m_db, n_sql, -1, &n_stmt, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "Failed to prepare node save query: %s", sqlite3_errmsg(m_db));
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
 
     const char* e_sql = "INSERT OR REPLACE INTO edges (source_id, target_id, success_count, failure_count, base_weight) VALUES (?, ?, ?, ?, ?);";
     sqlite3_stmt* e_stmt = nullptr;
-    sqlite3_prepare_v2(m_db, e_sql, -1, &e_stmt, nullptr);
+    if (sqlite3_prepare_v2(m_db, e_sql, -1, &e_stmt, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "Failed to prepare edge save query: %s", sqlite3_errmsg(m_db));
+        sqlite3_finalize(n_stmt);
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
 
     for (const auto& [id, node] : graph.getNodes()) {
         sqlite3_bind_int(n_stmt, 1, node.id);
