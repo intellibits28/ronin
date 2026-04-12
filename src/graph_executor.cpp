@@ -2,19 +2,15 @@
 #include <algorithm>
 #include <iostream>
 #include <thread>
-#include <android/log.h>
+#include "ronin_log.h"
 
 #define TAG "RoninGraphExecutor"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 
 namespace Ronin::Kernel::Reasoning {
 
 GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage) 
     : m_graph(graph), m_storage(storage) {}
 
-/**
- * Thompson Sampling with Divergence-based Exploration
- */
 uint32_t GraphExecutor::selectNextNode(uint32_t current_node_id, float divergence_score) {
     Node* current = m_graph.getNode(current_node_id);
     if (!current || current->outgoing_edges.empty()) return 0;
@@ -34,10 +30,6 @@ uint32_t GraphExecutor::selectNextNode(uint32_t current_node_id, float divergenc
     return best_node;
 }
 
-/**
- * Elastic Weight Consolidation (EWC) inspired dynamic learning rate.
- * Prevents catastrophic forgetting by scaling the update increment based on risk.
- */
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
     Node* source = m_graph.getNode(source_id);
     if (!source) return;
@@ -47,26 +39,19 @@ void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool s
     for (auto& edge : source->outgoing_edges) {
         if (edge.target_node_id == target_id) {
             if (success) {
-                // Scaling success/failure by eta to provide soft updates
                 edge.success_count += static_cast<uint32_t>(1.0f * eta);
-                edge.base_weight += (0.1f * eta); // Progressive weight reinforcement
+                edge.base_weight += (0.1f * eta);
             } else {
                 edge.failure_count += static_cast<uint32_t>(1.0f * eta);
-                edge.base_weight -= (0.05f * eta); // Conservative penalization
+                edge.base_weight -= (0.05f * eta);
             }
             break;
         }
     }
 
-    // Trigger async sync to SQLite L3 Deep-store
     triggerAsyncSync();
 }
 
-/**
- * Returns a learning rate multiplier based on the risk level.
- * High risk = Lower learning rate (consolidation).
- * Low risk = Higher learning rate (exploration).
- */
 float GraphExecutor::calculateLearningRate(RiskLevel risk) {
     switch (risk) {
         case RiskLevel::LOW:     return 1.5f;
@@ -77,17 +62,13 @@ float GraphExecutor::calculateLearningRate(RiskLevel risk) {
     }
 }
 
-/**
- * Atomic Async Sync: Persists current RAM weights to SQLite in a background thread.
- * Ensures the graph state is saved before potential LMK events.
- */
 void GraphExecutor::triggerAsyncSync() {
-    if (m_is_syncing.exchange(true)) return; // Prevent concurrent sync tasks
+    if (m_is_syncing.exchange(true)) return;
 
     std::thread([this]() {
-        LOGI("GraphExecutor: Starting async weight persistence to SQLite...");
+        LOGI(TAG, "GraphExecutor: Starting async weight persistence to SQLite...");
         if (m_storage.saveGraph(m_graph)) {
-            LOGI("GraphExecutor: Successfully synced weights to L3 Deep-store.");
+            LOGI(TAG, "GraphExecutor: Successfully synced weights to L3 Deep-store.");
         }
         m_is_syncing.store(false);
     }).detach();

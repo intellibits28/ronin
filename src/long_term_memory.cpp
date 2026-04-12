@@ -2,17 +2,15 @@
 #include <cmath>
 #include <ctime>
 #include <iostream>
-#include <android/log.h>
+#include "ronin_log.h"
 
 #define TAG "RoninLongTermMemory"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 namespace Ronin::Kernel::Memory {
 
 LongTermMemory::LongTermMemory(const std::string& db_path) {
     if (sqlite3_open(db_path.c_str(), &m_db) != SQLITE_OK) {
-        LOGE("Failed to open SQLite database: %s", sqlite3_errmsg(m_db));
+        LOGE(TAG, "Failed to open SQLite database: %s", sqlite3_errmsg(m_db));
     } else {
         initSchema();
     }
@@ -29,7 +27,7 @@ bool LongTermMemory::initSchema() {
         "  value TEXT, "
         "  stability REAL DEFAULT 1.0, "
         "  last_accessed INTEGER, "
-        "  priority INTEGER DEFAULT 1);" // Added priority column
+        "  priority INTEGER DEFAULT 1);"
         
         "CREATE VIRTUAL TABLE IF NOT EXISTS summaries USING fts5("
         "  content, "
@@ -37,7 +35,7 @@ bool LongTermMemory::initSchema() {
         ");";
 
     if (sqlite3_exec(m_db, schema, nullptr, nullptr, nullptr) != SQLITE_OK) {
-        LOGE("Failed to create SQLite schema: %s", sqlite3_errmsg(m_db));
+        LOGE(TAG, "Failed to create SQLite schema: %s", sqlite3_errmsg(m_db));
         return false;
     }
     return true;
@@ -60,27 +58,18 @@ bool LongTermMemory::storeFact(const std::string& key, const std::string& value,
     return success;
 }
 
-/**
- * Natural Forgetting Maintenance:
- * 1. Only runs if the device is charging to minimize power impact.
- * 2. Prunes memories where stability < 0.1 AND priority is LOW (0).
- */
 int LongTermMemory::runMaintenance(bool is_charging) {
     if (!is_charging) {
-        LOGI("Maintenance skipped: Device is not charging.");
+        LOGI(TAG, "Maintenance skipped: Device is not charging.");
         return 0;
     }
 
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI("Natural Forgetting: Scanning L3 Deep-store for stale memories...");
+    LOGI(TAG, "Natural Forgetting: Scanning L3 Deep-store for stale memories...");
 
     uint64_t current_time = std::time(nullptr);
     int pruned_count = 0;
 
-    // We'll calculate current stability in the query: S(t) = stability * e^(-lambda * (now - last))
-    // Note: SQLite doesn't have exp() by default, we'll approximate with a threshold-based decay
-    // or select and check manually. Here we'll do manual check for precision.
-    
     const char* select_sql = "SELECT key, stability, last_accessed, priority FROM facts WHERE priority = 0;";
     sqlite3_stmt* stmt;
     std::vector<std::string> keys_to_prune;
@@ -101,7 +90,6 @@ int LongTermMemory::runMaintenance(bool is_charging) {
     }
     sqlite3_finalize(stmt);
 
-    // Perform pruning
     for (const auto& key : keys_to_prune) {
         const char* delete_sql = "DELETE FROM facts WHERE key = ?;";
         sqlite3_stmt* del_stmt;
@@ -109,19 +97,18 @@ int LongTermMemory::runMaintenance(bool is_charging) {
             sqlite3_bind_text(del_stmt, 1, key.c_str(), -1, SQLITE_STATIC);
             if (sqlite3_step(del_stmt) == SQLITE_DONE) {
                 pruned_count++;
-                LOGI("Natural Forgetting: Pruned stale memory '%s' (Stability < 0.1)", key.c_str());
+                LOGI(TAG, "Natural Forgetting: Pruned stale memory '%s' (Stability < 0.1)", key.c_str());
             }
         }
         sqlite3_finalize(del_stmt);
     }
 
     if (pruned_count > 0) {
-        LOGI("Natural Forgetting complete: %d items cleared from Deep-store.", pruned_count);
+        LOGI(TAG, "Natural Forgetting complete: %d items cleared from Deep-store.", pruned_count);
     }
     return pruned_count;
 }
 
-// ... rest of the existing methods ...
 std::string LongTermMemory::retrieveFact(const std::string& key) {
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "SELECT value, stability, last_accessed FROM facts WHERE key = ?;";
@@ -165,8 +152,6 @@ bool LongTermMemory::consolidate(const std::string& summary_text) {
     return success;
 }
 
-void LongTermMemory::applyDecay(uint64_t current_timestamp) {
-    // Already covered in maintenance logic
-}
+void LongTermMemory::applyDecay(uint64_t current_timestamp) {}
 
 } // namespace Ronin::Kernel::Memory
