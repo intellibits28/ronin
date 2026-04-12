@@ -1,6 +1,7 @@
 #include "long_term_memory.h"
 #include <cmath>
 #include <ctime>
+#include <vector>
 #include <iostream>
 #include "ronin_log.h"
 

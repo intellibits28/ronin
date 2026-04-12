@@ -1,4 +1,5 @@
 #include "graph_storage.h"
+#include <vector>
 #include "ronin_log.h"
 #include <iostream>
 

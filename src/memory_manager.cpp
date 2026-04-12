@@ -1,6 +1,8 @@
 #include "memory_manager.h"
 #include <sys/mman.h>
 #include <algorithm>
+#include <vector>
+#include <numeric>
 #include <iostream>
 #include "ronin_log.h"
 
