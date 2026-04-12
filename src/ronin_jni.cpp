@@ -3,6 +3,9 @@
 #include "memory_manager.h"
 #include "long_term_memory.h"
 #include "checkpoint_engine.h"
+#include "capability_graph.h"
+#include "graph_storage.h"
+#include "graph_executor.h"
 #include "ronin_log.h"
 #include "checkpoint_schema_generated.h"
 #include <cstdint>
@@ -14,11 +17,15 @@
 using namespace Ronin::Kernel::Intent;
 using namespace Ronin::Kernel::Memory;
 using namespace Ronin::Kernel::Checkpoint;
+using namespace Ronin::Kernel::Reasoning;
 
 // Use unique_ptr for managed lifecycle of kernel components
 static std::unique_ptr<MemoryManager> g_memory_manager;
 static std::unique_ptr<LongTermMemory> g_long_term_memory;
 static std::unique_ptr<CheckpointEngine> g_checkpoint_engine;
+static std::unique_ptr<CapabilityGraph> g_capability_graph;
+static std::unique_ptr<GraphStorage> g_graph_storage;
+static std::unique_ptr<GraphExecutor> g_graph_executor;
 
 extern "C" {
 
@@ -28,10 +35,8 @@ extern "C" {
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir) {
     if (files_dir == nullptr) return;
-
     const char *path_cstr = env->GetStringUTFChars(files_dir, nullptr);
-    if (path_cstr == nullptr) return; // OOM
-
+    if (path_cstr == nullptr) return;
     std::string base_path(path_cstr);
     env->ReleaseStringUTFChars(files_dir, path_cstr);
 
@@ -48,18 +53,23 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     // 3. Initialize Checkpoint Engine
     std::string cp_path = base_path + "/checkpoint.bin";
     g_checkpoint_engine = std::make_unique<CheckpointEngine>(cp_path);
-    g_checkpoint_engine->initializeShadowBuffer(1024 * 1024); // 1MB shadow
+    g_checkpoint_engine->initializeShadowBuffer(1024 * 1024);
 
-    LOGI(TAG, "Kernel components synchronized and linked.");
+    // 4. Initialize Reasoning Spine (Graph)
+    std::string graph_path = base_path + "/ronin_graph.db";
+    g_graph_storage = std::make_unique<GraphStorage>(graph_path);
+    g_capability_graph = std::make_unique<CapabilityGraph>();
+    g_graph_storage->loadGraph(*g_capability_graph);
+    g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
+
+    LOGI(TAG, "Kernel components synchronized and linked (Memory + Reasoning).");
 }
 
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_loadCheckpoint(JNIEnv *env, jobject thiz, jobject byte_buffer) {
     if (byte_buffer == nullptr) return JNI_FALSE;
-
     void *buffer_ptr = env->GetDirectBufferAddress(byte_buffer);
     jlong capacity = env->GetDirectBufferCapacity(byte_buffer);
-
     if (buffer_ptr == nullptr || capacity <= 0) return JNI_FALSE;
 
     auto verifier = flatbuffers::Verifier(static_cast<const uint8_t*>(buffer_ptr), static_cast<size_t>(capacity));
@@ -81,6 +91,7 @@ Java_com_ronin_kernel_NativeEngine_updateLifecycleState(JNIEnv *env, jobject thi
         LOGI(TAG, "App in Background: Triggering LMK-aware flush.");
         g_thermal_state = ThermalState::SEVERE;
         if (g_checkpoint_engine) g_checkpoint_engine->onLMKSignal();
+        if (g_graph_executor) g_graph_executor->triggerAsyncSync();
     } else {
         g_thermal_state = ThermalState::NORMAL;
     }
@@ -90,7 +101,6 @@ JNIEXPORT jfloat JNICALL
 Java_com_ronin_kernel_NativeEngine_computeSimilarity(JNIEnv *env, jobject thiz, jobject buffer_a, jobject buffer_b) {
     void* ptr_a = env->GetDirectBufferAddress(buffer_a);
     void* ptr_b = env->GetDirectBufferAddress(buffer_b);
-
     if (ptr_a == nullptr || ptr_b == nullptr) return -1.0f;
 
     try {
@@ -103,9 +113,13 @@ Java_com_ronin_kernel_NativeEngine_computeSimilarity(JNIEnv *env, jobject thiz, 
 
 JNIEXPORT jfloat JNICALL
 Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jobject input) {
-    if (input == nullptr || !g_memory_manager) return 0.0f;
+    if (input == nullptr || !g_memory_manager || !g_graph_executor) return 0.0f;
     void* ptr = env->GetDirectBufferAddress(input);
     if (ptr == nullptr) return 0.0f;
+
+    // Simulate capability routing
+    uint32_t next_node = g_graph_executor->selectNextNode(1, 0.5f);
+    LOGI(TAG, "Reasoning Spine: Selected next capability node %u", next_node);
 
     Token t = {1, 0.9f, {0.1f, 0.2f}}; 
     g_memory_manager->addRecentToken(t);

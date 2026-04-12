@@ -12,6 +12,10 @@ namespace Ronin::Kernel::Memory {
 LongTermMemory::LongTermMemory(const std::string& db_path) {
     if (sqlite3_open(db_path.c_str(), &m_db) != SQLITE_OK) {
         LOGE(TAG, "Failed to open SQLite database: %s", sqlite3_errmsg(m_db));
+        if (m_db) {
+            sqlite3_close(m_db);
+            m_db = nullptr;
+        }
     } else {
         initSchema();
     }
