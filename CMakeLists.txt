@@ -61,9 +61,12 @@ if(ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
     
+    # Link system libraries to core so tests inherit them
+    target_link_libraries(ronin_core PUBLIC ${log-lib} ${android-lib})
+    
     # JNI Bridge Library
     add_library(ronin_kernel SHARED src/ronin_jni.cpp)
-    target_link_libraries(ronin_kernel ronin_core ${log-lib} ${android-lib})
+    target_link_libraries(ronin_kernel ronin_core sqlite3_lib)
     
     # Enable ARMv8.2-A Dot Product extension
     target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
