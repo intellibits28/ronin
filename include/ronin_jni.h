@@ -5,6 +5,13 @@
 extern "C" {
 
 /**
+ * Initializes and links kernel components.
+ */
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_initializeKernel(
+    JNIEnv *env, jobject thiz);
+
+/**
  * JNI wrapper for calculating similarity between two pre-normalized INT8 vectors.
  * Zero-copy: vectors are accessed via DirectByteBuffer.
  */
@@ -39,5 +46,8 @@ Java_com_ronin_kernel_NativeEngine_processInput(
 JNIEXPORT jint JNICALL
 Java_com_ronin_kernel_NativeEngine_getLMKPressure(
     JNIEnv *env, jobject thiz);
+
+} // extern "C"
+is_charging);
 
 } // extern "C"

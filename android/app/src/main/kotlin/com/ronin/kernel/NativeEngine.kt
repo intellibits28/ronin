@@ -21,6 +21,11 @@ class NativeEngine {
     }
 
     /**
+     * Initializes and links kernel components.
+     */
+    external fun initializeKernel()
+
+    /**
      * Native call to process intent vectors using NEON SIMD.
      * Uses DirectByteBuffer for zero-copy access.
      */
@@ -45,6 +50,11 @@ class NativeEngine {
      * Returns the current internal pressure score (0-100).
      */
     external fun getLMKPressure(): Int
+
+    /**
+     * Triggers Natural Forgetting background maintenance.
+     */
+    external fun runMaintenance(isCharging: Boolean): Int
 
     // --- Coroutine Wrappers ---
 

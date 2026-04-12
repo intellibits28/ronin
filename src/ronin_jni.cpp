@@ -1,6 +1,7 @@
 #include "ronin_jni.h"
 #include "intent_engine.h"
 #include "memory_manager.h"
+#include "long_term_memory.h"
 #include "ronin_log.h"
 #include "checkpoint_schema_generated.h"
 #include <cstdint>
@@ -12,8 +13,19 @@ using namespace Ronin::Kernel::Memory;
 
 // Static kernel components for the JNI bridge
 static MemoryManager g_memory_manager(20); // 20 tokens recent window
+static LongTermMemory g_long_term_memory("/data/data/com.ronin.kernel/files/ronin_l3.db");
 
 extern "C" {
+
+/**
+ * Initializes the kernel components and links them.
+ */
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz) {
+    LOGI(TAG, "Initializing Ronin Kernel components...");
+    g_memory_manager.setLongTermMemory(&g_long_term_memory);
+    LOGI(TAG, "Kernel components linked (L1/L2 <-> L3).");
+}
 
 /**
  * Maps a DirectByteBuffer directly to the Ronin Adaptive Checkpoint schema.
@@ -153,6 +165,14 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jobje
 JNIEXPORT jint JNICALL
 Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
     return static_cast<jint>(g_memory_manager.getPressureScore());
+}
+
+/**
+ * Triggers Natural Forgetting background maintenance.
+ */
+JNIEXPORT jint JNICALL
+Java_com_ronin_kernel_NativeEngine_runMaintenance(JNIEnv *env, jobject thiz, jboolean is_charging) {
+    return static_cast<jint>(g_long_term_memory.runMaintenance(is_charging == JNI_TRUE));
 }
 
 } // extern "C"
