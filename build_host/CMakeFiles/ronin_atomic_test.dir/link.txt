@@ -1,1 +1,0 @@
-/data/data/com.termux/files/usr/bin/c++ -g -Xlinker --dependency-file=CMakeFiles/ronin_atomic_test.dir/link.d CMakeFiles/ronin_atomic_test.dir/tests/atomic_integrity_test.cpp.o -o ronin_atomic_test  lib/libgtest_main.a libronin_core.a lib/libgtest.a -lpthread

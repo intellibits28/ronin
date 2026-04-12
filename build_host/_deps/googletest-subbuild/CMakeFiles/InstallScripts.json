@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/data/data/com.termux/files/home/play-ground/ronin/build_host/_deps/googletest-subbuild/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
