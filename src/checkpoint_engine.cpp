@@ -55,6 +55,8 @@ bool CheckpointEngine::initializeShadowBuffer(size_t size) {
 
     if (ftruncate(m_memfd, size) == -1) {
         LOGE(TAG, "Failed to truncate memfd to %zu bytes.", size);
+        close(m_memfd);
+        m_memfd = -1;
         return false;
     }
 

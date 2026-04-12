@@ -4,6 +4,11 @@
 #include <arm_neon.h>
 #include <sys/auxv.h>
 #include <asm/hwcap.h>
+
+// Fallback for older NDK headers
+#ifndef HWCAP_ASIMDDP
+#define HWCAP_ASIMDDP (1 << 20)
+#endif
 #endif
 
 #include <iostream>
