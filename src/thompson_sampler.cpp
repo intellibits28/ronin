@@ -87,8 +87,14 @@ float ThompsonSampler::sampleBeta(uint32_t success, uint32_t failure) {
     uint32_t alpha = std::clamp(success + 1, 1u, 20u);
     uint32_t beta = std::clamp(failure + 1, 1u, 20u);
 
-    const auto& table = m_precomputed_tables[{alpha, beta}];
-    return sampleFromAliasTable(table);
+    auto it = m_precomputed_tables.find({alpha, beta});
+    if (it == m_precomputed_tables.end()) {
+        // Fallback to 50/50 chance if table is missing
+        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+        return dist(m_rng);
+    }
+    
+    return sampleFromAliasTable(it->second);
 }
 
 float ThompsonSampler::sampleFromAliasTable(const AliasTable& table) {

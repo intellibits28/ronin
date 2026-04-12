@@ -42,9 +42,10 @@ bool LongTermMemory::initSchema() {
 }
 
 bool LongTermMemory::storeFact(const std::string& key, const std::string& value, MemoryPriority priority) {
+    if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT OR REPLACE INTO facts (key, value, last_accessed, priority) VALUES (?, ?, ?, ?);";
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt = nullptr;
     
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
     
@@ -71,7 +72,7 @@ int LongTermMemory::runMaintenance(bool is_charging) {
     int pruned_count = 0;
 
     const char* select_sql = "SELECT key, stability, last_accessed, priority FROM facts WHERE priority = 0;";
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt = nullptr;
     std::vector<std::string> keys_to_prune;
 
     if (sqlite3_prepare_v2(m_db, select_sql, -1, &stmt, nullptr) == SQLITE_OK) {
@@ -92,7 +93,7 @@ int LongTermMemory::runMaintenance(bool is_charging) {
 
     for (const auto& key : keys_to_prune) {
         const char* delete_sql = "DELETE FROM facts WHERE key = ?;";
-        sqlite3_stmt* del_stmt;
+        sqlite3_stmt* del_stmt = nullptr;
         if (sqlite3_prepare_v2(m_db, delete_sql, -1, &del_stmt, nullptr) == SQLITE_OK) {
             sqlite3_bind_text(del_stmt, 1, key.c_str(), -1, SQLITE_STATIC);
             if (sqlite3_step(del_stmt) == SQLITE_DONE) {
@@ -110,9 +111,10 @@ int LongTermMemory::runMaintenance(bool is_charging) {
 }
 
 std::string LongTermMemory::retrieveFact(const std::string& key) {
+    if (!m_db) return "";
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "SELECT value, stability, last_accessed FROM facts WHERE key = ?;";
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt = nullptr;
     std::string result = "";
 
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
@@ -126,10 +128,11 @@ std::string LongTermMemory::retrieveFact(const std::string& key) {
 }
 
 std::vector<std::string> LongTermMemory::search(const std::string& query) {
+    if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
     const char* sql = "SELECT content FROM summaries WHERE summaries MATCH ? ORDER BY rank;";
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -141,9 +144,10 @@ std::vector<std::string> LongTermMemory::search(const std::string& query) {
 }
 
 bool LongTermMemory::consolidate(const std::string& summary_text) {
+    if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO summaries (content, timestamp) VALUES (?, ?);";
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
     sqlite3_bind_text(stmt, 1, summary_text.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int64(stmt, 2, std::time(nullptr));
@@ -153,13 +157,12 @@ bool LongTermMemory::consolidate(const std::string& summary_text) {
 }
 
 void LongTermMemory::applyDecay(uint64_t current_timestamp) {
+    if (!m_db) return;
     std::lock_guard<std::mutex> lock(m_mutex);
     LOGI(TAG, "Applying database-wide Temporal Decay...");
     
-    // We update stability for all non-critical facts
-    // SQLite doesn't have exp() natively, so we select and update.
     const char* select_sql = "SELECT key, stability, last_accessed FROM facts WHERE priority < 3;";
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt = nullptr;
     
     struct UpdateEntry { std::string key; double new_stability; };
     std::vector<UpdateEntry> updates;
@@ -195,11 +198,3 @@ void LongTermMemory::applyDecay(uint64_t current_timestamp) {
 }
 
 } // namespace Ronin::Kernel::Memory
-y
-emory
-}
-}
-
-} // namespace Ronin::Kernel::Memory
-y
-emory

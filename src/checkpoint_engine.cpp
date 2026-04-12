@@ -35,7 +35,12 @@ bool CheckpointEngine::initializeShadowBuffer(size_t size) {
         close(m_memfd);
     }
 
-    m_memfd = memfd_create("ronin_shadow", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+#ifdef __linux__
+    m_memfd = syscall(SYS_memfd_create, "ronin_shadow", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+#else
+    m_memfd = -1; 
+#endif
+
     if (m_memfd == -1) {
         LOGE(TAG, "Failed to create memfd shadow buffer.");
         return false;
@@ -52,7 +57,6 @@ bool CheckpointEngine::initializeShadowBuffer(size_t size) {
 }
 
 bool CheckpointEngine::syncBufferToDisk() {
-    // This is a helper for persistToStorage logic
     return persistToStorage();
 }
 
@@ -118,10 +122,6 @@ void CheckpointEngine::onLMKSignal() {
     if (!persistToStorage()) {
         LOGE(TAG, "Critical Failure: LMK-triggered flush failed.");
     }
-}
-
-} // namespace Ronin::Kernel::Checkpoint
-
 }
 
 } // namespace Ronin::Kernel::Checkpoint

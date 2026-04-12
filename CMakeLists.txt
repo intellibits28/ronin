@@ -47,8 +47,8 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 # Memory Stress Test
-add_executable(ronin_memory_test tests/memory_stress_test.cpp src/memory_manager.cpp)
-target_link_libraries(ronin_memory_test gtest_main)
+add_executable(ronin_memory_test tests/memory_stress_test.cpp src/memory_manager.cpp src/long_term_memory.cpp)
+target_link_libraries(ronin_memory_test gtest_main sqlite3)
 
 # Precision Test
 add_executable(ronin_precision_test tests/precision_test.cpp src/thompson_sampler.cpp)

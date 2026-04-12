@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <iostream>
 #include <thread>
+#include <chrono>
 #include "ronin_log.h"
 
 #define TAG "RoninGraphExecutor"

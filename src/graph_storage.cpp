@@ -39,7 +39,7 @@ bool GraphStorage::initSchema() {
 bool GraphStorage::loadGraph(CapabilityGraph& graph) {
     if (!m_db) return false;
     const char* node_sql = "SELECT id, name FROM nodes;";
-    sqlite3_stmt* n_stmt;
+    sqlite3_stmt* n_stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, node_sql, -1, &n_stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(n_stmt) == SQLITE_ROW) {
             graph.addNode(sqlite3_column_int(n_stmt, 0), reinterpret_cast<const char*>(sqlite3_column_text(n_stmt, 1)));
@@ -76,10 +76,11 @@ bool GraphStorage::loadGraph(CapabilityGraph& graph) {
 }
 
 bool GraphStorage::saveGraph(const CapabilityGraph& graph) {
+    if (!m_db) return false;
     sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
 
     const char* n_sql = "INSERT OR REPLACE INTO nodes (id, name) VALUES (?, ?);";
-    sqlite3_stmt* n_stmt;
+    sqlite3_stmt* n_stmt = nullptr;
     sqlite3_prepare_v2(m_db, n_sql, -1, &n_stmt, nullptr);
 
     const char* e_sql = "INSERT OR REPLACE INTO edges (source_id, target_id, success_count, failure_count, base_weight) VALUES (?, ?, ?, ?, ?);";
