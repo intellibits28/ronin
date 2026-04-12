@@ -31,6 +31,11 @@ FetchContent_Declare(
   URL https://github.com/google/flatbuffers/archive/refs/tags/v2.0.8.zip
 )
 
+# Disable FlatBuffers internal builds/tests to prevent Exec format errors during Android cross-compiling
+set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "" FORCE)
+set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
+
 FetchContent_MakeAvailable(googletest sqlite3_src flatbuffers)
 
 # Define SQLite library
