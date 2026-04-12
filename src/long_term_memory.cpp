@@ -152,6 +152,43 @@ bool LongTermMemory::consolidate(const std::string& summary_text) {
     return success;
 }
 
-void LongTermMemory::applyDecay(uint64_t current_timestamp) {}
+void LongTermMemory::applyDecay(uint64_t current_timestamp) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    LOGI(TAG, "Applying database-wide Temporal Decay...");
+    
+    // We update stability for all non-critical facts
+    // SQLite doesn't have exp() natively, so we select and update.
+    const char* select_sql = "SELECT key, stability, last_accessed FROM facts WHERE priority < 3;";
+    sqlite3_stmt* stmt;
+    
+    struct UpdateEntry { std::string key; double new_stability; };
+    std::vector<UpdateEntry> updates;
+
+    if (sqlite3_prepare_v2(m_db, select_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            std::string key = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            double initial_stability = sqlite3_column_double(stmt, 1);
+            uint64_t last_accessed = sqlite3_column_int64(stmt, 2);
+
+            double delta_t = static_cast<double>(current_timestamp - last_accessed);
+            double new_stability = initial_stability * std::exp(-m_lambda * delta_t);
+            
+            updates.push_back({key, new_stability});
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    for (const auto& entry : updates) {
+        const char* up_sql = "UPDATE facts SET stability = ?, last_accessed = ? WHERE key = ?;";
+        sqlite3_stmt* up_stmt;
+        if (sqlite3_prepare_v2(m_db, up_sql, -1, &up_stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_double(up_stmt, 1, entry.new_stability);
+            sqlite3_bind_int64(up_stmt, 2, current_timestamp);
+            sqlite3_bind_text(up_stmt, 3, entry.key.c_str(), -1, SQLITE_STATIC);
+            sqlite3_step(up_stmt);
+        }
+        sqlite3_finalize(up_stmt);
+    }
+}
 
 } // namespace Ronin::Kernel::Memory

@@ -61,6 +61,14 @@ std::vector<uint32_t> MemoryManager::reconstructContext() {
     return context;
 }
 
+int MemoryManager::getPressureScore() const {
+    // Basic heuristic: Pressure increases as historical buffer (Anchor 2) grows.
+    // 1000 items = 100% pressure.
+    size_t count = m_anchor2_compressed.size();
+    if (count > 1000) return 100;
+    return static_cast<int>((static_cast<float>(count) / 1000.0f) * 100.0f);
+}
+
 void MemoryManager::onMemoryPressure() {
     std::lock_guard<std::mutex> lock(m_mutex);
     LOGI(TAG, "Critical Memory Pressure: Reducing Anchor 2 footprint.");

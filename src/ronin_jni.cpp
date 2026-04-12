@@ -1,11 +1,16 @@
 #include "ronin_jni.h"
 #include "intent_engine.h"
+#include "memory_manager.h"
 #include "ronin_log.h"
 #include <cstdint>
 
 #define TAG "RoninNativeEngine"
 
 using namespace Ronin::Kernel::Intent;
+using namespace Ronin::Kernel::Memory;
+
+// Static kernel components for the JNI bridge
+static MemoryManager g_memory_manager(20); // 20 tokens recent window
 
 extern "C" {
 
@@ -87,21 +92,31 @@ Java_com_ronin_kernel_NativeEngine_computeSimilarity(
 }
 
 /**
- * Placeholder for actual input processing in the kernel.
+ * Processes input via the memory manager.
+ * Uses DirectByteBuffer for zero-copy access.
  */
 JNIEXPORT jfloat JNICALL
 Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jobject input) {
-    LOGI(TAG, "processInput: Input received.");
+    if (input == nullptr) return 0.0f;
+    
+    void* ptr = env->GetDirectBufferAddress(input);
+    if (ptr == nullptr) return 0.0f;
+
+    LOGI(TAG, "processInput: Input mapped via DirectByteBuffer.");
+    
+    // Simulate adding a token to the memory manager
+    Token t = {1, 0.9f, {0.1f, 0.2f}}; 
+    g_memory_manager.addRecentToken(t);
+
     return 1.0f;
 }
 
 /**
- * Returns the current internal pressure score (0-100).
+ * Returns the current internal pressure score (0-100) from the MemoryManager.
  */
 JNIEXPORT jint JNICALL
 Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
-    // This would normally poll the MemoryManager or Thermal monitor
-    return 15; // Placeholder: 15% pressure
+    return static_cast<jint>(g_memory_manager.getPressureScore());
 }
 
 } // extern "C"

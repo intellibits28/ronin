@@ -41,6 +41,9 @@ public:
     // Reconstruct the full prompt context for the inference engine
     std::vector<uint32_t> reconstructContext();
 
+    // Returns current memory pressure score (0-100)
+    int getPressureScore() const;
+
     // LMK Signal: Force aggressive compression of Anchor 2
     void onMemoryPressure();
 
