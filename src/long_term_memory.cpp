@@ -72,13 +72,16 @@ int LongTermMemory::runMaintenance(bool is_charging) {
     uint64_t current_time = std::time(nullptr);
     int pruned_count = 0;
 
-    const char* select_sql = "SELECT key, stability, last_accessed, priority FROM facts WHERE priority = 0;";
+    const char* select_sql = "SELECT key, stability, last_accessed FROM facts WHERE priority = 0;";
     sqlite3_stmt* stmt = nullptr;
     std::vector<std::string> keys_to_prune;
 
     if (sqlite3_prepare_v2(m_db, select_sql, -1, &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            std::string key = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            const unsigned char* key_ptr = sqlite3_column_text(stmt, 0);
+            if (!key_ptr) continue;
+
+            std::string key = reinterpret_cast<const char*>(key_ptr);
             double initial_stability = sqlite3_column_double(stmt, 1);
             uint64_t last_accessed = sqlite3_column_int64(stmt, 2);
 
@@ -97,15 +100,19 @@ int LongTermMemory::runMaintenance(bool is_charging) {
     }
     sqlite3_finalize(stmt);
 
-    for (const auto& key : keys_to_prune) {
+    if (!keys_to_prune.empty()) {
         const char* delete_sql = "DELETE FROM facts WHERE key = ?;";
         sqlite3_stmt* del_stmt = nullptr;
         if (sqlite3_prepare_v2(m_db, delete_sql, -1, &del_stmt, nullptr) == SQLITE_OK) {
-            sqlite3_bind_text(del_stmt, 1, key.c_str(), -1, SQLITE_STATIC);
-            if (sqlite3_step(del_stmt) == SQLITE_DONE) {
-                pruned_count++;
-                LOGI(TAG, "Natural Forgetting: Pruned stale memory '%s' (Stability < 0.1)", key.c_str());
+            sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+            for (const auto& key : keys_to_prune) {
+                sqlite3_bind_text(del_stmt, 1, key.c_str(), -1, SQLITE_STATIC);
+                if (sqlite3_step(del_stmt) == SQLITE_DONE) {
+                    pruned_count++;
+                }
+                sqlite3_reset(del_stmt);
             }
+            sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
         }
         sqlite3_finalize(del_stmt);
     }
@@ -126,7 +133,10 @@ std::string LongTermMemory::retrieveFact(const std::string& key) {
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_STATIC);
         if (sqlite3_step(stmt) == SQLITE_ROW) {
-            result = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            const unsigned char* val_ptr = sqlite3_column_text(stmt, 0);
+            if (val_ptr) {
+                result = reinterpret_cast<const char*>(val_ptr);
+            }
         }
     }
     sqlite3_finalize(stmt);
@@ -142,7 +152,10 @@ std::vector<std::string> LongTermMemory::search(const std::string& query) {
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            results.push_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+            const unsigned char* content_ptr = sqlite3_column_text(stmt, 0);
+            if (content_ptr) {
+                results.push_back(reinterpret_cast<const char*>(content_ptr));
+            }
         }
     }
     sqlite3_finalize(stmt);
@@ -175,7 +188,10 @@ void LongTermMemory::applyDecay(uint64_t current_timestamp) {
 
     if (sqlite3_prepare_v2(m_db, select_sql, -1, &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            std::string key = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            const unsigned char* key_ptr = sqlite3_column_text(stmt, 0);
+            if (!key_ptr) continue;
+
+            std::string key = reinterpret_cast<const char*>(key_ptr);
             double initial_stability = sqlite3_column_double(stmt, 1);
             uint64_t last_accessed = sqlite3_column_int64(stmt, 2);
 
