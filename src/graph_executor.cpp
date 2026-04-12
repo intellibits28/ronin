@@ -11,6 +11,13 @@ namespace Ronin::Kernel::Reasoning {
 GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage) 
     : m_graph(graph), m_storage(storage) {}
 
+GraphExecutor::~GraphExecutor() {
+    // Wait for any active sync to finish before destruction
+    while (m_is_syncing.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
 uint32_t GraphExecutor::selectNextNode(uint32_t current_node_id, float divergence_score) {
     std::lock_guard<std::mutex> lock(m_mutex);
     

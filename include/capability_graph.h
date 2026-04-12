@@ -32,6 +32,7 @@ public:
     
     Node* getNode(uint32_t id);
     std::vector<Node>& getNodes() { return m_nodes; }
+    const std::vector<Node>& getNodes() const { return m_nodes; }
 
 private:
     std::vector<Node> m_nodes;

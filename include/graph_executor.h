@@ -19,6 +19,7 @@ enum class RiskLevel {
 class GraphExecutor {
 public:
     GraphExecutor(CapabilityGraph& graph, GraphStorage& storage);
+    ~GraphExecutor();
 
     // Selects the next node ID to execute
     uint32_t selectNextNode(uint32_t current_node_id, float divergence_score);
