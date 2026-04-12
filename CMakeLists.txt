@@ -28,7 +28,7 @@ FetchContent_Declare(
 # 3. Fetch FlatBuffers (For C++ headers)
 FetchContent_Declare(
   flatbuffers
-  URL https://github.com/google/flatbuffers/archive/refs/tags/v23.5.26.zip
+  URL https://github.com/google/flatbuffers/archive/refs/tags/v2.0.8.zip
 )
 
 FetchContent_MakeAvailable(googletest sqlite3_src flatbuffers)
