@@ -6,13 +6,11 @@
 #include "capability_graph.h"
 #include "graph_storage.h"
 #include "graph_executor.h"
+#include "capabilities/file_search_node.h"
 #include "ronin_log.h"
 #include "checkpoint_schema_generated.h"
 #include <cstdint>
 #include <memory>
-#include <string>
-
-#include "file_search_engine.h"
 #include <string>
 
 #define TAG "RoninNativeEngine"
@@ -30,7 +28,7 @@ static std::unique_ptr<CheckpointEngine> g_checkpoint_engine;
 static std::unique_ptr<CapabilityGraph> g_capability_graph;
 static std::unique_ptr<GraphStorage> g_graph_storage;
 static std::unique_ptr<GraphExecutor> g_graph_executor;
-static std::unique_ptr<FileSearchEngine> g_file_search_engine;
+static std::unique_ptr<FileSearchNode> g_file_search_node;
 
 extern "C" {
 
@@ -54,7 +52,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_graph_storage.reset();
     g_capability_graph.reset();
     g_graph_executor.reset();
-    g_file_search_engine.reset();
+    g_file_search_node.reset();
 
     // 1. Initialize Memory Components
     g_long_term_memory = std::make_unique<LongTermMemory>(base_path + "/ronin_l3.db");
@@ -141,9 +139,9 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jobje
     float divergence = 0.5f; 
     uint32_t next_node = g_graph_executor->selectNextNode(1, divergence);
 
-    if (next_node == 2) { // File_Search node
+    if (next_node == 2 && g_file_search_node) { // File_Search node
         LOGI(TAG, "Routing to File_Search capability.");
-        auto results = g_file_search_engine->searchFiles("demo_query");
+        auto results = g_file_search_node->execute("demo_query");
         LOGI(TAG, "File Search returned %zu results.", results.size());
     }
 
@@ -160,10 +158,6 @@ Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
 JNIEXPORT jint JNICALL
 Java_com_ronin_kernel_NativeEngine_runMaintenance(JNIEnv *env, jobject thiz, jboolean is_charging) {
     return g_long_term_memory ? static_cast<jint>(g_long_term_memory->runMaintenance(is_charging == JNI_TRUE)) : 0;
-}
-
-} // extern "C"
-ce(is_charging == JNI_TRUE)) : 0;
 }
 
 } // extern "C"
