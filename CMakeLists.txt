@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(RoninKernel VERSION 1.0 LANGUAGES CXX C) # Added C for SQLite
+project(RoninKernel VERSION 1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,7 +9,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR}/generated)
 include_directories(${CMAKE_SOURCE_DIR}/generated)
 include_directories(include)
 
-# GoogleTest & SQLite Integration
+# External Dependencies Integration
 include(FetchContent)
 
 # 1. Fetch GoogleTest
@@ -19,18 +19,27 @@ FetchContent_Declare(
 )
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
-# 2. Fetch SQLite Amalgamation (Essential for Android NDK)
+# 2. Fetch SQLite Amalgamation
 FetchContent_Declare(
   sqlite3_src
   URL https://www.sqlite.org/2024/sqlite-amalgamation-3450300.zip
 )
 
-FetchContent_MakeAvailable(googletest sqlite3_src)
+# 3. Fetch FlatBuffers (For C++ headers)
+FetchContent_Declare(
+  flatbuffers
+  URL https://github.com/google/flatbuffers/archive/refs/tags/v23.5.26.zip
+)
 
-# Define SQLite library from fetched amalgamation
+FetchContent_MakeAvailable(googletest sqlite3_src flatbuffers)
+
+# Define SQLite library
 add_library(sqlite3_lib STATIC ${sqlite3_src_SOURCE_DIR}/sqlite3.c)
 target_include_directories(sqlite3_lib PUBLIC ${sqlite3_src_SOURCE_DIR})
 target_compile_definitions(sqlite3_lib PRIVATE SQLITE_THREADSAFE=1)
+
+# Ensure FlatBuffers headers are accessible
+include_directories(${flatbuffers_SOURCE_DIR}/include)
 
 # Core Logic Source (Portable)
 set(RONIN_CORE_SOURCES
