@@ -56,6 +56,7 @@ set(RONIN_CORE_SOURCES
     src/memory_manager.cpp
     src/long_term_memory.cpp
     src/capability_graph.cpp
+    src/file_search_engine.cpp
 )
 
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})

@@ -12,12 +12,16 @@
 #include <memory>
 #include <string>
 
+#include "file_search_engine.h"
+#include <string>
+
 #define TAG "RoninNativeEngine"
 
 using namespace Ronin::Kernel::Intent;
 using namespace Ronin::Kernel::Memory;
 using namespace Ronin::Kernel::Checkpoint;
 using namespace Ronin::Kernel::Reasoning;
+using namespace Ronin::Kernel::Capability;
 
 // Use unique_ptr for managed lifecycle of kernel components
 static std::unique_ptr<MemoryManager> g_memory_manager;
@@ -26,6 +30,7 @@ static std::unique_ptr<CheckpointEngine> g_checkpoint_engine;
 static std::unique_ptr<CapabilityGraph> g_capability_graph;
 static std::unique_ptr<GraphStorage> g_graph_storage;
 static std::unique_ptr<GraphExecutor> g_graph_executor;
+static std::unique_ptr<FileSearchEngine> g_file_search_engine;
 
 extern "C" {
 
@@ -42,35 +47,38 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
 
     LOGI(TAG, "Initializing Ronin Kernel at: %s", base_path.c_str());
 
-    // Reset existing instances to prevent leaks on re-init
+    // Reset existing instances
     g_long_term_memory.reset();
     g_memory_manager.reset();
     g_checkpoint_engine.reset();
     g_graph_storage.reset();
     g_capability_graph.reset();
     g_graph_executor.reset();
+    g_file_search_engine.reset();
 
-    // 1. Initialize Long-Term Memory (SQLite)
-    std::string db_path = base_path + "/ronin_l3.db";
-    g_long_term_memory = std::make_unique<LongTermMemory>(db_path);
-
-    // 2. Initialize Memory Manager
+    // 1. Initialize Memory Components
+    g_long_term_memory = std::make_unique<LongTermMemory>(base_path + "/ronin_l3.db");
     g_memory_manager = std::make_unique<MemoryManager>(20);
     g_memory_manager->setLongTermMemory(g_long_term_memory.get());
 
-    // 3. Initialize Checkpoint Engine
-    std::string cp_path = base_path + "/checkpoint.bin";
-    g_checkpoint_engine = std::make_unique<CheckpointEngine>(cp_path);
+    // 2. Initialize Checkpoint and File Search
+    g_checkpoint_engine = std::make_unique<CheckpointEngine>(base_path + "/checkpoint.bin");
     g_checkpoint_engine->initializeShadowBuffer(1024 * 1024);
+    g_file_search_engine = std::make_unique<FileSearchEngine>(base_path + "/ronin_files.db");
 
-    // 4. Initialize Reasoning Spine (Graph)
-    std::string graph_path = base_path + "/ronin_graph.db";
-    g_graph_storage = std::make_unique<GraphStorage>(graph_path);
+    // 3. Initialize Reasoning Spine (Graph)
+    g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
     g_capability_graph = std::make_unique<CapabilityGraph>();
     g_graph_storage->loadGraph(*g_capability_graph);
+    
+    // Default nodes for prototype
+    g_capability_graph->addNode(1, "Reasoning_Engine");
+    g_capability_graph->addNode(2, "File_Search");
+    g_capability_graph->addEdge(1, 2, 1.0f);
+
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
 
-    LOGI(TAG, "Kernel components synchronized and linked (Memory + Reasoning).");
+    LOGI(TAG, "Kernel components synchronized and linked.");
 }
 
 JNIEXPORT jboolean JNICALL
@@ -125,9 +133,19 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jobje
     void* ptr = env->GetDirectBufferAddress(input);
     if (ptr == nullptr) return 0.0f;
 
-    // Simulate capability routing
-    uint32_t next_node = g_graph_executor->selectNextNode(1, 0.5f);
-    LOGI(TAG, "Reasoning Spine: Selected next capability node %u", next_node);
+    // 1. Simulate Intent Detection (Mock: if input contains 'search')
+    // In a real build, this would use compute_intent_similarity_neon
+    std::string input_str = "search"; // Mocked for demonstration
+
+    // 2. Routing Decision
+    float divergence = 0.5f; 
+    uint32_t next_node = g_graph_executor->selectNextNode(1, divergence);
+
+    if (next_node == 2) { // File_Search node
+        LOGI(TAG, "Routing to File_Search capability.");
+        auto results = g_file_search_engine->searchFiles("demo_query");
+        LOGI(TAG, "File Search returned %zu results.", results.size());
+    }
 
     Token t = {1, 0.9f, {0.1f, 0.2f}}; 
     g_memory_manager->addRecentToken(t);
