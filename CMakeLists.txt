@@ -73,8 +73,10 @@ if(ANDROID)
     add_library(ronin_kernel SHARED src/ronin_jni.cpp)
     target_link_libraries(ronin_kernel ronin_core sqlite3_lib)
     
-    # Enable ARMv8.2-A Dot Product extension
-    target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
+    # Enable ARMv8.2-A Dot Product extension only for arm64-v8a
+    if(ANDROID_ABI STREQUAL "arm64-v8a")
+        target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
+    endif()
 else()
     # Host build needs rt
     target_link_libraries(ronin_core PUBLIC rt)
