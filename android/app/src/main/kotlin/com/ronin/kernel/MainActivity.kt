@@ -273,3 +273,25 @@ fun ChatInput(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit
         }
     }
 }
+
+@Composable
+fun StabilityMeter(stability: Float) {
+    val color = when {
+        stability > 0.7f -> Color.Green
+        stability > 0.4f -> Color.Yellow
+        else -> Color.Red
+    }
+
+    Column(
+        horizontalAlignment = Alignment.End,
+        modifier = Modifier.padding(end = 16.dp)
+    ) {
+        Text("Stability", style = MaterialTheme.typography.caption, color = Color.White)
+        LinearProgressIndicator(
+            progress = stability,
+            color = color,
+            backgroundColor = Color.DarkGray,
+            modifier = Modifier.width(100.dp)
+        )
+    }
+}
