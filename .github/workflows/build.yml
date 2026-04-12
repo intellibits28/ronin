@@ -58,6 +58,7 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           build-root-directory: android
+          gradle-version: 8.2
           arguments: assembleDebug
 
       - name: Upload Ronin APK
