@@ -32,7 +32,12 @@ void ThompsonSampler::precomputeBetaTables(uint32_t max_param) {
             }
 
             // Normalize the distribution
-            for (auto& p : dist) p /= total;
+            if (total > 0.0f) {
+                for (auto& p : dist) p /= total;
+            } else {
+                // Fallback to uniform if calculation fails
+                std::fill(dist.begin(), dist.end(), 1.0f / static_cast<float>(resolution));
+            }
 
             buildAliasTable(dist, m_precomputed_tables[{a, b}]);
         }

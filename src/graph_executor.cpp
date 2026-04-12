@@ -12,6 +12,8 @@ GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage)
     : m_graph(graph), m_storage(storage) {}
 
 uint32_t GraphExecutor::selectNextNode(uint32_t current_node_id, float divergence_score) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
     Node* current = m_graph.getNode(current_node_id);
     if (!current) {
         LOGE(TAG, "selectNextNode: Current node ID %u not found in graph.", current_node_id);
@@ -35,6 +37,8 @@ uint32_t GraphExecutor::selectNextNode(uint32_t current_node_id, float divergenc
 }
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
     Node* source = m_graph.getNode(source_id);
     if (!source) return;
 
@@ -71,9 +75,15 @@ void GraphExecutor::triggerAsyncSync() {
 
     std::thread([this]() {
         LOGI(TAG, "GraphExecutor: Starting async weight persistence to SQLite...");
-        if (m_storage.saveGraph(m_graph)) {
-            LOGI(TAG, "GraphExecutor: Successfully synced weights to L3 Deep-store.");
+        
+        // Use a local copy or scope lock if graph size is large, but for now
+        // we'll lock during the save operation.
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_storage.saveGraph(m_graph);
         }
+        
+        LOGI(TAG, "GraphExecutor: Successfully synced weights to L3 Deep-store.");
         m_is_syncing.store(false);
     }).detach();
 }

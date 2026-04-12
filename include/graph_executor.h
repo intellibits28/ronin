@@ -5,6 +5,7 @@
 #include "graph_storage.h"
 #include <future>
 #include <atomic>
+#include <mutex>
 
 namespace Ronin::Kernel::Reasoning {
 
@@ -33,6 +34,7 @@ private:
     GraphStorage& m_storage;
     ThompsonSampler m_sampler;
     
+    std::mutex m_mutex;
     std::atomic<bool> m_is_syncing{false};
     
     // Dynamic learning rate helper
