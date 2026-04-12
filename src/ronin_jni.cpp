@@ -86,4 +86,22 @@ Java_com_ronin_kernel_NativeEngine_computeSimilarity(
     }
 }
 
+/**
+ * Placeholder for actual input processing in the kernel.
+ */
+JNIEXPORT jfloat JNICALL
+Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jobject input) {
+    LOGI(TAG, "processInput: Input received.");
+    return 1.0f;
+}
+
+/**
+ * Returns the current internal pressure score (0-100).
+ */
+JNIEXPORT jint JNICALL
+Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
+    // This would normally poll the MemoryManager or Thermal monitor
+    return 15; // Placeholder: 15% pressure
+}
+
 } // extern "C"
