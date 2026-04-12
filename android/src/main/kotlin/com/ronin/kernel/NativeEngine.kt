@@ -27,6 +27,11 @@ class NativeEngine {
     private external fun computeSimilarity(bufferA: ByteBuffer, bufferB: ByteBuffer): Float
 
     /**
+     * Maps a DirectByteBuffer directly to the Ronin Adaptive Checkpoint schema.
+     */
+    private external fun loadCheckpoint(byteBuffer: ByteBuffer): Boolean
+
+    /**
      * Syncs Android lifecycle (0 = Background, 1 = Foreground).
      */
     private external fun updateLifecycleState(state: Int)

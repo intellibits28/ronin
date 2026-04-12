@@ -13,6 +13,13 @@ Java_com_ronin_kernel_NativeEngine_computeSimilarity(
     JNIEnv *env, jobject thiz, jobject buffer_a, jobject buffer_b);
 
 /**
+ * Maps a DirectByteBuffer directly to the Ronin Adaptive Checkpoint schema.
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_loadCheckpoint(
+    JNIEnv *env, jobject thiz, jobject byte_buffer);
+
+/**
  * Syncs Android lifecycle (Foreground/Background) with the Ronin thermal monitor.
  */
 JNIEXPORT void JNICALL

@@ -2,6 +2,7 @@
 #include "intent_engine.h"
 #include "memory_manager.h"
 #include "ronin_log.h"
+#include "checkpoint_schema_generated.h"
 #include <cstdint>
 
 #define TAG "RoninNativeEngine"
@@ -13,6 +14,41 @@ using namespace Ronin::Kernel::Memory;
 static MemoryManager g_memory_manager(20); // 20 tokens recent window
 
 extern "C" {
+
+/**
+ * Maps a DirectByteBuffer directly to the Ronin Adaptive Checkpoint schema.
+ * Zero-copy: Buffer is managed in Kotlin/Java and mapped to C++ memory.
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_loadCheckpoint(JNIEnv *env, jobject thiz, jobject byte_buffer) {
+    if (byte_buffer == nullptr) {
+        LOGE(TAG, "loadCheckpoint: byte_buffer is null");
+        return JNI_FALSE;
+    }
+
+    void *buffer_ptr = env->GetDirectBufferAddress(byte_buffer);
+    jlong capacity = env->GetDirectBufferCapacity(byte_buffer);
+
+    if (buffer_ptr == nullptr || capacity <= 0) {
+        LOGE(TAG, "loadCheckpoint: Failed to map DirectByteBuffer or capacity is 0");
+        return JNI_FALSE;
+    }
+
+    // Verify FlatBuffers buffer
+    auto verifier = flatbuffers::Verifier(static_cast<const uint8_t*>(buffer_ptr), static_cast<size_t>(capacity));
+    if (!Ronin::Kernel::Checkpoint::VerifyCheckpointBuffer(verifier)) {
+        LOGE(TAG, "loadCheckpoint: FlatBuffers verification failed (corrupt or misaligned)");
+        return JNI_FALSE;
+    }
+
+    // Zero-copy access
+    auto checkpoint = Ronin::Kernel::Checkpoint::GetCheckpoint(buffer_ptr);
+
+    LOGI(TAG, "Checkpoint loaded via JNI: Frontier=%llu",
+         static_cast<unsigned long long>(checkpoint->edge_frontier()));
+
+    return JNI_TRUE;
+}
 
 /**
  * Syncs Android lifecycle (Foreground/Background) with the Ronin thermal monitor.
