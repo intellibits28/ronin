@@ -23,6 +23,10 @@ CheckpointEngine::~CheckpointEngine() {
 bool CheckpointEngine::initializeShadowBuffer(size_t size) {
     std::lock_guard<std::mutex> lock(m_mutex);
     
+    if (m_memfd != -1) {
+        close(m_memfd);
+    }
+
     m_memfd = memfd_create("ronin_shadow", MFD_CLOEXEC | MFD_ALLOW_SEALING);
     if (m_memfd == -1) {
         LOGE(TAG, "Failed to create memfd shadow buffer.");
@@ -37,6 +41,11 @@ bool CheckpointEngine::initializeShadowBuffer(size_t size) {
     m_buffer_size = size;
     LOGI(TAG, "Survival Core shadow buffer initialized: %zu bytes", m_buffer_size);
     return true;
+}
+
+bool CheckpointEngine::syncBufferToDisk() {
+    // This is a helper for persistToStorage logic
+    return persistToStorage();
 }
 
 bool CheckpointEngine::updateCheckpointData(const uint8_t* data, size_t size) {

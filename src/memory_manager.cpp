@@ -78,7 +78,9 @@ CompressedToken MemoryManager::quantize(const Token& token) {
     CompressedToken ct;
     ct.id = token.id;
     for (float v : token.embedding) {
-        ct.quantized_embedding.push_back(static_cast<int8_t>(v * 127.0f));
+        // Safe mapping with clamp to prevent overflow: [-1.0, 1.0] -> [-127, 127]
+        float scaled = std::clamp(v, -1.0f, 1.0f) * 127.0f;
+        ct.quantized_embedding.push_back(static_cast<int8_t>(std::round(scaled)));
     }
     return ct;
 }
