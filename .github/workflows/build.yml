@@ -21,13 +21,14 @@ jobs:
         run: |
           mkdir build_host && cd build_host
           cmake -DCMAKE_BUILD_TYPE=Debug ..
-          make ronin_atomic_test ronin_precision_test ronin_memory_test
+          make ronin_atomic_test ronin_precision_test ronin_memory_test ronin_search_test
       - name: Run Host Tests
         run: |
           cd build_host
           ./ronin_atomic_test
           ./ronin_precision_test
           ./ronin_memory_test
+          ./ronin_search_test
 
   build-apk:
     needs: test-host

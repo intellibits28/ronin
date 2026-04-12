@@ -99,8 +99,13 @@ target_link_libraries(ronin_precision_test gtest_main ronin_core)
 add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp)
 target_link_libraries(ronin_atomic_test gtest_main ronin_core)
 
+# Search Capability Test
+add_executable(ronin_search_test tests/search_capability_test.cpp)
+target_link_libraries(ronin_search_test gtest_main ronin_core)
+
 if(NOT ANDROID)
     target_link_libraries(ronin_memory_test rt)
     target_link_libraries(ronin_precision_test rt)
     target_link_libraries(ronin_atomic_test rt)
+    target_link_libraries(ronin_search_test rt)
 endif()
