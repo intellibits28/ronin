@@ -13,7 +13,11 @@ GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage)
 
 uint32_t GraphExecutor::selectNextNode(uint32_t current_node_id, float divergence_score) {
     Node* current = m_graph.getNode(current_node_id);
-    if (!current || current->outgoing_edges.empty()) return 0;
+    if (!current) {
+        LOGE(TAG, "selectNextNode: Current node ID %u not found in graph.", current_node_id);
+        return 0;
+    }
+    if (current->outgoing_edges.empty()) return 0;
 
     uint32_t best_node = 0;
     float max_sample = -1.0f;

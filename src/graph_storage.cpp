@@ -56,16 +56,20 @@ bool GraphStorage::loadGraph(CapabilityGraph& graph) {
             
             // Populate weights/counts
             Node* s_node = graph.getNode(src);
-            for (auto& edge : s_node->outgoing_edges) {
-                if (edge.target_node_id == target) {
-                    edge.success_count = sqlite3_column_int(e_stmt, 2);
-                    edge.failure_count = sqlite3_column_int(e_stmt, 3);
-                    break;
+            if (s_node) {
+                for (auto& edge : s_node->outgoing_edges) {
+                    if (edge.target_node_id == target) {
+                        edge.success_count = sqlite3_column_int(e_stmt, 2);
+                        edge.failure_count = sqlite3_column_int(e_stmt, 3);
+                        break;
+                    }
                 }
             }
         }
+        sqlite3_finalize(e_stmt);
+    } else {
+        LOGE(TAG, "Failed to prepare edge loading query: %s", sqlite3_errmsg(m_db));
     }
-    sqlite3_finalize(e_stmt);
     LOGI(TAG, "Capability Graph successfully loaded from SQLite Deep-store.");
     return true;
 }
