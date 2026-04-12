@@ -43,7 +43,10 @@ bool GraphStorage::loadGraph(CapabilityGraph& graph) {
     sqlite3_stmt* n_stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, node_sql, -1, &n_stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(n_stmt) == SQLITE_ROW) {
-            graph.addNode(sqlite3_column_int(n_stmt, 0), reinterpret_cast<const char*>(sqlite3_column_text(n_stmt, 1)));
+            int id = sqlite3_column_int(n_stmt, 0);
+            const unsigned char* name_ptr = sqlite3_column_text(n_stmt, 1);
+            std::string name = name_ptr ? reinterpret_cast<const char*>(name_ptr) : "Unknown_Capability";
+            graph.addNode(static_cast<uint32_t>(id), name);
         }
     }
     sqlite3_finalize(n_stmt);
@@ -55,21 +58,22 @@ bool GraphStorage::loadGraph(CapabilityGraph& graph) {
             uint32_t src = sqlite3_column_int(e_stmt, 0);
             uint32_t target = sqlite3_column_int(e_stmt, 1);
             graph.addEdge(src, target, static_cast<float>(sqlite3_column_double(e_stmt, 4)));
-            
-            // Populate weights/counts
+
+            // Populate weights/counts safely
             Node* s_node = graph.getNode(src);
             if (s_node) {
                 for (auto& edge : s_node->outgoing_edges) {
                     if (edge.target_node_id == target) {
-                        edge.success_count = sqlite3_column_int(e_stmt, 2);
-                        edge.failure_count = sqlite3_column_int(e_stmt, 3);
+                        edge.success_count = static_cast<uint32_t>(sqlite3_column_int(e_stmt, 2));
+                        edge.failure_count = static_cast<uint32_t>(sqlite3_column_int(e_stmt, 3));
                         break;
                     }
                 }
             }
         }
         sqlite3_finalize(e_stmt);
-    } else {
+    }
+ else {
         LOGE(TAG, "Failed to prepare edge loading query: %s", sqlite3_errmsg(m_db));
     }
     LOGI(TAG, "Capability Graph successfully loaded from SQLite Deep-store.");
