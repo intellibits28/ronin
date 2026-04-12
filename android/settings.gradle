@@ -1,0 +1,3 @@
+// android/settings.gradle
+rootProject.name = "RoninKernel"
+include ':app'

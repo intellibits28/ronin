@@ -1,0 +1,68 @@
+name: Ronin Kernel Build & Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install -y flatbuffers-compiler valgrind sqlite3 libsqlite3-dev
+      - name: Generate FlatBuffers Headers
+        run: |
+          mkdir -p generated
+          flatc --cpp -o generated/ checkpoint_schema.fbs
+      - name: Build Host Tests
+        run: |
+          mkdir build_host && cd build_host
+          cmake -DCMAKE_BUILD_TYPE=Debug ..
+          make ronin_atomic_test ronin_precision_test ronin_memory_test
+      - name: Run Host Tests
+        run: |
+          cd build_host
+          ./ronin_atomic_test
+          ./ronin_precision_test
+          ./ronin_memory_test
+
+  build-apk:
+    needs: test-host
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+
+      - name: Set up Android NDK r26b
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26b
+
+      - name: Install FlatBuffers Compiler
+        run: sudo apt-get update && sudo apt-get install -y flatbuffers-compiler
+
+      - name: Generate FlatBuffers Headers
+        run: |
+          mkdir -p generated
+          flatc --cpp -o generated/ checkpoint_schema.fbs
+
+      - name: Build Android APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload Ronin APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ronin-kernel-app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 5

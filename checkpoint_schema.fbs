@@ -1,0 +1,20 @@
+// Project Ronin: Mobile AI Kernel
+// Binary Checkpoint Schema - FlatBuffers
+// Optimized for NEON (16-byte) and Direct I/O (4KB)
+
+namespace Ronin.Kernel.Checkpoint;
+
+table Checkpoint {
+    // 128-dimensional INT8 quantized intent vector
+    // Aligned to 16 bytes for NEON SIMD loading (vld1q_s8)
+    intent_vector:[int8] (force_align: 16);
+
+    // 64-bit bitmask representing the capability graph's active edge frontier
+    edge_frontier:uint64;
+
+    // KV-cache data blob
+    // Aligned to 4KB (4096 bytes) for direct I/O and page-aligned memory mapping
+    kv_blob:[ubyte] (force_align: 4096);
+}
+
+root_type Checkpoint;
