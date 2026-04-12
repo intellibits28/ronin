@@ -1,0 +1,1 @@
+/data/data/com.termux/files/usr/bin/c++ -fPIC -g -shared -Xlinker --dependency-file=CMakeFiles/ronin_kernel.dir/link.d -Wl,-soname,libronin_kernel.so -o libronin_kernel.so CMakeFiles/ronin_kernel.dir/src/ronin_jni.cpp.o  libronin_core.a -llog-lib-NOTFOUND -landroid-lib-NOTFOUND -lsqlite3

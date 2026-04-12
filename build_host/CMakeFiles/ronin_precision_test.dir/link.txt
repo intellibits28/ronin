@@ -1,0 +1,1 @@
+/data/data/com.termux/files/usr/bin/c++ -g -Xlinker --dependency-file=CMakeFiles/ronin_precision_test.dir/link.d CMakeFiles/ronin_precision_test.dir/tests/precision_test.cpp.o -o ronin_precision_test  lib/libgtest_main.a libronin_core.a lib/libgtest.a -lpthread

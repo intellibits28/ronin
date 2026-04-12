@@ -42,6 +42,14 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
 
     LOGI(TAG, "Initializing Ronin Kernel at: %s", base_path.c_str());
 
+    // Reset existing instances to prevent leaks on re-init
+    g_long_term_memory.reset();
+    g_memory_manager.reset();
+    g_checkpoint_engine.reset();
+    g_graph_storage.reset();
+    g_capability_graph.reset();
+    g_graph_executor.reset();
+
     // 1. Initialize Long-Term Memory (SQLite)
     std::string db_path = base_path + "/ronin_l3.db";
     g_long_term_memory = std::make_unique<LongTermMemory>(db_path);
