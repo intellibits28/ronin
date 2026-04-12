@@ -19,9 +19,21 @@ GraphExecutor::~GraphExecutor() {
     }
 }
 
-uint32_t GraphExecutor::selectNextNode(uint32_t current_node_id, float divergence_score) {
+uint32_t GraphExecutor::selectNextNode(uint32_t current_node_id, float divergence_score, const std::string& input_text) {
     std::lock_guard<std::mutex> lock(m_mutex);
     
+    // 1. Explicit Keyword-Based Routing (Pre-Thompson Sampling)
+    std::string lower_input = input_text;
+    std::transform(lower_input.begin(), lower_input.end(), lower_input.begin(), ::tolower);
+
+    const std::vector<std::string> keywords = {"search", "find", "zip", "design"};
+    for (const auto& kw : keywords) {
+        if (lower_input.find(kw) != std::string::npos) {
+            LOGI(TAG, "DEBUG: Keyword '%s' detected, forcing FileSearchNode (ID 2)", kw.c_str());
+            return 2; // ID for File_Search
+        }
+    }
+
     Node* current = m_graph.getNode(current_node_id);
     if (!current) {
         LOGE(TAG, "selectNextNode: Current node ID %u not found in graph.", current_node_id);

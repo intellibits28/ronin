@@ -131,13 +131,13 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jobje
     void* ptr = env->GetDirectBufferAddress(input);
     if (ptr == nullptr) return 0.0f;
 
-    // 1. Simulate Intent Detection (Mock: if input contains 'search')
-    // In a real build, this would use compute_intent_similarity_neon
-    std::string input_str = "search"; // Mocked for demonstration
+    // 1. Extract input string from ByteBuffer (Simplified for prototype)
+    // In a real build, you'd read the UTF-8 content from the direct buffer.
+    std::string input_str = "search"; // Mocked: In real APK, this comes from UI text
 
-    // 2. Routing Decision
+    // 2. Routing Decision with Keyword Awareness
     float divergence = 0.5f; 
-    uint32_t next_node = g_graph_executor->selectNextNode(1, divergence);
+    uint32_t next_node = g_graph_executor->selectNextNode(1, divergence, input_str);
 
     if (next_node == 2 && g_file_search_node) { // File_Search node
         LOGI(TAG, "Routing to File_Search capability.");
