@@ -3,6 +3,7 @@
 #include <vector>
 #include <numeric>
 #include <cmath>
+#include <iostream>
 
 using namespace Ronin::Kernel::Reasoning;
 

@@ -81,19 +81,19 @@ float GraphExecutor::calculateLearningRate(RiskLevel risk) {
 void GraphExecutor::triggerAsyncSync() {
     if (m_is_syncing.exchange(true)) return;
 
-    std::thread([this]() {
+    if (m_sync_thread.joinable()) {
+        m_sync_thread.join();
+    }
+
+    m_sync_thread = std::thread([this]() {
         LOGI(TAG, "GraphExecutor: Starting async weight persistence to SQLite...");
-        
-        // Use a local copy or scope lock if graph size is large, but for now
-        // we'll lock during the save operation.
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_storage.saveGraph(m_graph);
         }
-        
         LOGI(TAG, "GraphExecutor: Successfully synced weights to L3 Deep-store.");
         m_is_syncing.store(false);
-    }).detach();
+    });
 }
 
 } // namespace Ronin::Kernel::Reasoning

@@ -37,6 +37,7 @@ private:
     
     std::mutex m_mutex;
     std::atomic<bool> m_is_syncing{false};
+    std::thread m_sync_thread;
     
     // Dynamic learning rate helper
     float calculateLearningRate(RiskLevel risk);
