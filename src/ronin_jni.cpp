@@ -64,7 +64,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     // 2. Initialize Checkpoint and File Search
     g_checkpoint_engine = std::make_unique<CheckpointEngine>(base_path + "/checkpoint.bin");
     g_checkpoint_engine->initializeShadowBuffer(1024 * 1024);
-    g_file_search_engine = std::make_unique<FileSearchEngine>(base_path + "/ronin_files.db");
+    g_file_search_node = std::make_unique<FileSearchNode>(*g_long_term_memory);
 
     // 3. Initialize Reasoning Spine (Graph)
     g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
@@ -160,6 +160,10 @@ Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
 JNIEXPORT jint JNICALL
 Java_com_ronin_kernel_NativeEngine_runMaintenance(JNIEnv *env, jobject thiz, jboolean is_charging) {
     return g_long_term_memory ? static_cast<jint>(g_long_term_memory->runMaintenance(is_charging == JNI_TRUE)) : 0;
+}
+
+} // extern "C"
+ce(is_charging == JNI_TRUE)) : 0;
 }
 
 } // extern "C"

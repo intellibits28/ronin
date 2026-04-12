@@ -58,6 +58,7 @@ set(RONIN_CORE_SOURCES
     src/capability_graph.cpp
     src/file_search_engine.cpp
     src/capabilities/file_scanner.cpp
+    src/capabilities/file_search_node.cpp
 )
 
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
