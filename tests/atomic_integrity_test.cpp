@@ -50,7 +50,7 @@ TEST_F(AtomicIntegrityTest, VerifyOriginalIntactOnFailure) {
     ASSERT_EQ(content_check, data_v1);
     
     // 4. Run the actual persist and verify it overcomes the .tmp and updates atomically
-    ASSERT_TRUE(engine.persistAtomic());
+    ASSERT_TRUE(engine.persistToStorage());
     
     // 5. Verify the rename happened correctly
     std::ifstream ifs_final(checkpoint_path);

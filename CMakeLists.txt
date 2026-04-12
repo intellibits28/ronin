@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Includes
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/generated)
+include_directories(${CMAKE_SOURCE_DIR}/generated)
 include_directories(include)
 
 # Kernel Source
@@ -26,6 +27,9 @@ if(ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
     target_link_libraries(ronin_kernel ${log-lib} ${android-lib} sqlite3)
+    
+    # Enable ARMv8.2-A Dot Product extension for NEON similarity kernel
+    target_compile_options(ronin_kernel PRIVATE -march=armv8.2-a+dotprod)
 else()
     # Host build needs rt and sqlite3
     target_link_libraries(ronin_kernel rt sqlite3)
