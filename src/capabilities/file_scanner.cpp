@@ -59,7 +59,7 @@ void FileScanner::scanWorker(const std::string& root_path) {
             if (entry.is_regular_file()) {
                 const auto& path = entry.path();
                 std::string filename = path.filename().string();
-                std::string abs_path = path.absolute().string();
+                std::string abs_path = fs::absolute(path).string();
                 std::string extension = path.extension().string();
                 
                 auto ftime = fs::last_write_time(path);
