@@ -37,6 +37,13 @@ bool LongTermMemory::initSchema() {
         "CREATE VIRTUAL TABLE IF NOT EXISTS summaries USING fts5("
         "  content, "
         "  timestamp UNINDEXED"
+        ");"
+        
+        "CREATE VIRTUAL TABLE IF NOT EXISTS file_index USING fts5("
+        "  name, "
+        "  path, "
+        "  extension, "
+        "  last_modified UNINDEXED"
         ");";
 
     if (sqlite3_exec(m_db, schema, nullptr, nullptr, nullptr) != SQLITE_OK) {
@@ -177,6 +184,46 @@ bool LongTermMemory::consolidate(const std::string& summary_text) {
     bool success = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
     return success;
+}
+
+bool LongTermMemory::indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified) {
+    if (!m_db) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "INSERT OR REPLACE INTO file_index (name, path, extension, last_modified) VALUES (?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    
+    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, path.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, ext.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(modified));
+    
+    bool success = sqlite3_step(stmt) == SQLITE_DONE;
+    sqlite3_finalize(stmt);
+    return success;
+}
+
+std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
+    if (!m_db) return {};
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::string> results;
+    
+    const char* sql = "SELECT name, path FROM file_index WHERE file_index MATCH ? ORDER BY rank LIMIT 20;";
+    sqlite3_stmt* stmt = nullptr;
+    
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* name = sqlite3_column_text(stmt, 0);
+            const unsigned char* path = sqlite3_column_text(stmt, 1);
+            if (name && path) {
+                results.push_back(reinterpret_cast<const char*>(name));
+            }
+        }
+    }
+    sqlite3_finalize(stmt);
+    return results;
 }
 
 void LongTermMemory::applyDecay(uint64_t current_timestamp) {

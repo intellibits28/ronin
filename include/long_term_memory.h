@@ -44,6 +44,10 @@ public:
     std::vector<std::string> search(const std::string& query);
     bool consolidate(const std::string& summary_text);
 
+    // File Indexing (FTS5)
+    bool indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified);
+    std::vector<std::string> searchFiles(const std::string& query);
+
 private:
     sqlite3* m_db = nullptr;
     std::mutex m_mutex;
