@@ -41,7 +41,7 @@ FetchContent_MakeAvailable(googletest sqlite3_src flatbuffers)
 # Define SQLite library
 add_library(sqlite3_lib STATIC ${sqlite3_src_SOURCE_DIR}/sqlite3.c)
 target_include_directories(sqlite3_lib PUBLIC ${sqlite3_src_SOURCE_DIR})
-target_compile_definitions(sqlite3_lib PRIVATE SQLITE_THREADSAFE=1)
+target_compile_definitions(sqlite3_lib PRIVATE SQLITE_THREADSAFE=1 SQLITE_ENABLE_FTS5=1)
 
 # Ensure FlatBuffers headers are accessible
 include_directories(${flatbuffers_SOURCE_DIR}/include)
