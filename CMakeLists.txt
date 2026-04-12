@@ -9,9 +9,8 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR}/generated)
 include_directories(${CMAKE_SOURCE_DIR}/generated)
 include_directories(include)
 
-# Kernel Source
-add_library(ronin_kernel SHARED
-    src/ronin_jni.cpp
+# Core Logic Source (Portable)
+set(RONIN_CORE_SOURCES
     src/intent_engine.cpp
     src/checkpoint_engine.cpp
     src/thompson_sampler.cpp
@@ -22,17 +21,22 @@ add_library(ronin_kernel SHARED
     src/capability_graph.cpp
 )
 
-# Platform Libraries
+add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
+
+# Platform Specific Builds
 if(ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
-    target_link_libraries(ronin_kernel ${log-lib} ${android-lib} sqlite3)
     
-    # Enable ARMv8.2-A Dot Product extension for NEON similarity kernel
-    target_compile_options(ronin_kernel PRIVATE -march=armv8.2-a+dotprod)
+    # JNI Bridge Library
+    add_library(ronin_kernel SHARED src/ronin_jni.cpp)
+    target_link_libraries(ronin_kernel ronin_core ${log-lib} ${android-lib} sqlite3)
+    
+    # Enable ARMv8.2-A Dot Product extension
+    target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
 else()
-    # Host build needs rt and sqlite3
-    target_link_libraries(ronin_kernel rt sqlite3)
+    # Host build needs rt and sqlite3 for the core
+    target_link_libraries(ronin_core rt sqlite3)
 endif()
 
 # GoogleTest Integration
@@ -47,16 +51,16 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 # Memory Stress Test
-add_executable(ronin_memory_test tests/memory_stress_test.cpp src/memory_manager.cpp src/long_term_memory.cpp)
-target_link_libraries(ronin_memory_test gtest_main sqlite3)
+add_executable(ronin_memory_test tests/memory_stress_test.cpp)
+target_link_libraries(ronin_memory_test gtest_main ronin_core)
 
 # Precision Test
-add_executable(ronin_precision_test tests/precision_test.cpp src/thompson_sampler.cpp)
-target_link_libraries(ronin_precision_test gtest_main)
+add_executable(ronin_precision_test tests/precision_test.cpp)
+target_link_libraries(ronin_precision_test gtest_main ronin_core)
 
 # Atomic Integrity Test
-add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp src/checkpoint_engine.cpp)
-target_link_libraries(ronin_atomic_test gtest_main)
+add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp)
+target_link_libraries(ronin_atomic_test gtest_main ronin_core)
 
 if(NOT ANDROID)
     target_link_libraries(ronin_memory_test rt)
