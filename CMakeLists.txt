@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(RoninKernel VERSION 1.0 LANGUAGES CXX)
+project(RoninKernel VERSION 1.0 LANGUAGES CXX C) # Added C for SQLite
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,6 +8,29 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/generated)
 include_directories(${CMAKE_SOURCE_DIR}/generated)
 include_directories(include)
+
+# GoogleTest & SQLite Integration
+include(FetchContent)
+
+# 1. Fetch GoogleTest
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+# 2. Fetch SQLite Amalgamation (Essential for Android NDK)
+FetchContent_Declare(
+  sqlite3_src
+  URL https://www.sqlite.org/2024/sqlite-amalgamation-3450300.zip
+)
+
+FetchContent_MakeAvailable(googletest sqlite3_src)
+
+# Define SQLite library from fetched amalgamation
+add_library(sqlite3_lib STATIC ${sqlite3_src_SOURCE_DIR}/sqlite3.c)
+target_include_directories(sqlite3_lib PUBLIC ${sqlite3_src_SOURCE_DIR})
+target_compile_definitions(sqlite3_lib PRIVATE SQLITE_THREADSAFE=1)
 
 # Core Logic Source (Portable)
 set(RONIN_CORE_SOURCES
@@ -22,6 +45,7 @@ set(RONIN_CORE_SOURCES
 )
 
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
+target_link_libraries(ronin_core PUBLIC sqlite3_lib)
 
 # Platform Specific Builds
 if(ANDROID)
@@ -30,23 +54,14 @@ if(ANDROID)
     
     # JNI Bridge Library
     add_library(ronin_kernel SHARED src/ronin_jni.cpp)
-    target_link_libraries(ronin_kernel ronin_core ${log-lib} ${android-lib} sqlite3)
+    target_link_libraries(ronin_kernel ronin_core ${log-lib} ${android-lib})
     
     # Enable ARMv8.2-A Dot Product extension
     target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
 else()
-    # Host build needs rt and sqlite3 for the core
-    target_link_libraries(ronin_core rt sqlite3)
+    # Host build needs rt
+    target_link_libraries(ronin_core PUBLIC rt)
 endif()
-
-# GoogleTest Integration
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-)
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
