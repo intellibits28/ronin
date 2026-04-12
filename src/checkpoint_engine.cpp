@@ -64,12 +64,19 @@ bool CheckpointEngine::persistToStorage() {
     char buffer[4096];
     ssize_t n_read;
     lseek(m_memfd, 0, SEEK_SET);
+    bool write_success = true;
     while ((n_read = read(m_memfd, buffer, sizeof(buffer))) > 0) {
         if (write(out_fd, buffer, n_read) != n_read) {
             LOGE(TAG, "Failed to write to internal storage.");
-            close(out_fd);
-            return false;
+            write_success = false;
+            break;
         }
+    }
+
+    if (!write_success) {
+        close(out_fd);
+        unlink(tmp_path.c_str());
+        return false;
     }
 
     if (fdatasync(out_fd) == -1) {
