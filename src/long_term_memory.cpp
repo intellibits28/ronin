@@ -82,8 +82,13 @@ int LongTermMemory::runMaintenance(bool is_charging) {
             double initial_stability = sqlite3_column_double(stmt, 1);
             uint64_t last_accessed = sqlite3_column_int64(stmt, 2);
 
-            double delta_t = static_cast<double>(current_time - last_accessed);
-            double current_stability = initial_stability * std::exp(-m_lambda * delta_t);
+            double current_stability;
+            if (current_time > last_accessed) {
+                double delta_t = static_cast<double>(current_time - last_accessed);
+                current_stability = initial_stability * std::exp(-m_lambda * delta_t);
+            } else {
+                current_stability = initial_stability;
+            }
 
             if (current_stability < 0.1) {
                 keys_to_prune.push_back(key);
@@ -174,8 +179,13 @@ void LongTermMemory::applyDecay(uint64_t current_timestamp) {
             double initial_stability = sqlite3_column_double(stmt, 1);
             uint64_t last_accessed = sqlite3_column_int64(stmt, 2);
 
-            double delta_t = static_cast<double>(current_timestamp - last_accessed);
-            double new_stability = initial_stability * std::exp(-m_lambda * delta_t);
+            double new_stability;
+            if (current_timestamp > last_accessed) {
+                double delta_t = static_cast<double>(current_timestamp - last_accessed);
+                new_stability = initial_stability * std::exp(-m_lambda * delta_t);
+            } else {
+                new_stability = initial_stability;
+            }
             
             updates.push_back({key, new_stability});
         }

@@ -4,6 +4,7 @@
 #include <vector>
 #include <numeric>
 #include <utility>
+#include <cmath>
 #include <iostream>
 #include "ronin_log.h"
 

@@ -3,6 +3,7 @@
 #include <vector>
 #include <random>
 #include <unordered_map>
+#include <functional>
 
 namespace Ronin::Kernel::Reasoning {
 
