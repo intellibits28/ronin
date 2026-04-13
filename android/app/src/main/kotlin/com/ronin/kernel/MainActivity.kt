@@ -100,7 +100,7 @@ fun RoninChatUI(engine: NativeEngine) {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v2.6-AUTO-SCAN")
+                        Text("Ronin Kernel v3.0-NEURAL-SCAN")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -151,7 +151,7 @@ fun RoninChatUI(engine: NativeEngine) {
                         scope.launch {
                             val isSearch = currentInput.contains("search", ignoreCase = true) || currentInput.contains("find", ignoreCase = true)
                             if (isSearch) {
-                                reasoningLogs.add(0, "Kernel Decision: Reasoning v2.6 auto-scan bypass activated.")
+                                reasoningLogs.add(0, "Kernel Decision: Reasoning v3.0 neural bypass activated.")
                             } else {
                                 reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
                             }

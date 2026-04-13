@@ -19,4 +19,10 @@ extern ThermalState g_thermal_state;
  */
 float compute_intent_similarity_neon(const int8_t* a, const int8_t* b);
 
+/**
+ * Calculates cosine similarity between two float vectors.
+ * Optimized with NEON SIMD for mobile performance.
+ */
+float compute_cosine_similarity_neon(const float* a, const float* b, size_t length);
+
 } // namespace Ronin::Kernel::Intent

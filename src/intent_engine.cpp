@@ -90,4 +90,36 @@ float compute_intent_similarity_neon(const int8_t* a, const int8_t* b) {
 #endif
 }
 
+float compute_cosine_similarity_neon(const float* a, const float* b, size_t length) {
+#ifndef __aarch64__
+    float dot = 0.0f, mag_a = 0.0f, mag_b = 0.0f;
+    for (size_t i = 0; i < length; ++i) {
+        dot += a[i] * b[i];
+        mag_a += a[i] * a[i];
+        mag_b += b[i] * b[i];
+    }
+    float denominator = std::sqrt(mag_a) * std::sqrt(mag_b);
+    return (denominator < 1e-9f) ? 0.0f : (dot / denominator);
+#else
+    float32x4_t dot_vec = vdupq_n_f32(0.0f);
+    float32x4_t mag_a_vec = vdupq_n_f32(0.0f);
+    float32x4_t mag_b_vec = vdupq_n_f32(0.0f);
+
+    for (size_t i = 0; i < length; i += 4) {
+        float32x4_t va = vld1q_f32(a + i);
+        float32x4_t vb = vld1q_f32(b + i);
+        dot_vec = vmlaq_f32(dot_vec, va, vb);
+        mag_a_vec = vmlaq_f32(mag_a_vec, va, va);
+        mag_b_vec = vmlaq_f32(mag_b_vec, vb, vb);
+    }
+
+    float dot = vaddvq_f32(dot_vec);
+    float mag_a = vaddvq_f32(mag_a_vec);
+    float mag_b = vaddvq_f32(mag_b_vec);
+
+    float denominator = std::sqrt(mag_a) * std::sqrt(mag_b);
+    return (denominator < 1e-9f) ? 0.0f : (dot / denominator);
+#endif
+}
+
 } // namespace Ronin::Kernel::Intent

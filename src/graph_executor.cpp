@@ -50,11 +50,11 @@ GraphExecutor::~GraphExecutor() {
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
-    // --- BYPASS v2.6-AUTO-SCAN ---
+    // --- BYPASS v3.0-NEURAL-SCAN ---
     if (clean.find("search") != std::string::npos || clean.find("find") != std::string::npos) {
         Node* searchNode = m_graph.getNodeByID("FileSearchNode");
         if (searchNode) {
-            LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v2.6)");
+            LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v3.0)");
             return searchNode;
         }
     }
@@ -64,7 +64,7 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Reasoning Spine active: [Kernel v2.6-AUTO-SCAN]");
+    LOGI(TAG, "Reasoning Spine active: [Kernel v3.0-NEURAL-SCAN]");
     
     Node* current = m_graph.getNode(1); 
     if (!current) {
@@ -85,6 +85,14 @@ Node* GraphExecutor::runThompsonSampling(const std::string& input) {
             max_sample = adjusted_score;
             best_node_id = edge.target_node_id;
         }
+    }
+
+    // --- NEURAL FALLBACK ---
+    // If Thompson Sampling confidence is low (max_sample < threshold), fallback to Neural Search
+    if (max_sample < 0.4f) {
+        LOGI(TAG, "> Thompson Confidence Low (%.2f). Falling back to Neural Embedding Node (ID 3).", max_sample);
+        Node* neural_node = m_graph.getNode(3);
+        if (neural_node) return neural_node;
     }
 
     Node* result = m_graph.getNode(best_node_id);

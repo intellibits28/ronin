@@ -9,7 +9,8 @@ namespace Ronin::Kernel::Capability {
 
 namespace fs = std::filesystem;
 
-FileScanner::FileScanner(Memory::LongTermMemory& ltm) : m_ltm(ltm) {}
+FileScanner::FileScanner(Memory::LongTermMemory& ltm, NeuralEmbeddingNode* neural) 
+    : m_ltm(ltm), m_neural(neural) {}
 
 FileScanner::~FileScanner() {
     stopScan();
@@ -67,8 +68,14 @@ void FileScanner::scanWorker(const std::string& root_path) {
                 auto sctp = std::chrono::time_point_cast<std::chrono::seconds>(ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
                 uint64_t modified = static_cast<uint64_t>(sctp.time_since_epoch().count());
 
+                // Generate embedding if node is available
+                std::vector<float> embedding;
+                if (m_neural) {
+                    embedding = m_neural->execute(filename);
+                }
+
                 // Index into L3 Deep-store
-                if (m_ltm.indexFile(filename, abs_path, extension, modified)) {
+                if (m_ltm.indexFile(filename, abs_path, extension, modified, embedding)) {
                     indexed_count++;
                 }
             }

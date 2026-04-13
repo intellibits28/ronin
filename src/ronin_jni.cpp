@@ -8,6 +8,7 @@
 #include "graph_executor.h"
 #include "capabilities/file_search_node.h"
 #include "capabilities/file_scanner.h"
+#include "capabilities/neural_embedding_node.h"
 #include "ronin_log.h"
 #include "checkpoint_schema_generated.h"
 #include <cstdint>
@@ -31,6 +32,7 @@ static std::unique_ptr<GraphStorage> g_graph_storage;
 static std::unique_ptr<GraphExecutor> g_graph_executor;
 static std::unique_ptr<FileSearchNode> g_file_search_node;
 static std::unique_ptr<FileScanner> g_file_scanner;
+static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
 
 extern "C" {
 
@@ -57,6 +59,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_file_search_node.reset();
     if (g_file_scanner) g_file_scanner->stopScan();
     g_file_scanner.reset();
+    g_neural_embedding_node.reset();
 
     // 1. Initialize Memory Components
     g_long_term_memory = std::make_unique<LongTermMemory>(base_path + "/ronin_l3.db");
@@ -65,9 +68,10 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
 
     // 2. Initialize Checkpoint and File Search
     g_checkpoint_engine = std::make_unique<CheckpointEngine>(base_path + "/checkpoint.bin");
-    g_checkpoint_engine->initializeShadowBuffer(1024 * 1024);
+    g_checkpoint_engine.initializeShadowBuffer(1024 * 1024);
     g_file_search_node = std::make_unique<FileSearchNode>(*g_long_term_memory);
-    g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory);
+    g_neural_embedding_node = std::make_unique<NeuralEmbeddingNode>(base_path + "/models/minilm-l6-v2.onnx");
+    g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory, g_neural_embedding_node.get());
 
     // 3. Initialize Reasoning Spine (Graph)
     g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
@@ -78,7 +82,9 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     LOGI(TAG, "Registering mandatory nodes...");
     g_capability_graph->addNode(1, "Reasoning_Engine");
     g_capability_graph->addNode(2, "FileSearchNode");
+    g_capability_graph->addNode(3, "NeuralEmbeddingNode");
     g_capability_graph->addEdge(1, 2, 1.0f);
+    g_capability_graph->addEdge(1, 3, 0.5f);
 
     Node* testNode = g_capability_graph->getNodeByID("FileSearchNode");
     if (testNode) {
@@ -162,6 +168,34 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         if (!results.empty()) {
             return env->NewStringUTF(results[0].c_str());
         }
+    }
+
+    if (next_node && next_node->id == 3 && g_neural_embedding_node && g_long_term_memory) {
+        LOGI(TAG, "Routing to Neural Semantic Search capability.");
+        auto query_vec = g_neural_embedding_node->execute(input_str);
+        auto all_embeddings = g_long_term_memory->getAllFileEmbeddings();
+        
+        std::vector<std::pair<std::string, float>> scores;
+        for (auto& fe : all_embeddings) {
+            float sim = compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 384);
+            scores.push_back({fe.name, sim});
+        }
+        
+        std::sort(scores.begin(), scores.end(), [](const auto& a, const auto& b) { 
+            return a.second > b.second; 
+        });
+        
+        if (scores.empty()) {
+            return env->NewStringUTF("Neural Search: No semantic matches found.");
+        }
+        
+        std::string output = "Semantic Matches: \n";
+        for (size_t i = 0; i < std::min(scores.size(), size_t(5)); ++i) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), " (Score: %.2f)", scores[i].second);
+            output += "- " + scores[i].first + buf + "\n";
+        }
+        return env->NewStringUTF(output.c_str());
     }
 
     // Default response if not routed to search or if search results empty

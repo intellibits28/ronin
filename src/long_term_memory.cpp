@@ -43,7 +43,8 @@ bool LongTermMemory::initSchema() {
         "  name, "
         "  path, "
         "  extension, "
-        "  last_modified UNINDEXED"
+        "  last_modified UNINDEXED, "
+        "  embedding_vector UNINDEXED"
         ");";
 
     if (sqlite3_exec(m_db, schema, nullptr, nullptr, nullptr) != SQLITE_OK) {
@@ -186,22 +187,54 @@ bool LongTermMemory::consolidate(const std::string& summary_text) {
     return success;
 }
 
-bool LongTermMemory::indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified) {
+bool LongTermMemory::indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified, const std::vector<float>& embedding) {
     if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = "INSERT OR REPLACE INTO file_index (name, path, extension, last_modified) VALUES (?, ?, ?, ?);";
+    const char* sql = "INSERT OR REPLACE INTO file_index (name, path, extension, last_modified, embedding_vector) VALUES (?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
-    
+
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
-    
+
     sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, path.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, ext.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(modified));
-    
-    bool success = sqlite3_step(stmt) == SQLITE_DONE;
+
+    if (!embedding.empty()) {
+        sqlite3_bind_blob(stmt, 5, embedding.data(), static_cast<int>(embedding.size() * sizeof(float)), SQLITE_STATIC);
+    } else {
+        sqlite3_bind_null(stmt, 5);
+    }
+
+    bool success = sqlite3_step(stmt) == SQLITE_DONE; // Wait, it's SQLITE_DONE
     sqlite3_finalize(stmt);
     return success;
+}
+
+std::vector<LongTermMemory::FileEmbedding> LongTermMemory::getAllFileEmbeddings() {
+    if (!m_db) return {};
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<FileEmbedding> results;
+
+    const char* sql = "SELECT name, embedding_vector FROM file_index WHERE embedding_vector IS NOT NULL;";
+    sqlite3_stmt* stmt = nullptr;
+
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* name = sqlite3_column_text(stmt, 0);
+            const void* blob = sqlite3_column_blob(stmt, 1);
+            int bytes = sqlite3_column_bytes(stmt, 1);
+
+            if (name && blob && bytes > 0) {
+                FileEmbedding fe;
+                fe.name = reinterpret_cast<const char*>(name);
+                fe.vector.assign(static_cast<const float*>(blob), static_cast<const float*>(blob) + (bytes / sizeof(float)));
+                results.push_back(fe);
+            }
+        }
+    }
+    sqlite3_finalize(stmt);
+    return results;
 }
 
 std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {

@@ -31,20 +31,38 @@ FetchContent_Declare(
   URL https://github.com/google/flatbuffers/archive/refs/tags/v2.0.8.zip
 )
 
+# 4. Fetch ONNX Runtime (C++ Library)
+if(ANDROID)
+    FetchContent_Declare(
+      onnxruntime
+      URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-android-1.17.1.aar
+    )
+else()
+    FetchContent_Declare(
+      onnxruntime
+      URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-linux-x64-1.17.1.tgz
+    )
+endif()
+
 # Disable FlatBuffers internal builds/tests to prevent Exec format errors during Android cross-compiling
 set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "" FORCE)
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(googletest sqlite3_src flatbuffers)
+FetchContent_MakeAvailable(googletest sqlite3_src flatbuffers onnxruntime)
 
 # Define SQLite library
 add_library(sqlite3_lib STATIC ${sqlite3_src_SOURCE_DIR}/sqlite3.c)
 target_include_directories(sqlite3_lib PUBLIC ${sqlite3_src_SOURCE_DIR})
 target_compile_definitions(sqlite3_lib PRIVATE SQLITE_THREADSAFE=1 SQLITE_ENABLE_FTS5=1)
 
-# Ensure FlatBuffers headers are accessible
+# Ensure FlatBuffers and ORT headers are accessible
 include_directories(${flatbuffers_SOURCE_DIR}/include)
+if(ANDROID)
+    include_directories(${onnxruntime_SOURCE_DIR}/headers)
+else()
+    include_directories(${onnxruntime_SOURCE_DIR}/include)
+endif()
 
 # Core Logic Source (Portable)
 set(RONIN_CORE_SOURCES
@@ -58,6 +76,7 @@ set(RONIN_CORE_SOURCES
     src/capability_graph.cpp
     src/capabilities/file_scanner.cpp
     src/capabilities/file_search_node.cpp
+    src/capabilities/neural_embedding_node.cpp
 )
 
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
@@ -67,40 +86,48 @@ target_link_libraries(ronin_core PUBLIC sqlite3_lib)
 if(ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
-    
+
+    # Locate ORT shared library in AAR (which was extracted by FetchContent)
+    set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/jni/${ANDROID_ABI}/libonnxruntime.so)
+    add_library(onnxruntime_lib SHARED IMPORTED)
+    set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+
     # Link system libraries to core so tests inherit them
-    target_link_libraries(ronin_core PUBLIC ${log-lib} ${android-lib})
-    
+    target_link_libraries(ronin_core PUBLIC ${log-lib} ${android-lib} onnxruntime_lib)
+
     # JNI Bridge Library
     add_library(ronin_kernel SHARED src/ronin_jni.cpp)
-    target_link_libraries(ronin_kernel ronin_core sqlite3_lib)
-    
+    target_link_libraries(ronin_kernel ronin_core sqlite3_lib onnxruntime_lib)
+...
     # Enable ARMv8.2-A Dot Product extension only for arm64-v8a
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
     endif()
 else()
-    # Host build needs rt
-    target_link_libraries(ronin_core PUBLIC rt)
+    # Host build needs rt and ORT
+    set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.so)
+    add_library(onnxruntime_lib SHARED IMPORTED)
+    set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+    target_link_libraries(ronin_core PUBLIC rt onnxruntime_lib)
 endif()
 
 enable_testing()
 
 # Memory Stress Test
 add_executable(ronin_memory_test tests/memory_stress_test.cpp)
-target_link_libraries(ronin_memory_test gtest_main ronin_core)
+target_link_libraries(ronin_memory_test gtest_main ronin_core onnxruntime_lib)
 
 # Precision Test
 add_executable(ronin_precision_test tests/precision_test.cpp)
-target_link_libraries(ronin_precision_test gtest_main ronin_core)
+target_link_libraries(ronin_precision_test gtest_main ronin_core onnxruntime_lib)
 
 # Atomic Integrity Test
 add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp)
-target_link_libraries(ronin_atomic_test gtest_main ronin_core)
+target_link_libraries(ronin_atomic_test gtest_main ronin_core onnxruntime_lib)
 
 # Search Capability Test
 add_executable(ronin_search_test tests/search_capability_test.cpp)
-target_link_libraries(ronin_search_test gtest_main ronin_core)
+target_link_libraries(ronin_search_test gtest_main ronin_core onnxruntime_lib)
 
 if(NOT ANDROID)
     target_link_libraries(ronin_memory_test rt)
