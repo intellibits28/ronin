@@ -6,7 +6,7 @@
 #include "capability_graph.h"
 #include "graph_storage.h"
 #include "graph_executor.h"
-#include "ronin_kernel.h"
+#include "ronin_kernel.hpp"
 #include "capabilities/file_search_node.h"
 #include "capabilities/file_scanner.h"
 #include "capabilities/neural_embedding_node.h"
@@ -37,6 +37,33 @@ static std::unique_ptr<RoninKernel> g_ronin_kernel;
 static std::unique_ptr<FileSearchNode> g_file_search_node;
 static std::unique_ptr<FileScanner> g_file_scanner;
 static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
+
+// v3.7 ULTRA-CORE Bridge Implementations
+namespace {
+class JniCapabilityManager : public Ronin::Kernel::CapabilityManager {
+public:
+  bool canExecute(uint32_t nodeId) const override {
+    // For prototype, all registered nodes are authorized
+    return nodeId > 0;
+  }
+};
+
+Ronin::Kernel::Intent defaultIntentProcessor(const Ronin::Kernel::Input &input) {
+  std::string s(input.data, input.length);
+  float score = 0.5f;
+  if (s.find("search") != std::string::npos) score = 1.0f;
+  return {1, score}; // Simple mapping for prototype
+}
+
+Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
+  LOGI("RoninJNI", "Executing Node %u via Static Dispatch", nodeId);
+  return {true, 0};
+}
+
+static JniCapabilityManager s_cap_manager;
+static Ronin::Kernel::HandlerRegistry s_handler_registry = {
+    defaultIntentProcessor, defaultExecProcessor};
+} // namespace
 
 extern "C" {
 
@@ -101,9 +128,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
 
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
     g_intent_engine = std::make_unique<IntentEngine>();
-    g_ronin_kernel = std::make_unique<RoninKernel>(
-        *g_intent_engine, *g_capability_graph, *g_graph_executor, *g_memory_manager, *g_checkpoint_engine
-    );
+    g_ronin_kernel = std::make_unique<RoninKernel>(s_handler_registry, s_cap_manager);
 
     // 4. Trigger Background Scan
     LOGI(TAG, "Triggering automatic background scan of /storage/emulated/0");
@@ -169,9 +194,13 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     std::string input_str(input_cstr);
     env->ReleaseStringUTFChars(input, input_cstr);
 
-    // 0. Trigger Core Heartbeat (v3.6 logic)
+    // 0. Trigger Core Heartbeat (v3.7 logic)
     if (g_ronin_kernel) {
-        g_ronin_kernel->tick(input_str);
+        Input minimalist_input = {};
+        size_t len = std::min(input_str.length(), sizeof(minimalist_input.data) - 1);
+        memcpy(minimalist_input.data, input_str.c_str(), len);
+        minimalist_input.length = len;
+        g_ronin_kernel->tick(minimalist_input);
     }
 
     // 1. Routing Decision (Nuclear Path is now inside selectNextNode)
