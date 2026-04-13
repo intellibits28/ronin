@@ -34,11 +34,11 @@ Java_com_ronin_kernel_NativeEngine_updateLifecycleState(
     JNIEnv *env, jobject thiz, jint lifecycle_state);
 
 /**
- * Processes input via the memory manager.
+ * Processes input via the reasoning spine.
  */
-JNIEXPORT jfloat JNICALL
+JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_processInput(
-    JNIEnv *env, jobject thiz, jobject input);
+    JNIEnv *env, jobject thiz, jstring input);
 
 /**
  * Returns the current internal pressure score (0-100).
