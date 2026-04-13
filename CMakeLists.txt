@@ -35,7 +35,7 @@ FetchContent_Declare(
 if(ANDROID)
     FetchContent_Declare(
       onnxruntime
-      URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-android-1.17.1.aar
+      URL https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.17.1/onnxruntime-android-1.17.1.aar
     )
 else()
     FetchContent_Declare(
