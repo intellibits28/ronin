@@ -6,6 +6,7 @@
 #include "capability_graph.h"
 #include "graph_storage.h"
 #include "graph_executor.h"
+#include "ronin_kernel.h"
 #include "capabilities/file_search_node.h"
 #include "capabilities/file_scanner.h"
 #include "capabilities/neural_embedding_node.h"
@@ -30,6 +31,8 @@ static std::unique_ptr<CheckpointEngine> g_checkpoint_engine;
 static std::unique_ptr<CapabilityGraph> g_capability_graph;
 static std::unique_ptr<GraphStorage> g_graph_storage;
 static std::unique_ptr<GraphExecutor> g_graph_executor;
+static std::unique_ptr<IntentEngine> g_intent_engine;
+static std::unique_ptr<RoninKernel> g_ronin_kernel;
 static std::unique_ptr<FileSearchNode> g_file_search_node;
 static std::unique_ptr<FileScanner> g_file_scanner;
 static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
@@ -56,6 +59,8 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_graph_storage.reset();
     g_capability_graph.reset();
     g_graph_executor.reset();
+    g_intent_engine.reset();
+    g_ronin_kernel.reset();
     g_file_search_node.reset();
     if (g_file_scanner) g_file_scanner->stopScan();
     g_file_scanner.reset();
@@ -94,6 +99,10 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     }
 
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
+    g_intent_engine = std::make_unique<IntentEngine>();
+    g_ronin_kernel = std::make_unique<RoninKernel>(
+        *g_intent_engine, *g_capability_graph, *g_graph_executor, *g_memory_manager, *g_checkpoint_engine
+    );
 
     // 4. Trigger Background Scan
     LOGI(TAG, "Triggering automatic background scan of /storage/emulated/0");
@@ -158,6 +167,11 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     if (input_cstr == nullptr) return env->NewStringUTF("Kernel Error: Memory allocation failed.");
     std::string input_str(input_cstr);
     env->ReleaseStringUTFChars(input, input_cstr);
+
+    // 0. Trigger Core Heartbeat (v3.6 logic)
+    if (g_ronin_kernel) {
+        g_ronin_kernel->tick(input_str);
+    }
 
     // 1. Routing Decision (Nuclear Path is now inside selectNextNode)
     Node* next_node = g_graph_executor->selectNextNode(input_str);

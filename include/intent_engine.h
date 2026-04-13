@@ -26,4 +26,12 @@ float compute_intent_similarity_neon(const int8_t* a, const int8_t* b);
  */
 float compute_cosine_similarity_neon(const float* a, const float* b, size_t length);
 
+class IntentEngine {
+public:
+    /**
+     * Processes raw input to determine the high-level intent score.
+     */
+    float process(const std::string& input);
+};
+
 } // namespace Ronin::Kernel::Intent

@@ -74,6 +74,7 @@ set(RONIN_CORE_SOURCES
     src/memory_manager.cpp
     src/long_term_memory.cpp
     src/capability_graph.cpp
+    src/ronin_kernel.cpp
     src/capabilities/file_scanner.cpp
     src/capabilities/file_search_node.cpp
     src/capabilities/neural_embedding_node.cpp

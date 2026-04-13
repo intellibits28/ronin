@@ -123,4 +123,11 @@ float compute_cosine_similarity_neon(const float* a, const float* b, size_t leng
 #endif
 }
 
+float IntentEngine::process(const std::string& input) {
+    if (input.find("search") != std::string::npos || input.find("find") != std::string::npos) {
+        return 1.0f;
+    }
+    return 0.5f;
+}
+
 } // namespace Ronin::Kernel::Intent
