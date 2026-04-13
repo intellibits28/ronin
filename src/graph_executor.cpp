@@ -80,28 +80,28 @@ Node* GraphExecutor::runThompsonSampling(const std::string& input) {
  * Hard-coded Integer ID bypass with Raw C-String comparison
  */
 Node* GraphExecutor::selectNextNode(const std::string& input) {
-    const char* raw_str = input.c_str();
-    LOGI(TAG, "RONIN_V2_BYPASS_READY: Incoming: %s", raw_str);
-#ifdef ANDROID
-    __android_log_print(ANDROID_LOG_DEBUG, "RONIN_KERN", "Incoming: %s", raw_str);
-#endif
+    std::string clean = trim(lowercase(input));
+    
+    // Diagnostic Log
+    LOGI(TAG, "> Debug: Cleaned Input is '%s'", clean.c_str());
+    
+    // Check if Node exists in Graph
+    Node* searchNode = m_graph.getNodeByID("FileSearchNode");
+    if (!searchNode) {
+        LOGE(TAG, "> Debug Error: 'FileSearchNode' is MISSING from Graph!");
+    } else {
+        LOGI(TAG, "> Debug Success: 'FileSearchNode' is present.");
+    }
 
-    // The most primitive check possible
-    bool isSearch = false;
-    if (strstr(raw_str, "search") || strstr(raw_str, "find")) isSearch = true;
-
-    if (isSearch) {
-        // Use the numeric ID directly if you know it (e.g., 2)
-        // Or find it by ID string
-        Node* target = m_graph.getNodeByID("FileSearchNode");
-        if (target) {
-            LOGI(TAG, "> HARD OVERRIDE: FileSearchNode selected");
-            return target;
+    // The Bypass
+    if (clean.find("search") != std::string::npos || clean.find("find") != std::string::npos) {
+        if (searchNode) {
+            LOGI(TAG, "> CRITICAL BYPASS: Routing to FileSearchNode");
+            return searchNode;
         }
     }
     
-    // Default to Thompson Sampling
-    return runThompsonSampling(input);
+    return runThompsonSampling(clean);
 }
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
