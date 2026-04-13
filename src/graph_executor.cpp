@@ -80,6 +80,7 @@ Node* GraphExecutor::runThompsonSampling(const std::string& input) {
  */
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     const char* raw_str = input.c_str();
+    LOGI(TAG, "RONIN_V2_BYPASS_READY: Incoming: %s", raw_str);
     __android_log_print(ANDROID_LOG_DEBUG, "RONIN_KERN", "Incoming: %s", raw_str);
 
     // The most primitive check possible
