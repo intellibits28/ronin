@@ -42,6 +42,9 @@ private:
     
     // Dynamic learning rate helper
     float calculateLearningRate(RiskLevel risk);
+
+    // Thompson Sampling logic
+    Node* runThompsonSampling(const std::string& input);
 };
 
 } // namespace Ronin::Kernel::Reasoning

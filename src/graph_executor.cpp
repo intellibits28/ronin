@@ -47,41 +47,7 @@ GraphExecutor::~GraphExecutor() {
     }
 }
 
-/**
- * Enhanced Debug Version: Hex Logging + C-String Fallback
- */
-Node* GraphExecutor::selectNextNode(const std::string& input) {
-    // 1. Log Hex to detect invisible junk (JNI encoding issues)
-    std::string hex_debug;
-    for (unsigned char c : input) {
-        char buf[4];
-        snprintf(buf, sizeof(buf), "%02X ", c);
-        hex_debug += buf;
-    }
-#ifdef ANDROID
-    __android_log_print(ANDROID_LOG_DEBUG, "RONIN_KERN", "Hex: %s", hex_debug.c_str());
-#else
-    printf("[RONIN_KERN] DEBUG Hex: %s\n", hex_debug.c_str());
-#endif
-
-    std::string clean_input = trim(lowercase(input));
-    
-    // 2. Robust check using both std::string::find and C-style strstr
-    if (clean_input.find("search") != std::string::npos || 
-        clean_input.find("find") != std::string::npos ||
-        strstr(clean_input.c_str(), "search") != nullptr ||
-        strstr(clean_input.c_str(), "find") != nullptr) {
-        
-        Node* searchNode = m_graph.getNodeByID("FileSearchNode");
-        if (searchNode) {
-            LOGI(TAG, "> CRITICAL BYPASS: Forced FileSearchNode");
-            return searchNode;
-        } else {
-            LOGE(TAG, "> BYPASS ERROR: FileSearchNode NOT FOUND in Graph!");
-        }
-    }
-
-    // 3. Thompson Sampling Fallback
+Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
     
     Node* current = m_graph.getNode(1); 
@@ -107,6 +73,31 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
 
     Node* result = m_graph.getNode(best_node_id);
     return result ? result : current;
+}
+
+/**
+ * Hard-coded Integer ID bypass with Raw C-String comparison
+ */
+Node* GraphExecutor::selectNextNode(const std::string& input) {
+    const char* raw_str = input.c_str();
+    __android_log_print(ANDROID_LOG_DEBUG, "RONIN_KERN", "Incoming: %s", raw_str);
+
+    // The most primitive check possible
+    bool isSearch = false;
+    if (strstr(raw_str, "search") || strstr(raw_str, "find")) isSearch = true;
+
+    if (isSearch) {
+        // Use the numeric ID directly if you know it (e.g., 2)
+        // Or find it by ID string
+        Node* target = m_graph.getNodeByID("FileSearchNode");
+        if (target) {
+            LOGI(TAG, "> HARD OVERRIDE: FileSearchNode selected");
+            return target;
+        }
+    }
+    
+    // Default to Thompson Sampling
+    return runThompsonSampling(input);
 }
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
