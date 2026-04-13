@@ -32,18 +32,16 @@ TEST_F(SearchCapabilityTest, VerifyFTS5IndexingAndSearch) {
     ASSERT_TRUE(ltm.indexFile("checkpoint_schema.fbs", "/schema/checkpoint.fbs", ".fbs", 12345680));
 
     // 2. Perform Search Query
-    // v2.6 searchFiles adds * before and after, so "ronin" becomes "*ronin*"
+    // v2.6 searchFiles uses LIKE %query%
     auto results = ltm.searchFiles("ronin");
     
     // 3. Verify Results
-    // Should match both "ronin_core.cpp" AND "project_manifest.pdf" (if it contained ronin, but here it doesn't)
-    // Wait, project_manifest.pdf doesn't contain "ronin".
-    // But ronin_core.cpp DOES.
+    // ronin_core.cpp matches %ronin%
     ASSERT_EQ(results.size(), 1);
     ASSERT_EQ(results[0], "ronin_core.cpp");
 
     // 4. Test Partial Match
-    // Querying for "manifest" will become "*manifest*"
+    // project_manifest.pdf matches %manifest%
     auto partial_results = ltm.searchFiles("manifest");
     ASSERT_EQ(partial_results.size(), 1);
     ASSERT_EQ(partial_results[0], "project_manifest.pdf");
