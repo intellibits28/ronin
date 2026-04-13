@@ -50,11 +50,11 @@ GraphExecutor::~GraphExecutor() {
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
-    // --- BYPASS v3.2-STABLE-BRAIN ---
+    // --- BYPASS v3.3-SMOOTH-FLOW ---
     if (clean.find("search") != std::string::npos || clean.find("find") != std::string::npos) {
         Node* searchNode = m_graph.getNodeByID("FileSearchNode");
         if (searchNode) {
-            LOGI(TAG, "> Route: Neural Bypass (Intent: Search) [v3.2]");
+            LOGI(TAG, "> Route: Neural Bypass (Intent: Search) [v3.3]");
             return searchNode;
         }
     }
@@ -64,7 +64,7 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Reasoning Spine active: [Kernel v3.2-STABLE-BRAIN]");
+    LOGI(TAG, "Reasoning Spine active: [Kernel v3.3-SMOOTH-FLOW]");
     
     Node* current = m_graph.getNode(1); 
     if (!current) {

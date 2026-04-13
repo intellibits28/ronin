@@ -71,6 +71,24 @@ fun RoninChatUI(engine: NativeEngine) {
     val messages = remember { mutableStateListOf<String>() }
     val reasoningLogs = remember { mutableStateListOf<String>() }
     
+    // Scroll States for Auto-scroll
+    val chatListState = rememberLazyListState()
+    val reasoningListState = rememberLazyListState()
+    
+    // Auto-scroll logic for Chat
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            chatListState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    // Auto-scroll logic for Reasoning Console (Newest thoughts at index 0)
+    LaunchedEffect(reasoningLogs.size) {
+        if (reasoningLogs.isNotEmpty()) {
+            reasoningListState.animateScrollToItem(0)
+        }
+    }
+
     // Kernel State Metrics
     var lmkPressure by remember { mutableStateOf(0) }
     var stability by remember { mutableStateOf(1.0f) } // 0.0 to 1.0
@@ -100,7 +118,7 @@ fun RoninChatUI(engine: NativeEngine) {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.2-STABLE-BRAIN")
+                        Text("Ronin Kernel v3.3-SMOOTH-FLOW")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -125,6 +143,7 @@ fun RoninChatUI(engine: NativeEngine) {
 
             // 2. Chat History
             LazyColumn(
+                state = chatListState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -137,7 +156,7 @@ fun RoninChatUI(engine: NativeEngine) {
             }
 
             // 3. Reasoning Console (Expandable)
-            ReasoningConsole(reasoningLogs)
+            ReasoningConsole(reasoningLogs, reasoningListState)
 
             // 4. Input Area
             ChatInput(
@@ -151,7 +170,7 @@ fun RoninChatUI(engine: NativeEngine) {
                         scope.launch {
                             val isSearch = currentInput.contains("search", ignoreCase = true) || currentInput.contains("find", ignoreCase = true)
                             if (isSearch) {
-                                reasoningLogs.add(0, "Kernel Decision: Reasoning v3.2 neural bypass activated.")
+                                reasoningLogs.add(0, "Kernel Decision: Reasoning v3.3 smooth-flow bypass activated.")
                             } else {
                                 reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
                             }
@@ -205,7 +224,7 @@ fun TimelineZone(label: String, count: Int, color: Color) {
 }
 
 @Composable
-fun ReasoningConsole(logs: List<String>) {
+fun ReasoningConsole(logs: List<String>, scrollState: LazyListState) {
     var expanded by remember { mutableStateOf(false) }
     
     Column(
@@ -233,7 +252,7 @@ fun ReasoningConsole(logs: List<String>) {
 
         if (expanded) {
             Box(modifier = Modifier.height(120.dp).padding(horizontal = 12.dp, vertical = 4.dp)) {
-                LazyColumn {
+                LazyColumn(state = scrollState) {
                     items(logs) { log ->
                         Text(
                             text = "> $log",
