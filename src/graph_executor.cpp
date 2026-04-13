@@ -50,7 +50,20 @@ GraphExecutor::~GraphExecutor() {
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
-    // --- BYPASS v3.7-ULTRA-CORE ---
+    // --- HARDWARE BYPASS v3.7-ULTRA-CORE ---
+    if (clean.find("flashlight") != std::string::npos || clean.find("torch") != std::string::npos ||
+        clean.find("on") != std::string::npos || clean.find("off") != std::string::npos) {
+        LOGI(TAG, "> Route: Neural Bypass (Intent: SystemControl) [v3.7]");
+        return m_graph.getNode(4);
+    }
+
+    if (clean.find("where") != std::string::npos || clean.find("location") != std::string::npos ||
+        clean.find("gps") != std::string::npos || clean.find("map") != std::string::npos) {
+        LOGI(TAG, "> Route: Neural Bypass (Intent: Location) [v3.7]");
+        return m_graph.getNode(5);
+    }
+
+    // --- SEARCH BYPASS ---
     if (clean.find("search") != std::string::npos || clean.find("find") != std::string::npos) {
         Node* searchNode = m_graph.getNodeByID("FileSearchNode");
         if (searchNode) {

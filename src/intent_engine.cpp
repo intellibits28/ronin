@@ -124,10 +124,26 @@ float compute_cosine_similarity_neon(const float* a, const float* b, size_t leng
 }
 
 float IntentEngine::process(const std::string& input) {
-    if (input.find("search") != std::string::npos || input.find("find") != std::string::npos) {
-        return 1.0f;
+    // Intent IDs: 
+    // 1: Reasoning/General
+    // 2: FileSearch
+    // 4: SystemControl (Flashlight)
+    // 5: Location (GPS)
+    
+    if (input.find("flashlight") != std::string::npos || input.find("torch") != std::string::npos ||
+        input.find("on") != std::string::npos || input.find("off") != std::string::npos) {
+        return 4.0f; // Return ID as float for now based on previous tick logic
     }
-    return 0.5f;
+    
+    if (input.find("where") != std::string::npos || input.find("location") != std::string::npos ||
+        input.find("gps") != std::string::npos || input.find("map") != std::string::npos) {
+        return 5.0f;
+    }
+
+    if (input.find("search") != std::string::npos || input.find("find") != std::string::npos) {
+        return 2.0f;
+    }
+    return 1.0f;
 }
 
 } // namespace Ronin::Kernel::Intent

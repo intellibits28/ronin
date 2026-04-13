@@ -49,13 +49,40 @@ public:
 
 Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input &input) {
   std::string s(input.data, input.length);
-  float score = 0.5f;
-  if (s.find("search") != std::string::npos) score = 1.0f;
-  return {1, score}; // Simple mapping for prototype
+  std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+
+  if (s.find("flashlight") != std::string::npos || s.find("torch") != std::string::npos ||
+      s.find("on") != std::string::npos || s.find("off") != std::string::npos) {
+      return {4, 1.0f};
+  }
+  
+  if (s.find("where") != std::string::npos || s.find("location") != std::string::npos ||
+      s.find("gps") != std::string::npos || s.find("map") != std::string::npos) {
+      return {5, 1.0f};
+  }
+
+  if (s.find("search") != std::string::npos || s.find("find") != std::string::npos) {
+      return {2, 1.0f};
+  }
+
+  return {1, 0.5f};
 }
 
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
   LOGI("RoninJNI", "Executing Node %u via Static Dispatch", nodeId);
+  
+  if (nodeId == 4) {
+      // Mock Flashlight Control
+      LOGI("RoninJNI", "> System: Flashlight state toggled.");
+      return {true, 200}; // Use status code 200 for 'Hardware Success'
+  }
+  
+  if (nodeId == 5) {
+      // Mock GPS Access
+      LOGI("RoninJNI", "> System: Retrieving coordinates...");
+      return {true, 201}; // Use status code 201 for 'Location Success'
+  }
+
   return {true, 0};
 }
 
@@ -115,8 +142,12 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_capability_graph->addNode(1, "Reasoning_Engine");
     g_capability_graph->addNode(2, "FileSearchNode");
     g_capability_graph->addNode(3, "NeuralEmbeddingNode");
+    g_capability_graph->addNode(4, "SystemControlNode");
+    g_capability_graph->addNode(5, "LocationNode");
     g_capability_graph->addEdge(1, 2, 1.0f);
     g_capability_graph->addEdge(1, 3, 0.5f);
+    g_capability_graph->addEdge(1, 4, 1.0f);
+    g_capability_graph->addEdge(1, 5, 1.0f);
 
     Node* testNode = g_capability_graph->getNodeByID("FileSearchNode");
     if (testNode) {
@@ -205,11 +236,17 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     // 1. Routing Decision (Nuclear Path is now inside selectNextNode)
     Node* next_node = g_graph_executor->selectNextNode(input_str);
 
-    if (next_node && (next_node->id == 2 || next_node->id == 3) && g_file_search_node) {
-        LOGI(TAG, "Routing to Hybrid FileSearch capability.");
-        auto results = g_file_search_node->execute(input_str);
-        if (!results.empty()) {
-            return env->NewStringUTF(results[0].c_str());
+    if (next_node) {
+        if ((next_node->id == 2 || next_node->id == 3) && g_file_search_node) {
+            LOGI(TAG, "Routing to Hybrid FileSearch capability.");
+            auto results = g_file_search_node->execute(input_str);
+            if (!results.empty()) {
+                return env->NewStringUTF(results[0].c_str());
+            }
+        } else if (next_node->id == 4) {
+            return env->NewStringUTF("System: Switching on Flashlight... [v3.7-ULTRA-CORE]");
+        } else if (next_node->id == 5) {
+            return env->NewStringUTF("System: Locating device... GPS Link Established.");
         }
     }
 
