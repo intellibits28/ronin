@@ -209,15 +209,15 @@ std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
     
-    const char* sql = "SELECT name, path FROM file_index WHERE file_index MATCH ? ORDER BY rank LIMIT 20;";
+    // Explicitly search by name as requested by user
+    const char* sql = "SELECT name FROM file_index WHERE name MATCH ? LIMIT 10;";
     sqlite3_stmt* stmt = nullptr;
     
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* name = sqlite3_column_text(stmt, 0);
-            const unsigned char* path = sqlite3_column_text(stmt, 1);
-            if (name && path) {
+            if (name) {
                 results.push_back(reinterpret_cast<const char*>(name));
             }
         }

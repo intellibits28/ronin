@@ -48,21 +48,25 @@ GraphExecutor::~GraphExecutor() {
 }
 
 Node* GraphExecutor::selectNextNode(const std::string& input) {
-    // --- BYPASS v2.4-NODE-EXISTS ---
-    Node* searchNode = m_graph.getNodeByID("FileSearchNode");
-    if (!searchNode) {
-        LOGE(TAG, "> FATAL ERROR: FileSearchNode is NOT in the graph object! [v2.4]");
-        return nullptr;
+    std::string clean = trim(lowercase(input));
+    
+    // --- BYPASS v2.5-LIVE-SEARCH ---
+    if (clean.find("search") != std::string::npos || clean.find("find") != std::string::npos) {
+        Node* searchNode = m_graph.getNodeByID("FileSearchNode");
+        if (searchNode) {
+            LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v2.5)");
+            return searchNode;
+        }
     }
-    LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v2.4)");
-    return searchNode;
+    
+    return runThompsonSampling(clean);
 }
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Processed via NEON SIMD [Kernel v2.4-NODE-EXISTS]");
+    LOGI(TAG, "Reasoning Spine active: [Kernel v2.5-LIVE-SEARCH]");
     
-    /* Thompson Sampling disabled for v2.4-NODE-EXISTS */
+    /* Thompson Sampling disabled for v2.5-LIVE-SEARCH */
     return nullptr; 
 }
 

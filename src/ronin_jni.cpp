@@ -133,27 +133,30 @@ Java_com_ronin_kernel_NativeEngine_computeSimilarity(JNIEnv *env, jobject thiz, 
     }
 }
 
-JNIEXPORT jfloat JNICALL
-Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jobject input) {
-    if (input == nullptr || !g_memory_manager || !g_graph_executor) return 0.0f;
-    void* ptr = env->GetDirectBufferAddress(input);
-    if (ptr == nullptr) return 0.0f;
+JNIEXPORT jstring JNICALL
+Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstring input) {
+    if (input == nullptr || !g_graph_executor) {
+        return env->NewStringUTF("Kernel Error: Graph Executor not ready.");
+    }
 
-    // 1. Extract input string (Mocked for JNI Prototype)
-    std::string input_str = "search"; 
+    const char *input_cstr = env->GetStringUTFChars(input, nullptr);
+    if (input_cstr == nullptr) return env->NewStringUTF("Kernel Error: Memory allocation failed.");
+    std::string input_str(input_cstr);
+    env->ReleaseStringUTFChars(input, input_cstr);
 
-    // 2. Routing Decision (Nuclear Path is now inside selectNextNode)
+    // 1. Routing Decision (Nuclear Path is now inside selectNextNode)
     Node* next_node = g_graph_executor->selectNextNode(input_str);
 
     if (next_node && next_node->id == 2 && g_file_search_node) {
         LOGI(TAG, "Routing to FileSearch capability.");
-        auto results = g_file_search_node->execute("demo_query");
-        LOGI(TAG, "File Search returned %zu results.", results.size());
+        auto results = g_file_search_node->execute(input_str);
+        if (!results.empty()) {
+            return env->NewStringUTF(results[0].c_str());
+        }
     }
 
-    Token t = {1, 0.9f, {0.1f, 0.2f}}; 
-    g_memory_manager->addRecentToken(t);
-    return 1.0f;
+    // Default response if not routed to search or if search results empty
+    return env->NewStringUTF("Input processed via Reasoning Spine (No specific capability triggered).");
 }
 
 JNIEXPORT jint JNICALL

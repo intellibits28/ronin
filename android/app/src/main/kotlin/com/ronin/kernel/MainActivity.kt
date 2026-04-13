@@ -100,7 +100,7 @@ fun RoninChatUI(engine: NativeEngine) {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v2.4-NODE-EXISTS")
+                        Text("Ronin Kernel v2.5-LIVE-SEARCH")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -149,9 +149,9 @@ fun RoninChatUI(engine: NativeEngine) {
                         val currentInput = inputText
                         inputText = ""
                         scope.launch {
-                            reasoningLogs.add(0, "Kernel Decision: Forced 'FileSearchNode' (v2.4 Bypass)")
-                            delay(600)
-                            messages.add("Ronin: Processed '$currentInput' via NEON SIMD [Kernel v2.4-NODE-EXISTS]")
+                            reasoningLogs.add(0, "Kernel Decision: Reasoning v2.5 live bypass activated.")
+                            val kernelOutput = engine.processInputAsync(currentInput)
+                            messages.add("Ronin: $kernelOutput")
                         }
                     }
                 }

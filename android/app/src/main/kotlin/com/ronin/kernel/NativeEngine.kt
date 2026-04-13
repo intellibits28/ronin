@@ -42,9 +42,9 @@ class NativeEngine {
     private external fun updateLifecycleState(state: Int)
 
     /**
-     * Placeholder for actual input processing in the kernel.
+     * Native call to process input string via reasoning spine.
      */
-    private external fun processInput(input: ByteBuffer): Float
+    private external fun processInput(input: String): String
 
     /**
      * Returns the current internal pressure score (0-100).
@@ -68,7 +68,7 @@ class NativeEngine {
         updateLifecycleState(state)
     }
 
-    suspend fun processInputAsync(input: ByteBuffer): Float = withContext(Dispatchers.Default) {
+    suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
         processInput(input)
     }
 }
