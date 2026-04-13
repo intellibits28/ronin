@@ -98,7 +98,7 @@ if(ANDROID)
     # JNI Bridge Library
     add_library(ronin_kernel SHARED src/ronin_jni.cpp)
     target_link_libraries(ronin_kernel ronin_core sqlite3_lib onnxruntime_lib)
-...
+
     # Enable ARMv8.2-A Dot Product extension only for arm64-v8a
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
