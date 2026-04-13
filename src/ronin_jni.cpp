@@ -70,9 +70,17 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_graph_storage->loadGraph(*g_capability_graph);
     
     // Default nodes for prototype (Fixed Names for Nuclear Path)
+    LOGI(TAG, "Registering mandatory nodes...");
     g_capability_graph->addNode(1, "Reasoning_Engine");
     g_capability_graph->addNode(2, "FileSearchNode");
     g_capability_graph->addEdge(1, 2, 1.0f);
+
+    Node* testNode = g_capability_graph->getNodeByID("FileSearchNode");
+    if (testNode) {
+        LOGI(TAG, "VERIFIED: FileSearchNode (ID %u) added to graph.", testNode->id);
+    } else {
+        LOGE(TAG, "CRITICAL: FileSearchNode registration FAILED!");
+    }
 
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
 

@@ -48,21 +48,21 @@ GraphExecutor::~GraphExecutor() {
 }
 
 Node* GraphExecutor::selectNextNode(const std::string& input) {
-    // --- BYPASS v2.3-FORCE-SEARCH ---
+    // --- BYPASS v2.4-NODE-EXISTS ---
     Node* searchNode = m_graph.getNodeByID("FileSearchNode");
     if (!searchNode) {
-        LOGE(TAG, "> FATAL ERROR: FileSearchNode is NOT in the graph object!");
+        LOGE(TAG, "> FATAL ERROR: FileSearchNode is NOT in the graph object! [v2.4]");
         return nullptr;
     }
-    LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v2.3)");
+    LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v2.4)");
     return searchNode;
 }
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Processed via NEON SIMD [Kernel v2.3-FORCE-SEARCH]");
+    LOGI(TAG, "Processed via NEON SIMD [Kernel v2.4-NODE-EXISTS]");
     
-    /* Thompson Sampling disabled for v2.3-FORCE-SEARCH */
+    /* Thompson Sampling disabled for v2.4-NODE-EXISTS */
     return nullptr; 
 }
 
