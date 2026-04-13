@@ -19,7 +19,6 @@
 #define TAG "RoninNativeEngine"
 
 using namespace Ronin::Kernel;
-using namespace Ronin::Kernel::Intent;
 using namespace Ronin::Kernel::Memory;
 using namespace Ronin::Kernel::Checkpoint;
 using namespace Ronin::Kernel::Reasoning;
@@ -32,7 +31,7 @@ static std::unique_ptr<CheckpointEngine> g_checkpoint_engine;
 static std::unique_ptr<CapabilityGraph> g_capability_graph;
 static std::unique_ptr<GraphStorage> g_graph_storage;
 static std::unique_ptr<GraphExecutor> g_graph_executor;
-static std::unique_ptr<IntentEngine> g_intent_engine;
+static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
 static std::unique_ptr<RoninKernel> g_ronin_kernel;
 static std::unique_ptr<FileSearchNode> g_file_search_node;
 static std::unique_ptr<FileScanner> g_file_scanner;
@@ -127,7 +126,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     }
 
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
-    g_intent_engine = std::make_unique<IntentEngine>();
+    g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_ronin_kernel = std::make_unique<RoninKernel>(s_handler_registry, s_cap_manager);
 
     // 4. Trigger Background Scan
@@ -161,11 +160,11 @@ JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_updateLifecycleState(JNIEnv *env, jobject thiz, jint lifecycle_state) {
     if (lifecycle_state == 0) {
         LOGI(TAG, "App in Background: Triggering LMK-aware flush.");
-        g_thermal_state = ThermalState::SEVERE;
+        Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::SEVERE;
         if (g_checkpoint_engine) g_checkpoint_engine->onLMKSignal();
         if (g_graph_executor) g_graph_executor->triggerAsyncSync();
     } else {
-        g_thermal_state = ThermalState::NORMAL;
+        Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::NORMAL;
     }
 }
 
@@ -176,7 +175,7 @@ Java_com_ronin_kernel_NativeEngine_computeSimilarity(JNIEnv *env, jobject thiz, 
     if (ptr_a == nullptr || ptr_b == nullptr) return -1.0f;
 
     try {
-        return static_cast<jfloat>(compute_intent_similarity_neon(
+        return static_cast<jfloat>(Ronin::Kernel::Intent::compute_intent_similarity_neon(
             static_cast<const int8_t*>(ptr_a), static_cast<const int8_t*>(ptr_b)));
     } catch (...) {
         return -1.0f;
