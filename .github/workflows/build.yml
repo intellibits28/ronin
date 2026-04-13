@@ -60,7 +60,8 @@ jobs:
         with:
           build-root-directory: android
           gradle-version: 8.2
-          arguments: assembleDebug
+          cache-disabled: true
+          arguments: clean assembleDebug
 
       - name: Upload Ronin APK
         uses: actions/upload-artifact@v4
