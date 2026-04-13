@@ -16,6 +16,11 @@ public:
      */
     std::vector<float> execute(const std::string& input);
 
+    /**
+     * Returns true if the ONNX session was successfully initialized.
+     */
+    bool isLoaded() const;
+
 private:
     // PIMPL or opaque pointer to avoid exposing ORT headers in this public header
     struct Impl;

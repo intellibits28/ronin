@@ -50,11 +50,11 @@ GraphExecutor::~GraphExecutor() {
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
-    // --- BYPASS v3.0-NEURAL-SCAN ---
+    // --- BYPASS v3.1-HYBRID-SCAN ---
     if (clean.find("search") != std::string::npos || clean.find("find") != std::string::npos) {
         Node* searchNode = m_graph.getNodeByID("FileSearchNode");
         if (searchNode) {
-            LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v3.0)");
+            LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v3.1)");
             return searchNode;
         }
     }
@@ -64,7 +64,7 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Reasoning Spine active: [Kernel v3.0-NEURAL-SCAN]");
+    LOGI(TAG, "Reasoning Spine active: [Kernel v3.1-HYBRID-SCAN]");
     
     Node* current = m_graph.getNode(1); 
     if (!current) {

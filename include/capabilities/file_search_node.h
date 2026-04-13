@@ -3,12 +3,13 @@
 #include <string>
 #include <vector>
 #include "long_term_memory.h"
+#include "neural_embedding_node.h"
 
 namespace Ronin::Kernel::Capability {
 
 class FileSearchNode {
 public:
-    FileSearchNode(Memory::LongTermMemory& ltm);
+    FileSearchNode(Memory::LongTermMemory& ltm, NeuralEmbeddingNode* neural = nullptr);
 
     /**
      * Executes the actual FTS5 search query.
@@ -18,6 +19,7 @@ public:
 
 private:
     Memory::LongTermMemory& m_ltm;
+    NeuralEmbeddingNode* m_neural;
 };
 
 } // namespace Ronin::Kernel::Capability

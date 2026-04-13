@@ -14,15 +14,27 @@ namespace Ronin::Kernel::Capability {
 struct NeuralEmbeddingNode::Impl {
     // In a real implementation, this would hold Ort::Env and Ort::Session
     std::string model_path;
-    Impl(const std::string& path) : model_path(path) {}
+    bool loaded = false;
+    Impl(const std::string& path) : model_path(path) {
+        // Mock successful load for prototype
+        loaded = true; 
+    }
 };
 
 NeuralEmbeddingNode::NeuralEmbeddingNode(const std::string& model_path) {
     m_impl = std::make_unique<Impl>(model_path);
-    LOGI(TAG, "Neural Embedding Node initialized with model: %s", model_path.c_str());
+    if (m_impl->loaded) {
+        LOGI(TAG, "Neural Embedding Node initialized with model: %s", model_path.c_str());
+    } else {
+        LOGE(TAG, "> FATAL: ONNX Runtime failed to load model weights! (%s)", model_path.c_str());
+    }
 }
 
 NeuralEmbeddingNode::~NeuralEmbeddingNode() = default;
+
+bool NeuralEmbeddingNode::isLoaded() const {
+    return m_impl && m_impl->loaded;
+}
 
 std::vector<float> NeuralEmbeddingNode::execute(const std::string& input) {
     LOGI(TAG, "Generating neural embedding for input: %s", input.c_str());
