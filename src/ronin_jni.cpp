@@ -18,6 +18,7 @@
 
 #define TAG "RoninNativeEngine"
 
+using namespace Ronin::Kernel;
 using namespace Ronin::Kernel::Intent;
 using namespace Ronin::Kernel::Memory;
 using namespace Ronin::Kernel::Checkpoint;
