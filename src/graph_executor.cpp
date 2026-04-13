@@ -50,7 +50,7 @@ GraphExecutor::~GraphExecutor() {
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
-    // --- HARDWARE BYPASS v3.7-ULTRA-CORE ---
+    // --- HARDWARE BYPASS v3.7-INTENT-FIX ---
     if (clean.find("flashlight") != std::string::npos || clean.find("torch") != std::string::npos ||
         clean.find("on") != std::string::npos || clean.find("off") != std::string::npos) {
         LOGI(TAG, "> Route: Neural Bypass (Intent: SystemControl) [v3.7]");
@@ -71,13 +71,15 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
             return searchNode;
         }
     }
+
+    LOGI(TAG, "> Route: Chat Engine (Intent: General)");
     
     return runThompsonSampling(clean);
 }
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Reasoning Spine active: [Kernel v3.7-ULTRA-CORE]");
+    LOGI(TAG, "Reasoning Spine active: [Kernel v3.7-INTENT-FIX]");
     
     Node* current = m_graph.getNode(1); 
     if (!current) {
@@ -119,8 +121,13 @@ void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool s
     if (!source) return;
 
     float eta = calculateLearningRate(risk);
+    const float decay = 0.95f; // Forgetting factor to keep sampling fresh
 
     for (auto& edge : source->outgoing_edges) {
+        // Apply global decay
+        edge.success_count = static_cast<uint32_t>(edge.success_count * decay);
+        edge.failure_count = static_cast<uint32_t>(edge.failure_count * decay);
+
         if (edge.target_node_id == target_id) {
             if (success) {
                 edge.success_count += static_cast<uint32_t>(1.0f * eta);
@@ -129,7 +136,6 @@ void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool s
                 edge.failure_count += static_cast<uint32_t>(1.0f * eta);
                 edge.base_weight -= (0.05f * eta);
             }
-            break;
         }
     }
 

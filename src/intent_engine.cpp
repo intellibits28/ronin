@@ -125,14 +125,22 @@ float compute_cosine_similarity_neon(const float* a, const float* b, size_t leng
 
 float IntentEngine::process(const std::string& input) {
     // Intent IDs: 
-    // 1: Reasoning/General
+    // 1: Reasoning/General (ChatNode)
     // 2: FileSearch
     // 4: SystemControl (Flashlight)
     // 5: Location (GPS)
     
-    if (input.find("flashlight") != std::string::npos || input.find("torch") != std::string::npos ||
-        input.find("on") != std::string::npos || input.find("off") != std::string::npos) {
-        return 4.0f; // Return ID as float for now based on previous tick logic
+    std::string s = input;
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+
+    // Strict Greeting Mapping (Intent Fallback to ChatNode)
+    if (s == "hello" || s == "hi" || s == "hey" || s == "greetings") {
+        return 1.0f;
+    }
+    
+    if (s.find("flashlight") != std::string::npos || s.find("torch") != std::string::npos ||
+        s.find("on") != std::string::npos || s.find("off") != std::string::npos) {
+        return 4.0f;
     }
     
     if (input.find("where") != std::string::npos || input.find("location") != std::string::npos ||

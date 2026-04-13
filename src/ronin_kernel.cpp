@@ -77,8 +77,9 @@ void RoninKernel::runAutonomousLoop(const Input &input) {
            result.statusCode);
     }
 
-    // Stop if loop logic indicates completion (mocked for prototype)
+    // State Clearing (v3.7-INTENT-FIX)
     state_.requiresAction = false; 
+    state_.currentIntent.id = 0;
   }
 
   // Bounded Autonomy Check
