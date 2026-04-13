@@ -6,13 +6,26 @@
 #include "memory_manager.h"
 #include "checkpoint_engine.h"
 #include <string>
-#include <memory>
+#include <vector>
+#include <functional>
 
 namespace Ronin::Kernel {
 
-struct KernelState {
-    float intent = 0.0f;
+struct KernelContext {
+    std::string input;
+    float intent_score = 0.0f;
     Reasoning::Node* active_node = nullptr;
+    bool requires_action = false;
+    int iterations = 0;
+};
+
+// Dispatch Registry Types
+using IntentHandler = void (*)(KernelContext&, Intent::IntentEngine&);
+using ExecHandler = void (*)(KernelContext&, Reasoning::GraphExecutor&);
+
+struct DispatchRegistry {
+    IntentHandler intent_processor;
+    ExecHandler exec_processor;
 };
 
 class RoninKernel {
@@ -26,7 +39,7 @@ public:
     );
 
     /**
-     * Core heartbeat logic. Processes input and updates kernel state.
+     * Autonomous Tick Loop (Bounded)
      */
     void tick(const std::string& input);
 
@@ -36,8 +49,16 @@ private:
     Reasoning::GraphExecutor& m_executor;
     Memory::MemoryManager& m_memory;
     Checkpoint::CheckpointEngine& m_checkpoint;
+
+    // Static Dispatch Registry
+    static const DispatchRegistry s_registry;
+
+    // Internal Handlers
+    static void processIntent(KernelContext& ctx, Intent::IntentEngine& engine);
+    static void executePlan(KernelContext& ctx, Reasoning::GraphExecutor& executor);
     
-    KernelState m_state;
+    // Security Gate
+    bool can_execute(uint32_t node_id);
 };
 
 } // namespace Ronin::Kernel

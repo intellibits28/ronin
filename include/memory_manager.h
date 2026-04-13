@@ -4,9 +4,32 @@
 #include <string>
 #include <cstdint>
 #include <mutex>
+#include <array>
 #include "long_term_memory.h"
 
 namespace Ronin::Kernel::Memory {
+
+template<typename T, size_t Size>
+class CircularBuffer {
+public:
+    void push(const T& item) {
+        m_data[m_head] = item;
+        m_head = (m_head + 1) % Size;
+        if (m_count < Size) m_count++;
+    }
+
+    const T& operator[](size_t index) const {
+        return m_data[(m_head - m_count + index + Size) % Size];
+    }
+
+    size_t size() const { return m_count; }
+    void clear() { m_head = 0; m_count = 0; }
+
+private:
+    std::array<T, Size> m_data;
+    size_t m_head = 0;
+    size_t m_count = 0;
+};
 
 enum class AnchorType {
     PREFIX,     // Anchor 1: Pinned
@@ -66,6 +89,9 @@ private:
 
     // Anchor 3: High-precision Rolling Window
     std::vector<Token> m_anchor3_recent;
+
+    // NullClaw Minimalist Requirement: Fixed-size Circular Buffer for recent context
+    CircularBuffer<uint32_t, 128> m_recent_context_buffer;
 
     // Internal helpers
     CompressedToken quantize(const Token& token);

@@ -1,52 +1,92 @@
-#include "ronin_kernel.h"
+#include "ronin_kernel.hpp"
 #include "ronin_log.h"
+#include <cstdio>
 
 #define TAG "RoninKernel"
 
 namespace Ronin::Kernel {
 
-RoninKernel::RoninKernel(
-    Intent::IntentEngine& intent_engine,
-    Reasoning::CapabilityGraph& graph,
-    Reasoning::GraphExecutor& executor,
-    Memory::MemoryManager& memory,
-    Checkpoint::CheckpointEngine& checkpoint
-) : m_intent_engine(intent_engine), 
-    m_graph(graph), 
-    m_executor(executor), 
-    m_memory(memory), 
-    m_checkpoint(checkpoint) {}
+RoninKernel::RoninKernel(const HandlerRegistry &registry,
+                         CapabilityManager &capManager)
+    : registry_(registry), capManager_(capManager) {
+  state_ = {};
+  contextStore_.clear();
+}
 
-void RoninKernel::tick(const std::string& input) {
-    // 1. Determine Intent
-    m_state.intent = m_intent_engine.process(input);
+void RoninKernel::tick(const Input &input) {
+  // Reset state for new heartbeat
+  state_.iterations = 0;
+  state_.requiresAction = true;
 
-    // 2. Resolve Plan (Find capable node)
-    // Map 'resolve' to selecting the next node based on input/intent
-    auto plan = m_executor.selectNextNode(input);
-    
-    if (plan == nullptr) {
-        LOGW(TAG, "> Warning: No capable node found for intent.");
-        return;
+  // Initial Intent Processing via Static Dispatch
+  state_.currentIntent = registry_.intentProcessor(input);
+
+  LOGI(TAG, "Heartbeat start: Intent ID %u (Confidence: %.2f) [v3.7-ULTRA-CORE]",
+       state_.currentIntent.id, state_.currentIntent.confidence);
+
+  runAutonomousLoop(input);
+
+  LOGI(TAG, "Heartbeat complete after %d iterations.", state_.iterations);
+}
+
+void RoninKernel::runAutonomousLoop(const Input &input) {
+  while (state_.requiresAction && state_.iterations < maxIterations_) {
+    state_.iterations++;
+
+    // 1. Resolve Plan (Selection logic encapsulated in dispatch or state update)
+    // For the prototype, we map intent ID directly to node ID if action required
+    state_.activeNodeId = state_.currentIntent.id;
+
+    LOGI(TAG, "> Thinking: Step [%d] - Analyzing Node %u", state_.iterations,
+         state_.activeNodeId);
+
+    // 2. Security Gate: Pre-dispatch authorization
+    if (!capManager_.canExecute(state_.activeNodeId)) {
+      LOGW(TAG, "> SECURITY WARNING: Unauthorized access attempt to Node %u. "
+                "Skipping.",
+           state_.activeNodeId);
+      state_.requiresAction = false;
+      break;
     }
 
-    m_state.active_node = plan;
+    // 3. Execution via Static Dispatch Registry (Sandboxed-style wrapper)
+    Result result = {false, -1};
+    try {
+      if (registry_.execProcessor) {
+        result = registry_.execProcessor(state_.activeNodeId, state_);
+      }
+    } catch (...) {
+      LOGE(TAG, "> FATAL: Exception caught during Node %u execution! "
+                "Emergency halt.",
+           state_.activeNodeId);
+      state_.requiresAction = false;
+      break;
+    }
 
-    // 3. Execute Plan
-    // Map 'execute' to actual routing or logic inside executor
-    // For now, selectNextNode already did the selection. 
-    // In a full implementation, this might run node->execute()
-    LOGI(TAG, "Heartbeat: Executing node '%s'", plan->capability_name.c_str());
+    // 4. Context Update (Short-term memory)
+    contextStore_.push(state_.activeNodeId);
 
-    // 4. Update Memory
-    // Map 'update' to adding token or updating context
-    Memory::Token t = {plan->id, 1.0f, {m_state.intent}};
-    m_memory.addRecentToken(t);
+    // 5. Termination Condition / Planning Update
+    // In a full implementation, the result or a new intent check would determine
+    // if more actions are needed.
+    if (result.success) {
+      LOGI(TAG, "> Success: Node %u returned status %d", state_.activeNodeId,
+           result.statusCode);
+    } else {
+      LOGW(TAG, "> Failure: Node %u failed with status %d", state_.activeNodeId,
+           result.statusCode);
+    }
 
-    // 5. Save Checkpoint
-    m_checkpoint.persistToStorage();
-    
-    LOGI(TAG, "Heartbeat tick complete. [Kernel v3.6-CORE-TICK]");
+    // Stop if loop logic indicates completion (mocked for prototype)
+    state_.requiresAction = false; 
+  }
+
+  // Bounded Autonomy Check
+  if (state_.iterations >= maxIterations_ && state_.requiresAction) {
+    LOGW(TAG, "> Warning: Kernel reached max iterations (%d). Force stopping.",
+         maxIterations_);
+    state_.requiresAction = false;
+  }
 }
 
 } // namespace Ronin::Kernel
