@@ -49,7 +49,7 @@ GraphExecutor::~GraphExecutor() {
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Processed via NEON SIMD [Kernel v2.2-DEBUG]");
+    LOGI(TAG, "Processed via NEON SIMD [Kernel v2.2-DEBUG-FORCED]");
     
     Node* current = m_graph.getNode(1); 
     if (!current) {
@@ -93,12 +93,10 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
         LOGI(TAG, "> Debug Success: 'FileSearchNode' is present.");
     }
 
-    // The Bypass
-    if (clean.find("search") != std::string::npos || clean.find("find") != std::string::npos) {
-        if (searchNode) {
-            LOGI(TAG, "> CRITICAL BYPASS: Routing to FileSearchNode");
-            return searchNode;
-        }
+    // --- ALWAYS FORCE MODE (v2.2-DEBUG-FORCED) ---
+    LOGW(TAG, "> !!! ALWAYS FORCE MODE ACTIVE: Returning FileSearchNode regardless of input !!!");
+    if (searchNode) {
+        return searchNode;
     }
     
     return runThompsonSampling(clean);
