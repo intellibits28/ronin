@@ -4,7 +4,12 @@
 #include <thread>
 #include <chrono>
 #include <cctype>
+#include <cstring>
 #include "ronin_log.h"
+
+#ifdef ANDROID
+#include <android/log.h>
+#endif
 
 #define TAG "RoninGraphExecutor"
 
@@ -23,6 +28,7 @@ static std::string trim(const std::string& s) {
     while (start != s.end() && std::isspace(*start)) {
         start++;
     }
+    if (start == s.end()) return "";
     auto end = s.end();
     do {
         end--;
@@ -42,32 +48,42 @@ GraphExecutor::~GraphExecutor() {
 }
 
 /**
- * Foolproof Version: Explicit Keyword Bypass + Thompson Sampling
+ * Enhanced Debug Version: Hex Logging + C-String Fallback
  */
 Node* GraphExecutor::selectNextNode(const std::string& input) {
-    // 1. Exact Log: See what C++ receives
-    // We use our unified LOGI or the requested __android_log_print
+    // 1. Log Hex to detect invisible junk (JNI encoding issues)
+    std::string hex_debug;
+    for (unsigned char c : input) {
+        char buf[4];
+        snprintf(buf, sizeof(buf), "%02X ", c);
+        hex_debug += buf;
+    }
 #ifdef ANDROID
-    __android_log_print(ANDROID_LOG_DEBUG, "RONIN_KERN", "Raw Input: '%s'", input.c_str());
+    __android_log_print(ANDROID_LOG_DEBUG, "RONIN_KERN", "Hex: %s", hex_debug.c_str());
 #else
-    printf("[RONIN_KERN] DEBUG: Raw Input: '%s'\n", input.c_str());
+    printf("[RONIN_KERN] DEBUG Hex: %s\n", hex_debug.c_str());
 #endif
-    
-    // 2. Normalize: Trim and Lowercase
+
     std::string clean_input = trim(lowercase(input));
     
-    // 3. Absolute Override (The Nuclear Path)
+    // 2. Robust check using both std::string::find and C-style strstr
     if (clean_input.find("search") != std::string::npos || 
-        clean_input.find("find") != std::string::npos) {
+        clean_input.find("find") != std::string::npos ||
+        strstr(clean_input.c_str(), "search") != nullptr ||
+        strstr(clean_input.c_str(), "find") != nullptr) {
         
-        LOGI(TAG, "> CRITICAL BYPASS: Forced FileSearchNode");
-        return m_graph.getNodeByID("FileSearchNode");
+        Node* searchNode = m_graph.getNodeByID("FileSearchNode");
+        if (searchNode) {
+            LOGI(TAG, "> CRITICAL BYPASS: Forced FileSearchNode");
+            return searchNode;
+        } else {
+            LOGE(TAG, "> BYPASS ERROR: FileSearchNode NOT FOUND in Graph!");
+        }
     }
 
-    // 4. Only if no keywords, proceed to Thompson Sampling
+    // 3. Thompson Sampling Fallback
     std::lock_guard<std::mutex> lock(m_mutex);
     
-    // Default to Reasoning_Engine (ID 1) as entry point
     Node* current = m_graph.getNode(1); 
     if (!current) {
         LOGE(TAG, "Thompson Sampling: Root node (ID 1) not found.");
@@ -81,8 +97,6 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
 
     for (auto& edge : current->outgoing_edges) {
         float sample = m_sampler.sampleBeta(edge.success_count, edge.failure_count);
-        
-        // Use a static divergence score for now
         float adjusted_score = (sample * edge.base_weight) * 1.5f;
 
         if (adjusted_score > max_sample) {
