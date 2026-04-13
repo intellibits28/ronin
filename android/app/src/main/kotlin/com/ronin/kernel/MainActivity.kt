@@ -100,7 +100,7 @@ fun RoninChatUI(engine: NativeEngine) {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v2.5-LIVE-SEARCH")
+                        Text("Ronin Kernel v2.6-AUTO-SCAN")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -149,7 +149,13 @@ fun RoninChatUI(engine: NativeEngine) {
                         val currentInput = inputText
                         inputText = ""
                         scope.launch {
-                            reasoningLogs.add(0, "Kernel Decision: Reasoning v2.5 live bypass activated.")
+                            val isSearch = currentInput.contains("search", ignoreCase = true) || currentInput.contains("find", ignoreCase = true)
+                            if (isSearch) {
+                                reasoningLogs.add(0, "Kernel Decision: Reasoning v2.6 auto-scan bypass activated.")
+                            } else {
+                                reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
+                            }
+                            
                             val kernelOutput = engine.processInputAsync(currentInput)
                             messages.add("Ronin: $kernelOutput")
                         }

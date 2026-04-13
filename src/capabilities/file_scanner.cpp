@@ -35,6 +35,7 @@ void FileScanner::stopScan() {
 
 void FileScanner::scanWorker(const std::string& root_path) {
     LOGI(TAG, "Background scan started: %s", root_path.c_str());
+    int indexed_count = 0;
 
     try {
         if (!fs::exists(root_path)) {
@@ -67,7 +68,9 @@ void FileScanner::scanWorker(const std::string& root_path) {
                 uint64_t modified = static_cast<uint64_t>(sctp.time_since_epoch().count());
 
                 // Index into L3 Deep-store
-                m_ltm.indexFile(filename, abs_path, extension, modified);
+                if (m_ltm.indexFile(filename, abs_path, extension, modified)) {
+                    indexed_count++;
+                }
             }
 
             // Yield CPU to maintain low-priority background operation
@@ -77,7 +80,7 @@ void FileScanner::scanWorker(const std::string& root_path) {
         LOGE(TAG, "Exception during file scan: %s", e.what());
     }
 
-    LOGI(TAG, "Background scan completed.");
+    LOGI(TAG, "Background scan completed. Indexed %d new files into SQLite.", indexed_count);
     m_is_running.store(false);
 }
 

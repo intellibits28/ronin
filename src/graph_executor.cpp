@@ -50,11 +50,11 @@ GraphExecutor::~GraphExecutor() {
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
-    // --- BYPASS v2.5-LIVE-SEARCH ---
+    // --- BYPASS v2.6-AUTO-SCAN ---
     if (clean.find("search") != std::string::npos || clean.find("find") != std::string::npos) {
         Node* searchNode = m_graph.getNodeByID("FileSearchNode");
         if (searchNode) {
-            LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v2.5)");
+            LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v2.6)");
             return searchNode;
         }
     }
@@ -64,10 +64,31 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Reasoning Spine active: [Kernel v2.5-LIVE-SEARCH]");
+    LOGI(TAG, "Reasoning Spine active: [Kernel v2.6-AUTO-SCAN]");
     
-    /* Thompson Sampling disabled for v2.5-LIVE-SEARCH */
-    return nullptr; 
+    Node* current = m_graph.getNode(1); 
+    if (!current) {
+        LOGE(TAG, "Thompson Sampling: Root node (ID 1) not found.");
+        return nullptr;
+    }
+
+    if (current->outgoing_edges.empty()) return current;
+
+    uint32_t best_node_id = 0;
+    float max_sample = -1.0f;
+
+    for (auto& edge : current->outgoing_edges) {
+        float sample = m_sampler.sampleBeta(edge.success_count, edge.failure_count);
+        float adjusted_score = (sample * edge.base_weight) * 1.5f;
+
+        if (adjusted_score > max_sample) {
+            max_sample = adjusted_score;
+            best_node_id = edge.target_node_id;
+        }
+    }
+
+    Node* result = m_graph.getNode(best_node_id);
+    return result ? result : current;
 }
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {

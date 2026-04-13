@@ -29,6 +29,7 @@ static std::unique_ptr<CapabilityGraph> g_capability_graph;
 static std::unique_ptr<GraphStorage> g_graph_storage;
 static std::unique_ptr<GraphExecutor> g_graph_executor;
 static std::unique_ptr<FileSearchNode> g_file_search_node;
+static std::unique_ptr<FileScanner> g_file_scanner;
 
 extern "C" {
 
@@ -53,6 +54,8 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_capability_graph.reset();
     g_graph_executor.reset();
     g_file_search_node.reset();
+    if (g_file_scanner) g_file_scanner->stopScan();
+    g_file_scanner.reset();
 
     // 1. Initialize Memory Components
     g_long_term_memory = std::make_unique<LongTermMemory>(base_path + "/ronin_l3.db");
@@ -63,6 +66,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_checkpoint_engine = std::make_unique<CheckpointEngine>(base_path + "/checkpoint.bin");
     g_checkpoint_engine->initializeShadowBuffer(1024 * 1024);
     g_file_search_node = std::make_unique<FileSearchNode>(*g_long_term_memory);
+    g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory);
 
     // 3. Initialize Reasoning Spine (Graph)
     g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
@@ -83,6 +87,10 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     }
 
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
+
+    // 4. Trigger Background Scan
+    LOGI(TAG, "Triggering automatic background scan of /storage/emulated/0");
+    g_file_scanner->startScan("/storage/emulated/0");
 
     LOGI(TAG, "Kernel components synchronized and linked.");
 }
