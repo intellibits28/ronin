@@ -94,7 +94,7 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
     }
 
     // --- ALWAYS FORCE MODE (v2.2-DEBUG-FORCED) ---
-    LOGW(TAG, "> !!! ALWAYS FORCE MODE ACTIVE: Returning FileSearchNode regardless of input !!!");
+    LOGI(TAG, "> !!! ALWAYS FORCE MODE ACTIVE: Returning FileSearchNode regardless of input !!!");
     if (searchNode) {
         return searchNode;
     }
