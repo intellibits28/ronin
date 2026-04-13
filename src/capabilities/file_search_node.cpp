@@ -18,30 +18,48 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
         LOGE(TAG, "> FATAL: ONNX Runtime failed to load model weights!");
     }
 
-    // 2. Try Neural Vector Search first
+    // 2. Identify Type Hints (Extensions)
+    std::string type_hint = "";
+    if (query.find("pdf") != std::string::npos) type_hint = ".pdf";
+    else if (query.find("jpg") != std::string::npos || query.find("jpeg") != std::string::npos) type_hint = ".jpg";
+    else if (query.find("mp3") != std::string::npos) type_hint = ".mp3";
+    else if (query.find("zip") != std::string::npos) type_hint = ".zip";
+    else if (query.find("txt") != std::string::npos) type_hint = ".txt";
+
+    // 3. Try Neural Vector Search first
     if (m_neural && m_neural->isLoaded()) {
         LOGI(TAG, "> Search Mode: Neural");
         auto query_vec = m_neural->execute(query);
         auto all_embeddings = m_ltm.getAllFileEmbeddings();
         
-        std::vector<std::string> neural_results;
+        std::vector<std::pair<std::string, float>> neural_matches;
         for (auto& fe : all_embeddings) {
             float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 384);
+            
+            // Apply Type-Hint Boost
+            if (!type_hint.empty() && fe.name.find(type_hint) != std::string::npos) {
+                sim += 0.3f;
+            }
+
             if (sim > 0.7f) {
-                neural_results.push_back(fe.name);
+                neural_matches.push_back({fe.name, sim});
             }
         }
 
-        if (!neural_results.empty()) {
+        if (!neural_matches.empty()) {
+            std::sort(neural_matches.begin(), neural_matches.end(), [](const auto& a, const auto& b) {
+                return a.second > b.second;
+            });
+
             std::string output = "Found files (Neural): \n";
-            for (const auto& file : neural_results) {
-                output += "- " + file + "\n";
+            for (size_t i = 0; i < std::min(neural_matches.size(), size_t(5)); ++i) {
+                output += "- " + neural_matches[i].first + "\n";
             }
             return {output};
         }
     }
 
-    // 3. Fallback to Keyword (FTS5) Search
+    // 4. Fallback to Keyword (FTS5) Search
     LOGI(TAG, "> Search Mode: Keyword Fallback");
     auto results = m_ltm.searchFiles(query);
     
