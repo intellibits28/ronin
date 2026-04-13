@@ -13,6 +13,7 @@
 
 #include <iostream>
 #include <cmath>
+#include <algorithm>
 #include "ronin_log.h"
 
 #define TAG "RoninIntentEngine"
