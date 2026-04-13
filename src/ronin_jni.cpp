@@ -7,6 +7,7 @@
 #include "graph_storage.h"
 #include "graph_executor.h"
 #include "capabilities/file_search_node.h"
+#include "capabilities/file_scanner.h"
 #include "ronin_log.h"
 #include "checkpoint_schema_generated.h"
 #include <cstdint>
