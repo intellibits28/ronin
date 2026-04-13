@@ -42,7 +42,7 @@ void RoninKernel::runAutonomousLoop(const Input &input) {
 
     // 2. Security Gate: Pre-dispatch authorization
     if (!capManager_.canExecute(state_.activeNodeId)) {
-      LOGW(TAG, "> SECURITY WARNING: Unauthorized access attempt to Node %u. "
+      LOGI(TAG, "> SECURITY WARNING: Unauthorized access attempt to Node %u. "
                 "Skipping.",
            state_.activeNodeId);
       state_.requiresAction = false;
@@ -73,7 +73,7 @@ void RoninKernel::runAutonomousLoop(const Input &input) {
       LOGI(TAG, "> Success: Node %u returned status %d", state_.activeNodeId,
            result.statusCode);
     } else {
-      LOGW(TAG, "> Failure: Node %u failed with status %d", state_.activeNodeId,
+      LOGI(TAG, "> Failure: Node %u failed with status %d", state_.activeNodeId,
            result.statusCode);
     }
 
@@ -83,7 +83,7 @@ void RoninKernel::runAutonomousLoop(const Input &input) {
 
   // Bounded Autonomy Check
   if (state_.iterations >= maxIterations_ && state_.requiresAction) {
-    LOGW(TAG, "> Warning: Kernel reached max iterations (%d). Force stopping.",
+    LOGI(TAG, "> Warning: Kernel reached max iterations (%d). Force stopping.",
          maxIterations_);
     state_.requiresAction = false;
   }
