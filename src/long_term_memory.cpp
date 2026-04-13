@@ -209,14 +209,13 @@ std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
     
-    // Explicitly search by name as requested by user
-    // Adding wildcards for flexible partial match (e.g. *ronin*)
-    std::string flexible_query = "*" + query + "*";
-    const char* sql = "SELECT name FROM file_index WHERE name MATCH ? LIMIT 10;";
+    // Using LIKE for flexible partial match since FTS5 MATCH doesn't support leading wildcards easily
+    std::string like_query = "%" + query + "%";
+    const char* sql = "SELECT name FROM file_index WHERE name LIKE ? LIMIT 10;";
     sqlite3_stmt* stmt = nullptr;
     
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, flexible_query.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 1, like_query.c_str(), -1, SQLITE_STATIC);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* name = sqlite3_column_text(stmt, 0);
             if (name) {
