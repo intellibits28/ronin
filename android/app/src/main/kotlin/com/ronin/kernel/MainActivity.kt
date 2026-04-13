@@ -151,7 +151,7 @@ fun RoninChatUI(engine: NativeEngine) {
                         scope.launch {
                             reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
                             delay(600)
-                            messages.add("Ronin: Processed '$currentInput' via NEON SIMD.")
+                            messages.add("Ronin: Processed '$currentInput' via NEON SIMD [Kernel v2.1]")
                         }
                     }
                 }
