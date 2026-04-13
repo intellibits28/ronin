@@ -47,7 +47,7 @@ public:
   }
 };
 
-Ronin::Kernel::Intent defaultIntentProcessor(const Ronin::Kernel::Input &input) {
+Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input &input) {
   std::string s(input.data, input.length);
   float score = 0.5f;
   if (s.find("search") != std::string::npos) score = 1.0f;

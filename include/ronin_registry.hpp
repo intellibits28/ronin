@@ -9,7 +9,7 @@ namespace Ronin::Kernel {
  * Functional interface for intent processing.
  * Replaces the virtual-based IntentEngine.
  */
-using IntentHandler = Intent (*)(const Input &);
+using IntentHandler = CognitiveIntent (*)(const Input &);
 
 /**
  * Functional interface for node execution.

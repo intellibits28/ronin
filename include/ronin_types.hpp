@@ -18,7 +18,7 @@ struct Input {
 /**
  * Represent a discrete user intent derived from the reasoning spine.
  */
-struct Intent {
+struct CognitiveIntent {
   uint32_t id;
   float confidence;
 };
@@ -35,7 +35,7 @@ struct Result {
  * Encapsulates the internal state of the kernel for a single tick cycle.
  */
 struct CognitiveState {
-  Intent currentIntent;
+  CognitiveIntent currentIntent;
   uint32_t activeNodeId;
   bool requiresAction;
   int iterations;
