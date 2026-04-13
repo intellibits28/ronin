@@ -47,59 +47,23 @@ GraphExecutor::~GraphExecutor() {
     }
 }
 
+Node* GraphExecutor::selectNextNode(const std::string& input) {
+    // --- BYPASS v2.3-FORCE-SEARCH ---
+    Node* searchNode = m_graph.getNodeByID("FileSearchNode");
+    if (!searchNode) {
+        LOGE(TAG, "> FATAL ERROR: FileSearchNode is NOT in the graph object!");
+        return nullptr;
+    }
+    LOGI(TAG, "> BYPASS ACTIVE: Routing to FileSearchNode (v2.3)");
+    return searchNode;
+}
+
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
     LOGI(TAG, "Processed via NEON SIMD [Kernel v2.3-FORCE-SEARCH]");
     
-    /* Thompson Sampling disabled for v2.3-FORCE-SEARCH
-    Node* current = m_graph.getNode(1); 
-    if (!current) {
-        LOGE(TAG, "Thompson Sampling: Root node (ID 1) not found.");
-        return nullptr;
-    }
-
-    if (current->outgoing_edges.empty()) return current;
-
-    uint32_t best_node_id = 0;
-    float max_sample = -1.0f;
-
-    for (auto& edge : current->outgoing_edges) {
-        float sample = m_sampler.sampleBeta(edge.success_count, edge.failure_count);
-        float adjusted_score = (sample * edge.base_weight) * 1.5f;
-
-        if (adjusted_score > max_sample) {
-            max_sample = adjusted_score;
-            best_node_id = edge.target_node_id;
-        }
-    }
-
-    Node* result = m_graph.getNode(best_node_id);
-    return result ? result : current;
-    */
-    return nullptr; // Always return null to force bypass check if it were here
-}
-
-/**
- * Hard-coded Integer ID bypass with Raw C-String comparison
- */
-Node* GraphExecutor::selectNextNode(const std::string& input) {
-    std::string clean = trim(lowercase(input));
-    
-    // Diagnostic Log
-    LOGI(TAG, "> Debug: Cleaned Input is '%s'", clean.c_str());
-    
-    // Check if Node exists in Graph
-    Node* searchNode = m_graph.getNodeByID("FileSearchNode");
-    
-    // --- FORCE SEARCH MODE (v2.3-FORCE-SEARCH) ---
-    LOGI(TAG, "> !!! FORCE SEARCH MODE ACTIVE: Always returning FileSearchNode !!!");
-    
-    if (!searchNode) {
-        LOGE(TAG, "> FATAL: FileSearchNode is NULL in Graph!");
-        return nullptr;
-    }
-
-    return searchNode;
+    /* Thompson Sampling disabled for v2.3-FORCE-SEARCH */
+    return nullptr; 
 }
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {

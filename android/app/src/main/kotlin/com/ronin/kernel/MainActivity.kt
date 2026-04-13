@@ -149,7 +149,7 @@ fun RoninChatUI(engine: NativeEngine) {
                         val currentInput = inputText
                         inputText = ""
                         scope.launch {
-                            reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
+                            reasoningLogs.add(0, "Kernel Decision: Forced 'FileSearchNode' (v2.3 Bypass)")
                             delay(600)
                             messages.add("Ronin: Processed '$currentInput' via NEON SIMD [Kernel v2.3-FORCE-SEARCH]")
                         }

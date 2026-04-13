@@ -4,7 +4,6 @@
 namespace Ronin::Kernel::Reasoning {
 
 void CapabilityGraph::addNode(uint32_t id, const std::string& name) {
-    if (m_nodes.find(id) != m_nodes.end()) return;
     m_nodes[id] = {id, name, {}};
 }
 
