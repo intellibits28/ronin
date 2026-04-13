@@ -51,17 +51,16 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
   std::string s(input.data, input.length);
   std::transform(s.begin(), s.end(), s.begin(), ::tolower);
 
-  if (s.find("flashlight") != std::string::npos || s.find("torch") != std::string::npos ||
-      s.find("on") != std::string::npos || s.find("off") != std::string::npos) {
+  if (s == "flashlight on" || s == "flashlight off" || 
+      s == "torch on" || s == "torch off") {
       return {4, 1.0f};
   }
   
-  if (s.find("where") != std::string::npos || s.find("location") != std::string::npos ||
-      s.find("gps") != std::string::npos || s.find("map") != std::string::npos) {
+  if (s == "where am i" || s == "get location" || s == "gps status") {
       return {5, 1.0f};
   }
 
-  if (s.find("search") != std::string::npos || s.find("find") != std::string::npos) {
+  if (s.find("search ") == 0 || s.find("find ") == 0) {
       return {2, 1.0f};
   }
 
@@ -144,10 +143,10 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_capability_graph->addNode(3, "NeuralEmbeddingNode");
     g_capability_graph->addNode(4, "SystemControlNode");
     g_capability_graph->addNode(5, "LocationNode");
-    g_capability_graph->addEdge(1, 2, 1.0f);
-    g_capability_graph->addEdge(1, 3, 0.5f);
-    g_capability_graph->addEdge(1, 4, 1.0f);
-    g_capability_graph->addEdge(1, 5, 1.0f);
+    g_capability_graph->addEdge(1, 2, 0.5f); // File Search
+    g_capability_graph->addEdge(1, 3, 0.3f); // Neural
+    g_capability_graph->addEdge(1, 4, 0.1f); // Flashlight (Low weight)
+    g_capability_graph->addEdge(1, 5, 0.1f); // Location (Low weight)
 
     Node* testNode = g_capability_graph->getNodeByID("FileSearchNode");
     if (testNode) {

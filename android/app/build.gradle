@@ -11,7 +11,7 @@ android {
         minSdk 26
         targetSdk 34
         versionCode 13
-        versionName "3.7-INTENT-FIX"
+        versionName "3.7-INTENT-FIX-2"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         

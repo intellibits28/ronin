@@ -125,33 +125,32 @@ float compute_cosine_similarity_neon(const float* a, const float* b, size_t leng
 }
 
 float IntentEngine::process(const std::string& input) {
-    // Intent IDs: 
-    // 1: Reasoning/General (ChatNode)
-    // 2: FileSearch
-    // 4: SystemControl (Flashlight)
-    // 5: Location (GPS)
-    
     std::string s = input;
     std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-
-    // Strict Greeting Mapping (Intent Fallback to ChatNode)
-    if (s == "hello" || s == "hi" || s == "hey" || s == "greetings") {
-        return 1.0f;
-    }
     
-    if (s.find("flashlight") != std::string::npos || s.find("torch") != std::string::npos ||
-        s.find("on") != std::string::npos || s.find("off") != std::string::npos) {
+    // 1. Strict Flashlight Patterns
+    if (s == "flashlight on" || s == "flashlight off" || 
+        s == "torch on" || s == "torch off") {
         return 4.0f;
     }
     
-    if (input.find("where") != std::string::npos || input.find("location") != std::string::npos ||
-        input.find("gps") != std::string::npos || input.find("map") != std::string::npos) {
+    // 2. Strict Location Patterns
+    if (s == "where am i" || s == "get location" || s == "gps status") {
         return 5.0f;
     }
 
-    if (input.find("search") != std::string::npos || input.find("find") != std::string::npos) {
+    // 3. Strict Search Patterns
+    if (s.find("search ") == 0 || s.find("find ") == 0) {
         return 2.0f;
     }
+
+    // 4. Security Log for partial matches that fail strict check
+    if (s.find("flashlight") != std::string::npos || s.find("torch") != std::string::npos ||
+        s.find("gps") != std::string::npos || s.find("location") != std::string::npos) {
+        LOGI("RoninIntent", "> Security: Bypass rejected. Routing to ChatNode.");
+    }
+
+    // Default Fallback: ChatNode (ID 1)
     return 1.0f;
 }
 

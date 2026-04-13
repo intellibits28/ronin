@@ -120,7 +120,7 @@ fun RoninChatUI(engine: NativeEngine) {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.7-INTENT-FIX")
+                        Text("Ronin Kernel v3.7-INTENT-FIX-2")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -172,7 +172,7 @@ fun RoninChatUI(engine: NativeEngine) {
                         scope.launch {
                             val isSearch = currentInput.contains("search", ignoreCase = true) || currentInput.contains("find", ignoreCase = true)
                             if (isSearch) {
-                                reasoningLogs.add(0, "Kernel Decision: Reasoning v3.7 intent-fix bypass activated.")
+                                reasoningLogs.add(0, "Kernel Decision: Reasoning v3.7 intent-fix-2 bypass activated.")
                             } else {
                                 reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
                             }

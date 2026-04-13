@@ -27,6 +27,11 @@ void RoninKernel::tick(const Input &input) {
   runAutonomousLoop(input);
 
   LOGI(TAG, "Heartbeat complete after %d iterations.", state_.iterations);
+
+  // Strict State Reset (v3.7-INTENT-FIX-2)
+  state_.currentIntent.id = 0;
+  state_.currentIntent.confidence = 0.0f;
+  state_.requiresAction = false;
 }
 
 void RoninKernel::runAutonomousLoop(const Input &input) {

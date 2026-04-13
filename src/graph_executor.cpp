@@ -50,21 +50,29 @@ GraphExecutor::~GraphExecutor() {
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
-    // --- HARDWARE BYPASS v3.7-INTENT-FIX ---
-    if (clean.find("flashlight") != std::string::npos || clean.find("torch") != std::string::npos ||
-        clean.find("on") != std::string::npos || clean.find("off") != std::string::npos) {
-        LOGI(TAG, "> Route: Neural Bypass (Intent: SystemControl) [v3.7]");
+    // --- STRICT HARDWARE BYPASS v3.7-INTENT-FIX-2 ---
+    bool hasFlashlightKeyword = (clean.find("flashlight") != std::string::npos || clean.find("torch") != std::string::npos);
+    bool hasLocationKeyword = (clean.find("where") != std::string::npos || clean.find("location") != std::string::npos || clean.find("gps") != std::string::npos);
+
+    if (clean == "flashlight on" || clean == "flashlight off" || 
+        clean == "torch on" || clean == "torch off") {
+        LOGI(TAG, "> Route: Strict Bypass (Intent: SystemControl) [v3.7]");
         return m_graph.getNode(4);
     }
 
-    if (clean.find("where") != std::string::npos || clean.find("location") != std::string::npos ||
-        clean.find("gps") != std::string::npos || clean.find("map") != std::string::npos) {
-        LOGI(TAG, "> Route: Neural Bypass (Intent: Location) [v3.7]");
+    if (clean == "where am i" || clean == "get location" || clean == "gps status") {
+        LOGI(TAG, "> Route: Strict Bypass (Intent: Location) [v3.7]");
         return m_graph.getNode(5);
     }
 
+    // Security Verification: If keywords found but strict check failed
+    if (hasFlashlightKeyword || hasLocationKeyword) {
+        LOGI(TAG, "> Security: Bypass rejected. Routing to ChatNode.");
+        return m_graph.getNode(1);
+    }
+
     // --- SEARCH BYPASS ---
-    if (clean.find("search") != std::string::npos || clean.find("find") != std::string::npos) {
+    if (clean.find("search ") == 0 || clean.find("find ") == 0) {
         Node* searchNode = m_graph.getNodeByID("FileSearchNode");
         if (searchNode) {
             LOGI(TAG, "> Route: Neural Bypass (Intent: Search) [v3.7]");
@@ -79,7 +87,7 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Reasoning Spine active: [Kernel v3.7-INTENT-FIX]");
+    LOGI(TAG, "Reasoning Spine active: [Kernel v3.7-INTENT-FIX-2]");
     
     Node* current = m_graph.getNode(1); 
     if (!current) {
