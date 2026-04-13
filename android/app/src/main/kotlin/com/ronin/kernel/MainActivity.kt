@@ -100,7 +100,7 @@ fun RoninChatUI(engine: NativeEngine) {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v2.2-DEBUG-FORCED")
+                        Text("Ronin Kernel v2.3-FORCE-SEARCH")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -151,7 +151,7 @@ fun RoninChatUI(engine: NativeEngine) {
                         scope.launch {
                             reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
                             delay(600)
-                            messages.add("Ronin: Processed '$currentInput' via NEON SIMD [Kernel v2.2-DEBUG-FORCED]")
+                            messages.add("Ronin: Processed '$currentInput' via NEON SIMD [Kernel v2.3-FORCE-SEARCH]")
                         }
                     }
                 }

@@ -49,8 +49,9 @@ GraphExecutor::~GraphExecutor() {
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Processed via NEON SIMD [Kernel v2.2-DEBUG-FORCED]");
+    LOGI(TAG, "Processed via NEON SIMD [Kernel v2.3-FORCE-SEARCH]");
     
+    /* Thompson Sampling disabled for v2.3-FORCE-SEARCH
     Node* current = m_graph.getNode(1); 
     if (!current) {
         LOGE(TAG, "Thompson Sampling: Root node (ID 1) not found.");
@@ -74,6 +75,8 @@ Node* GraphExecutor::runThompsonSampling(const std::string& input) {
 
     Node* result = m_graph.getNode(best_node_id);
     return result ? result : current;
+    */
+    return nullptr; // Always return null to force bypass check if it were here
 }
 
 /**
@@ -87,19 +90,16 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
     
     // Check if Node exists in Graph
     Node* searchNode = m_graph.getNodeByID("FileSearchNode");
+    
+    // --- FORCE SEARCH MODE (v2.3-FORCE-SEARCH) ---
+    LOGI(TAG, "> !!! FORCE SEARCH MODE ACTIVE: Always returning FileSearchNode !!!");
+    
     if (!searchNode) {
-        LOGE(TAG, "> Debug Error: 'FileSearchNode' is MISSING from Graph!");
-    } else {
-        LOGI(TAG, "> Debug Success: 'FileSearchNode' is present.");
+        LOGE(TAG, "> FATAL: FileSearchNode is NULL in Graph!");
+        return nullptr;
     }
 
-    // --- ALWAYS FORCE MODE (v2.2-DEBUG-FORCED) ---
-    LOGI(TAG, "> !!! ALWAYS FORCE MODE ACTIVE: Returning FileSearchNode regardless of input !!!");
-    if (searchNode) {
-        return searchNode;
-    }
-    
-    return runThompsonSampling(clean);
+    return searchNode;
 }
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
