@@ -49,7 +49,7 @@ GraphExecutor::~GraphExecutor() {
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Processed via NEON SIMD [Kernel v2.1]");
+    LOGI(TAG, "Processed via NEON SIMD [Kernel v2.2-DEBUG]");
     
     Node* current = m_graph.getNode(1); 
     if (!current) {
