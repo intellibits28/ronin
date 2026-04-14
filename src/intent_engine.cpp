@@ -133,13 +133,15 @@ bool IntentEngine::isFuzzyMatch(const std::string& word, const std::string& targ
 
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
     auto tokens = tokenize(input);
-    if (tokens.empty()) return {1, 0.0f};
+    if (tokens.empty()) return {1, 0.0f, true};
 
     // Tier 1: Greetings Guardrail
     std::string first = tokens[0];
     if (first == "hi" || first == "hello" || first == "hey" || first == "mingalaba") {
-        return {1, 1.0f}; // ChatNode (ID 1)
+        return {1, 1.0f, true}; // ChatNode (ID 1)
     }
+
+    bool isOff = (input.find("off") != std::string::npos);
 
     // Tier 2: Dynamic Matcher (Subject + Action) - Order Independent
     for (const auto& cap : m_capabilities) {
@@ -190,7 +192,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
         if (subject_found && action_found) {
             LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u) [v3.9-SYSTEM-CONTROL-MASTER]", cap.name.c_str(), cap.id);
-            return {cap.id, cap.confidence_threshold};
+            return {cap.id, cap.confidence_threshold, !isOff};
         }
     }
 
@@ -199,12 +201,13 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         auto intent = m_inference_engine->predict(input);
         if (intent.confidence >= 0.6f) {
             LOGI(TAG, "> Tier 3 Match: ONNX Model predicted ID %u (Conf: %.2f)", intent.id, intent.confidence);
+            intent.intent_param = !isOff;
             return intent;
         }
     }
 
     // Tier 4: Default Fallback
-    return {1, 0.5f};
+    return {1, 0.5f, true};
 }
 
 /**
