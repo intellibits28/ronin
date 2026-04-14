@@ -166,6 +166,11 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
+    
+    // Attach ONNX Inference Engine for Tier 3 intent detection
+    auto inference_engine = std::make_unique<Ronin::Kernel::Model::InferenceEngine>(base_path + "/assets/models/model.onnx");
+    g_intent_engine->setInferenceEngine(std::move(inference_engine));
+
     g_ronin_kernel = std::make_unique<RoninKernel>(s_handler_registry, s_cap_manager);
 
     // 4. Trigger Background Scan

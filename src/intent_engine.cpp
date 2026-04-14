@@ -194,7 +194,16 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         }
     }
 
-    // Tier 3: Default Fallback
+    // Tier 3: ONNX Inference Fallback
+    if (m_inference_engine && m_inference_engine->isLoaded()) {
+        auto intent = m_inference_engine->predict(input);
+        if (intent.confidence >= 0.6f) {
+            LOGI(TAG, "> Tier 3 Match: ONNX Model predicted ID %u (Conf: %.2f)", intent.id, intent.confidence);
+            return intent;
+        }
+    }
+
+    // Tier 4: Default Fallback
     return {1, 0.5f};
 }
 

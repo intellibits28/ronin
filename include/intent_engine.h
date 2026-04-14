@@ -4,7 +4,9 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+#include <memory>
 #include "ronin_types.hpp"
+#include "models/inference_engine.h"
 
 namespace Ronin::Kernel::Intent {
 
@@ -39,12 +41,20 @@ public:
     void loadCapabilities(const std::string& json_path);
 
     /**
+     * Attaches an ONNX inference engine for Tier 3 detection.
+     */
+    void setInferenceEngine(std::unique_ptr<Model::InferenceEngine> engine) {
+        m_inference_engine = std::move(engine);
+    }
+
+    /**
      * Processes raw input to determine the high-level intent score.
      */
     CognitiveIntent process(const std::string& input, const std::string& context_subject = "");
 
 private:
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
+    std::unique_ptr<Model::InferenceEngine> m_inference_engine;
 
     // Minimalist tokenizer
     std::vector<std::string> tokenize(const std::string& input);
