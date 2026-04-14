@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setupHardwareCallbacks() {
-        nativeEngine.executeHardwareAction = { nodeId ->
+        nativeEngine.executeHardwareAction = { nodeId, state ->
             var success = false
             var toolName = ""
             when (nodeId) {
@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
                     val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
                     try {
                         val cameraId = cameraManager.cameraIdList[0]
-                        cameraManager.setTorchMode(cameraId, true) // Always turn ON for demo
+                        cameraManager.setTorchMode(cameraId, state) 
                         success = true
                     } catch (e: Exception) { Log.e("RoninUI", "Flashlight Error", e) }
                 }
@@ -106,19 +106,21 @@ class MainActivity : ComponentActivity() {
                     toolName = "WiFi"
                     val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
                     @Suppress("DEPRECATION")
-                    success = wifiManager.setWifiEnabled(true)
+                    success = wifiManager.setWifiEnabled(state)
                 }
                 7 -> {
                     toolName = "Bluetooth"
                     val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
                     if (bluetoothAdapter != null) {
                         @Suppress("MissingPermission")
-                        success = if (bluetoothAdapter.isEnabled) true else bluetoothAdapter.enable()
+                        success = if (bluetoothAdapter.isEnabled == state) true 
+                                  else if (state) bluetoothAdapter.enable() 
+                                  else bluetoothAdapter.disable()
                     }
                 }
             }
             if (success) {
-                Log.i("RoninUI", "System: $toolName engaged.")
+                Log.i("RoninUI", "System: $toolName set to ${if (state) "ON" else "OFF"}")
             }
             success
         }
