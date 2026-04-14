@@ -1,6 +1,8 @@
 #include "models/inference_engine.h"
 #include "ronin_log.h"
+#include <string>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 #define TAG "RoninInferenceEngine"

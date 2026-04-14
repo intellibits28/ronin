@@ -1,5 +1,6 @@
 package com.ronin.kernel
 
+import android.os.Bundle
 import android.content.Context
 import android.app.ActivityManager
 import android.os.BatteryManager
@@ -9,6 +10,7 @@ import android.bluetooth.BluetoothAdapter
 import android.location.LocationManager
 import android.hardware.camera2.CameraManager
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.ui.text.font.FontFamily
 import android.os.Environment
 import android.os.Build
 import android.content.Intent
@@ -76,8 +78,8 @@ class MainActivity : ComponentActivity() {
         checkAndRequestStoragePermission()
 
         setContent {
-            val viewModel: ChatViewModel = viewModel()
-            RoninChatUI(nativeEngine, viewModel)
+            val chatViewModel: ChatViewModel = viewModel()
+            RoninChatUI(nativeEngine, chatViewModel)
         }
     }
 
@@ -141,10 +143,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun RoninChatUI(engine: NativeEngine, viewModel: ChatViewModel = viewModel()) {
+fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()) {
     var inputText by remember { mutableStateOf("") }
-    val messages = viewModel.messages
-    val reasoningLogs = viewModel.reasoningLogs
+    val messages = chatViewModel.messages
+    val reasoningLogs = chatViewModel.reasoningLogs
     val context = LocalContext.current
     val scaffoldState = rememberScaffoldState()
     
@@ -167,11 +169,11 @@ fun RoninChatUI(engine: NativeEngine, viewModel: ChatViewModel = viewModel()) {
     }
 
     // Kernel State Metrics (Synchronized from ViewModel)
-    val lmkPressure = viewModel.lmkPressure
-    val stability = viewModel.stability
-    val l1Count = viewModel.l1Count
-    val l2Count = viewModel.l2Count
-    val l3Count = viewModel.l3Count
+    val lmkPressure = chatViewModel.lmkPressure
+    val stability = chatViewModel.stability
+    val l1Count = chatViewModel.l1Count
+    val l2Count = chatViewModel.l2Count
+    val l3Count = chatViewModel.l3Count
     
     val scope = rememberCoroutineScope()
 
@@ -202,9 +204,9 @@ fun RoninChatUI(engine: NativeEngine, viewModel: ChatViewModel = viewModel()) {
             val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             val temp = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
             
-            viewModel.temperature = temp
-            viewModel.ramUsedGB = usedRAM
-            viewModel.ramTotalGB = totalRAM
+            chatViewModel.temperature = temp
+            chatViewModel.ramUsedGB = usedRAM
+            chatViewModel.ramTotalGB = totalRAM
             
             // Push to C++ Kernel
             val highPressure = engine.updateSystemHealth(temp, usedRAM, totalRAM)
@@ -212,8 +214,8 @@ fun RoninChatUI(engine: NativeEngine, viewModel: ChatViewModel = viewModel()) {
                 reasoningLogs.add(0, "> High Memory Pressure: Pruning KV Cache.")
             }
 
-            viewModel.lmkPressure = engine.getLMKPressure()
-            viewModel.stability = (100 - viewModel.lmkPressure) / 100.0f
+            chatViewModel.lmkPressure = engine.getLMKPressure()
+            chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f
             
             delay(2500)
         }
@@ -231,8 +233,8 @@ fun RoninChatUI(engine: NativeEngine, viewModel: ChatViewModel = viewModel()) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.showSysInfo = !viewModel.showSysInfo }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Toggle Info", tint = if (viewModel.showSysInfo) Color.Cyan else Color.Gray)
+                    IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Toggle Info", tint = if (chatViewModel.showSysInfo) Color.Cyan else Color.Gray)
                     }
                     StabilityMeter(stability)
                 },
@@ -280,9 +282,9 @@ fun RoninChatUI(engine: NativeEngine, viewModel: ChatViewModel = viewModel()) {
                         inputText = ""
                         
                         // Reset context counters for stable release v3.9
-                        viewModel.l1Count = 0
-                        viewModel.l2Count = 0
-                        viewModel.l3Count = 0
+                        chatViewModel.l1Count = 0
+                        chatViewModel.l2Count = 0
+                        chatViewModel.l3Count = 0
                         
                         scope.launch {
                             val cleanInput = currentInput.trim().lowercase()
@@ -327,8 +329,8 @@ fun RoninChatUI(engine: NativeEngine, viewModel: ChatViewModel = viewModel()) {
                 }
             )
             
-            if (viewModel.showSysInfo) {
-                SystemHealthOverlay(viewModel.temperature, viewModel.ramUsedGB, viewModel.ramTotalGB)
+            if (chatViewModel.showSysInfo) {
+                SystemHealthOverlay(chatViewModel.temperature, chatViewModel.ramUsedGB, chatViewModel.ramTotalGB)
             }
         }
     }
