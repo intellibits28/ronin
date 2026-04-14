@@ -59,7 +59,7 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
       std::string context = g_ronin_kernel ? g_ronin_kernel->getSuggestedSubject() : "";
       return g_intent_engine->process(s, context);
   }
-  return {1, 0.5f};
+  return {1, 0.5f, true};
 }
 
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
