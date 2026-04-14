@@ -74,6 +74,12 @@ public:
     // LMK Signal: Force aggressive compression of Anchor 2
     void onMemoryPressure();
 
+    // Context Cleanup: Clear all anchors
+    void clearContext();
+
+    // Deduplication filter for search results
+    static std::vector<std::string> filterDuplicateFilenames(const std::vector<std::string>& results);
+
 private:
     size_t m_recent_window_size;
     std::mutex m_mutex;

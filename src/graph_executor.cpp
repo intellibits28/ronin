@@ -50,32 +50,32 @@ GraphExecutor::~GraphExecutor() {
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
-    // --- STRICT HARDWARE BYPASS v3.7-INTENT-FIX-2 ---
-    bool hasFlashlightKeyword = (clean.find("flashlight") != std::string::npos || clean.find("torch") != std::string::npos);
-    bool hasLocationKeyword = (clean.find("where") != std::string::npos || clean.find("location") != std::string::npos || clean.find("gps") != std::string::npos);
+    // --- STRICT HARDWARE BYPASS v3.7-STABLE-FINAL ---
+    bool hasVerb = (clean.find("turn on") != std::string::npos || clean.find("turn off") != std::string::npos || 
+                    clean.find("switch on") != std::string::npos || clean.find("switch off") != std::string::npos);
+    bool hasObject = (clean.find("flashlight") != std::string::npos || clean.find("torch") != std::string::npos || 
+                      clean.find("bluetooth") != std::string::npos);
 
-    if (clean == "flashlight on" || clean == "flashlight off" || 
-        clean == "torch on" || clean == "torch off") {
-        LOGI(TAG, "> Route: Strict Bypass (Intent: SystemControl) [v3.7]");
+    if (hasVerb && hasObject) {
+        LOGI(TAG, "> Route: Strict Bypass (Intent: SystemControl) [v3.7-STABLE-FINAL]");
         return m_graph.getNode(4);
     }
 
     if (clean == "where am i" || clean == "get location" || clean == "gps status") {
-        LOGI(TAG, "> Route: Strict Bypass (Intent: Location) [v3.7]");
+        LOGI(TAG, "> Route: Strict Bypass (Intent: Location) [v3.7-STABLE-FINAL]");
         return m_graph.getNode(5);
     }
 
-    // Security Verification: If keywords found but strict check failed
-    if (hasFlashlightKeyword || hasLocationKeyword) {
-        LOGI(TAG, "> Security: Bypass rejected. Routing to ChatNode.");
-        return m_graph.getNode(1);
-    }
-
     // --- SEARCH BYPASS ---
-    if (clean.find("search ") == 0 || clean.find("find ") == 0) {
+    bool isSearchPrefix = (clean.find("search ") == 0 || clean.find("find ") == 0 || clean.find("locate ") == 0);
+    bool isFilename = (clean.find(".pdf") != std::string::npos || clean.find(".txt") != std::string::npos || 
+                       clean.find(".jpg") != std::string::npos || clean.find(".jpeg") != std::string::npos || 
+                       clean.find(".mp3") != std::string::npos || clean.find(".zip") != std::string::npos);
+
+    if (isSearchPrefix || isFilename) {
         Node* searchNode = m_graph.getNodeByID("FileSearchNode");
         if (searchNode) {
-            LOGI(TAG, "> Route: Neural Bypass (Intent: Search) [v3.7]");
+            LOGI(TAG, "> Route: Neural Bypass (Intent: Search) [v3.7-STABLE-FINAL]");
             return searchNode;
         }
     }
@@ -87,8 +87,8 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Reasoning Spine active: [Kernel v3.7-INTENT-FIX-2]");
-    
+    LOGI(TAG, "Reasoning Spine active: [Kernel v3.7-STABLE-FINAL]");
+
     Node* current = m_graph.getNode(1); 
     if (!current) {
         LOGE(TAG, "Thompson Sampling: Root node (ID 1) not found.");
@@ -97,8 +97,9 @@ Node* GraphExecutor::runThompsonSampling(const std::string& input) {
 
     if (current->outgoing_edges.empty()) return current;
 
-    uint32_t best_node_id = 0;
-    float max_sample = -1.0f;
+    // ChatNode (current) is the default with weight 1.0
+    uint32_t best_node_id = current->id;
+    float max_sample = 1.0f;
 
     for (auto& edge : current->outgoing_edges) {
         float sample = m_sampler.sampleBeta(edge.success_count, edge.failure_count);
@@ -110,17 +111,10 @@ Node* GraphExecutor::runThompsonSampling(const std::string& input) {
         }
     }
 
-    // --- NEURAL FALLBACK ---
-    // If Thompson Sampling confidence is low (max_sample < threshold), fallback to Neural Search
-    if (max_sample < 0.4f) {
-        LOGI(TAG, "> Thompson Confidence Low (%.2f). Falling back to Neural Embedding Node (ID 3).", max_sample);
-        Node* neural_node = m_graph.getNode(3);
-        if (neural_node) return neural_node;
-    }
-
     Node* result = m_graph.getNode(best_node_id);
     return result ? result : current;
 }
+
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
     std::lock_guard<std::mutex> lock(m_mutex);

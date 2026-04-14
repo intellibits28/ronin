@@ -21,14 +21,14 @@ void RoninKernel::tick(const Input &input) {
   // Initial Intent Processing via Static Dispatch
   state_.currentIntent = registry_.intentProcessor(input);
 
-  LOGI(TAG, "Heartbeat start: CognitiveIntent ID %u (Confidence: %.2f) [v3.7-ULTRA-CORE]",
+  LOGI(TAG, "Heartbeat start: CognitiveIntent ID %u (Confidence: %.2f) [v3.7-STABLE-FINAL]",
        state_.currentIntent.id, state_.currentIntent.confidence);
 
   runAutonomousLoop(input);
 
   LOGI(TAG, "Heartbeat complete after %d iterations.", state_.iterations);
 
-  // Strict State Reset (v3.7-INTENT-FIX-2)
+  // Strict State Reset (v3.7-STABLE-FINAL)
   state_.currentIntent.id = 0;
   state_.currentIntent.confidence = 0.0f;
   state_.requiresAction = false;

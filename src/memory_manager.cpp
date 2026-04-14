@@ -6,6 +6,7 @@
 #include <utility>
 #include <cmath>
 #include <iostream>
+#include <unordered_set>
 #include "ronin_log.h"
 
 #define TAG "RoninMemoryManager"
@@ -108,6 +109,27 @@ void MemoryManager::onMemoryPressure() {
             m_anchor2_compressed.clear();
         }
     }
+}
+
+void MemoryManager::clearContext() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    LOGI(TAG, "Memory Cleanup: Clearing L1/L2/L3 context buffers.");
+    unpinMemory();
+    m_anchor1_prefix.clear();
+    m_anchor2_compressed.clear();
+    m_anchor3_recent.clear();
+}
+
+std::vector<std::string> MemoryManager::filterDuplicateFilenames(const std::vector<std::string>& results) {
+    std::vector<std::string> unique_results;
+    std::unordered_set<std::string> seen;
+    for (const auto& res : results) {
+        if (seen.find(res) == seen.end()) {
+            seen.insert(res);
+            unique_results.push_back(res);
+        }
+    }
+    return unique_results;
 }
 
 CompressedToken MemoryManager::quantize(const Token& token) {

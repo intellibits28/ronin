@@ -1,7 +1,9 @@
 #include "capabilities/file_search_node.h"
 #include "ronin_log.h"
 #include "intent_engine.h"
+#include "memory_manager.h"
 #include <algorithm>
+#include <unordered_set>
 
 #define TAG "RoninFileSearchNode"
 
@@ -51,9 +53,14 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
                 return a.second > b.second;
             });
 
+            // Extract names and deduplicate
+            std::vector<std::string> names;
+            for (const auto& nm : neural_matches) names.push_back(nm.first);
+            auto unique_names = Memory::MemoryManager::filterDuplicateFilenames(names);
+
             std::string output = "Found files (Neural): \n";
-            for (size_t i = 0; i < std::min(neural_matches.size(), size_t(5)); ++i) {
-                output += "- " + neural_matches[i].first + "\n";
+            for (size_t i = 0; i < std::min(unique_names.size(), size_t(5)); ++i) {
+                output += "- " + unique_names[i] + "\n";
             }
             return {output};
         }
@@ -62,13 +69,14 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
     // 4. Fallback to Keyword (FTS5) Search
     LOGI(TAG, "> Search Mode: Keyword Fallback");
     auto results = m_ltm.searchFiles(query);
+    auto unique_results = Memory::MemoryManager::filterDuplicateFilenames(results);
     
     std::vector<std::string> formatted_results;
-    if (results.empty()) {
+    if (unique_results.empty()) {
         formatted_results.push_back("No matching files found in local storage.");
     } else {
         std::string output = "Found files (Keyword): \n";
-        for (const auto& file : results) {
+        for (const auto& file : unique_results) {
             output += "- " + file + "\n";
         }
         formatted_results.push_back(output);

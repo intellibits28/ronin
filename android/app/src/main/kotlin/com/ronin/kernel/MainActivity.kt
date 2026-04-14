@@ -120,7 +120,7 @@ fun RoninChatUI(engine: NativeEngine) {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.7-INTENT-FIX-2")
+                        Text("Ronin Kernel v3.7-STABLE-FINAL")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -169,12 +169,28 @@ fun RoninChatUI(engine: NativeEngine) {
                         messages.add("User: $inputText")
                         val currentInput = inputText
                         inputText = ""
+                        
+                        // Reset context counters for stable release v3.7
+                        l1Count = 0
+                        l2Count = 0
+                        l3Count = 0
+                        
                         scope.launch {
-                            val isSearch = currentInput.contains("search", ignoreCase = true) || currentInput.contains("find", ignoreCase = true)
-                            if (isSearch) {
-                                reasoningLogs.add(0, "Kernel Decision: Reasoning v3.7 intent-fix-2 bypass activated.")
+                            val cleanInput = currentInput.trim().lowercase()
+                            val greetings = listOf("hi", "hello", "hey", "mingalaba")
+                            
+                            if (greetings.any { cleanInput == it }) {
+                                reasoningLogs.add(0, "> Dispatching to Chat: Greeting detected.")
                             } else {
-                                reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
+                                val isSearch = currentInput.contains("search", ignoreCase = true) || 
+                                               currentInput.contains("find", ignoreCase = true) ||
+                                               currentInput.contains("locate", ignoreCase = true)
+                                               
+                                if (isSearch) {
+                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.7-STABLE-FINAL bypass activated.")
+                                } else {
+                                    reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
+                                }
                             }
                             
                             val kernelOutput = engine.processInputAsync(currentInput)
