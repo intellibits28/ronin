@@ -78,10 +78,12 @@ Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel:
       }
 
       jclass cls = env->GetObjectClass(g_engine_instance);
-      jmethodID methodCallback = env->GetMethodID(cls, "triggerHardwareAction", "(I)Z");
+      jmethodID methodCallback = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
       
       if (methodCallback) {
-          jboolean success = env->CallBooleanMethod(g_engine_instance, methodCallback, static_cast<jint>(nodeId));
+          jboolean success = env->CallBooleanMethod(g_engine_instance, methodCallback, 
+              static_cast<jint>(nodeId),
+              static_cast<jboolean>(state.currentIntent.intent_param));
           return {success == JNI_TRUE, 200};
       }
   }
