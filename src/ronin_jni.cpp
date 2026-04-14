@@ -277,13 +277,13 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
                 response = results[0];
             }
         } else if (next_node->id == 4) {
-            response = "System: Switching on Flashlight... [v3.9-SYSTEM-CONTROL-MASTER]";
+            response = std::string("System: Flashlight ") + (state.currentIntent.intent_param ? "ON" : "OFF") + "... [v3.9-SYSTEM-CONTROL-MASTER]";
         } else if (next_node->id == 5) {
             response = "System: Locating device... GPS Link Established.";
         } else if (next_node->id == 6) {
-            response = "System: WiFi Module engaged. Toggling connectivity...";
+            response = std::string("System: WiFi ") + (state.currentIntent.intent_param ? "ENABLED" : "DISABLED") + ".";
         } else if (next_node->id == 7) {
-            response = "System: Bluetooth Module engaged. Toggling connectivity...";
+            response = std::string("System: Bluetooth ") + (state.currentIntent.intent_param ? "ENABLED" : "DISABLED") + ".";
         }
     }
 
