@@ -56,6 +56,15 @@ jobs:
           mkdir -p generated
           flatc --cpp -o generated/ checkpoint_schema.fbs
 
+      - name: Debug: List JNI Libraries and Model Assets
+        run: |
+          echo "--- Assets models ---"
+          ls -R android/app/src/main/assets/models || echo "Assets directory missing"
+          echo "--- jniLibs (if any) ---"
+          ls -R android/app/src/main/jniLibs || echo "jniLibs directory missing"
+          echo "--- Searching for shared libraries (.so) ---"
+          find . -name "*.so"
+
       - name: Build Android APK
         uses: gradle/gradle-build-action@v2
         with:

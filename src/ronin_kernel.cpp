@@ -33,14 +33,14 @@ void RoninKernel::tick(const Input &input) {
       state_.currentIntent.intent_param = true;
   }
 
-  LOGI(TAG, "Heartbeat start: CognitiveIntent ID %u (Confidence: %.2f) [v3.9-SYSTEM-CONTROL-MASTER]",
+  LOGI(TAG, "Heartbeat start: CognitiveIntent ID %u (Confidence: %.2f) [v3.9.1-STABLE]",
        state_.currentIntent.id, state_.currentIntent.confidence);
 
   runAutonomousLoop(input);
 
   LOGI(TAG, "Heartbeat complete after %d iterations.", state_.iterations);
 
-  // Strict State Reset (v3.9-SYSTEM-CONTROL-MASTER)
+  // Strict State Reset (v3.9.1-STABLE)
   state_.currentIntent.id = 0;
   state_.currentIntent.confidence = 0.0f;
   state_.currentIntent.intent_param = true;

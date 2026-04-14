@@ -43,7 +43,7 @@ static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
 static JavaVM* g_vm = nullptr;
 static jobject g_engine_instance = nullptr;
 
-// v3.9-SYSTEM-CONTROL-MASTER Bridge Implementations
+// v3.9.1-STABLE Bridge Implementations
 namespace {
 class JniCapabilityManager : public Ronin::Kernel::CapabilityManager {
 public:
@@ -63,7 +63,7 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
 }
 
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
-  LOGI("RoninJNI", "Executing Node %u via Static Dispatch [v3.9-SYSTEM-CONTROL-MASTER]", nodeId);
+  LOGI("RoninJNI", "Executing Node %u via Static Dispatch [v3.9.1-STABLE]", nodeId);
   
   // Hardware Execution via JNI Callback
   if (nodeId >= 4 && nodeId <= 7) {
@@ -279,7 +279,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
                 response = results[0];
             }
         } else if (next_node->id == 4) {
-            response = std::string("System: Flashlight ") + (intent.intent_param ? "ON" : "OFF") + "... [v3.9-SYSTEM-CONTROL-MASTER]";
+            response = std::string("System: Flashlight ") + (intent.intent_param ? "ON" : "OFF") + "... [v3.9.1-STABLE]";
         } else if (next_node->id == 5) {
             response = "System: Locating device... GPS Link Established.";
         } else if (next_node->id == 6) {

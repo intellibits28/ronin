@@ -54,7 +54,7 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
     buffer << file.rdbuf();
     std::string content = buffer.str();
     
-    LOGI(TAG, "Loading dynamic manifest: v3.9-SYSTEM-CONTROL-MASTER");
+    LOGI(TAG, "Loading dynamic manifest: v3.9.1-STABLE");
 
     // Minimalist string-based "JSON" parser for our specific format
     size_t pos = 0;
@@ -141,7 +141,11 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         return {1, 1.0f, true}; // ChatNode (ID 1)
     }
 
-    bool isOff = (input.find("off") != std::string::npos);
+    // Safety-First Negation Logic (v3.9.1)
+    // If any negation token is present, it must override all positive tokens.
+    bool isOff = (input.find("off") != std::string::npos || 
+                  input.find("stop") != std::string::npos || 
+                  input.find("disable") != std::string::npos);
 
     // Tier 2: Dynamic Matcher (Subject + Action) - Order Independent
     for (const auto& cap : m_capabilities) {
@@ -191,7 +195,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         }
 
         if (subject_found && action_found) {
-            LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u) [v3.9-SYSTEM-CONTROL-MASTER]", cap.name.c_str(), cap.id);
+            LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u) [v3.9.1-STABLE]", cap.name.c_str(), cap.id);
             return {cap.id, cap.confidence_threshold, !isOff};
         }
     }

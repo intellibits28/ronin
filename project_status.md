@@ -1,11 +1,12 @@
 # Ronin Kernel: Project Status Report
 
-## Current Milestone: v3.9-SYSTEM-CONTROL-MASTER
-The project is currently in the final stabilization phase of the v3.9 cycle. The kernel has transition from a simple reasoning prototype to a system-aware autonomous controller.
+## Current Milestone: v3.9.1-STABLE
+The project is currently in the final stabilization phase of the v3.9 cycle.
 
 ## Completed Tasks (Tested & Functional)
 - [x] **Hybrid Intent Resolution**: 4-Tier logic (Greetings -> Keywords -> ONNX Inference -> Reasoning Spine).
 - [x] **Hardware Integration**: Full control over Flashlight, WiFi, Bluetooth, and GPS status via JNI.
+- [x] **Flashlight 'OFF' Logic**: Implemented Safety-First negation logic; 'off', 'stop', 'disable' tokens now override positive intents.
 - [x] **Real-time System Monitoring**: Background polling of RAM usage and CPU/Battery temperature with high-pressure pruning logic.
 - [x] **UI Persistence**: Chat history and reasoning logs maintained via Android ViewModel and Native SQLite "Source of Truth".
 - [x] **Dynamic Manifest**: Capabilities loaded from `assets/capabilities.json`, allowing skill expansion without C++ recompilation.
@@ -13,8 +14,7 @@ The project is currently in the final stabilization phase of the v3.9 cycle. The
 - [x] **Deduplication**: Efficient file search result filtering using `std::unique`.
 
 ## Pending Bugs & Active Issues
-- [ ] **ONNX Linking Errors**: Recent CI runs have shown intermittent failures during the APK build related to ONNX Runtime mobile library linkage. (Fix under verification).
-- [ ] **Flashlight 'OFF' Logic**: State-tracking for intents just implemented; pending confirmation of correct hardware state-switching in all edge cases (e.g., simultaneous "on" and "off" tokens).
+- [ ] **ONNX Linking Errors**: GitHub Workflow updated with debug listing to verify `.so` file paths before the linker step. Active investigation.
 
 ## Divergence from Original Plan
 - **Intelligence Shift**: The system was originally scoped as a static rule engine. It has diverged into a neural-hybrid kernel with the inclusion of ONNX inference for intent classification.

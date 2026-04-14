@@ -229,7 +229,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.9-SYSTEM-CONTROL-MASTER")
+                        Text("Ronin Kernel v3.9.1-STABLE")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -300,7 +300,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                                                currentInput.contains("locate", ignoreCase = true)
                                                
                                 if (isSearch) {
-                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.9-SYSTEM-CONTROL-MASTER bypass activated.")
+                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.9.1-STABLE bypass activated.")
                                 } else {
                                     reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
                                 }
