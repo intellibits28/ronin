@@ -44,19 +44,19 @@ CognitiveIntent InferenceEngine::predict(const std::string& input) {
 
     // Simulated Model logic:
     if (s.find("light") != std::string::npos || s.find("torch") != std::string::npos) {
-        return {4, 0.85f}; // Flashlight
+        return {4, 0.85f, true}; // Flashlight
     }
     if (s.find("gps") != std::string::npos || s.find("map") != std::string::npos) {
-        return {5, 0.82f}; // Location
+        return {5, 0.82f, true}; // Location
     }
     if (s.find("wifi") != std::string::npos) {
-        return {6, 0.88f}; // WiFi
+        return {6, 0.88f, true}; // WiFi
     }
     if (s.find("blue") != std::string::npos) {
-        return {7, 0.84f}; // Bluetooth
+        return {7, 0.84f, true}; // Bluetooth
     }
 
-    return {1, 0.4f}; // Low confidence fallback to Chat
+    return {1, 0.4f, true}; // Low confidence fallback to Chat
 }
 
 } // namespace Ronin::Kernel::Model
