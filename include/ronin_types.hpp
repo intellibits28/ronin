@@ -34,6 +34,7 @@ struct Input {
 struct CognitiveIntent {
   uint32_t id;
   float confidence;
+  bool intent_param; // Added for stateful actions (e.g., ON/OFF)
 };
 
 /**
