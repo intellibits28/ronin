@@ -130,7 +130,7 @@ fun RoninChatUI(engine: NativeEngine) {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.8.1-STABLE-UI")
+                        Text("Ronin Kernel v3.8.3-CONTEXT-AWARE")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -197,7 +197,7 @@ fun RoninChatUI(engine: NativeEngine) {
                                                currentInput.contains("locate", ignoreCase = true)
                                                
                                 if (isSearch) {
-                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.8.1-STABLE-UI bypass activated.")
+                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.8.3-CONTEXT-AWARE bypass activated.")
                                 } else {
                                     reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
                                 }

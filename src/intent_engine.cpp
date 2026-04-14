@@ -131,7 +131,7 @@ bool IntentEngine::isFuzzyMatch(const std::string& word, const std::string& targ
     return diff <= 1;
 }
 
-CognitiveIntent IntentEngine::process(const std::string& input) {
+CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
     auto tokens = tokenize(input);
     if (tokens.empty()) return {1, 0.0f};
 
@@ -147,7 +147,12 @@ CognitiveIntent IntentEngine::process(const std::string& input) {
         bool action_found = false;
 
         // Check if any subject from the manifest exists in the input tokens
+        // OR if the context_subject matches one of this capability's subjects
         for (const auto& sub : cap.subjects) {
+            if (!context_subject.empty() && isFuzzyMatch(context_subject, sub)) {
+                subject_found = true;
+                break;
+            }
             for (const auto& token : tokens) {
                 if (isFuzzyMatch(token, sub)) { 
                     subject_found = true; 
@@ -158,7 +163,16 @@ CognitiveIntent IntentEngine::process(const std::string& input) {
         }
 
         // Check if any action from the manifest exists in the input tokens or as a substring
+        // OR if it's an affirmative generic trigger and context_subject is relevant to this cap
         for (const auto& act : cap.actions) {
+            // Affirmative Mapping ( ok, yes, sure, do it )
+            bool isAffirmative = (first == "ok" || first == "yes" || first == "sure" || input.find("do it") != std::string::npos);
+            
+            if (isAffirmative && subject_found) {
+                action_found = true;
+                break;
+            }
+
             // Check full string for multi-word actions
             if (input.find(act) != std::string::npos) {
                 action_found = true;
@@ -175,7 +189,7 @@ CognitiveIntent IntentEngine::process(const std::string& input) {
         }
 
         if (subject_found && action_found) {
-            LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u)", cap.name.c_str(), cap.id);
+            LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u) [v3.8.3-CONTEXT-AWARE]", cap.name.c_str(), cap.id);
             return {cap.id, cap.confidence_threshold};
         }
     }

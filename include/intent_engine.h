@@ -41,7 +41,7 @@ public:
     /**
      * Processes raw input to determine the high-level intent score.
      */
-    CognitiveIntent process(const std::string& input);
+    CognitiveIntent process(const std::string& input, const std::string& context_subject = "");
 
 private:
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
