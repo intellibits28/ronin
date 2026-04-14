@@ -15,6 +15,8 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <algorithm>
+#include <cctype>
 
 #define TAG "RoninNativeEngine"
 

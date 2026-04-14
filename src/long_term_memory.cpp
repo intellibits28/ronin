@@ -3,6 +3,7 @@
 #include <ctime>
 #include <vector>
 #include <iostream>
+#include <algorithm>
 #include "ronin_log.h"
 
 #define TAG "RoninLongTermMemory"
