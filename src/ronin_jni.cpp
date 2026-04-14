@@ -255,15 +255,17 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     if (g_long_term_memory) g_long_term_memory->storeMessage("user", input_str);
 
     // 1. Trigger Core Heartbeat (v3.9 logic)
+    Input minimalist_input = {};
+    size_t len = std::min(input_str.length(), sizeof(minimalist_input.data) - 1);
+    memcpy(minimalist_input.data, input_str.c_str(), len);
+    minimalist_input.length = len;
+
     if (g_ronin_kernel) {
-        Input minimalist_input = {};
-        size_t len = std::min(input_str.length(), sizeof(minimalist_input.data) - 1);
-        memcpy(minimalist_input.data, input_str.c_str(), len);
-        minimalist_input.length = len;
         g_ronin_kernel->tick(minimalist_input);
     }
 
     // 2. Routing Decision
+    CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
     Node* next_node = g_graph_executor->selectNextNode(input_str);
     std::string response = "Input processed via Reasoning Spine (No specific capability triggered).";
 
@@ -277,13 +279,13 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
                 response = results[0];
             }
         } else if (next_node->id == 4) {
-            response = std::string("System: Flashlight ") + (state.currentIntent.intent_param ? "ON" : "OFF") + "... [v3.9-SYSTEM-CONTROL-MASTER]";
+            response = std::string("System: Flashlight ") + (intent.intent_param ? "ON" : "OFF") + "... [v3.9-SYSTEM-CONTROL-MASTER]";
         } else if (next_node->id == 5) {
             response = "System: Locating device... GPS Link Established.";
         } else if (next_node->id == 6) {
-            response = std::string("System: WiFi ") + (state.currentIntent.intent_param ? "ENABLED" : "DISABLED") + ".";
+            response = std::string("System: WiFi ") + (intent.intent_param ? "ENABLED" : "DISABLED") + ".";
         } else if (next_node->id == 7) {
-            response = std::string("System: Bluetooth ") + (state.currentIntent.intent_param ? "ENABLED" : "DISABLED") + ".";
+            response = std::string("System: Bluetooth ") + (intent.intent_param ? "ENABLED" : "DISABLED") + ".";
         }
     }
 
