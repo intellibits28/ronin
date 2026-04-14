@@ -30,6 +30,7 @@ void RoninKernel::tick(const Input &input) {
       // Force ChatNode (ID 1) for the reasoning engine to handle it
       state_.currentIntent.id = 1;
       state_.currentIntent.confidence = 0.6f; 
+      state_.currentIntent.intent_param = true;
   }
 
   LOGI(TAG, "Heartbeat start: CognitiveIntent ID %u (Confidence: %.2f) [v3.9-SYSTEM-CONTROL-MASTER]",
@@ -42,6 +43,7 @@ void RoninKernel::tick(const Input &input) {
   // Strict State Reset (v3.9-SYSTEM-CONTROL-MASTER)
   state_.currentIntent.id = 0;
   state_.currentIntent.confidence = 0.0f;
+  state_.currentIntent.intent_param = true;
   state_.requiresAction = false;
 }
 
@@ -98,7 +100,8 @@ void RoninKernel::runAutonomousLoop(const Input &input) {
     // State Clearing (v3.9-SYSTEM-CONTROL-MASTER)
     state_.requiresAction = false; 
     state_.currentIntent.id = 0;
-    }
+    state_.currentIntent.intent_param = true;
+  }
 
 
   // Bounded Autonomy Check
