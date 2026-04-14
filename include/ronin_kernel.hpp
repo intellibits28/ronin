@@ -31,7 +31,7 @@ public:
    */
   void tick(const Input &input);
 
-  // Contextual Subject Management (v3.8.3)
+  // Contextual Subject Management (v3.9)
   void setSuggestedSubject(const std::string& subject) { m_last_suggested_subject = subject; }
   std::string getSuggestedSubject() const { return m_last_suggested_subject; }
   void clearSuggestedSubject() { m_last_suggested_subject.clear(); }

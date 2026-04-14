@@ -10,8 +10,8 @@ android {
         applicationId "com.ronin.kernel"
         minSdk 26
         targetSdk 34
-        versionCode 17
-        versionName "3.8.3-CONTEXT-AWARE"
+        versionCode 18
+        versionName "3.9-SYSTEM-CONTROL-MASTER"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         

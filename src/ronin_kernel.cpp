@@ -32,14 +32,14 @@ void RoninKernel::tick(const Input &input) {
       state_.currentIntent.confidence = 0.6f; 
   }
 
-  LOGI(TAG, "Heartbeat start: CognitiveIntent ID %u (Confidence: %.2f) [v3.8.3-CONTEXT-AWARE]",
+  LOGI(TAG, "Heartbeat start: CognitiveIntent ID %u (Confidence: %.2f) [v3.9-SYSTEM-CONTROL-MASTER]",
        state_.currentIntent.id, state_.currentIntent.confidence);
 
   runAutonomousLoop(input);
 
   LOGI(TAG, "Heartbeat complete after %d iterations.", state_.iterations);
 
-  // Strict State Reset (v3.8.1-STABLE-UI)
+  // Strict State Reset (v3.9-SYSTEM-CONTROL-MASTER)
   state_.currentIntent.id = 0;
   state_.currentIntent.confidence = 0.0f;
   state_.requiresAction = false;
@@ -88,14 +88,14 @@ void RoninKernel::runAutonomousLoop(const Input &input) {
     if (result.success) {
       LOGI(TAG, "> Success: Node %u returned status %d", state_.activeNodeId,
            result.statusCode);
-      // Clear context after successful action (v3.8.3)
+      // Clear context after successful action (v3.9)
       clearSuggestedSubject();
     } else {
       LOGI(TAG, "> Failure: Node %u failed with status %d", state_.activeNodeId,
            result.statusCode);
     }
 
-    // State Clearing (v3.8.3-CONTEXT-AWARE)
+    // State Clearing (v3.9-SYSTEM-CONTROL-MASTER)
     state_.requiresAction = false; 
     state_.currentIntent.id = 0;
     }

@@ -2,22 +2,29 @@
   {
     "id": 4,
     "name": "SystemControlNode",
-    "subjects": ["flashlight", "torch", "bluetooth"],
-    "actions": ["turn on", "turn off", "switch on", "switch off"],
+    "subjects": ["flashlight", "torch", "light"],
+    "actions": ["on", "off", "turn"],
     "confidence_threshold": 0.9
   },
   {
     "id": 5,
     "name": "LocationNode",
-    "subjects": ["gps", "location"],
-    "actions": ["get", "where", "status"],
+    "subjects": ["location", "gps", "where"],
+    "actions": ["show", "get", "find"],
+    "confidence_threshold": 0.9
+  },
+  {
+    "id": 6,
+    "name": "WiFiNode",
+    "subjects": ["wifi", "internet", "connection"],
+    "actions": ["on", "off", "enable"],
     "confidence_threshold": 0.9
   },
   {
     "id": 7,
-    "name": "CommunicationNode",
-    "subjects": ["sms", "mail", "message"],
-    "actions": ["send", "write", "draft"],
+    "name": "BluetoothNode",
+    "subjects": ["bluetooth", "bt"],
+    "actions": ["on", "off"],
     "confidence_threshold": 0.9
   }
 ]

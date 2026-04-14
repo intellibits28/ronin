@@ -54,7 +54,7 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
     buffer << file.rdbuf();
     std::string content = buffer.str();
     
-    LOGI(TAG, "Loading dynamic manifest: v3.8.1-STABLE-UI");
+    LOGI(TAG, "Loading dynamic manifest: v3.9-SYSTEM-CONTROL-MASTER");
 
     // Minimalist string-based "JSON" parser for our specific format
     size_t pos = 0;
@@ -189,7 +189,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         }
 
         if (subject_found && action_found) {
-            LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u) [v3.8.3-CONTEXT-AWARE]", cap.name.c_str(), cap.id);
+            LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u) [v3.9-SYSTEM-CONTROL-MASTER]", cap.name.c_str(), cap.id);
             return {cap.id, cap.confidence_threshold};
         }
     }

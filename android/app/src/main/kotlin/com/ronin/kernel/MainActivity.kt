@@ -1,6 +1,14 @@
 package com.ronin.kernel
 
-import android.os.Bundle
+import android.content.Context
+import android.app.ActivityManager
+import android.os.BatteryManager
+import android.content.IntentFilter
+import android.net.wifi.WifiManager
+import android.bluetooth.BluetoothAdapter
+import android.location.LocationManager
+import android.hardware.camera2.CameraManager
+import androidx.compose.material.icons.filled.Settings
 import android.os.Environment
 import android.os.Build
 import android.content.Intent
@@ -29,11 +37,32 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.snapshots.SnapshotStateList
+
+class ChatViewModel : ViewModel() {
+    val messages = mutableStateListOf<String>()
+    val reasoningLogs = mutableStateListOf<String>()
+    var showSysInfo by mutableStateOf(false)
+    var lmkPressure by mutableStateOf(0)
+    var stability by mutableStateOf(1.0f)
+    var l1Count by mutableStateOf(0)
+    var l2Count by mutableStateOf(0)
+    var l3Count by mutableStateOf(0)
+    
+    // Health metrics
+    var temperature by mutableStateOf(0f)
+    var ramUsedGB by mutableStateOf(0f)
+    var ramTotalGB by mutableStateOf(0f)
+}
 
 class MainActivity : ComponentActivity() {
     private val nativeEngine = NativeEngine()
@@ -41,11 +70,55 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         nativeEngine.initializeKernel(filesDir.absolutePath)
+        nativeEngine.setEngineInstance()
         
+        setupHardwareCallbacks()
         checkAndRequestStoragePermission()
 
         setContent {
-            RoninChatUI(nativeEngine)
+            val viewModel: ChatViewModel = viewModel()
+            RoninChatUI(nativeEngine, viewModel)
+        }
+    }
+
+    private fun setupHardwareCallbacks() {
+        nativeEngine.executeHardwareAction = { nodeId ->
+            var success = false
+            var toolName = ""
+            when (nodeId) {
+                4 -> {
+                    toolName = "Flashlight"
+                    val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                    try {
+                        val cameraId = cameraManager.cameraIdList[0]
+                        cameraManager.setTorchMode(cameraId, true) // Always turn ON for demo
+                        success = true
+                    } catch (e: Exception) { Log.e("RoninUI", "Flashlight Error", e) }
+                }
+                5 -> {
+                    toolName = "GPS"
+                    val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                    success = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                }
+                6 -> {
+                    toolName = "WiFi"
+                    val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                    @Suppress("DEPRECATION")
+                    success = wifiManager.setWifiEnabled(true)
+                }
+                7 -> {
+                    toolName = "Bluetooth"
+                    val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+                    if (bluetoothAdapter != null) {
+                        @Suppress("MissingPermission")
+                        success = if (bluetoothAdapter.isEnabled) true else bluetoothAdapter.enable()
+                    }
+                }
+            }
+            if (success) {
+                Log.i("RoninUI", "System: $toolName engaged.")
+            }
+            success
         }
     }
 
@@ -68,10 +141,12 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun RoninChatUI(engine: NativeEngine) {
+fun RoninChatUI(engine: NativeEngine, viewModel: ChatViewModel = viewModel()) {
     var inputText by remember { mutableStateOf("") }
-    val messages = remember { mutableStateListOf<String>() }
-    val reasoningLogs = remember { mutableStateListOf<String>() }
+    val messages = viewModel.messages
+    val reasoningLogs = viewModel.reasoningLogs
+    val context = LocalContext.current
+    val scaffoldState = rememberScaffoldState()
     
     // Scroll States for Auto-scroll
     val chatListState = rememberLazyListState()
@@ -91,51 +166,74 @@ fun RoninChatUI(engine: NativeEngine) {
         }
     }
 
-    // Kernel State Metrics
-    var lmkPressure by remember { mutableStateOf(0) }
-    var stability by remember { mutableStateOf(1.0f) } // 0.0 to 1.0
-    var l1Count by remember { mutableStateOf(12) } // Pinned
-    var l2Count by remember { mutableStateOf(45) } // Compressed
-    var l3Count by remember { mutableStateOf(128) } // Deep-store
+    // Kernel State Metrics (Synchronized from ViewModel)
+    val lmkPressure = viewModel.lmkPressure
+    val stability = viewModel.stability
+    val l1Count = viewModel.l1Count
+    val l2Count = viewModel.l2Count
+    val l3Count = viewModel.l3Count
     
     val scope = rememberCoroutineScope()
 
     // Sync History from Kernel (Source of Truth)
     LaunchedEffect(Unit) {
-        val history = engine.getChatHistoryAsync()
-        messages.clear()
-        history.forEach { (role, content) ->
-            if (role == "user") messages.add("User: $content")
-            else messages.add("Ronin: $content")
+        if (messages.isEmpty()) {
+            val history = engine.getChatHistoryAsync()
+            history.forEach { (role, content) ->
+                if (role == "user") messages.add("User: $content")
+                else messages.add("Ronin: $content")
+            }
         }
     }
 
-    // Kernel Polling Loop
+    // Kernel Polling Loop (System Monitoring v3.9)
     LaunchedEffect(Unit) {
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        
         while (true) {
-            lmkPressure = engine.getLMKPressure()
-            stability = (100 - lmkPressure) / 100.0f
-            // Randomly simulate cache movement for the demo
-            if (lmkPressure > 70) {
-                reasoningLogs.add(0, "KV-cache compressed 40% due to LMK pressure.")
-                l2Count += 5
-                l1Count -= 2
+            // Fetch RAM
+            activityManager.getMemoryInfo(memInfo)
+            val totalRAM = memInfo.totalMem / (1024f * 1024f * 1024f)
+            val availableRAM = memInfo.availMem / (1024f * 1024f * 1024f)
+            val usedRAM = totalRAM - availableRAM
+            
+            // Fetch Temp
+            val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val temp = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
+            
+            viewModel.temperature = temp
+            viewModel.ramUsedGB = usedRAM
+            viewModel.ramTotalGB = totalRAM
+            
+            // Push to C++ Kernel
+            val highPressure = engine.updateSystemHealth(temp, usedRAM, totalRAM)
+            if (highPressure) {
+                reasoningLogs.add(0, "> High Memory Pressure: Pruning KV Cache.")
             }
-            delay(3000)
+
+            viewModel.lmkPressure = engine.getLMKPressure()
+            viewModel.stability = (100 - viewModel.lmkPressure) / 100.0f
+            
+            delay(2500)
         }
     }
 
     Scaffold(
+        scaffoldState = scaffoldState,
         topBar = {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.8.3-CONTEXT-AWARE")
+                        Text("Ronin Kernel v3.9-SYSTEM-CONTROL-MASTER")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.showSysInfo = !viewModel.showSysInfo }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Toggle Info", tint = if (viewModel.showSysInfo) Color.Cyan else Color.Gray)
+                    }
                     StabilityMeter(stability)
                 },
                 backgroundColor = Color(0xFF121212),
@@ -143,6 +241,7 @@ fun RoninChatUI(engine: NativeEngine) {
                 elevation = 8.dp
             )
         },
+
         backgroundColor = Color(0xFF1A1A1A)
     ) { paddingValues ->
         Column(
@@ -180,10 +279,10 @@ fun RoninChatUI(engine: NativeEngine) {
                         val currentInput = inputText
                         inputText = ""
                         
-                        // Reset context counters for dynamic release v3.8
-                        l1Count = 0
-                        l2Count = 0
-                        l3Count = 0
+                        // Reset context counters for stable release v3.9
+                        viewModel.l1Count = 0
+                        viewModel.l2Count = 0
+                        viewModel.l3Count = 0
                         
                         scope.launch {
                             val cleanInput = currentInput.trim().lowercase()
@@ -197,13 +296,24 @@ fun RoninChatUI(engine: NativeEngine) {
                                                currentInput.contains("locate", ignoreCase = true)
                                                
                                 if (isSearch) {
-                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.8.3-CONTEXT-AWARE bypass activated.")
+                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.9-SYSTEM-CONTROL-MASTER bypass activated.")
                                 } else {
                                     reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
                                 }
                             }
                             
                             val kernelOutput = engine.processInputAsync(currentInput)
+                            
+                            // Check if a tool was engaged
+                            if (kernelOutput.contains("Switching on Flashlight")) {
+                                scaffoldState.snackbarHostState.showSnackbar("System: Flashlight engaged.")
+                            } else if (kernelOutput.contains("Locating device")) {
+                                scaffoldState.snackbarHostState.showSnackbar("System: GPS engaged.")
+                            } else if (kernelOutput.contains("System: WiFi")) {
+                                scaffoldState.snackbarHostState.showSnackbar("System: WiFi engaged.")
+                            } else if (kernelOutput.contains("System: Bluetooth")) {
+                                scaffoldState.snackbarHostState.showSnackbar("System: Bluetooth engaged.")
+                            }
                             
                             // Re-sync from Kernel history to ensure perfect consistency
                             val history = engine.getChatHistoryAsync()
@@ -215,6 +325,32 @@ fun RoninChatUI(engine: NativeEngine) {
                         }
                     }
                 }
+            )
+            
+            if (viewModel.showSysInfo) {
+                SystemHealthOverlay(viewModel.temperature, viewModel.ramUsedGB, viewModel.ramTotalGB)
+            }
+        }
+    }
+}
+
+@Composable
+fun SystemHealthOverlay(temp: Float, used: Float, total: Float) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFF121212),
+        elevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${"%.1f".format(temp)}°C | RAM: ${"%.2f".format(used)}/${"%.2f".format(total)} GB",
+                color = Color.Green,
+                fontSize = 12.sp,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
             )
         }
     }

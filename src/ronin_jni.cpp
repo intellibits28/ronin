@@ -39,7 +39,11 @@ static std::unique_ptr<FileSearchNode> g_file_search_node;
 static std::unique_ptr<FileScanner> g_file_scanner;
 static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
 
-// v3.8 DYNAMIC-MANIFEST Bridge Implementations
+// JNI Callback Caching
+static JavaVM* g_vm = nullptr;
+static jobject g_engine_instance = nullptr;
+
+// v3.9-SYSTEM-CONTROL-MASTER Bridge Implementations
 namespace {
 class JniCapabilityManager : public Ronin::Kernel::CapabilityManager {
 public:
@@ -59,18 +63,27 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
 }
 
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
-  LOGI("RoninJNI", "Executing Node %u via Static Dispatch", nodeId);
+  LOGI("RoninJNI", "Executing Node %u via Static Dispatch [v3.9-SYSTEM-CONTROL-MASTER]", nodeId);
   
-  if (nodeId == 4) {
-      // Mock Flashlight Control
-      LOGI("RoninJNI", "> System: Flashlight state toggled.");
-      return {true, 200}; // Use status code 200 for 'Hardware Success'
-  }
-  
-  if (nodeId == 5) {
-      // Mock GPS Access
-      LOGI("RoninJNI", "> System: Retrieving coordinates...");
-      return {true, 201}; // Use status code 201 for 'Location Success'
+  // Hardware Execution via JNI Callback
+  if (nodeId >= 4 && nodeId <= 7) {
+      if (!g_vm || !g_engine_instance) {
+          LOGE("RoninJNI", "Exec Error: JNI Instance not cached.");
+          return {false, -1};
+      }
+
+      JNIEnv* env = nullptr;
+      if (g_vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
+          return {false, -2};
+      }
+
+      jclass cls = env->GetObjectClass(g_engine_instance);
+      jmethodID methodCallback = env->GetMethodID(cls, "triggerHardwareAction", "(I)Z");
+      
+      if (methodCallback) {
+          jboolean success = env->CallBooleanMethod(g_engine_instance, methodCallback, static_cast<jint>(nodeId));
+          return {success == JNI_TRUE, 200};
+      }
   }
 
   return {true, 0};
@@ -134,10 +147,14 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_capability_graph->addNode(3, "NeuralEmbeddingNode");
     g_capability_graph->addNode(4, "SystemControlNode");
     g_capability_graph->addNode(5, "LocationNode");
+    g_capability_graph->addNode(6, "WiFiNode");
+    g_capability_graph->addNode(7, "BluetoothNode");
     g_capability_graph->addEdge(1, 2, 0.5f); // File Search (Reset to 0.5)
     g_capability_graph->addEdge(1, 3, 0.5f); // Neural (Reset to 0.5)
     g_capability_graph->addEdge(1, 4, 0.5f); // SystemControl (Reset to 0.5)
     g_capability_graph->addEdge(1, 5, 0.5f); // Location (Reset to 0.5)
+    g_capability_graph->addEdge(1, 6, 0.5f); // WiFi
+    g_capability_graph->addEdge(1, 7, 0.5f); // Bluetooth
 
     Node* testNode = g_capability_graph->getNodeByID("FileSearchNode");
     if (testNode) {
@@ -230,7 +247,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
 
     if (g_long_term_memory) g_long_term_memory->storeMessage("user", input_str);
 
-    // 1. Trigger Core Heartbeat (v3.8 logic)
+    // 1. Trigger Core Heartbeat (v3.9 logic)
     if (g_ronin_kernel) {
         Input minimalist_input = {};
         size_t len = std::min(input_str.length(), sizeof(minimalist_input.data) - 1);
@@ -253,9 +270,13 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
                 response = results[0];
             }
         } else if (next_node->id == 4) {
-            response = "System: Switching on Flashlight... [v3.8.1-STABLE-UI]";
+            response = "System: Switching on Flashlight... [v3.9-SYSTEM-CONTROL-MASTER]";
         } else if (next_node->id == 5) {
             response = "System: Locating device... GPS Link Established.";
+        } else if (next_node->id == 6) {
+            response = "System: WiFi Module engaged. Toggling connectivity...";
+        } else if (next_node->id == 7) {
+            response = "System: Bluetooth Module engaged. Toggling connectivity...";
         }
     }
 
@@ -288,6 +309,22 @@ Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
 JNIEXPORT jint JNICALL
 Java_com_ronin_kernel_NativeEngine_runMaintenance(JNIEnv *env, jobject thiz, jboolean is_charging) {
     return g_long_term_memory ? static_cast<jint>(g_long_term_memory->runMaintenance(is_charging == JNI_TRUE)) : 0;
+}
+
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_setEngineInstance(JNIEnv *env, jobject thiz) {
+    env->GetJavaVM(&g_vm);
+    if (g_engine_instance) env->DeleteGlobalRef(g_engine_instance);
+    g_engine_instance = env->NewGlobalRef(thiz);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
+    // Return true if RAM > 85%
+    if (total > 0 && (used / total) > 0.85f) {
+        return JNI_TRUE;
+    }
+    return JNI_FALSE;
 }
 
 } // extern "C"

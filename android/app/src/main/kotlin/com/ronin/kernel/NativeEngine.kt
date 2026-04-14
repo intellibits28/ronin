@@ -61,6 +61,20 @@ class NativeEngine {
      */
     external fun runMaintenance(isCharging: Boolean): Int
 
+    // --- System Health JNI Bridges ---
+    external fun updateSystemHealth(temperature: Float, ramUsedGB: Float, ramTotalGB: Float): Boolean
+    external fun setEngineInstance()
+
+    // --- Hardware Control JNI Callbacks ---
+    var executeHardwareAction: ((Int) -> Boolean)? = null
+
+    // Called from C++ ExecHandlers
+    @Suppress("unused")
+    fun triggerHardwareAction(nodeId: Int): Boolean {
+        Log.i(TAG, "Native request: Triggering action for Node $nodeId")
+        return executeHardwareAction?.invoke(nodeId) ?: false
+    }
+
     // --- Coroutine Wrappers ---
 
     suspend fun getChatHistoryAsync(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
