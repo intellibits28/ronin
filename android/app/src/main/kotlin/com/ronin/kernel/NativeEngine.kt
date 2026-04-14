@@ -47,6 +47,11 @@ class NativeEngine {
     private external fun processInput(input: String): String
 
     /**
+     * Retrieves chat history from SQLite (Kernel source of truth).
+     */
+    private external fun getChatHistory(): Array<String>?
+
+    /**
      * Returns the current internal pressure score (0-100).
      */
     external fun getLMKPressure(): Int
@@ -57,6 +62,15 @@ class NativeEngine {
     external fun runMaintenance(isCharging: Boolean): Int
 
     // --- Coroutine Wrappers ---
+
+    suspend fun getChatHistoryAsync(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        val raw = getChatHistory() ?: return@withContext emptyList<Pair<String, String>>()
+        val result = mutableListOf<Pair<String, String>>()
+        for (i in 0 until raw.size / 2) {
+            result.add(raw[i * 2] to raw[i * 2 + 1])
+        }
+        result
+    }
 
     suspend fun processIntentAsync(bufferA: ByteBuffer, bufferB: ByteBuffer): Float = 
         withContext(Dispatchers.Default) {

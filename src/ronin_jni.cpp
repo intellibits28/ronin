@@ -217,8 +217,15 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     std::transform(clean_input.begin(), clean_input.end(), clean_input.begin(), ::tolower);
     if (clean_input == "hi" || clean_input == "hello" || clean_input == "hey" || clean_input == "mingalaba") {
         if (g_memory_manager) g_memory_manager->clearContext();
-        return env->NewStringUTF("ChatNode: Hello! I am Ronin. How can I help you today?");
+        std::string response = "ChatNode: Hello! I am Ronin. How can I help you today?";
+        if (g_long_term_memory) {
+            g_long_term_memory->storeMessage("user", input_str);
+            g_long_term_memory->storeMessage("ronin", response);
+        }
+        return env->NewStringUTF(response.c_str());
     }
+
+    if (g_long_term_memory) g_long_term_memory->storeMessage("user", input_str);
 
     // 1. Trigger Core Heartbeat (v3.8 logic)
     if (g_ronin_kernel) {
@@ -231,6 +238,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
 
     // 2. Routing Decision
     Node* next_node = g_graph_executor->selectNextNode(input_str);
+    std::string response = "Input processed via Reasoning Spine (No specific capability triggered).";
 
     if (next_node) {
         if (g_memory_manager) g_memory_manager->clearContext();
@@ -239,17 +247,34 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
             LOGI(TAG, "Routing to Hybrid FileSearch capability.");
             auto results = g_file_search_node->execute(input_str);
             if (!results.empty()) {
-                return env->NewStringUTF(results[0].c_str());
+                response = results[0];
             }
         } else if (next_node->id == 4) {
-            return env->NewStringUTF("System: Switching on Flashlight... [v3.8-DYNAMIC-MANIFEST]");
+            response = "System: Switching on Flashlight... [v3.8.1-STABLE-UI]";
         } else if (next_node->id == 5) {
-            return env->NewStringUTF("System: Locating device... GPS Link Established.");
+            response = "System: Locating device... GPS Link Established.";
         }
     }
 
-    // Default response if not routed to search or if search results empty
-    return env->NewStringUTF("Input processed via Reasoning Spine (No specific capability triggered).");
+    if (g_long_term_memory) g_long_term_memory->storeMessage("ronin", response);
+
+    return env->NewStringUTF(response.c_str());
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz) {
+    if (!g_long_term_memory) return nullptr;
+    auto history = g_long_term_memory->getHistory(50);
+    
+    jclass stringClass = env->FindClass("java/lang/String");
+    jobjectArray result = env->NewObjectArray(history.size() * 2, stringClass, nullptr);
+    
+    for (size_t i = 0; i < history.size(); ++i) {
+        env->SetObjectArrayElement(result, i * 2, env->NewStringUTF(history[i].first.c_str()));
+        env->SetObjectArrayElement(result, i * 2 + 1, env->NewStringUTF(history[i].second.c_str()));
+    }
+    
+    return result;
 }
 
 JNIEXPORT jint JNICALL

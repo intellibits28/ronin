@@ -44,6 +44,10 @@ public:
     std::vector<std::string> search(const std::string& query);
     bool consolidate(const std::string& summary_text);
 
+    // Chat History Persistence
+    bool storeMessage(const std::string& role, const std::string& content);
+    std::vector<std::pair<std::string, std::string>> getHistory(int limit = 50);
+
     // File Indexing (FTS5 + Semantic)
     struct FileEmbedding {
         std::string name;

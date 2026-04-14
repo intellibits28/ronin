@@ -39,6 +39,12 @@ bool LongTermMemory::initSchema() {
         "  timestamp UNINDEXED"
         ");"
         
+        "CREATE TABLE IF NOT EXISTS chat_history ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "  role TEXT, "
+        "  content TEXT, "
+        "  timestamp INTEGER);"
+        
         "CREATE VIRTUAL TABLE IF NOT EXISTS file_index USING fts5("
         "  name, "
         "  path, "
@@ -307,6 +313,42 @@ void LongTermMemory::applyDecay(uint64_t current_timestamp) {
         sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
         sqlite3_finalize(up_stmt);
     }
+}
+
+bool LongTermMemory::storeMessage(const std::string& role, const std::string& content) {
+    if (!m_db) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "INSERT INTO chat_history (role, content, timestamp) VALUES (?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_text(stmt, 1, role.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, content.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 3, std::time(nullptr));
+    bool success = sqlite3_step(stmt) == SQLITE_DONE;
+    sqlite3_finalize(stmt);
+    return success;
+}
+
+std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int limit) {
+    if (!m_db) return {};
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::pair<std::string, std::string>> history;
+    const char* sql = "SELECT role, content FROM chat_history ORDER BY id DESC LIMIT ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, limit);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* role = sqlite3_column_text(stmt, 0);
+            const unsigned char* content = sqlite3_column_text(stmt, 1);
+            if (role && content) {
+                history.push_back({reinterpret_cast<const char*>(role), reinterpret_cast<const char*>(content)});
+            }
+        }
+    }
+    sqlite3_finalize(stmt);
+    // Reverse to get chronological order
+    std::reverse(history.begin(), history.end());
+    return history;
 }
 
 } // namespace Ronin::Kernel::Memory

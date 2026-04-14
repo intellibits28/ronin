@@ -100,6 +100,16 @@ fun RoninChatUI(engine: NativeEngine) {
     
     val scope = rememberCoroutineScope()
 
+    // Sync History from Kernel (Source of Truth)
+    LaunchedEffect(Unit) {
+        val history = engine.getChatHistoryAsync()
+        messages.clear()
+        history.forEach { (role, content) ->
+            if (role == "user") messages.add("User: $content")
+            else messages.add("Ronin: $content")
+        }
+    }
+
     // Kernel Polling Loop
     LaunchedEffect(Unit) {
         while (true) {
@@ -120,7 +130,7 @@ fun RoninChatUI(engine: NativeEngine) {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.8-DYNAMIC-MANIFEST")
+                        Text("Ronin Kernel v3.8.1-STABLE-UI")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -187,14 +197,21 @@ fun RoninChatUI(engine: NativeEngine) {
                                                currentInput.contains("locate", ignoreCase = true)
                                                
                                 if (isSearch) {
-                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.8-DYNAMIC-MANIFEST bypass activated.")
+                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.8.1-STABLE-UI bypass activated.")
                                 } else {
                                     reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
                                 }
                             }
                             
                             val kernelOutput = engine.processInputAsync(currentInput)
-                            messages.add("Ronin: $kernelOutput")
+                            
+                            // Re-sync from Kernel history to ensure perfect consistency
+                            val history = engine.getChatHistoryAsync()
+                            messages.clear()
+                            history.forEach { (role, content) ->
+                                if (role == "user") messages.add("User: $content")
+                                else messages.add("Ronin: $content")
+                            }
                         }
                     }
                 }

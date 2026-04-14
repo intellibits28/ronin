@@ -35,6 +35,14 @@ static std::string strip_punctuation(const std::string& s) {
     return out;
 }
 
+// Helper to trim leading/trailing whitespace
+static std::string trim(const std::string& s) {
+    auto start = s.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) return "";
+    auto end = s.find_last_not_of(" \t\n\r");
+    return s.substr(start, end - start + 1);
+}
+
 void IntentEngine::loadCapabilities(const std::string& json_path) {
     std::ifstream file(json_path);
     if (!file.is_open()) {
@@ -46,7 +54,7 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
     buffer << file.rdbuf();
     std::string content = buffer.str();
     
-    LOGI(TAG, "Loading dynamic manifest: v3.8-DYNAMIC-MANIFEST");
+    LOGI(TAG, "Loading dynamic manifest: v3.8.1-STABLE-UI");
 
     // Minimalist string-based "JSON" parser for our specific format
     size_t pos = 0;
@@ -72,7 +80,7 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
             size_t s_start = s.find("\"") + 1;
             size_t s_end = s.find("\"", s_start);
             if (s_start != std::string::npos && s_end != std::string::npos) {
-                cap.subjects.push_back(s.substr(s_start, s_end - s_start));
+                cap.subjects.push_back(trim(s.substr(s_start, s_end - s_start)));
             }
         }
 
@@ -85,7 +93,7 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
             size_t a_start = s.find("\"") + 1;
             size_t a_end = s.find("\"", a_start);
             if (a_start != std::string::npos && a_end != std::string::npos) {
-                cap.actions.push_back(s.substr(a_start, a_end - a_start));
+                cap.actions.push_back(trim(s.substr(a_start, a_end - a_start)));
             }
         }
 
@@ -133,20 +141,37 @@ CognitiveIntent IntentEngine::process(const std::string& input) {
         return {1, 1.0f}; // ChatNode (ID 1)
     }
 
-    // Tier 2: Dynamic Matcher (Subject + Action)
+    // Tier 2: Dynamic Matcher (Subject + Action) - Order Independent
     for (const auto& cap : m_capabilities) {
         bool subject_found = false;
         bool action_found = false;
 
-        for (const auto& token : tokens) {
-            for (const auto& sub : cap.subjects) {
-                if (isFuzzyMatch(token, sub)) { subject_found = true; break; }
+        // Check if any subject from the manifest exists in the input tokens
+        for (const auto& sub : cap.subjects) {
+            for (const auto& token : tokens) {
+                if (isFuzzyMatch(token, sub)) { 
+                    subject_found = true; 
+                    break; 
+                }
             }
-            for (const auto& act : cap.actions) {
-                if (input.find(act) != std::string::npos) { action_found = true; break; }
-                if (isFuzzyMatch(token, act)) { action_found = true; break; }
+            if (subject_found) break;
+        }
+
+        // Check if any action from the manifest exists in the input tokens or as a substring
+        for (const auto& act : cap.actions) {
+            // Check full string for multi-word actions
+            if (input.find(act) != std::string::npos) {
+                action_found = true;
+                break;
             }
-            if (subject_found && action_found) break;
+            // Check individual tokens
+            for (const auto& token : tokens) {
+                if (isFuzzyMatch(token, act)) {
+                    action_found = true;
+                    break;
+                }
+            }
+            if (action_found) break;
         }
 
         if (subject_found && action_found) {
