@@ -11,7 +11,7 @@ namespace Ronin::Kernel {
 /**
  * Dynamic capability manifest entry.
  */
-struct Capability {
+struct CapabilityEntry {
     uint32_t id;
     std::string name;
     std::vector<std::string> subjects;

@@ -51,7 +51,7 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
     // Minimalist string-based "JSON" parser for our specific format
     size_t pos = 0;
     while ((pos = content.find("{\"id\":", pos)) != std::string::npos) {
-        Ronin::Kernel::Capability cap;
+        Ronin::Kernel::CapabilityEntry cap;
         
         // Extract ID
         size_t id_start = content.find(":", pos) + 1;

@@ -44,7 +44,7 @@ public:
     CognitiveIntent process(const std::string& input);
 
 private:
-    std::vector<Ronin::Kernel::Capability> m_capabilities;
+    std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
 
     // Minimalist tokenizer
     std::vector<std::string> tokenize(const std::string& input);
