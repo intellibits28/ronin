@@ -21,14 +21,25 @@ void RoninKernel::tick(const Input &input) {
   // Initial Intent Processing via Static Dispatch
   state_.currentIntent = registry_.intentProcessor(input);
 
-  LOGI(TAG, "Heartbeat start: CognitiveIntent ID %u (Confidence: %.2f) [v3.7-STABLE-FINAL]",
+  // Tier 3: Reasoning Fallback
+  if (state_.currentIntent.confidence < 0.6f) {
+      std::string original_input(input.data, input.length);
+      LOGI(TAG, "> Tier 3: Reasoning Fallback triggered for input: '%s'", original_input.c_str());
+      LOGI(TAG, "> Prompt: User input: '%s'. Available tools: Flashlight, GPS, Chat. Which one?", original_input.c_str());
+      
+      // Force ChatNode (ID 1) for the reasoning engine to handle it
+      state_.currentIntent.id = 1;
+      state_.currentIntent.confidence = 0.6f; 
+  }
+
+  LOGI(TAG, "Heartbeat start: CognitiveIntent ID %u (Confidence: %.2f) [v3.8-DYNAMIC-MANIFEST]",
        state_.currentIntent.id, state_.currentIntent.confidence);
 
   runAutonomousLoop(input);
 
   LOGI(TAG, "Heartbeat complete after %d iterations.", state_.iterations);
 
-  // Strict State Reset (v3.7-STABLE-FINAL)
+  // Strict State Reset (v3.8-DYNAMIC-MANIFEST)
   state_.currentIntent.id = 0;
   state_.currentIntent.confidence = 0.0f;
   state_.requiresAction = false;
@@ -82,7 +93,7 @@ void RoninKernel::runAutonomousLoop(const Input &input) {
            result.statusCode);
     }
 
-    // State Clearing (v3.7-INTENT-FIX)
+    // State Clearing (v3.8-DYNAMIC-MANIFEST)
     state_.requiresAction = false; 
     state_.currentIntent.id = 0;
   }

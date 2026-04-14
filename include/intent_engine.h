@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cstddef>
 #include <string>
+#include <vector>
+#include "ronin_types.hpp"
 
 namespace Ronin::Kernel::Intent {
 
@@ -29,10 +31,26 @@ float compute_cosine_similarity_neon(const float* a, const float* b, size_t leng
 
 class IntentEngine {
 public:
+    IntentEngine() = default;
+
+    /**
+     * Loads capability manifest from a JSON-like formatted file.
+     */
+    void loadCapabilities(const std::string& json_path);
+
     /**
      * Processes raw input to determine the high-level intent score.
      */
-    float process(const std::string& input);
+    CognitiveIntent process(const std::string& input);
+
+private:
+    std::vector<Capability> m_capabilities;
+
+    // Minimalist tokenizer
+    std::vector<std::string> tokenize(const std::string& input);
+
+    // Simple fuzzy match for typos (e.g., 'flashlite' vs 'flashlight')
+    bool isFuzzyMatch(const std::string& word, const std::string& target);
 };
 
 } // namespace Ronin::Kernel::Intent

@@ -1,4 +1,7 @@
 #include "intent_engine.h"
+#include <fstream>
+#include <sstream>
+#include <vector>
 
 #ifdef __aarch64__
 #include <arm_neon.h>
@@ -22,6 +25,139 @@ namespace Ronin::Kernel::Intent {
 
 // Initialize to NORMAL by default
 ThermalState g_thermal_state = ThermalState::NORMAL;
+
+// Helper to strip non-alphanumeric chars for tokenizer
+static std::string strip_punctuation(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if (std::isalnum(c) || std::isspace(c)) out += c;
+    }
+    return out;
+}
+
+void IntentEngine::loadCapabilities(const std::string& json_path) {
+    std::ifstream file(json_path);
+    if (!file.is_open()) {
+        LOGE(TAG, "Failed to open capability manifest: %s", json_path.c_str());
+        return;
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string content = buffer.str();
+    
+    LOGI(TAG, "Loading dynamic manifest: v3.8-DYNAMIC-MANIFEST");
+
+    // Minimalist string-based "JSON" parser for our specific format
+    size_t pos = 0;
+    while ((pos = content.find("{\"id\":", pos)) != std::string::npos) {
+        Capability cap;
+        
+        // Extract ID
+        size_t id_start = content.find(":", pos) + 1;
+        cap.id = std::stoul(content.substr(id_start));
+
+        // Extract Name
+        size_t name_start = content.find("\"name\": \"", pos) + 9;
+        size_t name_end = content.find("\"", name_start);
+        cap.name = content.substr(name_start, name_end - name_start);
+
+        // Extract Subjects (naive array parsing)
+        size_t sub_start = content.find("\"subjects\": [", pos) + 12;
+        size_t sub_end = content.find("]", sub_start);
+        std::string subs = content.substr(sub_start, sub_end - sub_start);
+        std::stringstream ss_sub(subs);
+        std::string s;
+        while (std::getline(ss_sub, s, ',')) {
+            size_t s_start = s.find("\"") + 1;
+            size_t s_end = s.find("\"", s_start);
+            if (s_start != std::string::npos && s_end != std::string::npos) {
+                cap.subjects.push_back(s.substr(s_start, s_end - s_start));
+            }
+        }
+
+        // Extract Actions
+        size_t act_start = content.find("\"actions\": [", pos) + 11;
+        size_t act_end = content.find("]", act_start);
+        std::string acts = content.substr(act_start, act_end - act_start);
+        std::stringstream ss_act(acts);
+        while (std::getline(ss_act, s, ',')) {
+            size_t a_start = s.find("\"") + 1;
+            size_t a_end = s.find("\"", a_start);
+            if (a_start != std::string::npos && a_end != std::string::npos) {
+                cap.actions.push_back(s.substr(a_start, a_end - a_start));
+            }
+        }
+
+        // Extract Threshold
+        size_t conf_start = content.find("\"confidence_threshold\":", pos) + 23;
+        cap.confidence_threshold = std::stof(content.substr(conf_start));
+
+        m_capabilities.push_back(cap);
+        pos = act_end;
+    }
+    LOGI(TAG, "Dynamic manifest loaded: %zu capabilities registered.", m_capabilities.size());
+}
+
+std::vector<std::string> IntentEngine::tokenize(const std::string& input) {
+    std::string clean = strip_punctuation(input);
+    std::transform(clean.begin(), clean.end(), clean.begin(), ::tolower);
+    
+    std::vector<std::string> tokens;
+    std::stringstream ss(clean);
+    std::string token;
+    while (ss >> token) tokens.push_back(token);
+    return tokens;
+}
+
+bool IntentEngine::isFuzzyMatch(const std::string& word, const std::string& target) {
+    if (word == target) return true;
+    if (std::abs((int)word.length() - (int)target.length()) > 1) return false;
+    
+    int diff = 0;
+    size_t len = std::min(word.length(), target.length());
+    for (size_t i = 0; i < len; ++i) {
+        if (word[i] != target[i]) diff++;
+    }
+    diff += std::abs((int)word.length() - (int)target.length());
+    return diff <= 1;
+}
+
+CognitiveIntent IntentEngine::process(const std::string& input) {
+    auto tokens = tokenize(input);
+    if (tokens.empty()) return {1, 0.0f};
+
+    // Tier 1: Greetings Guardrail
+    std::string first = tokens[0];
+    if (first == "hi" || first == "hello" || first == "hey" || first == "mingalaba") {
+        return {1, 1.0f}; // ChatNode (ID 1)
+    }
+
+    // Tier 2: Dynamic Matcher (Subject + Action)
+    for (const auto& cap : m_capabilities) {
+        bool subject_found = false;
+        bool action_found = false;
+
+        for (const auto& token : tokens) {
+            for (const auto& sub : cap.subjects) {
+                if (isFuzzyMatch(token, sub)) { subject_found = true; break; }
+            }
+            for (const auto& act : cap.actions) {
+                if (input.find(act) != std::string::npos) { action_found = true; break; }
+                if (isFuzzyMatch(token, act)) { action_found = true; break; }
+            }
+            if (subject_found && action_found) break;
+        }
+
+        if (subject_found && action_found) {
+            LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u)", cap.name.c_str(), cap.id);
+            return {cap.id, cap.confidence_threshold};
+        }
+    }
+
+    // Tier 3: Default Fallback
+    return {1, 0.5f};
+}
 
 /**
  * Scalar fallback: Calculating dot product to minimize power usage in SEVERE thermal state.
@@ -122,36 +258,6 @@ float compute_cosine_similarity_neon(const float* a, const float* b, size_t leng
     float denominator = std::sqrt(mag_a) * std::sqrt(mag_b);
     return (denominator < 1e-9f) ? 0.0f : (dot / denominator);
 #endif
-}
-
-float IntentEngine::process(const std::string& input) {
-    std::string s = input;
-    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-    
-    // 1. Strict Flashlight Patterns
-    if (s == "flashlight on" || s == "flashlight off" || 
-        s == "torch on" || s == "torch off") {
-        return 4.0f;
-    }
-    
-    // 2. Strict Location Patterns
-    if (s == "where am i" || s == "get location" || s == "gps status") {
-        return 5.0f;
-    }
-
-    // 3. Strict Search Patterns
-    if (s.find("search ") == 0 || s.find("find ") == 0) {
-        return 2.0f;
-    }
-
-    // 4. Security Log for partial matches that fail strict check
-    if (s.find("flashlight") != std::string::npos || s.find("torch") != std::string::npos ||
-        s.find("gps") != std::string::npos || s.find("location") != std::string::npos) {
-        LOGI("RoninIntent", "> Security: Bypass rejected. Routing to ChatNode.");
-    }
-
-    // Default Fallback: ChatNode (ID 1)
-    return 1.0f;
 }
 
 } // namespace Ronin::Kernel::Intent

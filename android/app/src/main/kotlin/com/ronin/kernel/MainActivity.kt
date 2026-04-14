@@ -120,7 +120,7 @@ fun RoninChatUI(engine: NativeEngine) {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.7-STABLE-FINAL")
+                        Text("Ronin Kernel v3.8-DYNAMIC-MANIFEST")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -170,7 +170,7 @@ fun RoninChatUI(engine: NativeEngine) {
                         val currentInput = inputText
                         inputText = ""
                         
-                        // Reset context counters for stable release v3.7
+                        // Reset context counters for dynamic release v3.8
                         l1Count = 0
                         l2Count = 0
                         l3Count = 0
@@ -187,7 +187,7 @@ fun RoninChatUI(engine: NativeEngine) {
                                                currentInput.contains("locate", ignoreCase = true)
                                                
                                 if (isSearch) {
-                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.7-STABLE-FINAL bypass activated.")
+                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.8-DYNAMIC-MANIFEST bypass activated.")
                                 } else {
                                     reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
                                 }

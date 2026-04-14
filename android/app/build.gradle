@@ -10,8 +10,8 @@ android {
         applicationId "com.ronin.kernel"
         minSdk 26
         targetSdk 34
-        versionCode 14
-        versionName "3.7-STABLE-FINAL"
+        versionCode 15
+        versionName "3.8-DYNAMIC-MANIFEST"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         

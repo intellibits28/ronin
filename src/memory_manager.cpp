@@ -121,14 +121,10 @@ void MemoryManager::clearContext() {
 }
 
 std::vector<std::string> MemoryManager::filterDuplicateFilenames(const std::vector<std::string>& results) {
-    std::vector<std::string> unique_results;
-    std::unordered_set<std::string> seen;
-    for (const auto& res : results) {
-        if (seen.find(res) == seen.end()) {
-            seen.insert(res);
-            unique_results.push_back(res);
-        }
-    }
+    std::vector<std::string> unique_results = results;
+    std::sort(unique_results.begin(), unique_results.end());
+    auto last = std::unique(unique_results.begin(), unique_results.end());
+    unique_results.erase(last, unique_results.end());
     return unique_results;
 }
 

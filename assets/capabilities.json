@@ -1,0 +1,23 @@
+[
+  {
+    "id": 4,
+    "name": "SystemControlNode",
+    "subjects": ["flashlight", "torch", "bluetooth"],
+    "actions": ["turn on", "turn off", "switch on", "switch off"],
+    "confidence_threshold": 0.9
+  },
+  {
+    "id": 5,
+    "name": "LocationNode",
+    "subjects": ["gps", "location"],
+    "actions": ["get", "where", "status"],
+    "confidence_threshold": 0.9
+  },
+  {
+    "id": 7,
+    "name": "CommunicationNode",
+    "subjects": ["sms", "mail", "message"],
+    "actions": ["send", "write", "draft"],
+    "confidence_threshold": 0.9
+  }
+]

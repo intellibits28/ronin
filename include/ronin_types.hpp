@@ -3,8 +3,21 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace Ronin::Kernel {
+
+/**
+ * Dynamic capability manifest entry.
+ */
+struct Capability {
+    uint32_t id;
+    std::string name;
+    std::vector<std::string> subjects;
+    std::vector<std::string> actions;
+    float confidence_threshold;
+};
 
 /**
  * Minimalist input container with a fixed-size buffer to prevent heap

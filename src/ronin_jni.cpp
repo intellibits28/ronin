@@ -37,7 +37,7 @@ static std::unique_ptr<FileSearchNode> g_file_search_node;
 static std::unique_ptr<FileScanner> g_file_scanner;
 static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
 
-// v3.7 ULTRA-CORE Bridge Implementations
+// v3.8 DYNAMIC-MANIFEST Bridge Implementations
 namespace {
 class JniCapabilityManager : public Ronin::Kernel::CapabilityManager {
 public:
@@ -49,21 +49,9 @@ public:
 
 Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input &input) {
   std::string s(input.data, input.length);
-  std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-
-  if (s == "flashlight on" || s == "flashlight off" || 
-      s == "torch on" || s == "torch off") {
-      return {4, 1.0f};
+  if (g_intent_engine) {
+      return g_intent_engine->process(s);
   }
-  
-  if (s == "where am i" || s == "get location" || s == "gps status") {
-      return {5, 1.0f};
-  }
-
-  if (s.find("search ") == 0 || s.find("find ") == 0) {
-      return {2, 1.0f};
-  }
-
   return {1, 0.5f};
 }
 
@@ -157,6 +145,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
 
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
+    g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
     g_ronin_kernel = std::make_unique<RoninKernel>(s_handler_registry, s_cap_manager);
 
     // 4. Trigger Background Scan
@@ -231,7 +220,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         return env->NewStringUTF("ChatNode: Hello! I am Ronin. How can I help you today?");
     }
 
-    // 1. Trigger Core Heartbeat (v3.7 logic)
+    // 1. Trigger Core Heartbeat (v3.8 logic)
     if (g_ronin_kernel) {
         Input minimalist_input = {};
         size_t len = std::min(input_str.length(), sizeof(minimalist_input.data) - 1);
@@ -253,7 +242,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
                 return env->NewStringUTF(results[0].c_str());
             }
         } else if (next_node->id == 4) {
-            return env->NewStringUTF("System: Switching on Flashlight... [v3.7-STABLE-FINAL]");
+            return env->NewStringUTF("System: Switching on Flashlight... [v3.8-DYNAMIC-MANIFEST]");
         } else if (next_node->id == 5) {
             return env->NewStringUTF("System: Locating device... GPS Link Established.");
         }
