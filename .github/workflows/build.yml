@@ -56,7 +56,7 @@ jobs:
           mkdir -p generated
           flatc --cpp -o generated/ checkpoint_schema.fbs
 
-      - name: Debug: List JNI Libraries and Model Assets
+      - name: "Debug: List JNI Libraries and Model Assets"
         run: |
           echo "--- Assets models ---"
           ls -R android/app/src/main/assets/models || echo "Assets directory missing"
