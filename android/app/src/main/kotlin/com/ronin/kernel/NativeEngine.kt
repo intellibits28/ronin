@@ -66,13 +66,13 @@ class NativeEngine {
     external fun setEngineInstance()
 
     // --- Hardware Control JNI Callbacks ---
-    var executeHardwareAction: ((Int) -> Boolean)? = null
+    var executeHardwareAction: ((Int, Boolean) -> Boolean)? = null
 
     // Called from C++ ExecHandlers
     @Suppress("unused")
-    fun triggerHardwareAction(nodeId: Int): Boolean {
-        Log.i(TAG, "Native request: Triggering action for Node $nodeId")
-        return executeHardwareAction?.invoke(nodeId) ?: false
+    fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
+        Log.i(TAG, "Native request: Triggering action for Node $nodeId (State: $state)")
+        return executeHardwareAction?.invoke(nodeId, state) ?: false
     }
 
     // --- Coroutine Wrappers ---
