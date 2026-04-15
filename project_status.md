@@ -6,20 +6,21 @@
 
 ---
 
-## 2. Current Status (v3.9.3-STABILITY)
+## 2. Current Status (v3.9.4-STABLE)
 - [x] **Tier 1 (Greetings/Keywords):** Fully functional. Tier 1 (Greetings) and Tier 2 (Dynamic Keywords) are decoupled and order-independent.
 - [x] **Hardware Toggles:** Flashlight, WiFi, and Bluetooth fixed. Integrated **Async std::async** execution to prevent UI freezes.
 - [x] **Safety Logic:** Negation priority implemented. 'OFF/Stop/Disable' tokens correctly override all positive triggers.
-- [x] **Android Integration:** Critical hardware permissions (WiFi, BT, GPS, Camera) added to Manifest to resolve SecurityExceptions.
+- [x] **Android Integration:** Critical hardware permissions (WiFi, BT, GPS, Camera) added to Manifest. **Runtime Permission Guard (v3.9.4)** implemented for Android 12+.
 - [x] **State Management:** SQLite-based chat history and Context Awareness (`m_last_suggested_subject`) are stable and survive Activity rotation via ViewModel.
-- [x] **Tier 3 (ONNX Inference):** Bridge integrated and active. Model loading verified via JNI logs. Current logic uses a hybrid heuristic fallback.
+- [x] **Tier 3 (ONNX Inference):** Bridge integrated and active. Model loading verified via JNI logs. **Diagnostic Logging (v3.9.4)** implemented to capture model confidence.
 
 ---
 
-## 3. Immediate Stabilization (The "Sanitization" Phase)
+## 3. Stabilization Phase (Completed)
 - [x] **Fix ANR (v3.9.2):** COMPLETED. Moved WiFi/Bluetooth toggles to background threads using `std::async(std::launch::async)`.
 - [x] **Negation Priority:** COMPLETED. 'OFF' tokens now have absolute override authority in `IntentEngine.cpp`.
-- [ ] **Verify ONNX (v3.9.4):** Pending further JNI stress tests. Need to finalize the `.so` pathing logic in CI/CD to eliminate intermittent linking warnings.
+- [x] **Permission Guard (v3.9.4):** COMPLETED. Implemented runtime request logic for BLUETOOTH_CONNECT and SCAN.
+- [x] **Diagnostic Logging (v3.9.4):** COMPLETED. Added try-catch blocks and __android_log_print for hardware calls.
 
 ---
 

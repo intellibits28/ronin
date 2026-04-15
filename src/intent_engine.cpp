@@ -54,7 +54,7 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
     buffer << file.rdbuf();
     std::string content = buffer.str();
     
-    LOGI(TAG, "Loading dynamic manifest: v3.9.1-STABLE");
+    LOGI(TAG, "Loading dynamic manifest: v3.9.4-STABLE");
 
     // Minimalist string-based "JSON" parser for our specific format
     size_t pos = 0;
@@ -135,20 +135,21 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     auto tokens = tokenize(input);
     if (tokens.empty()) return {1, 0.0f, true};
 
-    // Tier 1: Greetings Guardrail
+    // Tier 1: Greetings Guardrail (Exact Match)
     std::string first = tokens[0];
     if (first == "hi" || first == "hello" || first == "hey" || first == "mingalaba") {
+        LOGI(TAG, "> Tier 1 Match: Greeting detected.");
         return {1, 1.0f, true}; // ChatNode (ID 1)
     }
 
-    // Safety-First Negation Logic (v3.9.1)
-    // If any negation token is present, it must override all positive tokens.
+    // Safety-First Negation Logic (v3.9.4)
     bool isOff = (input.find("off") != std::string::npos || 
                   input.find("stop") != std::string::npos || 
                   input.find("disable") != std::string::npos);
 
-    // Tier 2: Dynamic Matcher (Subject + Action) - Order Independent
+    // Tier 2: Dynamic Matcher (Subject + Action)
     for (const auto& cap : m_capabilities) {
+        // ... (existing matcher logic)
         bool subject_found = false;
         bool action_found = false;
 
@@ -195,18 +196,24 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         }
 
         if (subject_found && action_found) {
-            LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u) [v3.9.1-STABLE]", cap.name.c_str(), cap.id);
+            LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u) [v3.9.4-STABLE]", cap.name.c_str(), cap.id);
             return {cap.id, cap.confidence_threshold, !isOff};
         }
     }
 
-    // Tier 3: ONNX Inference Fallback
+    // Tier 3: ONNX Inference Fallback (v3.9.4 Revival)
     if (m_inference_engine && m_inference_engine->isLoaded()) {
         auto intent = m_inference_engine->predict(input);
+        
+        LOGI(TAG, ">>> Tier 3 (ONNX) Verification: Input='%s' | Predicted_ID=%u | Confidence=%.2f", 
+             input.c_str(), intent.id, intent.confidence);
+
         if (intent.confidence >= 0.6f) {
-            LOGI(TAG, "> Tier 3 Match: ONNX Model predicted ID %u (Conf: %.2f)", intent.id, intent.confidence);
+            LOGI(TAG, "> Tier 3 Match: ONNX Model confirmed ID %u", intent.id);
             intent.intent_param = !isOff;
             return intent;
+        } else if (intent.confidence == 0.0f) {
+            LOGE(TAG, "> CRITICAL: ONNX Model returned 0.0 confidence for input: '%s'", input.c_str());
         }
     }
 

@@ -74,68 +74,92 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         nativeEngine.initializeKernel(filesDir.absolutePath)
         nativeEngine.setEngineInstance()
-        
+
         setupHardwareCallbacks()
         checkAndRequestStoragePermission()
+        checkAndRequestHardwarePermissions()
 
         setContent {
             val chatViewModel: ChatViewModel = viewModel()
             RoninChatUI(nativeEngine, chatViewModel)
         }
     }
-private fun setupHardwareCallbacks() {
-    nativeEngine.executeHardwareAction = { nodeId, state ->
-        var toolName = ""
-        when (nodeId) {
-            4 -> toolName = "Flashlight"
-            5 -> toolName = "GPS"
-            6 -> toolName = "WiFi"
-            7 -> toolName = "Bluetooth"
+
+    private fun checkAndRequestHardwarePermissions() {
+        val permissions = mutableListOf<String>()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions.add(android.Manifest.permission.BLUETOOTH_CONNECT)
+            permissions.add(android.Manifest.permission.BLUETOOTH_SCAN)
         }
 
-        // Show immediate feedback to user
-        runOnUiThread {
-            Toast.makeText(this, "Kernel: Initiating $toolName toggle...", Toast.LENGTH_SHORT).show()
+        permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        permissions.add(android.Manifest.permission.CAMERA)
+
+        val missing = permissions.filter {
+            checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED
         }
 
-        var success = false
-        when (nodeId) {
-            4 -> {
-                val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                try {
-                    val cameraId = cameraManager.cameraIdList[0]
-                    cameraManager.setTorchMode(cameraId, state) 
-                    success = true
-                } catch (e: Exception) { Log.e("RoninUI", "Flashlight Error", e) }
+        if (missing.isNotEmpty()) {
+            requestPermissions(missing.toTypedArray(), 1001)
+        }
+    }
+
+    private fun setupHardwareCallbacks() {
+        nativeEngine.executeHardwareAction = { nodeId, state ->
+            var toolName = ""
+            when (nodeId) {
+                4 -> toolName = "Flashlight"
+                5 -> toolName = "GPS"
+                6 -> toolName = "WiFi"
+                7 -> toolName = "Bluetooth"
             }
-            5 -> {
-                toolName = "GPS"
-                val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                success = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+
+            // Show immediate feedback to user
+            runOnUiThread {
+                Toast.makeText(this, "Kernel: Initiating $toolName toggle...", Toast.LENGTH_SHORT).show()
             }
-            6 -> {
-                toolName = "WiFi"
-                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                @Suppress("DEPRECATION")
-                success = wifiManager.setWifiEnabled(state)
-            }
-            7 -> {
-                toolName = "Bluetooth"
-                val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-                if (bluetoothAdapter != null) {
-                    @Suppress("MissingPermission")
-                    success = if (bluetoothAdapter.isEnabled == state) true 
-                              else if (state) bluetoothAdapter.enable() 
-                              else bluetoothAdapter.disable()
+
+            var success = false
+            try {
+                when (nodeId) {
+                    4 -> {
+                        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                        val cameraId = cameraManager.cameraIdList[0]
+                        cameraManager.setTorchMode(cameraId, state) 
+                        success = true
+                    }
+                    5 -> {
+                        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                        success = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                    }
+                    6 -> {
+                        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                        @Suppress("DEPRECATION")
+                        success = wifiManager.setWifiEnabled(state)
+                    }
+                    7 -> {
+                        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+                        if (bluetoothAdapter != null) {
+                            @Suppress("MissingPermission")
+                            success = if (bluetoothAdapter.isEnabled == state) true 
+                                      else if (state) bluetoothAdapter.enable() 
+                                      else bluetoothAdapter.disable()
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("RoninUI", "CRITICAL ERROR: Hardware Node $nodeId failed", e)
+                success = false
             }
-        }
+
             if (success) {
                 Log.i("RoninUI", "System: $toolName set to ${if (state) "ON" else "OFF"}")
             }
             success
         }
     }
+
 
     private fun checkAndRequestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -240,7 +264,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.9.3-PERMISSION-FIX")
+                        Text("Ronin Kernel v3.9.4-STABLE")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
