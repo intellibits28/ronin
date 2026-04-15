@@ -102,35 +102,34 @@ private fun setupHardwareCallbacks() {
         when (nodeId) {
             4 -> {
                 val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-...
-                    try {
-                        val cameraId = cameraManager.cameraIdList[0]
-                        cameraManager.setTorchMode(cameraId, state) 
-                        success = true
-                    } catch (e: Exception) { Log.e("RoninUI", "Flashlight Error", e) }
-                }
-                5 -> {
-                    toolName = "GPS"
-                    val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                    success = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
-                }
-                6 -> {
-                    toolName = "WiFi"
-                    val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                    @Suppress("DEPRECATION")
-                    success = wifiManager.setWifiEnabled(state)
-                }
-                7 -> {
-                    toolName = "Bluetooth"
-                    val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-                    if (bluetoothAdapter != null) {
-                        @Suppress("MissingPermission")
-                        success = if (bluetoothAdapter.isEnabled == state) true 
-                                  else if (state) bluetoothAdapter.enable() 
-                                  else bluetoothAdapter.disable()
-                    }
+                try {
+                    val cameraId = cameraManager.cameraIdList[0]
+                    cameraManager.setTorchMode(cameraId, state) 
+                    success = true
+                } catch (e: Exception) { Log.e("RoninUI", "Flashlight Error", e) }
+            }
+            5 -> {
+                toolName = "GPS"
+                val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                success = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            }
+            6 -> {
+                toolName = "WiFi"
+                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                @Suppress("DEPRECATION")
+                success = wifiManager.setWifiEnabled(state)
+            }
+            7 -> {
+                toolName = "Bluetooth"
+                val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+                if (bluetoothAdapter != null) {
+                    @Suppress("MissingPermission")
+                    success = if (bluetoothAdapter.isEnabled == state) true 
+                              else if (state) bluetoothAdapter.enable() 
+                              else bluetoothAdapter.disable()
                 }
             }
+        }
             if (success) {
                 Log.i("RoninUI", "System: $toolName set to ${if (state) "ON" else "OFF"}")
             }
