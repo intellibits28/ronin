@@ -28,6 +28,10 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
     else if (query.find("zip") != std::string::npos) type_hint = ".zip";
     else if (query.find("txt") != std::string::npos) type_hint = ".txt";
 
+    if (!type_hint.empty()) {
+        LOGI(TAG, "> Active Search Filter: [Extension=%s]", type_hint.c_str());
+    }
+
     // 3. Try Neural Vector Search first
     if (m_neural && m_neural->isLoaded()) {
         LOGI(TAG, "> Search Mode: Neural");
@@ -36,13 +40,16 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
         
         std::vector<std::pair<std::string, float>> neural_matches;
         for (auto& fe : all_embeddings) {
-            float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 384);
-            
-            // Apply Type-Hint Boost
-            if (!type_hint.empty() && fe.name.find(type_hint) != std::string::npos) {
-                sim += 0.3f;
+            // EXPLICIT FILTER: If we have a type hint, skip files that don't match it
+            if (!type_hint.empty()) {
+                std::string filename = fe.name;
+                std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
+                if (filename.find(type_hint) == std::string::npos) {
+                    continue;
+                }
             }
 
+            float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 384);
             if (sim > 0.7f) {
                 neural_matches.push_back({fe.name, sim});
             }
@@ -69,7 +76,22 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
     // 4. Fallback to Keyword (FTS5) Search
     LOGI(TAG, "> Search Mode: Keyword Fallback");
     auto results = m_ltm.searchFiles(query);
-    auto unique_results = Memory::MemoryManager::filterDuplicateFilenames(results);
+    
+    // EXPLICIT FILTER: Apply extension filter to keyword results
+    std::vector<std::string> filtered_results;
+    if (!type_hint.empty()) {
+        for (const auto& file : results) {
+            std::string filename = file;
+            std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
+            if (filename.find(type_hint) != std::string::npos) {
+                filtered_results.push_back(file);
+            }
+        }
+    } else {
+        filtered_results = results;
+    }
+
+    auto unique_results = Memory::MemoryManager::filterDuplicateFilenames(filtered_results);
     
     std::vector<std::string> formatted_results;
     if (unique_results.empty()) {
