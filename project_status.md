@@ -1,9 +1,10 @@
 # Ronin Kernel: Project Status Report
 
-## Current Milestone: v3.9.1-STABLE
-The project is currently in the final stabilization phase of the v3.9 cycle.
+## Current Milestone: v3.9.3-PERMISSION-FIX
+The project is focusing on resolving runtime permissions and stabilizing hardware access.
 
 ## Completed Tasks (Tested & Functional)
+- [x] **Hardware Permissions**: Added WiFi, Bluetooth, Camera, and GPS permissions to AndroidManifest.xml to fix SecurityExceptions.
 - [x] **Hybrid Intent Resolution**: 4-Tier logic (Greetings -> Keywords -> ONNX Inference -> Reasoning Spine).
 - [x] **Hardware Integration**: Full control over Flashlight, WiFi, Bluetooth, and GPS status via JNI.
 - [x] **Flashlight 'OFF' Logic**: Implemented Safety-First negation logic; 'off', 'stop', 'disable' tokens now override positive intents.
