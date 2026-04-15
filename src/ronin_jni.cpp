@@ -17,6 +17,7 @@
 #include <string>
 #include <algorithm>
 #include <cctype>
+#include <thread>
 
 #define TAG "RoninNativeEngine"
 
@@ -43,7 +44,7 @@ static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
 static JavaVM* g_vm = nullptr;
 static jobject g_engine_instance = nullptr;
 
-// v3.9.1-STABLE Bridge Implementations
+// v3.9.2-ASYNC Bridge Implementations
 namespace {
 class JniCapabilityManager : public Ronin::Kernel::CapabilityManager {
 public:
@@ -63,29 +64,33 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
 }
 
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
-  LOGI("RoninJNI", "Executing Node %u via Static Dispatch [v3.9.1-STABLE]", nodeId);
+  LOGI("RoninJNI", "Executing Node %u via Static Dispatch [v3.9.2-ASYNC]", nodeId);
   
-  // Hardware Execution via JNI Callback
+  // Hardware Execution via Asynchronous JNI Callback (Prevents ANRs)
   if (nodeId >= 4 && nodeId <= 7) {
       if (!g_vm || !g_engine_instance) {
           LOGE("RoninJNI", "Exec Error: JNI Instance not cached.");
           return {false, -1};
       }
 
-      JNIEnv* env = nullptr;
-      if (g_vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
-          return {false, -2};
-      }
+      bool intent_param = state.currentIntent.intent_param;
 
-      jclass cls = env->GetObjectClass(g_engine_instance);
-      jmethodID methodCallback = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
-      
-      if (methodCallback) {
-          jboolean success = env->CallBooleanMethod(g_engine_instance, methodCallback, 
-              static_cast<jint>(nodeId),
-              static_cast<jboolean>(state.currentIntent.intent_param));
-          return {success == JNI_TRUE, 200};
-      }
+      std::thread([nodeId, intent_param]() {
+          JNIEnv* env = nullptr;
+          if (g_vm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+              jclass cls = env->GetObjectClass(g_engine_instance);
+              jmethodID methodCallback = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
+              
+              if (methodCallback) {
+                  env->CallBooleanMethod(g_engine_instance, methodCallback, 
+                      static_cast<jint>(nodeId),
+                      static_cast<jboolean>(intent_param));
+              }
+              g_vm->DetachCurrentThread();
+          }
+      }).detach();
+
+      return {true, 202}; // Accepted/Task Started
   }
 
   return {true, 0};
@@ -142,8 +147,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_capability_graph = std::make_unique<CapabilityGraph>();
     g_graph_storage->loadGraph(*g_capability_graph);
     
-    // Default nodes for prototype (Fixed Names for Nuclear Path)
-    LOGI(TAG, "Registering mandatory nodes...");
+    // Default nodes
     g_capability_graph->addNode(1, "Reasoning_Engine");
     g_capability_graph->addNode(2, "FileSearchNode");
     g_capability_graph->addNode(3, "NeuralEmbeddingNode");
@@ -151,31 +155,22 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_capability_graph->addNode(5, "LocationNode");
     g_capability_graph->addNode(6, "WiFiNode");
     g_capability_graph->addNode(7, "BluetoothNode");
-    g_capability_graph->addEdge(1, 2, 0.5f); // File Search (Reset to 0.5)
-    g_capability_graph->addEdge(1, 3, 0.5f); // Neural (Reset to 0.5)
-    g_capability_graph->addEdge(1, 4, 0.5f); // SystemControl (Reset to 0.5)
-    g_capability_graph->addEdge(1, 5, 0.5f); // Location (Reset to 0.5)
-    g_capability_graph->addEdge(1, 6, 0.5f); // WiFi
-    g_capability_graph->addEdge(1, 7, 0.5f); // Bluetooth
-
-    Node* testNode = g_capability_graph->getNodeByID("FileSearchNode");
-    if (testNode) {
-        LOGI(TAG, "VERIFIED: FileSearchNode (ID %u) added to graph.", testNode->id);
-    } else {
-        LOGE(TAG, "CRITICAL: FileSearchNode registration FAILED!");
-    }
+    g_capability_graph->addEdge(1, 2, 0.5f);
+    g_capability_graph->addEdge(1, 3, 0.5f);
+    g_capability_graph->addEdge(1, 4, 0.5f);
+    g_capability_graph->addEdge(1, 5, 0.5f);
+    g_capability_graph->addEdge(1, 6, 0.5f);
+    g_capability_graph->addEdge(1, 7, 0.5f);
 
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
     
-    // Attach ONNX Inference Engine for Tier 3 intent detection
     auto inference_engine = std::make_unique<Ronin::Kernel::Model::InferenceEngine>(base_path + "/assets/models/model.onnx");
     g_intent_engine->setInferenceEngine(std::move(inference_engine));
 
     g_ronin_kernel = std::make_unique<RoninKernel>(s_handler_registry, s_cap_manager);
 
-    // 4. Trigger Background Scan
     LOGI(TAG, "Triggering automatic background scan of /storage/emulated/0");
     g_file_scanner->startScan("/storage/emulated/0");
 
@@ -191,21 +186,16 @@ Java_com_ronin_kernel_NativeEngine_loadCheckpoint(JNIEnv *env, jobject thiz, job
 
     auto verifier = flatbuffers::Verifier(static_cast<const uint8_t*>(buffer_ptr), static_cast<size_t>(capacity));
     if (!Ronin::Kernel::Checkpoint::VerifyCheckpointBuffer(verifier)) {
-        LOGE(TAG, "loadCheckpoint: FlatBuffers verification failed.");
         return JNI_FALSE;
     }
 
     auto checkpoint = Ronin::Kernel::Checkpoint::GetCheckpoint(buffer_ptr);
-    LOGI(TAG, "Checkpoint mapped via JNI. Frontier bitmask: %llu", 
-         static_cast<unsigned long long>(checkpoint->edge_frontier()));
-
     return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_updateLifecycleState(JNIEnv *env, jobject thiz, jint lifecycle_state) {
     if (lifecycle_state == 0) {
-        LOGI(TAG, "App in Background: Triggering LMK-aware flush.");
         Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::SEVERE;
         if (g_checkpoint_engine) g_checkpoint_engine->onLMKSignal();
         if (g_graph_executor) g_graph_executor->triggerAsyncSync();
@@ -219,13 +209,8 @@ Java_com_ronin_kernel_NativeEngine_computeSimilarity(JNIEnv *env, jobject thiz, 
     void* ptr_a = env->GetDirectBufferAddress(buffer_a);
     void* ptr_b = env->GetDirectBufferAddress(buffer_b);
     if (ptr_a == nullptr || ptr_b == nullptr) return -1.0f;
-
-    try {
-        return static_cast<jfloat>(Ronin::Kernel::Intent::compute_intent_similarity_neon(
-            static_cast<const int8_t*>(ptr_a), static_cast<const int8_t*>(ptr_b)));
-    } catch (...) {
-        return -1.0f;
-    }
+    return static_cast<jfloat>(Ronin::Kernel::Intent::compute_intent_similarity_neon(
+        static_cast<const int8_t*>(ptr_a), static_cast<const int8_t*>(ptr_b)));
 }
 
 JNIEXPORT jstring JNICALL
@@ -239,7 +224,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     std::string input_str(input_cstr);
     env->ReleaseStringUTFChars(input, input_cstr);
 
-    // 0. Intent Logic Bypass (Greetings First)
+    // 0. Greetings
     std::string clean_input = input_str;
     std::transform(clean_input.begin(), clean_input.end(), clean_input.begin(), ::tolower);
     if (clean_input == "hi" || clean_input == "hello" || clean_input == "hey" || clean_input == "mingalaba") {
@@ -254,7 +239,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
 
     if (g_long_term_memory) g_long_term_memory->storeMessage("user", input_str);
 
-    // 1. Trigger Core Heartbeat (v3.9 logic)
+    // 1. Heartbeat
     Input minimalist_input = {};
     size_t len = std::min(input_str.length(), sizeof(minimalist_input.data) - 1);
     memcpy(minimalist_input.data, input_str.c_str(), len);
@@ -264,7 +249,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         g_ronin_kernel->tick(minimalist_input);
     }
 
-    // 2. Routing Decision
+    // 2. Routing
     CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
     Node* next_node = g_graph_executor->selectNextNode(input_str);
     std::string response = "Input processed via Reasoning Spine (No specific capability triggered).";
@@ -273,24 +258,20 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         if (g_memory_manager) g_memory_manager->clearContext();
 
         if ((next_node->id == 2 || next_node->id == 3) && g_file_search_node) {
-            LOGI(TAG, "Routing to Hybrid FileSearch capability.");
             auto results = g_file_search_node->execute(input_str);
-            if (!results.empty()) {
-                response = results[0];
-            }
+            if (!results.empty()) response = results[0];
         } else if (next_node->id == 4) {
-            response = std::string("System: Flashlight ") + (intent.intent_param ? "ON" : "OFF") + "... [v3.9.1-STABLE]";
+            response = std::string("System: Flashlight ") + (intent.intent_param ? "ON" : "OFF") + " command sent. [v3.9.2-ASYNC]";
         } else if (next_node->id == 5) {
-            response = "System: Locating device... GPS Link Established.";
+            response = "System: GPS module activated. Retrieving location...";
         } else if (next_node->id == 6) {
-            response = std::string("System: WiFi ") + (intent.intent_param ? "ENABLED" : "DISABLED") + ".";
+            response = std::string("System: WiFi ") + (intent.intent_param ? "ENABLE" : "DISABLE") + " task started.";
         } else if (next_node->id == 7) {
-            response = std::string("System: Bluetooth ") + (intent.intent_param ? "ENABLED" : "DISABLED") + ".";
+            response = std::string("System: Bluetooth ") + (intent.intent_param ? "ENABLE" : "DISABLE") + " task started.";
         }
     }
 
     if (g_long_term_memory) g_long_term_memory->storeMessage("ronin", response);
-
     return env->NewStringUTF(response.c_str());
 }
 
@@ -298,15 +279,12 @@ JNIEXPORT jobjectArray JNICALL
 Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz) {
     if (!g_long_term_memory) return nullptr;
     auto history = g_long_term_memory->getHistory(50);
-    
     jclass stringClass = env->FindClass("java/lang/String");
     jobjectArray result = env->NewObjectArray(history.size() * 2, stringClass, nullptr);
-    
     for (size_t i = 0; i < history.size(); ++i) {
         env->SetObjectArrayElement(result, i * 2, env->NewStringUTF(history[i].first.c_str()));
         env->SetObjectArrayElement(result, i * 2 + 1, env->NewStringUTF(history[i].second.c_str()));
     }
-    
     return result;
 }
 
@@ -329,10 +307,7 @@ Java_com_ronin_kernel_NativeEngine_setEngineInstance(JNIEnv *env, jobject thiz) 
 
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
-    // Return true if RAM > 85%
-    if (total > 0 && (used / total) > 0.85f) {
-        return JNI_TRUE;
-    }
+    if (total > 0 && (used / total) > 0.85f) return JNI_TRUE;
     return JNI_FALSE;
 }
 
