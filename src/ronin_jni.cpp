@@ -68,7 +68,7 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
   LOGI("RoninJNI", "Executing Node %u via Static Dispatch [v3.9.5-STABLE]", nodeId);
   
-  // Hardware Execution via std::async (Prevents UI Thread blockage and ANRs)
+  // Hardware Execution via Detached Thread (Prevents UI Thread blockage and ANRs)
   if (nodeId >= 4 && nodeId <= 7) {
       if (!g_vm || !g_engine_instance) {
           LOGE("RoninJNI", "Exec Error: JNI Instance not cached.");
@@ -77,16 +77,16 @@ Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel:
 
       bool intent_param = state.currentIntent.intent_param;
 
-      // Use std::async to run the hardware toggle in the background
-      std::async(std::launch::async, [nodeId, intent_param]() {
+      // Use a raw thread and detach it to ensure it doesn't block the Kernel spine
+      std::thread([nodeId, intent_param]() {
           JNIEnv* env = nullptr;
-          // Use AttachCurrentThreadAsDaemon to prevent thread from blocking JVM shutdown
           JavaVMAttachArgs args;
           args.version = JNI_VERSION_1_6;
           args.name = "RoninHardwareThread";
           args.group = nullptr;
 
-          if (g_vm->AttachCurrentThread(&env, &args) == JNI_OK) {
+          // Typecast to void** for Android-compatible signature
+          if (g_vm->AttachCurrentThread(reinterpret_cast<JNIEnv**>(&env), &args) == JNI_OK) {
               jclass cls = env->GetObjectClass(g_engine_instance);
               jmethodID methodCallback = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
               
@@ -105,7 +105,7 @@ Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel:
               }
               g_vm->DetachCurrentThread();
           }
-      });
+      }).detach();
 
       return {true, 202}; // Success: Action Initiated
   }

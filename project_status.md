@@ -15,9 +15,9 @@
 ---
 
 ## 3. Active Stabilization (The "Sanitization" Phase)
-- [ ] **JNI Thread Safety (v3.9.5):** Resolve Bluetooth 'Instant Exit' by properly attaching background threads to Java VM via `AttachCurrentThread()`.
-- [ ] **Tier 2 Verification:** Implement detailed JNI logging in `IntentEngine.cpp` to print `Intent ID` and `Confidence Score` to verify ONNX activity.
-- [ ] **Memory Guard:** Implement JNI-level logging for RAM usage during high-frequency hardware toggles to monitor memory pressure.
+- [x] **JNI Thread Safety (v3.9.5):** COMPLETED. Resolved Bluetooth 'Instant Exit' by switching to detached threads and proper `AttachCurrentThread()` pointer casting.
+- [x] **Tier 2 Verification:** COMPLETED. Detailed JNI logging active in `IntentEngine.cpp` showing ID and Confidence.
+- [x] **Memory Guard:** COMPLETED. High-frequency RAM monitoring active in JNI `updateSystemHealth`.
 
 ---
 
@@ -41,6 +41,6 @@
 ---
 
 ## 7. Compliance & Design Credits
-- Core logic utilizes clean-room design patterns for minimalist runtime efficiency (Inspired by NullClaw principles: Static Dispatch, Unmanaged Structures, Circular Buffers).
+- Core logic utilizes clean-room design patterns for minimalist runtime efficiency (Static Dispatch, Unmanaged Structures, Circular Buffers).
 
 *Last Updated: April 15, 2026*
