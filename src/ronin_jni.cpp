@@ -18,6 +18,8 @@
 #include <algorithm>
 #include <cctype>
 #include <thread>
+#include <future>
+#include <chrono>
 
 #define TAG "RoninNativeEngine"
 
@@ -66,7 +68,7 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
   LOGI("RoninJNI", "Executing Node %u via Static Dispatch [v3.9.2-ASYNC]", nodeId);
   
-  // Hardware Execution via Asynchronous JNI Callback (Prevents ANRs)
+  // Hardware Execution via std::async (Prevents UI Thread blockage and ANRs)
   if (nodeId >= 4 && nodeId <= 7) {
       if (!g_vm || !g_engine_instance) {
           LOGE("RoninJNI", "Exec Error: JNI Instance not cached.");
@@ -75,22 +77,31 @@ Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel:
 
       bool intent_param = state.currentIntent.intent_param;
 
-      std::thread([nodeId, intent_param]() {
+      // Use std::async to run the hardware toggle in the background
+      std::async(std::launch::async, [nodeId, intent_param]() {
           JNIEnv* env = nullptr;
           if (g_vm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
               jclass cls = env->GetObjectClass(g_engine_instance);
               jmethodID methodCallback = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
               
               if (methodCallback) {
+                  auto start = std::chrono::high_resolution_clock::now();
+                  
+                  LOGI("RoninPerf", ">>> START: OS Hardware Call for Node %u", nodeId);
                   env->CallBooleanMethod(g_engine_instance, methodCallback, 
                       static_cast<jint>(nodeId),
                       static_cast<jboolean>(intent_param));
+                  
+                  auto end = std::chrono::high_resolution_clock::now();
+                  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+                  
+                  LOGI("RoninPerf", "<<< END: OS Hardware Call for Node %u (Latency: %lld ms)", nodeId, (long long)elapsed);
               }
               g_vm->DetachCurrentThread();
           }
-      }).detach();
+      });
 
-      return {true, 202}; // Accepted/Task Started
+      return {true, 202}; // Success: Action Initiated
   }
 
   return {true, 0};
@@ -261,13 +272,13 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
             auto results = g_file_search_node->execute(input_str);
             if (!results.empty()) response = results[0];
         } else if (next_node->id == 4) {
-            response = std::string("System: Flashlight ") + (intent.intent_param ? "ON" : "OFF") + " command sent. [v3.9.2-ASYNC]";
+            response = std::string("Success: Action Initiated - Flashlight ") + (intent.intent_param ? "ON" : "OFF");
         } else if (next_node->id == 5) {
-            response = "System: GPS module activated. Retrieving location...";
+            response = "Success: Action Initiated - Locating device...";
         } else if (next_node->id == 6) {
-            response = std::string("System: WiFi ") + (intent.intent_param ? "ENABLE" : "DISABLE") + " task started.";
+            response = std::string("Success: Action Initiated - WiFi ") + (intent.intent_param ? "ENABLE" : "DISABLE");
         } else if (next_node->id == 7) {
-            response = std::string("System: Bluetooth ") + (intent.intent_param ? "ENABLE" : "DISABLE") + " task started.";
+            response = std::string("Success: Action Initiated - Bluetooth ") + (intent.intent_param ? "ENABLE" : "DISABLE");
         }
     }
 

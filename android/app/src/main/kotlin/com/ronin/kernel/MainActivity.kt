@@ -1,6 +1,7 @@
 package com.ronin.kernel
 
 import android.os.Bundle
+import android.widget.Toast
 import android.content.Context
 import android.app.ActivityManager
 import android.os.BatteryManager
@@ -82,15 +83,26 @@ class MainActivity : ComponentActivity() {
             RoninChatUI(nativeEngine, chatViewModel)
         }
     }
+private fun setupHardwareCallbacks() {
+    nativeEngine.executeHardwareAction = { nodeId, state ->
+        var toolName = ""
+        when (nodeId) {
+            4 -> toolName = "Flashlight"
+            5 -> toolName = "GPS"
+            6 -> toolName = "WiFi"
+            7 -> toolName = "Bluetooth"
+        }
 
-    private fun setupHardwareCallbacks() {
-        nativeEngine.executeHardwareAction = { nodeId, state ->
-            var success = false
-            var toolName = ""
-            when (nodeId) {
-                4 -> {
-                    toolName = "Flashlight"
-                    val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        // Show immediate feedback to user
+        runOnUiThread {
+            Toast.makeText(this, "Kernel: Initiating $toolName toggle...", Toast.LENGTH_SHORT).show()
+        }
+
+        var success = false
+        when (nodeId) {
+            4 -> {
+                val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+...
                     try {
                         val cameraId = cameraManager.cameraIdList[0]
                         cameraManager.setTorchMode(cameraId, state) 
