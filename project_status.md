@@ -1,31 +1,52 @@
-# Ronin Kernel: Project Status Report
+# Ronin Kernel: Project Status & Strategic Roadmap
 
-## Current Milestone: v3.9.3-PERMISSION-FIX
-The project is focusing on resolving runtime permissions and stabilizing hardware access.
+## 1. Project Overview
+**Name:** Ronin Kernel (v3.9 -> v4.0 Evolution)
+**Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G, utilizing a Hybrid Intent System and Clean-Room minimalist design patterns.
 
-## Completed Tasks (Tested & Functional)
-- [x] **Hardware Permissions**: Added WiFi, Bluetooth, Camera, and GPS permissions to AndroidManifest.xml to fix SecurityExceptions.
-- [x] **Hybrid Intent Resolution**: 4-Tier logic (Greetings -> Keywords -> ONNX Inference -> Reasoning Spine).
-- [x] **Hardware Integration**: Full control over Flashlight, WiFi, Bluetooth, and GPS status via JNI.
-- [x] **Flashlight 'OFF' Logic**: Implemented Safety-First negation logic; 'off', 'stop', 'disable' tokens now override positive intents.
-- [x] **Real-time System Monitoring**: Background polling of RAM usage and CPU/Battery temperature with high-pressure pruning logic.
-- [x] **UI Persistence**: Chat history and reasoning logs maintained via Android ViewModel and Native SQLite "Source of Truth".
-- [x] **Dynamic Manifest**: Capabilities loaded from `assets/capabilities.json`, allowing skill expansion without C++ recompilation.
-- [x] **Context Awareness**: Support for follow-up commands (e.g., "do it") using `m_last_suggested_subject`.
-- [x] **Deduplication**: Efficient file search result filtering using `std::unique`.
+---
 
-## Pending Bugs & Active Issues
-- [ ] **ONNX Linking Errors**: GitHub Workflow updated with debug listing to verify `.so` file paths before the linker step. Active investigation.
+## 2. Current Status (v3.9.3-STABILITY)
+- [x] **Tier 1 (Greetings/Keywords):** Fully functional. Tier 1 (Greetings) and Tier 2 (Dynamic Keywords) are decoupled and order-independent.
+- [x] **Hardware Toggles:** Flashlight, WiFi, and Bluetooth fixed. Integrated **Async std::async** execution to prevent UI freezes.
+- [x] **Safety Logic:** Negation priority implemented. 'OFF/Stop/Disable' tokens correctly override all positive triggers.
+- [x] **Android Integration:** Critical hardware permissions (WiFi, BT, GPS, Camera) added to Manifest to resolve SecurityExceptions.
+- [x] **State Management:** SQLite-based chat history and Context Awareness (`m_last_suggested_subject`) are stable and survive Activity rotation via ViewModel.
+- [x] **Tier 3 (ONNX Inference):** Bridge integrated and active. Model loading verified via JNI logs. Current logic uses a hybrid heuristic fallback.
 
-## Divergence from Original Plan
-- **Intelligence Shift**: The system was originally scoped as a static rule engine. It has diverged into a neural-hybrid kernel with the inclusion of ONNX inference for intent classification.
-- **Persistence Layer**: Native SQLite persistence for chat history was added to mitigate Android activity lifecycle resets, a step beyond the initial volatile memory design.
-- **Dynamic Extensibility**: The implementation of a JSON-based capability manifest was a mid-cycle pivot to ensure Ronin could scale to hundreds of "skills" without bloated kernel code.
+---
 
-## Future Roadmap: v4.0 SENSOR-HUB
-- **Multimodal Inputs**: Integration of Audio (Whisper) and Vision (LLaVA) via ONNX Runtime.
-- **Sensor Fusion**: Real-time processing of Accelerometer/Gyroscope data for activity-aware reasoning.
-- **Privacy Lock**: Local-only intent masking to ensure user queries never leave the device.
-- **Neural Graph**: Transitioning the Capability Graph from static weights to a fully differentiable neural-link model.
+## 3. Immediate Stabilization (The "Sanitization" Phase)
+- [x] **Fix ANR (v3.9.2):** COMPLETED. Moved WiFi/Bluetooth toggles to background threads using `std::async(std::launch::async)`.
+- [x] **Negation Priority:** COMPLETED. 'OFF' tokens now have absolute override authority in `IntentEngine.cpp`.
+- [ ] **Verify ONNX (v3.9.4):** Pending further JNI stress tests. Need to finalize the `.so` pathing logic in CI/CD to eliminate intermittent linking warnings.
 
-*Last Updated: Tuesday, April 14, 2026*
+---
+
+## 4. Phase 4.0: The Modular Evolution (NullClaw Patterns)
+**Core Redesign Goals:**
+- **Modular Skill Interface:** Transition to a **Vtable-based Registry**. Use a Component-Interface pattern to allow adding new Skills (GPS, SMS, Sensors) without recompiling the core kernel.
+- **Vtable Registry Implementation:** Decouple `IntentEngine` from specific hardware calls using `BaseSkill` interfaces.
+
+---
+
+## 5. Phase 4.1: Local Inference Engine (Brain Plugins)
+- **Local Brain (Gemma 4):** Integration of **MediaPipe LLM Inference API (LiteRT)** for on-demand local reasoning.
+- **Multimodal Foundation:** Placeholder JNI structures for Vision (Camera2) and AudioRecord (Whisper).
+- **Thermal & Battery Guard:** Implementation of a JNI-level monitor that unloads the Local LLM if device temperature > 40°C or battery < 15%.
+
+---
+
+## 6. Future Skills & Capabilities (The Roadmap)
+- **v4.2 (SENSOR-HUB):** Native JNI SensorEventListener for SHM (Vibration Analysis).
+- **v4.3 (SOCIAL-BRIDGE):** ContactNode & SmsNode for multi-step tasks (e.g., "Send location to Dad").
+- **v4.4 (DSP-SKILL):** Digital Signal Processing for sensor noise reduction and audio filtering.
+
+---
+
+## 7. Divergence from Original Plan
+- **Intelligence Shift**: Transitioned from a rule-engine to a neural-hybrid design midway through v3.8.
+- **Persistence Layer**: Added native SQLite history to support complex multi-turn context beyond the original volatile scope.
+- **Async Execution**: Pivoted to mandatory `std::async` wrappers for all hardware calls to ensure strict 60FPS UI stability.
+
+*Last Updated: April 15, 2026*
