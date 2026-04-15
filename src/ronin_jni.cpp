@@ -66,7 +66,7 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
 }
 
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
-  LOGI("RoninJNI", "Executing Node %u via Static Dispatch [v3.9.2-ASYNC]", nodeId);
+  LOGI("RoninJNI", "Executing Node %u via Static Dispatch [v3.9.5-STABLE]", nodeId);
   
   // Hardware Execution via std::async (Prevents UI Thread blockage and ANRs)
   if (nodeId >= 4 && nodeId <= 7) {
@@ -80,7 +80,13 @@ Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel:
       // Use std::async to run the hardware toggle in the background
       std::async(std::launch::async, [nodeId, intent_param]() {
           JNIEnv* env = nullptr;
-          if (g_vm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+          // Use AttachCurrentThreadAsDaemon to prevent thread from blocking JVM shutdown
+          JavaVMAttachArgs args;
+          args.version = JNI_VERSION_1_6;
+          args.name = "RoninHardwareThread";
+          args.group = nullptr;
+
+          if (g_vm->AttachCurrentThread(&env, &args) == JNI_OK) {
               jclass cls = env->GetObjectClass(g_engine_instance);
               jmethodID methodCallback = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
               
@@ -318,7 +324,14 @@ Java_com_ronin_kernel_NativeEngine_setEngineInstance(JNIEnv *env, jobject thiz) 
 
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
-    if (total > 0 && (used / total) > 0.85f) return JNI_TRUE;
+    LOGI("RoninHealth", "System Health Poll: Temp=%.1f C | RAM=%.2f/%.2f GB (%.1f%%)", 
+         temp, used, total, (total > 0 ? (used / total) * 100.0f : 0));
+
+    // Return true if RAM > 85%
+    if (total > 0 && (used / total) > 0.85f) {
+        LOGW("RoninHealth", "> CRITICAL: High Memory Pressure detected. Signaling Kernel for pruning.");
+        return JNI_TRUE;
+    }
     return JNI_FALSE;
 }
 

@@ -264,7 +264,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.9.4-STABLE")
+                        Text("Ronin Kernel v3.9.5-STABLE")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
