@@ -15,9 +15,10 @@
 ---
 
 ## 3. Active Stabilization (The "Sanitization" Phase)
-- [x] **JNI Thread Safety (v3.9.5):** COMPLETED. Resolved Bluetooth 'Instant Exit' by switching to detached threads and proper `AttachCurrentThread()` pointer casting.
-- [x] **Tier 2 Verification:** COMPLETED. Detailed JNI logging active in `IntentEngine.cpp` showing ID and Confidence.
+- [x] **JNI Thread Safety (v3.9.5):** COMPLETED. Resolved Bluetooth 'Instant Exit'.
+- [x] **Tier 2 Verification:** COMPLETED. Detailed JNI logging active in `IntentEngine.cpp`.
 - [x] **Memory Guard:** COMPLETED. High-frequency RAM monitoring active in JNI `updateSystemHealth`.
+- [x] **Intent ID & Search Calibration (v3.9.7):** COMPLETED. Fixed Bluetooth vs Flashlight conflict via Strict Bypass. Improved File Search isolation for MP3/PDF.
 
 ---
 

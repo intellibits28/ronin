@@ -61,6 +61,11 @@ class ChatViewModel : ViewModel() {
     var l2Count by mutableStateOf(0)
     var l3Count by mutableStateOf(0)
     
+    // Lazy Loading History
+    var historyPage by mutableStateOf(0)
+    var isLoadingHistory by mutableStateOf(false)
+    var hasMoreHistory by mutableStateOf(true)
+
     // Health metrics
     var temperature by mutableStateOf(0f)
     var ramUsedGB by mutableStateOf(0f)
@@ -191,10 +196,59 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
     val chatListState = rememberLazyListState()
     val reasoningListState = rememberLazyListState()
     
-    // Auto-scroll logic for Chat
+    val scope = rememberCoroutineScope()
+
+    // Lazy Loading History Implementation
+    val loadNextHistoryPage = {
+        if (!chatViewModel.isLoadingHistory && chatViewModel.hasMoreHistory) {
+            chatViewModel.isLoadingHistory = true
+            scope.launch {
+                val pageSize = 20
+                val offset = chatViewModel.historyPage * pageSize
+                val newHistory = engine.getChatHistoryAsync(pageSize, offset)
+                
+                if (newHistory.isEmpty()) {
+                    chatViewModel.hasMoreHistory = false
+                } else {
+                    // Prepend history
+                    newHistory.reversed().forEach { (role, content) ->
+                        val msg = if (role == "user") "User: $content" else "Ronin: $content"
+                        messages.add(0, msg)
+                    }
+                    chatViewModel.historyPage++
+                }
+                chatViewModel.isLoadingHistory = false
+            }
+        }
+    }
+
+    // Initial history load
+    LaunchedEffect(Unit) {
+        loadNextHistoryPage()
+    }
+
+    // Detect when user scrolls to top to load more history
+    LaunchedEffect(chatListState.firstVisibleItemIndex) {
+        if (chatListState.firstVisibleItemIndex == 0 && messages.isNotEmpty()) {
+            loadNextHistoryPage()
+        }
+    }
+
+    // Auto-scroll logic for Chat: Only scroll if user sent message or already at bottom
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            chatListState.animateScrollToItem(messages.size - 1)
+            val lastMsg = messages.last()
+            val isUserMsg = lastMsg.startsWith("User:")
+            
+            // Check if we are near bottom
+            val layoutInfo = chatListState.layoutInfo
+            val visibleItemsInfo = layoutInfo.visibleItemsInfo
+            val isAtBottom = if (visibleItemsInfo.isEmpty()) true 
+                             else visibleItemsInfo.last().index == layoutInfo.totalItemsCount - 1
+
+            if (isUserMsg || isAtBottom) {
+                chatListState.animateScrollToItem(messages.size - 1)
+            }
         }
     }
 
@@ -212,18 +266,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
     val l2Count = chatViewModel.l2Count
     val l3Count = chatViewModel.l3Count
     
-    val scope = rememberCoroutineScope()
-
-    // Sync History from Kernel (Source of Truth)
-    LaunchedEffect(Unit) {
-        if (messages.isEmpty()) {
-            val history = engine.getChatHistoryAsync()
-            history.forEach { (role, content) ->
-                if (role == "user") messages.add("User: $content")
-                else messages.add("Ronin: $content")
-            }
-        }
-    }
+    // Sync History from Kernel - REMOVED for v3.9.7-PRIVACY-UI (Use /history command)
 
     // Kernel Polling Loop (System Monitoring v3.9)
     LaunchedEffect(Unit) {
@@ -264,7 +307,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.9.6-FILTER-FIX")
+                        Text("Ronin Kernel v3.9.7-AUTO-SCROLL")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
@@ -290,6 +333,14 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
         ) {
             // 1. Context Timeline (L1, L2, L3 Visualization)
             ContextTimeline(l1Count, l2Count, l3Count)
+
+            if (chatViewModel.isLoadingHistory) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = Color.Cyan,
+                    backgroundColor = Color.Transparent
+                )
+            }
 
             // 2. Chat History
             LazyColumn(
@@ -354,13 +405,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                                 scaffoldState.snackbarHostState.showSnackbar("System: Bluetooth engaged.")
                             }
                             
-                            // Re-sync from Kernel history to ensure perfect consistency
-                            val history = engine.getChatHistoryAsync()
-                            messages.clear()
-                            history.forEach { (role, content) ->
-                                if (role == "user") messages.add("User: $content")
-                                else messages.add("Ronin: $content")
-                            }
+                            // Add Ronin's response to the UI
+                            messages.add("Ronin: $kernelOutput")
                         }
                     }
                 }

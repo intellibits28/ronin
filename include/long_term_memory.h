@@ -46,7 +46,7 @@ public:
 
     // Chat History Persistence
     bool storeMessage(const std::string& role, const std::string& content);
-    std::vector<std::pair<std::string, std::string>> getHistory(int limit = 50);
+    std::vector<std::pair<std::string, std::string>> getHistory(int limit = 50, int offset = 0);
 
     // File Indexing (FTS5 + Semantic)
     struct FileEmbedding {

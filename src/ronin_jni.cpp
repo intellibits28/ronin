@@ -293,9 +293,9 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz) {
+Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
     if (!g_long_term_memory) return nullptr;
-    auto history = g_long_term_memory->getHistory(50);
+    auto history = g_long_term_memory->getHistory(limit, offset);
     jclass stringClass = env->FindClass("java/lang/String");
     jobjectArray result = env->NewObjectArray(history.size() * 2, stringClass, nullptr);
     for (size_t i = 0; i < history.size(); ++i) {

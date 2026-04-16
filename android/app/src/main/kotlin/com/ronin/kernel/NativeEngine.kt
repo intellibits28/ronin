@@ -57,9 +57,9 @@ class NativeEngine {
     external fun getLMKPressure(): Int
 
     /**
-     * Triggers Natural Forgetting background maintenance.
+     * Retrieves chat history from SQLite (Kernel source of truth) with pagination.
      */
-    external fun runMaintenance(isCharging: Boolean): Int
+    private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
 
     // --- System Health JNI Bridges ---
     external fun updateSystemHealth(temperature: Float, ramUsedGB: Float, ramTotalGB: Float): Boolean
@@ -77,8 +77,8 @@ class NativeEngine {
 
     // --- Coroutine Wrappers ---
 
-    suspend fun getChatHistoryAsync(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
-        val raw = getChatHistory() ?: return@withContext emptyList<Pair<String, String>>()
+    suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        val raw = getChatHistory(limit, offset) ?: return@withContext emptyList<Pair<String, String>>()
         val result = mutableListOf<Pair<String, String>>()
         for (i in 0 until raw.size / 2) {
             result.add(raw[i * 2] to raw[i * 2 + 1])

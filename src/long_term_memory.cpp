@@ -330,14 +330,15 @@ bool LongTermMemory::storeMessage(const std::string& role, const std::string& co
     return success;
 }
 
-std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int limit) {
+std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int limit, int offset) {
     if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::pair<std::string, std::string>> history;
-    const char* sql = "SELECT role, content FROM chat_history ORDER BY id DESC LIMIT ?;";
+    const char* sql = "SELECT role, content FROM chat_history ORDER BY id ASC LIMIT ? OFFSET ?;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_int(stmt, 1, limit);
+        sqlite3_bind_int(stmt, 2, offset);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* role = sqlite3_column_text(stmt, 0);
             const unsigned char* content = sqlite3_column_text(stmt, 1);
@@ -347,8 +348,6 @@ std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int 
         }
     }
     sqlite3_finalize(stmt);
-    // Reverse to get chronological order
-    std::reverse(history.begin(), history.end());
     return history;
 }
 
