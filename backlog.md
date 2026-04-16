@@ -1,8 +1,10 @@
 # Ronin Kernel Task Backlog
 
-## Priority 1: Critical Fixes & Calibration
-- **Intent ID Mapping Fix:** Investigate and correct `IntentEngine.cpp`. Resolve issue where 'Bluetooth' triggers 'Flashlight'.
-- **File Search Filter Fix:** Update `FileSearchNode` or relevant logic to ensure strict extension checking (.mp3 only returns audio, .pdf only returns documents).
+## Priority 1: Critical Fixes & Calibration (v3.9.7 STABLE)
+- [x] **Intent ID Mapping Fix:** Resolved Bluetooth vs Flashlight conflict via Strict Bypass.
+- [x] **File Search Filter Fix:** Implemented 'ends_with' strict extension isolation and keyword mapping.
+- [x] **UI Auto-Scroll Fix:** Chat now scrolls to bottom on new messages.
+- [x] **Lazy Loading History:** Implemented paginated history loading in MainActivity.
 
 ## Priority 2: Phase 4.0 & 4.1 (Modular Evolution)
 - **Modular Skill Interface:** Transition to a Vtable-based Registry.
