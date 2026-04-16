@@ -50,28 +50,28 @@ GraphExecutor::~GraphExecutor() {
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
-    // --- STRICT HARDWARE BYPASS v3.9.6-FILTER-FIX ---
+    // --- STRICT HARDWARE BYPASS v3.9.7-AUTO-SCROLL ---
     bool hasVerb = (clean.find("turn on") != std::string::npos || clean.find("turn off") != std::string::npos || 
                     clean.find("switch on") != std::string::npos || clean.find("switch off") != std::string::npos ||
                     clean.find("enable") != std::string::npos || clean.find("disable") != std::string::npos);
 
     if (hasVerb) {
-        if (clean.find("flashlight") != std::string::npos || clean.find("torch") != std::string::npos) {
-            LOGI(TAG, "> Route: Strict Bypass (Intent: Flashlight) [v3.9.6-FILTER-FIX]");
+        if (clean.find("flashlight") != std::string::npos || clean.find("torch") != std::string::npos || clean.find("light") != std::string::npos) {
+            LOGI(TAG, "> Route: Strict Bypass (Intent: Flashlight) [v3.9.7-AUTO-SCROLL]");
             return m_graph.getNode(4);
         }
         if (clean.find("wifi") != std::string::npos) {
-            LOGI(TAG, "> Route: Strict Bypass (Intent: WiFi) [v3.9.6-FILTER-FIX]");
+            LOGI(TAG, "> Route: Strict Bypass (Intent: WiFi) [v3.9.7-AUTO-SCROLL]");
             return m_graph.getNode(6);
         }
-        if (clean.find("bluetooth") != std::string::npos) {
-            LOGI(TAG, "> Route: Strict Bypass (Intent: Bluetooth) [v3.9.6-FILTER-FIX]");
+        if (clean.find("bluetooth") != std::string::npos || clean.find("bt") != std::string::npos) {
+            LOGI(TAG, "> Route: Strict Bypass (Intent: Bluetooth) [v3.9.7-AUTO-SCROLL]");
             return m_graph.getNode(7);
         }
     }
 
     if (clean == "where am i" || clean == "get location" || clean == "gps status") {
-        LOGI(TAG, "> Route: Strict Bypass (Intent: Location) [v3.9.6-FILTER-FIX]");
+        LOGI(TAG, "> Route: Strict Bypass (Intent: Location) [v3.9.7-AUTO-SCROLL]");
         return m_graph.getNode(5);
     }
 
@@ -84,7 +84,7 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
     if (isSearchPrefix || isFilename) {
         Node* searchNode = m_graph.getNodeByID("FileSearchNode");
         if (searchNode) {
-            LOGI(TAG, "> Route: Neural Bypass (Intent: Search) [v3.9.6-FILTER-FIX]");
+            LOGI(TAG, "> Route: Neural Bypass (Intent: Search) [v3.9.7-AUTO-SCROLL]");
             return searchNode;
         }
     }
@@ -96,7 +96,7 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
 
 Node* GraphExecutor::runThompsonSampling(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Reasoning Spine active: [Kernel v3.9.6-FILTER-FIX]");
+    LOGI(TAG, "Reasoning Spine active: [Kernel v3.9.7-AUTO-SCROLL]");
 
     Node* current = m_graph.getNode(1); 
     if (!current) {

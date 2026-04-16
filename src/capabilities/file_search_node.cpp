@@ -22,11 +22,14 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
 
     // 2. Identify Type Hints (Extensions)
     std::string type_hint = "";
-    if (query.find("pdf") != std::string::npos) type_hint = ".pdf";
-    else if (query.find("jpg") != std::string::npos || query.find("jpeg") != std::string::npos) type_hint = ".jpg";
-    else if (query.find("mp3") != std::string::npos) type_hint = ".mp3";
-    else if (query.find("zip") != std::string::npos) type_hint = ".zip";
-    else if (query.find("txt") != std::string::npos) type_hint = ".txt";
+    std::string lower_query = query;
+    std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
+
+    if (lower_query.find("pdf") != std::string::npos || lower_query.find("document") != std::string::npos) type_hint = ".pdf";
+    else if (lower_query.find("jpg") != std::string::npos || lower_query.find("jpeg") != std::string::npos || lower_query.find("image") != std::string::npos || lower_query.find("photo") != std::string::npos) type_hint = ".jpg";
+    else if (lower_query.find("mp3") != std::string::npos || lower_query.find("music") != std::string::npos || lower_query.find("audio") != std::string::npos || lower_query.find("song") != std::string::npos) type_hint = ".mp3";
+    else if (lower_query.find("zip") != std::string::npos || lower_query.find("archive") != std::string::npos) type_hint = ".zip";
+    else if (lower_query.find("txt") != std::string::npos || lower_query.find("note") != std::string::npos) type_hint = ".txt";
 
     if (!type_hint.empty()) {
         LOGI(TAG, "> Active Search Filter: [Extension=%s]", type_hint.c_str());
@@ -44,7 +47,9 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
             if (!type_hint.empty()) {
                 std::string filename = fe.name;
                 std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
-                if (filename.find(type_hint) == std::string::npos) {
+                // Strict extension check (ends_with)
+                if (filename.length() < type_hint.length() || 
+                    filename.compare(filename.length() - type_hint.length(), type_hint.length(), type_hint) != 0) {
                     continue;
                 }
             }
@@ -83,7 +88,9 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
         for (const auto& file : results) {
             std::string filename = file;
             std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
-            if (filename.find(type_hint) != std::string::npos) {
+            // Strict extension check (ends_with)
+            if (filename.length() >= type_hint.length() && 
+                filename.compare(filename.length() - type_hint.length(), type_hint.length(), type_hint) == 0) {
                 filtered_results.push_back(file);
             }
         }
