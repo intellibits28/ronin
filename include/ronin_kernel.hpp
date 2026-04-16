@@ -36,6 +36,9 @@ public:
   std::string getSuggestedSubject() const { return m_last_suggested_subject; }
   void clearSuggestedSubject() { m_last_suggested_subject.clear(); }
 
+  // Physical Context Injection
+  void injectLocation(double lat, double lon);
+
 private:
   const HandlerRegistry &registry_;
   CapabilityManager &capManager_;

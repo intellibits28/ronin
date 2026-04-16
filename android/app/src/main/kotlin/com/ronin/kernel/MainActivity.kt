@@ -10,6 +10,10 @@ import android.net.wifi.WifiManager
 import android.bluetooth.BluetoothAdapter
 import android.location.LocationManager
 import android.hardware.camera2.CameraManager
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.text.font.FontFamily
 import android.os.Environment
@@ -74,11 +78,13 @@ class ChatViewModel : ViewModel() {
 
 class MainActivity : ComponentActivity() {
     private val nativeEngine = NativeEngine()
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         nativeEngine.initializeKernel(filesDir.absolutePath)
         nativeEngine.setEngineInstance()
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         setupHardwareCallbacks()
         checkAndRequestStoragePermission()
@@ -96,9 +102,12 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissions.add(android.Manifest.permission.BLUETOOTH_CONNECT)
             permissions.add(android.Manifest.permission.BLUETOOTH_SCAN)
+            permissions.add(android.Manifest.permission.BLUETOOTH_ADVERTISE)
+            permissions.add(android.Manifest.permission.BLUETOOTH_ADMIN)
         }
 
         permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        permissions.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
         permissions.add(android.Manifest.permission.CAMERA)
 
         val missing = permissions.filter {
@@ -135,21 +144,37 @@ class MainActivity : ComponentActivity() {
                         success = true
                     }
                     5 -> {
-                        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                        success = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                        // GPS: Real Fused Location Implementation
+                        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
+                                .addOnSuccessListener { location ->
+                                    if (location != null) {
+                                        Log.i("RoninUI", "GPS: Success [${location.latitude}, ${location.longitude}]")
+                                        nativeEngine.injectLocation(location.latitude, location.longitude)
+                                    }
+                                }
+                            success = true
+                        } else {
+                            Log.e("RoninUI", "GPS Error: Missing ACCESS_FINE_LOCATION")
+                        }
                     }
                     6 -> {
                         val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                        @Suppress("DEPRECATION")
-                        success = wifiManager.setWifiEnabled(state)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            // Android 10+ requires Intent for user to toggle WiFi manually for security
+                            val panelIntent = Intent(Settings.Panel.ACTION_WIFI)
+                            startActivity(panelIntent)
+                            success = true
+                        } else {
+                            @Suppress("DEPRECATION")
+                            success = wifiManager.setWifiEnabled(state)
+                        }
                     }
                     7 -> {
                         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
                         if (bluetoothAdapter != null) {
                             @Suppress("MissingPermission")
-                            success = if (bluetoothAdapter.isEnabled == state) true 
-                                      else if (state) bluetoothAdapter.enable() 
-                                      else bluetoothAdapter.disable()
+                            success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
                         }
                     }
                 }
@@ -159,7 +184,7 @@ class MainActivity : ComponentActivity() {
             }
 
             if (success) {
-                Log.i("RoninUI", "System: $toolName set to ${if (state) "ON" else "OFF"}")
+                Log.i("RoninUI", "System: $toolName action successfully dispatched.")
             }
             success
         }
@@ -222,19 +247,17 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
         }
     }
 
-    // Initial history load
-    LaunchedEffect(Unit) {
-        loadNextHistoryPage()
-    }
+    // Initial history load (REMOVED for v3.9.7 PRIVACY-RECOVERY - Clean slate on startup)
+    // Only fetch history when explicitly requested via /history (Handled in processInput logic)
 
     // Detect when user scrolls to top to load more history
     LaunchedEffect(chatListState.firstVisibleItemIndex) {
-        if (chatListState.firstVisibleItemIndex == 0 && messages.isNotEmpty()) {
+        if (chatListState.firstVisibleItemIndex == 0 && messages.isNotEmpty() && !chatViewModel.isLoadingHistory) {
             loadNextHistoryPage()
         }
     }
 
-    // Auto-scroll logic for Chat: Only scroll if user sent message or already at bottom
+    // Auto-scroll logic for Chat: Use SideEffect for layout-aware scrolling
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             val lastMsg = messages.last()
@@ -244,9 +267,10 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             val layoutInfo = chatListState.layoutInfo
             val visibleItemsInfo = layoutInfo.visibleItemsInfo
             val isAtBottom = if (visibleItemsInfo.isEmpty()) true 
-                             else visibleItemsInfo.last().index == layoutInfo.totalItemsCount - 1
+                             else visibleItemsInfo.last().index >= layoutInfo.totalItemsCount - 2
 
             if (isUserMsg || isAtBottom) {
+                // Post to UI thread equivalent in Compose: animateScrollToItem is already async/layout-aware
                 chatListState.animateScrollToItem(messages.size - 1)
             }
         }
@@ -376,6 +400,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                         
                         scope.launch {
                             val cleanInput = currentInput.trim().lowercase()
+                            
+                            if (cleanInput == "/history") {
+                                reasoningLogs.add(0, "> Privacy Bypass: Explicit history fetch requested.")
+                                loadNextHistoryPage()
+                                return@launch
+                            }
+
                             val greetings = listOf("hi", "hello", "hey", "mingalaba")
                             
                             if (greetings.any { cleanInput == it }) {

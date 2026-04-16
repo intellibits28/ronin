@@ -33,6 +33,9 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
 
     if (!type_hint.empty()) {
         LOGI(TAG, "> Active Search Filter: [Extension=%s]", type_hint.c_str());
+    } else {
+        LOGW(TAG, "> No valid category identified. Aborting search to prevent data leakage.");
+        return {"Error: Invalid search category. Please specify a file type (e.g., 'search music')."};
     }
 
     // 3. Try Neural Vector Search first
@@ -43,6 +46,13 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
         
         std::vector<std::pair<std::string, float>> neural_matches;
         for (auto& fe : all_embeddings) {
+            // EXPLICIT PRIVACY GUARD: Never leak system files
+            std::string filename = fe.name;
+            std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
+            if (filename.find(".env") != std::string::npos || filename.find(".ignore") != std::string::npos || filename.find("config") != std::string::npos) {
+                continue;
+            }
+
             // EXPLICIT FILTER: If we have a type hint, skip files that don't match it
             if (!type_hint.empty()) {
                 std::string filename = fe.name;
@@ -88,6 +98,12 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
         for (const auto& file : results) {
             std::string filename = file;
             std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
+            
+            // EXPLICIT PRIVACY GUARD: Never leak system files
+            if (filename.find(".env") != std::string::npos || filename.find(".ignore") != std::string::npos || filename.find("config") != std::string::npos) {
+                continue;
+            }
+
             // Strict extension check (ends_with)
             if (filename.length() >= type_hint.length() && 
                 filename.compare(filename.length() - type_hint.length(), type_hint.length(), type_hint) == 0) {
@@ -95,7 +111,8 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
             }
         }
     } else {
-        filtered_results = results;
+        // This branch should ideally not be reached due to the guard at step 2.
+        return {"No matching files found in local storage."};
     }
 
     auto unique_results = Memory::MemoryManager::filterDuplicateFilenames(filtered_results);

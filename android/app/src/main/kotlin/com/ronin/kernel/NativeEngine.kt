@@ -64,6 +64,7 @@ class NativeEngine {
     // --- System Health JNI Bridges ---
     external fun updateSystemHealth(temperature: Float, ramUsedGB: Float, ramTotalGB: Float): Boolean
     external fun setEngineInstance()
+    external fun injectLocation(lat: Double, lon: Double)
 
     // --- Hardware Control JNI Callbacks ---
     var executeHardwareAction: ((Int, Boolean) -> Boolean)? = null

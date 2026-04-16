@@ -322,6 +322,13 @@ Java_com_ronin_kernel_NativeEngine_setEngineInstance(JNIEnv *env, jobject thiz) 
     g_engine_instance = env->NewGlobalRef(thiz);
 }
 
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) {
+    if (g_ronin_kernel) {
+        g_ronin_kernel->injectLocation(static_cast<double>(lat), static_cast<double>(lon));
+    }
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
     LOGI("RoninHealth", "System Health Poll: Temp=%.1f C | RAM=%.2f/%.2f GB (%.1f%%)", 

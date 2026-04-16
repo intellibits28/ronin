@@ -10,8 +10,8 @@ android {
         applicationId "com.ronin.kernel"
         minSdk 26
         targetSdk 34
-        versionCode 23
-        versionName "3.9.6-FILTER-FIX"
+        versionCode 24
+        versionName "3.9.7-AUTO-SCROLL"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         
@@ -66,4 +66,5 @@ dependencies {
     implementation 'androidx.compose.material:material'
     implementation 'androidx.compose.material:material-icons-extended'
     implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'com.google.android.gms:play-services-location:21.1.0'
 }

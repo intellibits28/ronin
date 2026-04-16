@@ -112,4 +112,13 @@ void RoninKernel::runAutonomousLoop(const Input &input) {
   }
 }
 
+void RoninKernel::injectLocation(double lat, double lon) {
+    LOGI(TAG, ">>> Physical Context Injected: GPS Coordinates [%.6f, %.6f]", lat, lon);
+    // In v3.9.7, we inject this into the suggested subject so subsequent queries 
+    // (e.g., "where am I") can use this real data.
+    char buffer[128];
+    snprintf(buffer, sizeof(buffer), "Current Location: %.6f, %.6f", lat, lon);
+    setSuggestedSubject(buffer);
+}
+
 } // namespace Ronin::Kernel
