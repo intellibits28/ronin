@@ -268,13 +268,6 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
 
     // 2. Routing
     CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
-    
-    // Explicitly re-check negation for hardware bypass consistency
-    bool isOff = (input_str.find("off") != std::string::npos || 
-                  input_str.find("stop") != std::string::npos || 
-                  input_str.find("disable") != std::string::npos);
-    intent.intent_param = !isOff;
-
     Node* next_node = g_graph_executor->selectNextNode(input_str);
     std::string response = "Input processed via Reasoning Spine (No specific capability triggered).";
 

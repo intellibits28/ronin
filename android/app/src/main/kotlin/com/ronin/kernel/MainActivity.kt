@@ -473,7 +473,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                                 delay(100)
                                 chatListState.animateScrollToItem(messages.size - 1)
                             }
-                            }                    }
+                        }
+                    }
                 }
             )
             
