@@ -81,7 +81,9 @@ class NativeEngine {
     @Suppress("unused")
     fun pushKernelMessage(message: String) {
         Log.i(TAG, "Kernel push: $message")
-        onKernelMessage?.invoke(message)
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            onKernelMessage?.invoke(message)
+        }
     }
 
     // --- Coroutine Wrappers ---
