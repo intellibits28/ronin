@@ -282,9 +282,9 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         } else if (next_node->id == 5) {
             response = "Success: Action Initiated - Locating device...";
         } else if (next_node->id == 6) {
-            response = std::string("Success: Action Initiated - WiFi ") + (intent.intent_param ? "ENABLE" : "DISABLE");
+            response = std::string("Success: Action Initiated - WiFi (Opening Settings Panel)");
         } else if (next_node->id == 7) {
-            response = std::string("Success: Action Initiated - Bluetooth ") + (intent.intent_param ? "ENABLE" : "DISABLE");
+            response = std::string("Success: Action Initiated - Bluetooth (Opening Settings Panel/Request)");
         }
     }
 
@@ -329,7 +329,11 @@ Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdo
     }
     if (g_long_term_memory) {
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "System Update: GPS Coordinates injected [%.6f, %.6f]", (double)lat, (double)lon);
+        if (lat == 0.0 && lon == 0.0) {
+            snprintf(buffer, sizeof(buffer), "System Update: GPS Timeout or Unavailable.");
+        } else {
+            snprintf(buffer, sizeof(buffer), "System Update: GPS Coordinates injected [%.6f, %.6f]", (double)lat, (double)lon);
+        }
         g_long_term_memory->storeMessage("ronin", buffer);
     }
 }

@@ -157,19 +157,26 @@ class MainActivity : ComponentActivity() {
                                         }
                                     } else {
                                         Log.e("RoninUI", "GPS Error: Location is null")
+                                        nativeEngine.injectLocation(0.0, 0.0) // Notify C++ of failure
                                     }
                                 }
                                 .addOnFailureListener { e ->
                                     Log.e("RoninUI", "GPS Failure", e)
+                                    nativeEngine.injectLocation(0.0, 0.0) // Notify C++ of failure
                                 }
                             
                             // 10s Timeout logic
                             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                cancellationToken.cancel()
+                                if (!cancellationToken.token.isCancellationRequested) {
+                                    cancellationToken.cancel()
+                                    Log.w("RoninUI", "GPS Timeout: Notifying Kernel")
+                                    nativeEngine.injectLocation(0.0, 0.0) // Notify C++ of timeout
+                                }
                             }, 10000)
                             success = true
                         } else {
                             Log.e("RoninUI", "GPS Error: Missing ACCESS_FINE_LOCATION")
+                            nativeEngine.injectLocation(0.0, 0.0) // Notify C++ of permission failure
                             runOnUiThread {
                                 Toast.makeText(this, "Permission Denied: GPS", Toast.LENGTH_SHORT).show()
                             }
@@ -190,7 +197,12 @@ class MainActivity : ComponentActivity() {
                     7 -> {
                         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
                         if (bluetoothAdapter != null) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                // Android 13+ (API 33) restricts background toggling
+                                val panelIntent = Intent(Settings.Panel.ACTION_BLUETOOTH)
+                                startActivity(panelIntent)
+                                success = true
+                            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                 if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
                                     success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
                                 } else {

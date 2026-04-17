@@ -36,7 +36,7 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
         else type_hint = ".mp4";
     }
     else if (lower_query.find("zip") != std::string::npos || lower_query.find("archive") != std::string::npos) type_hint = ".zip";
-    else if (lower_query.find("txt") != std::string::npos || lower_query.find("note") != std::string::npos || lower_query.find("text") != std::string::npos) type_hint = ".txt";
+    else if (lower_query.find("txt") != std::string::npos || lower_query.find("note") != std::string::npos || lower_query.find("text") != std::string::npos || lower_query.find("document") != std::string::npos) type_hint = ".txt";
 
     if (!type_hint.empty()) {
         LOGI(TAG, "> Active Search Filter: [Extension=%s]", type_hint.c_str());

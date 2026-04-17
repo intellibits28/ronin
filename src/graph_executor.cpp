@@ -57,7 +57,8 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
 
     bool hasVerb = (clean.find("turn on") != std::string::npos || clean.find("turn off") != std::string::npos || 
                     clean.find("switch on") != std::string::npos || clean.find("switch off") != std::string::npos ||
-                    clean.find("enable") != std::string::npos || clean.find("disable") != std::string::npos);
+                    clean.find("enable") != std::string::npos || clean.find("disable") != std::string::npos ||
+                    clean.find("stop bt") != std::string::npos || clean.find("stop bluetooth") != std::string::npos);
 
     if (hasVerb) {
         if (clean.find("flashlight") != std::string::npos || clean.find("torch") != std::string::npos || clean.find("light") != std::string::npos) {
