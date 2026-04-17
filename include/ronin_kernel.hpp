@@ -46,7 +46,6 @@ private:
   CircularBuffer<uint32_t, 128> contextStore_;
 
   std::string m_last_suggested_subject;
-  bool m_is_waiting_for_location = false;
   const int maxIterations_ = 8;
 
   /**

@@ -1,8 +1,6 @@
 #include "ronin_kernel.hpp"
 #include "ronin_log.h"
 #include <cstdio>
-#include <thread>
-#include <chrono>
 
 #define TAG "RoninKernel"
 
@@ -74,26 +72,6 @@ void RoninKernel::runAutonomousLoop(const Input &input) {
     try {
       if (registry_.execProcessor) {
         result = registry_.execProcessor(state_.activeNodeId, state_);
-        
-        // --- GPS Synchronization Loop (v3.9.7-RECOVERY) ---
-        if (state_.activeNodeId == 5 && result.success) {
-            LOGI(TAG, "> GPS: Entering wait-loop for asynchronous location injection...");
-            m_is_waiting_for_location = true;
-            
-            // Wait for injectLocation callback to clear the flag
-            int timeout_counter = 0;
-            while (m_is_waiting_for_location) {
-                // Yield CPU to prevent high memory pressure and LMK panics
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                
-                // Safety break after 15s if injectLocation fails to notify us
-                if (++timeout_counter > 150) {
-                    LOGW(TAG, "> GPS Error: Kernel-side timeout waiting for JNI injection.");
-                    m_is_waiting_for_location = false;
-                }
-            }
-            LOGI(TAG, "> GPS: Wait-loop terminated. Processing injected context.");
-        }
       }
     } catch (...) {
       LOGE(TAG, "> FATAL: Exception caught during Node %u execution! "
@@ -137,10 +115,6 @@ void RoninKernel::runAutonomousLoop(const Input &input) {
 void RoninKernel::injectLocation(double lat, double lon) {
     LOGI(TAG, ">>> Physical Context Injected: GPS Coordinates [%.6f, %.6f]", lat, lon);
     
-    // Accept lat == 0.0 && lon == 0.0 as terminal state (Timeout/Error)
-    // Always break the waiting loop when a terminal state is reached
-    m_is_waiting_for_location = false;
-
     // In v3.9.7, we inject this into the suggested subject so subsequent queries 
     // (e.g., "where am I") can use this real data.
     char buffer[128];
