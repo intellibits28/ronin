@@ -164,10 +164,9 @@ class MainActivity : ComponentActivity() {
                                 }
                             
                             // 10s Timeout logic
-                            scope.launch {
-                                delay(10000)
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                                 cancellationToken.cancel()
-                            }
+                            }, 10000)
                             success = true
                         } else {
                             Log.e("RoninUI", "GPS Error: Missing ACCESS_FINE_LOCATION")

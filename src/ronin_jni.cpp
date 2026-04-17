@@ -274,15 +274,6 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     if (next_node) {
         if (g_memory_manager) g_memory_manager->clearContext();
         
-        // Force intent alignment for hardware nodes to ensure ON/OFF logic is correct
-        if (next_node->id >= 4 && next_node->id <= 7) {
-            bool isOff = (input_str.find("off") != std::string::npos || 
-                          input_str.find("stop") != std::string::npos || 
-                          input_str.find("disable") != std::string::npos);
-            intent.id = next_node->id;
-            intent.intent_param = !isOff;
-        }
-
         if ((next_node->id == 2 || next_node->id == 3) && g_file_search_node) {
             auto results = g_file_search_node->execute(input_str);
             if (!results.empty()) response = results[0];
