@@ -144,18 +144,36 @@ class MainActivity : ComponentActivity() {
                         success = true
                     }
                     5 -> {
-                        // GPS: Real Fused Location Implementation
+                        // GPS: Real Fused Location Implementation with Timeout
                         if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
+                            val cancellationToken = CancellationTokenSource()
+                            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationToken.token)
                                 .addOnSuccessListener { location ->
                                     if (location != null) {
                                         Log.i("RoninUI", "GPS: Success [${location.latitude}, ${location.longitude}]")
                                         nativeEngine.injectLocation(location.latitude, location.longitude)
+                                        runOnUiThread {
+                                            Toast.makeText(this, "Location found: ${location.latitude}, ${location.longitude}", Toast.LENGTH_LONG).show()
+                                        }
+                                    } else {
+                                        Log.e("RoninUI", "GPS Error: Location is null")
                                     }
                                 }
+                                .addOnFailureListener { e ->
+                                    Log.e("RoninUI", "GPS Failure", e)
+                                }
+                            
+                            // 10s Timeout logic
+                            scope.launch {
+                                delay(10000)
+                                cancellationToken.cancel()
+                            }
                             success = true
                         } else {
                             Log.e("RoninUI", "GPS Error: Missing ACCESS_FINE_LOCATION")
+                            runOnUiThread {
+                                Toast.makeText(this, "Permission Denied: GPS", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                     6 -> {
@@ -173,10 +191,13 @@ class MainActivity : ComponentActivity() {
                     7 -> {
                         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
                         if (bluetoothAdapter != null) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
-                                checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                Log.e("RoninUI", "Bluetooth Error: Missing BLUETOOTH_CONNECT permission")
-                                success = false
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                    success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
+                                } else {
+                                    Log.e("RoninUI", "Bluetooth Error: Missing BLUETOOTH_CONNECT")
+                                    requestPermissions(arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT), 1002)
+                                }
                             } else {
                                 @Suppress("MissingPermission")
                                 success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()

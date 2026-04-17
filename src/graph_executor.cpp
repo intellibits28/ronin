@@ -51,6 +51,10 @@ Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
     // --- STRICT HARDWARE BYPASS v3.9.7-AUTO-SCROLL ---
+    bool isOff = (clean.find("off") != std::string::npos || 
+                  clean.find("stop") != std::string::npos || 
+                  clean.find("disable") != std::string::npos);
+
     bool hasVerb = (clean.find("turn on") != std::string::npos || clean.find("turn off") != std::string::npos || 
                     clean.find("switch on") != std::string::npos || clean.find("switch off") != std::string::npos ||
                     clean.find("enable") != std::string::npos || clean.find("disable") != std::string::npos);
