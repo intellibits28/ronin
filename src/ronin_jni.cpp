@@ -330,7 +330,7 @@ Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdo
     if (g_long_term_memory) {
         char buffer[128];
         if (lat == 0.0 && lon == 0.0) {
-            snprintf(buffer, sizeof(buffer), "System Update: GPS Timeout or Unavailable.");
+            snprintf(buffer, sizeof(buffer), "System Update: GPS Error: Location Unavailable.");
         } else {
             snprintf(buffer, sizeof(buffer), "System Update: GPS Coordinates injected [%.6f, %.6f]", (double)lat, (double)lon);
         }

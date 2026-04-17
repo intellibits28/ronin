@@ -144,39 +144,58 @@ class MainActivity : ComponentActivity() {
                         success = true
                     }
                     5 -> {
-                        // GPS: Real Fused Location Implementation with Timeout
-                        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        // GPS: Robust 3-Tier Fallback Implementation (v3.9.7-RECOVERY)
+                        val hasFine = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        val hasCoarse = checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        
+                        if (hasFine || hasCoarse) {
                             val cancellationToken = CancellationTokenSource()
+                            var locationFound = false
+
+                            // Tier 1: Primary - getCurrentLocation
                             fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationToken.token)
                                 .addOnSuccessListener { location ->
-                                    if (location != null) {
-                                        Log.i("RoninUI", "GPS: Success [${location.latitude}, ${location.longitude}]")
+                                    if (location != null && !locationFound) {
+                                        locationFound = true
+                                        Log.i("RoninUI", "GPS Tier 1: Success [${location.latitude}, ${location.longitude}]")
                                         nativeEngine.injectLocation(location.latitude, location.longitude)
-                                        runOnUiThread {
-                                            Toast.makeText(this, "Location found: ${location.latitude}, ${location.longitude}", Toast.LENGTH_LONG).show()
-                                        }
-                                    } else {
-                                        Log.e("RoninUI", "GPS Error: Location is null")
-                                        nativeEngine.injectLocation(0.0, 0.0) // Notify C++ of failure
+                                    } else if (location == null) {
+                                        // Trigger Tier 2 immediately if null
+                                        Log.w("RoninUI", "GPS Tier 1 returned null. Falling back to Tier 2.")
                                     }
                                 }
                                 .addOnFailureListener { e ->
-                                    Log.e("RoninUI", "GPS Failure", e)
-                                    nativeEngine.injectLocation(0.0, 0.0) // Notify C++ of failure
+                                    Log.e("RoninUI", "GPS Tier 1 Failure: ${e.message}")
                                 }
                             
-                            // 10s Timeout logic
+                            // Tier 2 & 3 Handler: 10s Timeout or Fallback Trigger
                             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                if (!cancellationToken.token.isCancellationRequested) {
+                                if (!locationFound) {
                                     cancellationToken.cancel()
-                                    Log.w("RoninUI", "GPS Timeout: Notifying Kernel")
-                                    nativeEngine.injectLocation(0.0, 0.0) // Notify C++ of timeout
+                                    Log.w("RoninUI", "GPS Primary Timeout. Attempting Tier 2 (lastLocation)...")
+                                    
+                                    // Tier 2: Fallback - lastLocation
+                                    @Suppress("MissingPermission")
+                                    fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc ->
+                                        if (lastLoc != null) {
+                                            locationFound = true
+                                            Log.i("RoninUI", "GPS Tier 2: Success [${lastLoc.latitude}, ${lastLoc.longitude}]")
+                                            nativeEngine.injectLocation(lastLoc.latitude, lastLoc.longitude)
+                                        } else {
+                                            // Tier 3: Failsafe - (0,0)
+                                            Log.e("RoninUI", "GPS Tier 2 Failure. Injecting Tier 3 Failsafe (0,0).")
+                                            nativeEngine.injectLocation(0.0, 0.0)
+                                        }
+                                    }.addOnFailureListener {
+                                        Log.e("RoninUI", "GPS Tier 2 Fatal. Injecting Tier 3 Failsafe (0,0).")
+                                        nativeEngine.injectLocation(0.0, 0.0)
+                                    }
                                 }
                             }, 10000)
                             success = true
                         } else {
-                            Log.e("RoninUI", "GPS Error: Missing ACCESS_FINE_LOCATION")
-                            nativeEngine.injectLocation(0.0, 0.0) // Notify C++ of permission failure
+                            Log.e("RoninUI", "GPS Error: Permissions Denied. Unblocking Kernel with (0,0).")
+                            nativeEngine.injectLocation(0.0, 0.0)
                             runOnUiThread {
                                 Toast.makeText(this, "Permission Denied: GPS", Toast.LENGTH_SHORT).show()
                             }
