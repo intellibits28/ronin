@@ -173,8 +173,14 @@ class MainActivity : ComponentActivity() {
                     7 -> {
                         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
                         if (bluetoothAdapter != null) {
-                            @Suppress("MissingPermission")
-                            success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
+                                checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                Log.e("RoninUI", "Bluetooth Error: Missing BLUETOOTH_CONNECT permission")
+                                success = false
+                            } else {
+                                @Suppress("MissingPermission")
+                                success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
+                            }
                         }
                     }
                 }
