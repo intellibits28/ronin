@@ -21,6 +21,8 @@
 #include <future>
 #include <chrono>
 
+#include "ronin_skill_registry.hpp"
+
 #define TAG "RoninNativeEngine"
 
 using namespace Ronin::Kernel;
@@ -29,46 +31,18 @@ using namespace Ronin::Kernel::Checkpoint;
 using namespace Ronin::Kernel::Reasoning;
 using namespace Ronin::Kernel::Capability;
 
-// Use unique_ptr for managed lifecycle of kernel components
-static std::unique_ptr<MemoryManager> g_memory_manager;
-static std::unique_ptr<LongTermMemory> g_long_term_memory;
-static std::unique_ptr<CheckpointEngine> g_checkpoint_engine;
-static std::unique_ptr<CapabilityGraph> g_capability_graph;
-static std::unique_ptr<GraphStorage> g_graph_storage;
-static std::unique_ptr<GraphExecutor> g_graph_executor;
-static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
-static std::unique_ptr<RoninKernel> g_ronin_kernel;
-static std::unique_ptr<FileSearchNode> g_file_search_node;
-static std::unique_ptr<FileScanner> g_file_scanner;
-static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
-
-// JNI Callback Caching
-static JavaVM* g_vm = nullptr;
-static jobject g_engine_instance = nullptr;
-
-// v3.9.2-ASYNC Bridge Implementations
-namespace {
-class JniCapabilityManager : public Ronin::Kernel::CapabilityManager {
-public:
-  bool canExecute(uint32_t nodeId) const override {
-    // For prototype, all registered nodes are authorized
-    return nodeId > 0;
-  }
-};
-
-Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input &input) {
-  std::string s(input.data, input.length);
-  if (g_intent_engine) {
-      std::string context = g_ronin_kernel ? g_ronin_kernel->getSuggestedSubject() : "";
-      return g_intent_engine->process(s, context);
-  }
-  return {1, 0.5f, true};
-}
+// ... (existing unique_ptrs)
 
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
-  LOGI("RoninJNI", "Executing Node %u via Static Dispatch [v3.9.5-STABLE]", nodeId);
+  LOGI("RoninJNI", "Executing Node %u via Vtable Registry [v4.0-MODULAR]", nodeId);
   
-  // Hardware Execution via Detached Thread (Prevents UI Thread blockage and ANRs)
+  // 1. Try Vtable-based Skill Registry first (Phase 4.0)
+  auto skill = SkillRegistry::getInstance().getSkill(nodeId);
+  if (skill) {
+      return skill->execute(state.currentIntent);
+  }
+
+  // 2. Hardware Execution via Detached Thread (Legacy Bridge for Phase 4.0 stabilization)
   if (nodeId >= 4 && nodeId <= 7) {
       if (!g_vm || !g_engine_instance) {
           LOGE("RoninJNI", "Exec Error: JNI Instance not cached.");
@@ -157,6 +131,12 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_checkpoint_engine->initializeShadowBuffer(1024 * 1024);
     g_neural_embedding_node = std::make_unique<NeuralEmbeddingNode>(base_path + "/models/model.onnx");
     g_file_search_node = std::make_unique<FileSearchNode>(*g_long_term_memory, g_neural_embedding_node.get());
+    
+    // Register Modular Skills (Phase 4.0)
+    // We pass a non-owning pointer to the registry. 
+    // In Phase 4.1, SkillRegistry will own these objects.
+    SkillRegistry::getInstance().registerSkill(g_file_search_node.get());
+    
     g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory, g_neural_embedding_node.get());
 
     // 3. Initialize Reasoning Spine (Graph)

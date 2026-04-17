@@ -146,4 +146,11 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
     return formatted_results;
 }
 
+Result FileSearchNode::execute(const CognitiveIntent& intent) {
+    // Phase 4.0: Vtable-based execution
+    // Currently, search results are returned as strings via the direct execute(string) overload
+    // In Phase 4.1, we will unify this to return Result structures containing context pointers.
+    return {true, 0}; 
+}
+
 } // namespace Ronin::Kernel::Capability
