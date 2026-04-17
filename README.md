@@ -1,28 +1,43 @@
-# Ronin: Mobile AI Kernel
+# Ronin Kernel
 
-A shippable, fault-tolerant Mobile AI runtime kernel optimized for Android (Snapdragon 778G focus), implementing high-efficiency inference and survival mechanisms.
+**Ronin Kernel** is a modular, high-efficiency AI agent runtime optimized for Android (Snapdragon 778G+). It utilizes a Hybrid Intent System and clean-room minimalist design patterns to provide a low-latency, privacy-first reasoning engine.
 
-## Core Architectural Pillars
+## 🚀 Tech Stack
 
-### 1. Binary Checkpoint Schema (FlatBuffers)
-To achieve zero-copy state restoration, Ronin utilizes a specialized **FlatBuffers** schema. This allows the kernel to map checkpoint data directly from disk/memory into C++ structures without deserialization overhead.
-*   **NEON Optimization:** Fields are 16-byte aligned to ensure direct SIMD access.
-*   **Shadow Buffers:** Dual-buffer system for atomic state updates, preventing corruption during sudden process termination.
-*   **Intent Tracking:** Thompson Sampling-based routing keys are embedded to resume execution at the optimal capability node.
+- **Engine Core:** Pure C++20 (Android NDK) for deterministic execution and peak performance.
+- **Hardware Interaction:** Kotlin-JNI Wrappers & Bridges for secure, asynchronous access to Android hardware APIs.
+- **Inference:** ONNX Runtime (LiteRT) for local semantic routing and intent classification.
+- **Build System:** CMake + Gradle for cross-platform portability and CI/CD automation.
 
-### 2. Tri-Anchor KV Model
-Memory is the primary bottleneck on mobile. The Tri-Anchor model manages the KV-cache through a three-point pruning strategy:
-*   **Recency Anchor:** Preserves the immediate local context for conversational fluidity.
-*   **Saliency Anchor:** Protects high-attention tokens identified during the forward pass.
-*   **Semantic Anchor:** Retains compressed global context tokens to prevent "context drift" during long-running sessions.
+## 🏗️ Architecture
 
-### 3. Adaptive LMK Heuristics
-The kernel is "LMK-Aware," designed to survive Android's Low Memory Killer (LMK) by monitoring system pressure signals.
-*   **Proactive Eviction:** Triggering KV-cache pruning *before* the system reaches critical memory thresholds.
-*   **O(1) Checkpointing:** Rapid serialization of the execution frontier when a high-pressure signal is detected.
-*   **DirectByteBuffer Mapping:** Minimizing the heap footprint by moving large tensors and caches into native memory, making the process less likely to be targeted by the LMK.
+### Hybrid Intent System
+Ronin employs a tiered approach to intent resolution:
+1. **Strict Bypass:** Immediate routing for unambiguous hardware commands (e.g., "Flashlight", "WiFi", "BT") to ensure near-zero latency.
+2. **Semantic ONNX Router:** Vector-based reasoning for complex queries, mapping user intent to discrete capability nodes.
+3. **Reasoning Fallback:** Graceful degradation to general chat or clarification when confidence thresholds are not met.
 
-## Development & CI/CD
-*   **Language:** C++20 / Zig (Engine Core), Kotlin (JNI Wrapper).
-*   **Build System:** CMake + Android NDK.
-*   **Verification:** GitHub Actions (Ubuntu-latest) running NDK-cross-compilation and GoogleTest (GTest) suites on every push.
+### Phase 4.0: Modular Evolution
+We are currently transitioning to a **Vtable-based Registry**. This evolution decouples the `IntentEngine` from specific hardware implementations using `BaseSkill` interfaces, inspired by the NullClaw Component-Interface pattern.
+
+## 🧠 Memory & System Integrity
+
+- **LMK-Awareness:** High-frequency RAM monitoring via JNI `updateSystemHealth`. The kernel automatically prunes KV caches and triggers L3 persistence when memory pressure exceeds 85%.
+- **Zero-Copy Access:** Utilizes DirectByteBuffers for efficient data transfer between Kotlin and the C++ reasoning spine.
+- **Global Reference Management:** Rigorous JNI lifecycle management to prevent memory leaks and ensure thread safety across detached hardware threads.
+- **Thermal Guard:** Real-time throttling of inference engines if device temperature exceeds 40°C.
+
+## 🛠️ Status (v3.9.7-RECOVERY)
+
+- [x] **Verified JNI Thread Safety:** Detached threads with proper `AttachCurrentThread()` pointer casting.
+- [x] **Real Hardware Integration:** Physical toggling for Bluetooth and WiFi (Android 10+ panel fallback).
+- [x] **Asynchronous GPS Bridge:** Real-time location injection from `FusedLocationProviderClient` into the C++ Reasoning Spine.
+- [x] **Search Privacy Guard:** Strict extension isolation and exclusion of system files (.env, .ignore).
+
+## 🧪 Testing
+
+- **Robolectric:** Unit testing for UI auto-scroll logic and SQLite persistence.
+- **GoogleTest:** C++ core logic verification for memory integrity and search precision.
+
+---
+*Clean-Room Implementation | Minimalist Runtime Efficiency*
