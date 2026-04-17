@@ -280,6 +280,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
     
     val scope = rememberCoroutineScope()
 
+    // Initialize Kernel Async UI Bridge
+    LaunchedEffect(Unit) {
+        engine.onKernelMessage = { message ->
+            messages.add("Ronin: $message")
+        }
+    }
+
     // Lazy Loading History Implementation
     val loadNextHistoryPage = {
         if (!chatViewModel.isLoadingHistory && chatViewModel.hasMoreHistory) {

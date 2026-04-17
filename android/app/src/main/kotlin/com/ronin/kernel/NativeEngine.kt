@@ -68,12 +68,20 @@ class NativeEngine {
 
     // --- Hardware Control JNI Callbacks ---
     var executeHardwareAction: ((Int, Boolean) -> Boolean)? = null
+    var onKernelMessage: ((String) -> Unit)? = null
 
     // Called from C++ ExecHandlers
     @Suppress("unused")
     fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
         Log.i(TAG, "Native request: Triggering action for Node $nodeId (State: $state)")
         return executeHardwareAction?.invoke(nodeId, state) ?: false
+    }
+
+    // Called from JNI for asynchronous UI updates
+    @Suppress("unused")
+    fun pushKernelMessage(message: String) {
+        Log.i(TAG, "Kernel push: $message")
+        onKernelMessage?.invoke(message)
     }
 
     // --- Coroutine Wrappers ---

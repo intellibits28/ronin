@@ -327,14 +327,32 @@ Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdo
     if (g_ronin_kernel) {
         g_ronin_kernel->injectLocation(static_cast<double>(lat), static_cast<double>(lon));
     }
+    
+    char buffer[128];
+    if (lat == 0.0 && lon == 0.0) {
+        snprintf(buffer, sizeof(buffer), "System Update: GPS Error: Location Unavailable.");
+    } else {
+        snprintf(buffer, sizeof(buffer), "System Update: GPS Coordinates injected [%.6f, %.6f]", (double)lat, (double)lon);
+    }
+
     if (g_long_term_memory) {
-        char buffer[128];
-        if (lat == 0.0 && lon == 0.0) {
-            snprintf(buffer, sizeof(buffer), "System Update: GPS Error: Location Unavailable.");
-        } else {
-            snprintf(buffer, sizeof(buffer), "System Update: GPS Coordinates injected [%.6f, %.6f]", (double)lat, (double)lon);
-        }
         g_long_term_memory->storeMessage("ronin", buffer);
+    }
+
+    // --- ASYNCHRONOUS UI CALLBACK (Kotlin Bridge) ---
+    if (g_vm && g_engine_instance) {
+        JNIEnv* attached_env;
+        if (g_vm->GetEnv((void**)&attached_env, JNI_VERSION_1_6) == JNI_EDETACHED) {
+            if (g_vm->AttachCurrentThread(&attached_env, nullptr) != 0) return;
+        }
+
+        jclass clazz = attached_env->GetObjectClass(g_engine_instance);
+        jmethodID mid = attached_env->GetMethodID(clazz, "pushKernelMessage", "(Ljava/lang/String;)V");
+        if (mid) {
+            jstring jmsg = attached_env->NewStringUTF(buffer);
+            attached_env->CallVoidMethod(g_engine_instance, mid, jmsg);
+            attached_env->DeleteLocalRef(jmsg);
+        }
     }
 }
 
