@@ -199,7 +199,7 @@ class MainActivity : ComponentActivity() {
                         if (bluetoothAdapter != null) {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 // Android 13+ (API 33) restricts background toggling
-                                val panelIntent = Intent(Settings.Panel.ACTION_BLUETOOTH)
+                                val panelIntent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
                                 startActivity(panelIntent)
                                 success = true
                             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
