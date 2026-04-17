@@ -25,9 +25,16 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
     std::string lower_query = query;
     std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
 
-    if (lower_query.find("pdf") != std::string::npos || lower_query.find("document") != std::string::npos) type_hint = ".pdf";
+    if (lower_query.find("pdf") != std::string::npos || lower_query.find("document") != std::string::npos || lower_query.find("docx") != std::string::npos) {
+        if (lower_query.find("docx") != std::string::npos) type_hint = ".docx";
+        else type_hint = ".pdf";
+    }
     else if (lower_query.find("jpg") != std::string::npos || lower_query.find("jpeg") != std::string::npos || lower_query.find("image") != std::string::npos || lower_query.find("photo") != std::string::npos) type_hint = ".jpg";
     else if (lower_query.find("mp3") != std::string::npos || lower_query.find("music") != std::string::npos || lower_query.find("audio") != std::string::npos || lower_query.find("song") != std::string::npos) type_hint = ".mp3";
+    else if (lower_query.find("video") != std::string::npos || lower_query.find("movie") != std::string::npos || lower_query.find("mp4") != std::string::npos || lower_query.find("mkv") != std::string::npos) {
+        if (lower_query.find("mkv") != std::string::npos) type_hint = ".mkv";
+        else type_hint = ".mp4";
+    }
     else if (lower_query.find("zip") != std::string::npos || lower_query.find("archive") != std::string::npos) type_hint = ".zip";
     else if (lower_query.find("txt") != std::string::npos || lower_query.find("note") != std::string::npos) type_hint = ".txt";
 
@@ -81,8 +88,12 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
             auto unique_names = Memory::MemoryManager::filterDuplicateFilenames(names);
 
             std::string output = "Found files (Neural): \n";
-            for (size_t i = 0; i < std::min(unique_names.size(), size_t(5)); ++i) {
+            size_t display_count = std::min(unique_names.size(), size_t(5));
+            for (size_t i = 0; i < display_count; ++i) {
                 output += "- " + unique_names[i] + "\n";
+            }
+            if (unique_names.size() > 5) {
+                output += "... and " + std::to_string(unique_names.size() - 5) + " more files found.\n";
             }
             return {output};
         }
@@ -122,8 +133,12 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
         formatted_results.push_back("No matching files found in local storage.");
     } else {
         std::string output = "Found files (Keyword): \n";
-        for (const auto& file : unique_results) {
-            output += "- " + file + "\n";
+        size_t display_count = std::min(unique_results.size(), size_t(5));
+        for (size_t i = 0; i < display_count; ++i) {
+            output += "- " + unique_results[i] + "\n";
+        }
+        if (unique_results.size() > 5) {
+            output += "... and " + std::to_string(unique_results.size() - 5) + " more files found.\n";
         }
         formatted_results.push_back(output);
     }

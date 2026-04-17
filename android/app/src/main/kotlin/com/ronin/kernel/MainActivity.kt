@@ -260,12 +260,14 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
     // Auto-scroll logic for Chat: Use SideEffect for layout-aware scrolling
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            val lastMsg = messages.last()
-            val isUserMsg = lastMsg.startsWith("User:")
-            
-            // Check if we are near bottom
+            // Check if we are near bottom to avoid "jumping" if user is reading history
             val layoutInfo = chatListState.layoutInfo
             val visibleItemsInfo = layoutInfo.visibleItemsInfo
+            
+            // If we're not at the bottom, we only auto-scroll if the LAST message was from the user
+            // OR if we're already very close to the bottom (within 2 items)
+            val lastMsg = messages.last()
+            val isUserMsg = lastMsg.startsWith("User:")
             val isAtBottom = if (visibleItemsInfo.isEmpty()) true 
                              else visibleItemsInfo.last().index >= layoutInfo.totalItemsCount - 2
 
@@ -424,7 +426,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                             }
                             
                             val kernelOutput = engine.processInputAsync(currentInput)
-                            
+
                             // Check if a tool was engaged
                             if (kernelOutput.contains("Switching on Flashlight")) {
                                 scaffoldState.snackbarHostState.showSnackbar("System: Flashlight engaged.")
@@ -435,11 +437,16 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                             } else if (kernelOutput.contains("System: Bluetooth")) {
                                 scaffoldState.snackbarHostState.showSnackbar("System: Bluetooth engaged.")
                             }
-                            
+
                             // Add Ronin's response to the UI
                             messages.add("Ronin: $kernelOutput")
-                        }
-                    }
+
+                            // Explicitly scroll to bottom after response, ensuring UI thread post
+                            launch {
+                                delay(100)
+                                chatListState.animateScrollToItem(messages.size - 1)
+                            }
+                            }                    }
                 }
             )
             
