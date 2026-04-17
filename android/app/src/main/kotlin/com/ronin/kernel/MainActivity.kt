@@ -455,14 +455,14 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                             val kernelOutput = engine.processInputAsync(currentInput)
 
                             // Check if a tool was engaged
-                            if (kernelOutput.contains("Switching on Flashlight")) {
-                                scaffoldState.snackbarHostState.showSnackbar("System: Flashlight engaged.")
+                            if (kernelOutput.contains("Action Initiated - Flashlight")) {
+                                scaffoldState.snackbarHostState.showSnackbar("System: Flashlight toggled.")
                             } else if (kernelOutput.contains("Locating device")) {
-                                scaffoldState.snackbarHostState.showSnackbar("System: GPS engaged.")
-                            } else if (kernelOutput.contains("System: WiFi")) {
-                                scaffoldState.snackbarHostState.showSnackbar("System: WiFi engaged.")
-                            } else if (kernelOutput.contains("System: Bluetooth")) {
-                                scaffoldState.snackbarHostState.showSnackbar("System: Bluetooth engaged.")
+                                scaffoldState.snackbarHostState.showSnackbar("System: GPS sensor active.")
+                            } else if (kernelOutput.contains("Action Initiated - WiFi")) {
+                                scaffoldState.snackbarHostState.showSnackbar("System: WiFi action dispatched.")
+                            } else if (kernelOutput.contains("Action Initiated - Bluetooth")) {
+                                scaffoldState.snackbarHostState.showSnackbar("System: Bluetooth action dispatched.")
                             }
 
                             // Add Ronin's response to the UI

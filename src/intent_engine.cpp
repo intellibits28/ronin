@@ -180,11 +180,16 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                 break;
             }
 
-            // Check full string for multi-word actions
-            if (input.find(act) != std::string::npos) {
-                action_found = true;
-                break;
+            // Check full string for multi-word actions or explicit word boundaries
+            if (act.length() > 3) {
+                if (input.find(act) != std::string::npos) {
+                    action_found = true;
+                    break;
+                }
+            } else {
+                // For short actions like "on", "off", check tokens only (already handled below)
             }
+
             // Check individual tokens
             for (const auto& token : tokens) {
                 if (isFuzzyMatch(token, act)) {
