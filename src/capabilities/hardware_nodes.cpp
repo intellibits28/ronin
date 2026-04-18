@@ -4,8 +4,8 @@
 namespace Ronin::Kernel::Capability {
 
 std::string FlashlightNode::execute(const std::string& param) {
-    // Phase 4.0 Refactor: JNI logic will be moved here in Phase 4.1
-    return "Success: Action Initiated - Flashlight";
+    bool isOff = (param.find("off") != std::string::npos || param.find("stop") != std::string::npos || param.find("disable") != std::string::npos);
+    return std::string("Success: Action Initiated - Flashlight ") + (isOff ? "OFF" : "ON");
 }
 
 std::string LocationNode::execute(const std::string& param) {
@@ -13,11 +13,13 @@ std::string LocationNode::execute(const std::string& param) {
 }
 
 std::string WifiNode::execute(const std::string& param) {
-    return "Success: Action Initiated - WiFi (Opening Settings Panel)";
+    bool isOff = (param.find("off") != std::string::npos || param.find("stop") != std::string::npos || param.find("disable") != std::string::npos);
+    return std::string("Success: Action Initiated - WiFi ") + (isOff ? "DISABLE" : "ENABLE") + " (Opening Settings Panel)";
 }
 
 std::string BluetoothNode::execute(const std::string& param) {
-    return "Success: Action Initiated - Bluetooth (Opening Settings Panel/Request)";
+    bool isOff = (param.find("off") != std::string::npos || param.find("stop") != std::string::npos || param.find("disable") != std::string::npos);
+    return std::string("Success: Action Initiated - Bluetooth ") + (isOff ? "DISABLE" : "ENABLE") + " (Opening Settings Panel/Request)";
 }
 
 } // namespace Ronin::Kernel::Capability

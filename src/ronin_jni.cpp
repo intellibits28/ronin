@@ -214,6 +214,8 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     std::string input_str(input_cstr);
     env->ReleaseStringUTFChars(input, input_cstr);
 
+    if (g_long_term_memory) g_long_term_memory->storeMessage("user", input_str);
+
     // 0. Greetings
     std::string clean_input = input_str;
     std::transform(clean_input.begin(), clean_input.end(), clean_input.begin(), ::tolower);
@@ -227,9 +229,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         return env->NewStringUTF(response.c_str());
     }
 
-    if (g_long_term_memory) g_long_term_memory->storeMessage("user", input_str);
-
-    // 1. Heartbeat
+    // 1. Kernel Heartbeat (State Management & History)
     Input minimalist_input = {};
     size_t len = std::min(input_str.length(), sizeof(minimalist_input.data) - 1);
     memcpy(minimalist_input.data, input_str.c_str(), len);
@@ -239,20 +239,20 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         g_ronin_kernel->tick(minimalist_input);
     }
 
-    // 2. Routing
-    // In Phase 4.0, we prioritize the Vtable Registry for execution and response generation
+    // 2. Unified Routing & Execution (Phase 4.0)
     Node* next_node = g_graph_executor->selectNextNode(input_str);
     std::string response = "Input processed via Reasoning Spine (No specific capability triggered).";
 
     if (next_node) {
         if (g_memory_manager) g_memory_manager->clearContext();
         
-        // ALL cognitive and hardware nodes now routed exclusively via executeSkill (Phase 4.0 Migration)
+        // Exclusively route via IntentEngine registry
         if (g_intent_engine) {
             response = g_intent_engine->executeSkill(next_node->id, input_str);
             
-            // --- MAINTAIN HARDWARE BRIDGE (v4.0 stabilization) ---
+            // --- JNI Hardware Bridge (v4.0 stabilization) ---
             if (next_node->id >= 4 && next_node->id <= 7) {
+                // Use the intent from the last tick for parameter extraction
                 CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
                 jclass cls = env->GetObjectClass(thiz);
                 jmethodID mid = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
