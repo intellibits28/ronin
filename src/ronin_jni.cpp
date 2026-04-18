@@ -65,15 +65,10 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
 }
 
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
-  LOGI("RoninJNI", "Executing Node %u via Vtable Registry [v4.0-MODULAR]", nodeId);
+  LOGI("RoninJNI", "Executing Node %u [v4.0-STABLE]", nodeId);
   
-  // Phase 4.0: Unified modular execution.
-  // We trigger the skill here for kernel-side state updates (if any),
-  // but physical hardware actuation and UI responses are now mastered in processInput.
-  if (g_intent_engine && g_intent_engine->hasSkill(nodeId)) {
-      g_intent_engine->executeSkill(nodeId, ""); 
-  }
-
+  // Node state transitions and context storage handled here.
+  // Physical execution and UI responses are mastered in processInput.
   return {true, 0};
 }
 
@@ -252,12 +247,14 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
             
             // --- JNI Hardware Bridge (v4.0 stabilization) ---
             if (next_node->id >= 4 && next_node->id <= 7) {
-                // Use the intent from the last tick for parameter extraction
-                CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
+                bool isOff = (input_str.find("off") != std::string::npos || 
+                              input_str.find("stop") != std::string::npos || 
+                              input_str.find("disable") != std::string::npos);
+                
                 jclass cls = env->GetObjectClass(thiz);
                 jmethodID mid = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
                 if (mid) {
-                    env->CallBooleanMethod(thiz, mid, static_cast<jint>(next_node->id), static_cast<jboolean>(intent.intent_param));
+                    env->CallBooleanMethod(thiz, mid, static_cast<jint>(next_node->id), static_cast<jboolean>(!isOff));
                 }
             }
         }
