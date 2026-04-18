@@ -38,10 +38,17 @@ if(ANDROID)
       URL https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.17.1/onnxruntime-android-1.17.1.aar
     )
 else()
-    FetchContent_Declare(
-      onnxruntime
-      URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-linux-x64-1.17.1.tgz
-    )
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "aarch64")
+        FetchContent_Declare(
+          onnxruntime
+          URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-linux-aarch64-1.17.1.tgz
+        )
+    else()
+        FetchContent_Declare(
+          onnxruntime
+          URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-linux-x64-1.17.1.tgz
+        )
+    endif()
 endif()
 
 # Disable FlatBuffers internal builds/tests to prevent Exec format errors during Android cross-compiling
@@ -90,28 +97,58 @@ if(ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
 
-    # Locate ORT shared library in AAR (which was extracted by FetchContent)
-    set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/jni/${ANDROID_ABI}/libonnxruntime.so)
-    add_library(onnxruntime_lib SHARED IMPORTED)
-    set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+    if(log-lib AND android-lib)
+        # Locate ORT shared library in AAR (which was extracted by FetchContent)
+        set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/jni/${ANDROID_ABI}/libonnxruntime.so)
+        add_library(onnxruntime_lib SHARED IMPORTED)
+        set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
 
-    # Link system libraries to core so tests inherit them
-    target_link_libraries(ronin_core PUBLIC ${log-lib} ${android-lib} onnxruntime_lib)
+        # Link system libraries to core so tests inherit them
+        target_link_libraries(ronin_core PUBLIC ${log-lib} ${android-lib} onnxruntime_lib)
 
-    # JNI Bridge Library
-    add_library(ronin_kernel SHARED src/ronin_jni.cpp)
-    target_link_libraries(ronin_kernel ronin_core sqlite3_lib onnxruntime_lib)
+        # JNI Bridge Library
+        add_library(ronin_kernel SHARED src/ronin_jni.cpp)
+        target_link_libraries(ronin_kernel ronin_core sqlite3_lib onnxruntime_lib)
 
-    # Enable ARMv8.2-A Dot Product extension only for arm64-v8a
-    if(ANDROID_ABI STREQUAL "arm64-v8a")
-        target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
+        # Enable ARMv8.2-A Dot Product extension only for arm64-v8a
+        if(ANDROID_ABI STREQUAL "arm64-v8a")
+            target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
+        endif()
+    else()
+        # Fallback for Android environments without NDK libs (like Termux)
+        find_library(ORT_LIB_PATH_INTERNAL NAMES onnxruntime
+                     PATHS ${onnxruntime_SOURCE_DIR}/lib 
+                           ${onnxruntime_SOURCE_DIR}/jni/arm64-v8a 
+                           ${onnxruntime_SOURCE_DIR}/jni/x86_64
+                     NO_DEFAULT_PATH)
+        set(ORT_LIB_PATH ${ORT_LIB_PATH_INTERNAL})
+
+        add_library(onnxruntime_lib SHARED IMPORTED)        set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+        target_link_libraries(ronin_core PUBLIC rt onnxruntime_lib)
+
+        if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "aarch64")
+            target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
+        endif()
     endif()
 else()
     # Host build needs rt and ORT
-    set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.so)
+    set(ORT_LIB_PATH "ORT_LIB_PATH-NOTFOUND")
+    find_library(ORT_LIB_PATH_INTERNAL NAMES onnxruntime
+                 PATHS ${onnxruntime_SOURCE_DIR}/lib 
+                       ${onnxruntime_SOURCE_DIR}/jni/arm64-v8a 
+                       ${onnxruntime_SOURCE_DIR}/jni/x86_64
+                 NO_DEFAULT_PATH)
+    set(ORT_LIB_PATH ${ORT_LIB_PATH_INTERNAL})
+    message(STATUS ">>> Phase 4.0: ORT_LIB_PATH is ${ORT_LIB_PATH}")
+
     add_library(onnxruntime_lib SHARED IMPORTED)
     set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
     target_link_libraries(ronin_core PUBLIC rt onnxruntime_lib)
+
+    # Enable ARMv8.2-A Dot Product extension for host ARM64
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+        target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
+    endif()
 endif()
 
 enable_testing()

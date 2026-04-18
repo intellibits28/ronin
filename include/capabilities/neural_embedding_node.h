@@ -9,7 +9,7 @@ namespace Ronin::Kernel::Capability {
 
 class NeuralEmbeddingNode : public BaseSkill {
 public:
-    NeuralEmbeddingNode() : m_impl(nullptr) {}
+    NeuralEmbeddingNode();
     NeuralEmbeddingNode(const std::string& model_path);
     ~NeuralEmbeddingNode();
 

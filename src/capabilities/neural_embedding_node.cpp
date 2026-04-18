@@ -21,6 +21,8 @@ struct NeuralEmbeddingNode::Impl {
     }
 };
 
+NeuralEmbeddingNode::NeuralEmbeddingNode() : m_impl(nullptr) {}
+
 NeuralEmbeddingNode::NeuralEmbeddingNode(const std::string& model_path) {
     m_impl = std::make_unique<Impl>(model_path);
     if (m_impl->loaded) {
@@ -42,7 +44,7 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
         LOGW(TAG, "Neural model not loaded. Returning zero vector.");
         return std::vector<float>(384, 0.0f);
     }
-...
+
     // For v3.0-NEURAL-SCAN, we return a deterministic 384-dim vector based on the input.
     std::vector<float> embedding(384, 0.0f);
     

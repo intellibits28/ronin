@@ -71,7 +71,7 @@ void FileScanner::scanWorker(const std::string& root_path) {
                 // Generate embedding if node is available
                 std::vector<float> embedding;
                 if (m_neural) {
-                    embedding = m_neural->execute(filename);
+                    embedding = m_neural->generateEmbedding(filename);
                 }
 
                 // Index into L3 Deep-store
