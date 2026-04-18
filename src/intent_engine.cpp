@@ -18,6 +18,7 @@
 #include <cmath>
 #include <algorithm>
 #include "ronin_log.h"
+#include "capabilities/hardware_nodes.h"
 
 #define TAG "RoninIntentEngine"
 
@@ -41,6 +42,26 @@ static std::string trim(const std::string& s) {
     if (start == std::string::npos) return "";
     auto end = s.find_last_not_of(" \t\n\r");
     return s.substr(start, end - start + 1);
+}
+
+IntentEngine::IntentEngine() {
+    using namespace Ronin::Kernel::Capability;
+    
+    // Phase 4.0: Vtable-based Skill Registration
+    m_skill_registry[4] = std::make_shared<FlashlightNode>();
+    m_skill_registry[5] = std::make_shared<LocationNode>();
+    m_skill_registry[6] = std::make_shared<WifiNode>();
+    m_skill_registry[7] = std::make_shared<BluetoothNode>();
+    
+    LOGI(TAG, "IntentEngine: Modular Skill Registry initialized (Phase 4.0).");
+}
+
+std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param) {
+    auto it = m_skill_registry.find(nodeId);
+    if (it != m_skill_registry.end()) {
+        return it->second->execute(param);
+    }
+    return "Error: Modular skill not found for ID " + std::to_string(nodeId);
 }
 
 void IntentEngine::loadCapabilities(const std::string& json_path) {

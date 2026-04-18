@@ -295,16 +295,11 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         if (skill) {
             response = skill->execute(input_str);
         } 
-        // Fallback for hardware nodes not yet modularized
-        else if (next_node->id == 4) {
-            CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
-            response = std::string("Success: Action Initiated - Flashlight ") + (intent.intent_param ? "ON" : "OFF");
-        } else if (next_node->id == 5) {
-            response = "Success: Action Initiated - Locating device...";
-        } else if (next_node->id == 6) {
-            response = std::string("Success: Action Initiated - WiFi (Opening Settings Panel)");
-        } else if (next_node->id == 7) {
-            response = std::string("Success: Action Initiated - Bluetooth (Opening Settings Panel/Request)");
+        // Phase 4.0: Integrated Hardware Registry in IntentEngine
+        else if (next_node->id >= 4 && next_node->id <= 7) {
+            if (g_intent_engine) {
+                response = g_intent_engine->executeSkill(next_node->id, input_str);
+            }
         }
     }
 

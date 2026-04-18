@@ -5,8 +5,10 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 #include "ronin_types.hpp"
 #include "models/inference_engine.h"
+#include "capabilities/base_skill.h"
 
 namespace Ronin::Kernel::Intent {
 
@@ -33,7 +35,7 @@ float compute_cosine_similarity_neon(const float* a, const float* b, size_t leng
 
 class IntentEngine {
 public:
-    IntentEngine() = default;
+    IntentEngine();
 
     /**
      * Loads capability manifest from a JSON-like formatted file.
@@ -52,9 +54,20 @@ public:
      */
     CognitiveIntent process(const std::string& input, const std::string& context_subject = "");
 
+    /**
+     * Phase 4.0: Vtable-based Skill Execution
+     * @param nodeId The target node ID from the Reasoning Spine.
+     * @param param The extracted parameter for this tool.
+     * @return A response string for the UI.
+     */
+    std::string executeSkill(uint32_t nodeId, const std::string& param);
+
 private:
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
     std::unique_ptr<Model::InferenceEngine> m_inference_engine;
+
+    // Phase 4.0: Vtable-based Skill Registry
+    std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;
 
     // Minimalist tokenizer
     std::vector<std::string> tokenize(const std::string& input);
