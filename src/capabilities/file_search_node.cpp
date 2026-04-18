@@ -12,7 +12,7 @@ namespace Ronin::Kernel::Capability {
 FileSearchNode::FileSearchNode(Memory::LongTermMemory& ltm, NeuralEmbeddingNode* neural) 
     : m_ltm(ltm), m_neural(neural) {}
 
-std::vector<std::string> FileSearchNode::execute(const std::string& query) {
+std::vector<std::string> FileSearchNode::search(const std::string& query) {
     LOGI(TAG, "Executing File Search query: %s", query.c_str());
     
     // 1. Check Model Health
@@ -147,7 +147,7 @@ std::vector<std::string> FileSearchNode::execute(const std::string& query) {
 }
 
 std::string FileSearchNode::execute(const std::string& param) {
-    auto results = execute(param);
+    auto results = search(param);
     if (results.empty()) return "No files found.";
     return results[0]; // Returning first summary block as per current UI expectation
 }

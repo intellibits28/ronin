@@ -19,7 +19,7 @@ public:
     /**
      * Executes the actual FTS5 search query.
      */
-    std::vector<std::string> execute(const std::string& query);
+    std::vector<std::string> search(const std::string& query);
 
 private:
     Memory::LongTermMemory& m_ltm;

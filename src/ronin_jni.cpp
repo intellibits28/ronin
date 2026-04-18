@@ -259,7 +259,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         if (g_memory_manager) g_memory_manager->clearContext();
         
         if ((next_node->id == 2 || next_node->id == 3) && g_file_search_node) {
-            auto results = g_file_search_node->execute(input_str);
+            auto results = g_file_search_node->search(input_str);
             if (!results.empty()) response = results[0];
         } else if (next_node->id == 4) {
             response = std::string("Success: Action Initiated - Flashlight ") + (intent.intent_param ? "ON" : "OFF");
