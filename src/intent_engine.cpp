@@ -19,6 +19,8 @@
 #include <algorithm>
 #include "ronin_log.h"
 #include "capabilities/hardware_nodes.h"
+#include "capabilities/file_search_node.h"
+#include "capabilities/neural_embedding_node.h"
 
 #define TAG "RoninIntentEngine"
 
@@ -48,6 +50,8 @@ IntentEngine::IntentEngine() {
     using namespace Ronin::Kernel::Capability;
     
     // Phase 4.0: Vtable-based Skill Registration
+    m_skill_registry[2] = std::make_shared<FileSearchNode>();
+    m_skill_registry[3] = std::make_shared<NeuralEmbeddingNode>();
     m_skill_registry[4] = std::make_shared<FlashlightNode>();
     m_skill_registry[5] = std::make_shared<LocationNode>();
     m_skill_registry[6] = std::make_shared<WifiNode>();

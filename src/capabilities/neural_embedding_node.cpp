@@ -31,15 +31,18 @@ NeuralEmbeddingNode::NeuralEmbeddingNode(const std::string& model_path) {
 }
 
 NeuralEmbeddingNode::~NeuralEmbeddingNode() = default;
-
 bool NeuralEmbeddingNode::isLoaded() const {
     return m_impl && m_impl->loaded;
 }
 
-std::vector<float> NeuralEmbeddingNode::execute(const std::string& input) {
+std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& input) {
     LOGI(TAG, "Generating neural embedding for input: %s", input.c_str());
-    
-    // Placeholder: In a full implementation, this runs the MiniLM-L6-v2 ONNX model.
+
+    if (!isLoaded()) {
+        LOGW(TAG, "Neural model not loaded. Returning zero vector.");
+        return std::vector<float>(384, 0.0f);
+    }
+...
     // For v3.0-NEURAL-SCAN, we return a deterministic 384-dim vector based on the input.
     std::vector<float> embedding(384, 0.0f);
     
@@ -56,6 +59,11 @@ std::vector<float> NeuralEmbeddingNode::execute(const std::string& input) {
     }
 
     return embedding;
+}
+
+std::string NeuralEmbeddingNode::execute(const std::string& param) {
+    auto vec = generateEmbedding(param);
+    return "Neural Output: Vectorized context of " + std::to_string(vec.size()) + " dimensions.";
 }
 
 } // namespace Ronin::Kernel::Capability

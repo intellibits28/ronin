@@ -3,18 +3,24 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include "base_skill.h"
 
 namespace Ronin::Kernel::Capability {
 
-class NeuralEmbeddingNode {
+class NeuralEmbeddingNode : public BaseSkill {
 public:
+    NeuralEmbeddingNode() : m_impl(nullptr) {}
     NeuralEmbeddingNode(const std::string& model_path);
     ~NeuralEmbeddingNode();
+
+    // BaseSkill Implementation
+    std::string getName() const override { return "NeuralEmbeddingNode"; }
+    std::string execute(const std::string& param) override;
 
     /**
      * Runs inference on the input text to produce a 384-dim semantic embedding.
      */
-    std::vector<float> execute(const std::string& input);
+    std::vector<float> generateEmbedding(const std::string& input);
 
     /**
      * Returns true if the ONNX session was successfully initialized.

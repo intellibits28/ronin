@@ -40,7 +40,7 @@ static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
 static std::unique_ptr<RoninKernel> g_ronin_kernel;
 static std::shared_ptr<FileSearchNode> g_file_search_node;
 static std::unique_ptr<FileScanner> g_file_scanner;
-static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
+static std::shared_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
 
 // JNI Callback Caching
 static JavaVM* g_vm = nullptr;
@@ -162,8 +162,8 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     // 2. Initialize Checkpoint and File Search
     g_checkpoint_engine = std::make_unique<CheckpointEngine>(base_path + "/checkpoint.bin");
     g_checkpoint_engine->initializeShadowBuffer(1024 * 1024);
-    g_neural_embedding_node = std::make_unique<NeuralEmbeddingNode>(base_path + "/models/model.onnx");
-    g_file_search_node = std::make_shared<FileSearchNode>(*g_long_term_memory, g_neural_embedding_node.get());
+    g_neural_embedding_node = std::make_shared<NeuralEmbeddingNode>(base_path + "/models/model.onnx");
+    g_file_search_node = std::make_shared<FileSearchNode>(g_long_term_memory.get(), g_neural_embedding_node.get());
     
     g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory, g_neural_embedding_node.get());
 
@@ -194,7 +194,9 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     // Register Modular Skills (Phase 4.0 Unified)
     if (g_file_search_node) {
         g_intent_engine->registerSkill(2, g_file_search_node);
-        g_intent_engine->registerSkill(3, g_file_search_node);
+    }
+    if (g_neural_embedding_node) {
+        g_intent_engine->registerSkill(3, g_neural_embedding_node);
     }
     
     auto inference_engine = std::make_unique<Ronin::Kernel::Model::InferenceEngine>(base_path + "/assets/models/model.onnx");
@@ -288,11 +290,11 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     if (next_node) {
         if (g_memory_manager) g_memory_manager->clearContext();
         
-        // Try Vtable-based Skill Registry (Phase 4.0 Unified)
-        if (g_intent_engine && g_intent_engine->hasSkill(next_node->id)) {
+        // ALL cognitive and hardware nodes now routed exclusively via executeSkill (Phase 4.0 Migration)
+        if (g_intent_engine) {
             response = g_intent_engine->executeSkill(next_node->id, input_str);
             
-            // --- RESTORE SEVERED HARDWARE BRIDGE (v4.0 stabilization) ---
+            // --- MAINTAIN HARDWARE BRIDGE (v4.0 stabilization) ---
             if (next_node->id >= 4 && next_node->id <= 7) {
                 CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
                 jclass cls = env->GetObjectClass(thiz);
@@ -301,17 +303,6 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
                     env->CallBooleanMethod(thiz, mid, static_cast<jint>(next_node->id), static_cast<jboolean>(intent.intent_param));
                 }
             }
-        } 
-        // Fallback for hardware nodes handled by the legacy bridge response string logic
-        else if (next_node->id == 4) {
-            CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
-            response = std::string("Success: Action Initiated - Flashlight ") + (intent.intent_param ? "ON" : "OFF");
-        } else if (next_node->id == 5) {
-            response = "Success: Action Initiated - Locating device...";
-        } else if (next_node->id == 6) {
-            response = std::string("Success: Action Initiated - WiFi (Opening Settings Panel)");
-        } else if (next_node->id == 7) {
-            response = std::string("Success: Action Initiated - Bluetooth (Opening Settings Panel/Request)");
         }
     }
 

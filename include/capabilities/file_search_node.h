@@ -10,7 +10,8 @@ namespace Ronin::Kernel::Capability {
 
 class FileSearchNode : public BaseSkill {
 public:
-    FileSearchNode(Memory::LongTermMemory& ltm, NeuralEmbeddingNode* neural = nullptr);
+    FileSearchNode() : m_ltm(nullptr), m_neural(nullptr) {}
+    FileSearchNode(Memory::LongTermMemory* ltm, NeuralEmbeddingNode* neural = nullptr);
 
     // BaseSkill Implementation
     std::string getName() const override { return "FileSearchNode"; }
@@ -22,7 +23,7 @@ public:
     std::vector<std::string> search(const std::string& query);
 
 private:
-    Memory::LongTermMemory& m_ltm;
+    Memory::LongTermMemory* m_ltm;
     NeuralEmbeddingNode* m_neural;
 };
 

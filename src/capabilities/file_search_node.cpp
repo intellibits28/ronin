@@ -9,12 +9,16 @@
 
 namespace Ronin::Kernel::Capability {
 
-FileSearchNode::FileSearchNode(Memory::LongTermMemory& ltm, NeuralEmbeddingNode* neural) 
+FileSearchNode::FileSearchNode(Memory::LongTermMemory* ltm, NeuralEmbeddingNode* neural) 
     : m_ltm(ltm), m_neural(neural) {}
 
 std::vector<std::string> FileSearchNode::search(const std::string& query) {
     LOGI(TAG, "Executing File Search query: %s", query.c_str());
     
+    if (!m_ltm) {
+        return {"Error: File Search logic not initialized (LTM missing)."};
+    }
+
     // 1. Check Model Health
     if (m_neural && !m_neural->isLoaded()) {
         LOGE(TAG, "> FATAL: ONNX Runtime failed to load model weights!");
@@ -48,8 +52,8 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
     // 3. Try Neural Vector Search first
     if (m_neural && m_neural->isLoaded()) {
         LOGI(TAG, "> Search Mode: Neural");
-        auto query_vec = m_neural->execute(query);
-        auto all_embeddings = m_ltm.getAllFileEmbeddings();
+        auto query_vec = m_neural->generateEmbedding(query);
+        auto all_embeddings = m_ltm->getAllFileEmbeddings();
         
         std::vector<std::pair<std::string, float>> neural_matches;
         for (auto& fe : all_embeddings) {
@@ -101,7 +105,7 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
 
     // 4. Fallback to Keyword (FTS5) Search
     LOGI(TAG, "> Search Mode: Keyword Fallback");
-    auto results = m_ltm.searchFiles(query);
+    auto results = m_ltm->searchFiles(query);
     
     // EXPLICIT FILTER: Apply extension filter to keyword results
     std::vector<std::string> filtered_results;
