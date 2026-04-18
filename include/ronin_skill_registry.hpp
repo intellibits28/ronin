@@ -19,22 +19,22 @@ public:
     }
 
     void registerSkill(BaseSkill* skill) {
-        m_skills[skill->getId()] = skill;
+        m_skills[skill->getName()] = skill;
     }
 
-    BaseSkill* getSkill(uint32_t id) {
-        auto it = m_skills.find(id);
+    BaseSkill* getSkill(const std::string& name) {
+        auto it = m_skills.find(name);
         if (it != m_skills.end()) return it->second;
         return nullptr;
     }
 
-    const std::unordered_map<uint32_t, BaseSkill*>& getAllSkills() const {
+    const std::unordered_map<std::string, BaseSkill*>& getAllSkills() const {
         return m_skills;
     }
 
 private:
     SkillRegistry() = default;
-    std::unordered_map<uint32_t, BaseSkill*> m_skills;
+    std::unordered_map<std::string, BaseSkill*> m_skills;
 };
 
 } // namespace Ronin::Kernel::Capability

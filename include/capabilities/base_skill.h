@@ -1,40 +1,29 @@
 #pragma once
 
 #include <string>
-#include <vector>
-#include <cstdint>
-#include "../ronin_types.hpp"
+#include <memory>
 
-namespace Ronin::Kernel::Capability {
+namespace Ronin::Kernel {
 
 /**
- * Phase 4.0: Base interface for all kernel skills.
- * Implements a Vtable-based registry pattern to decouple intents from execution.
+ * Phase 4.0: Vtable-based Registry Foundation.
+ * This interface decouples intent resolution from physical execution.
  */
 class BaseSkill {
 public:
     virtual ~BaseSkill() = default;
 
     /**
-     * Unique identifier for the skill (maps to Node ID).
+     * Primary execution entry point for the skill.
+     * @param param The extracted parameter for this tool.
+     * @return A response string for the Reasoning Console/UI.
      */
-    virtual uint32_t getId() const = 0;
+    virtual std::string execute(const std::string& param) = 0;
 
     /**
-     * Human-readable name of the skill.
+     * @return The internal registration name of this skill.
      */
     virtual std::string getName() const = 0;
-
-    /**
-     * Primary execution entry point.
-     */
-    virtual Result execute(const CognitiveIntent& intent) = 0;
-
-    /**
-     * Capability Manifest data for the IntentEngine.
-     */
-    virtual std::vector<std::string> getSubjects() const = 0;
-    virtual std::vector<std::string> getActions() const = 0;
 };
 
-} // namespace Ronin::Kernel::Capability
+} // namespace Ronin::Kernel
