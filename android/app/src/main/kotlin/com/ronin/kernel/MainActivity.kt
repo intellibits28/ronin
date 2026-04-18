@@ -8,7 +8,7 @@ import android.os.BatteryManager
 import android.content.IntentFilter
 import android.net.wifi.WifiManager
 import android.bluetooth.BluetoothAdapter
-import android.location.LocationManager
+import android.bluetooth.BluetoothManager
 import android.hardware.camera2.CameraManager
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
@@ -22,6 +22,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
+import java.util.concurrent.atomic.AtomicBoolean
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
@@ -150,16 +151,16 @@ class MainActivity : ComponentActivity() {
                         
                         if (hasFine || hasCoarse) {
                             val cancellationToken = CancellationTokenSource()
-                            var locationFound = false
+                            val locationFound = AtomicBoolean(false)
 
                             // Tier 1: Primary - getCurrentLocation
                             fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationToken.token)
-                                .addOnSuccessListener { location ->
-                                    if (location != null && !locationFound) {
-                                        locationFound = true
-                                        Log.i("RoninUI", "GPS Tier 1: Success [${location.latitude}, ${location.longitude}]")
-                                        nativeEngine.injectLocation(location.latitude, location.longitude)
-                                    } else if (location == null) {
+                                .addOnSuccessListener { loc ->
+                                    if (loc != null && !locationFound.get()) {
+                                        locationFound.set(true)
+                                        Log.i("RoninUI", "GPS Tier 1: Success [${loc.latitude}, ${loc.longitude}]")
+                                        nativeEngine.injectLocation(loc.latitude, loc.longitude)
+                                    } else if (loc == null) {
                                         // Trigger Tier 2 immediately if null
                                         Log.w("RoninUI", "GPS Tier 1 returned null. Falling back to Tier 2.")
                                     }
@@ -170,7 +171,7 @@ class MainActivity : ComponentActivity() {
                             
                             // Tier 2 & 3 Handler: 10s Timeout or Fallback Trigger
                             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                if (!locationFound) {
+                                if (!locationFound.get()) {
                                     cancellationToken.cancel()
                                     Log.w("RoninUI", "GPS Primary Timeout. Attempting Tier 2 (lastLocation)...")
                                     
@@ -178,7 +179,7 @@ class MainActivity : ComponentActivity() {
                                     @Suppress("MissingPermission")
                                     fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc ->
                                         if (lastLoc != null) {
-                                            locationFound = true
+                                            locationFound.set(true)
                                             Log.i("RoninUI", "GPS Tier 2: Success [${lastLoc.latitude}, ${lastLoc.longitude}]")
                                             nativeEngine.injectLocation(lastLoc.latitude, lastLoc.longitude)
                                         } else {
@@ -214,7 +215,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     7 -> {
-                        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+                        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+                        val bluetoothAdapter = bluetoothManager.adapter
                         if (bluetoothAdapter != null) {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 // Android 13+ (API 33) restricts background toggling
