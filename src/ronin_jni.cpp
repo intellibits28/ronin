@@ -31,7 +31,40 @@ using namespace Ronin::Kernel::Checkpoint;
 using namespace Ronin::Kernel::Reasoning;
 using namespace Ronin::Kernel::Capability;
 
-// ... (existing unique_ptrs)
+// Use unique_ptr for managed lifecycle of kernel components
+static std::unique_ptr<MemoryManager> g_memory_manager;
+static std::unique_ptr<LongTermMemory> g_long_term_memory;
+static std::unique_ptr<CheckpointEngine> g_checkpoint_engine;
+static std::unique_ptr<CapabilityGraph> g_capability_graph;
+static std::unique_ptr<GraphStorage> g_graph_storage;
+static std::unique_ptr<GraphExecutor> g_graph_executor;
+static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
+static std::unique_ptr<RoninKernel> g_ronin_kernel;
+static std::unique_ptr<FileSearchNode> g_file_search_node;
+static std::unique_ptr<FileScanner> g_file_scanner;
+static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
+
+// JNI Callback Caching
+static JavaVM* g_vm = nullptr;
+static jobject g_engine_instance = nullptr;
+
+namespace {
+class JniCapabilityManager : public Ronin::Kernel::CapabilityManager {
+public:
+  bool canExecute(uint32_t nodeId) const override {
+    // For prototype, all registered nodes are authorized
+    return nodeId > 0;
+  }
+};
+
+Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input &input) {
+  std::string s(input.data, input.length);
+  if (g_intent_engine) {
+      std::string context = g_ronin_kernel ? g_ronin_kernel->getSuggestedSubject() : "";
+      return g_intent_engine->process(s, context);
+  }
+  return {1, 0.5f, true};
+}
 
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
   LOGI("RoninJNI", "Executing Node %u via Vtable Registry [v4.0-MODULAR]", nodeId);
