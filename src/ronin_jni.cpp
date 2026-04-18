@@ -21,8 +21,6 @@
 #include <future>
 #include <chrono>
 
-#include "ronin_skill_registry.hpp"
-
 #define TAG "RoninNativeEngine"
 
 using namespace Ronin::Kernel;
@@ -40,7 +38,7 @@ static std::unique_ptr<GraphStorage> g_graph_storage;
 static std::unique_ptr<GraphExecutor> g_graph_executor;
 static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
 static std::unique_ptr<RoninKernel> g_ronin_kernel;
-static std::unique_ptr<FileSearchNode> g_file_search_node;
+static std::shared_ptr<FileSearchNode> g_file_search_node;
 static std::unique_ptr<FileScanner> g_file_scanner;
 static std::unique_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
 
@@ -69,12 +67,11 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
   LOGI("RoninJNI", "Executing Node %u via Vtable Registry [v4.0-MODULAR]", nodeId);
   
-  // 1. Try Vtable-based Skill Registry first (Phase 4.0)
-  auto skill = SkillRegistry::getInstance().getSkill(nodeId == 2 || nodeId == 3 ? "FileSearchNode" : "");
-  if (skill) {
+  // 1. Try Vtable-based Skill Registry (Phase 4.0 Unified)
+  if (g_intent_engine && g_intent_engine->hasSkill(nodeId)) {
       // In Phase 4.0, we prioritize natural language parameters for skills
-      // For now, we use a placeholder or recent context if needed
-      skill->execute(""); 
+      // For now, the kernel just triggers it.
+      g_intent_engine->executeSkill(nodeId, ""); 
       return {true, 0};
   }
 
@@ -166,12 +163,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_checkpoint_engine = std::make_unique<CheckpointEngine>(base_path + "/checkpoint.bin");
     g_checkpoint_engine->initializeShadowBuffer(1024 * 1024);
     g_neural_embedding_node = std::make_unique<NeuralEmbeddingNode>(base_path + "/models/model.onnx");
-    g_file_search_node = std::make_unique<FileSearchNode>(*g_long_term_memory, g_neural_embedding_node.get());
-    
-    // Register Modular Skills (Phase 4.0)
-    // We pass a non-owning pointer to the registry. 
-    // In Phase 4.1, SkillRegistry will own these objects.
-    SkillRegistry::getInstance().registerSkill(g_file_search_node.get());
+    g_file_search_node = std::make_shared<FileSearchNode>(*g_long_term_memory, g_neural_embedding_node.get());
     
     g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory, g_neural_embedding_node.get());
 
@@ -198,6 +190,12 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
+    
+    // Register Modular Skills (Phase 4.0 Unified)
+    if (g_file_search_node) {
+        g_intent_engine->registerSkill(2, g_file_search_node);
+        g_intent_engine->registerSkill(3, g_file_search_node);
+    }
     
     auto inference_engine = std::make_unique<Ronin::Kernel::Model::InferenceEngine>(base_path + "/assets/models/model.onnx");
     g_intent_engine->setInferenceEngine(std::move(inference_engine));

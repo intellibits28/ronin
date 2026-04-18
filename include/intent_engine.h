@@ -62,6 +62,20 @@ public:
      */
     std::string executeSkill(uint32_t nodeId, const std::string& param);
 
+    /**
+     * Checks if a modular skill is registered for the given ID.
+     */
+    bool hasSkill(uint32_t nodeId) const {
+        return m_skill_registry.find(nodeId) != m_skill_registry.end();
+    }
+
+    /**
+     * Registers an externally managed skill (e.g. FileSearchNode).
+     */
+    void registerSkill(uint32_t id, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill> skill) {
+        m_skill_registry[id] = skill;
+    }
+
 private:
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
     std::unique_ptr<Model::InferenceEngine> m_inference_engine;
