@@ -68,9 +68,9 @@ Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel:
   LOGI("RoninJNI", "Executing Node %u via Vtable Registry [v4.0-MODULAR]", nodeId);
   
   // 1. Try Vtable-based Skill Registry (Phase 4.0 Unified)
-  if (g_intent_engine && g_intent_engine->hasSkill(nodeId)) {
-      // In Phase 4.0, we prioritize natural language parameters for skills
-      // For now, the kernel just triggers it.
+  // For stabilization, we ONLY use the registry for non-hardware nodes (1-3)
+  // so the legacy hardware bridge (4-7) can still fire.
+  if (nodeId < 4 && g_intent_engine && g_intent_engine->hasSkill(nodeId)) {
       g_intent_engine->executeSkill(nodeId, ""); 
       return {true, 0};
   }
@@ -288,16 +288,20 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     if (next_node) {
         if (g_memory_manager) g_memory_manager->clearContext();
         
-        // Try Vtable-based Skill Registry (Phase 4.0)
-        auto skill = SkillRegistry::getInstance().getSkill(next_node->capability_name);
-        if (skill) {
-            response = skill->execute(input_str);
+        // Try Vtable-based Skill Registry (Phase 4.0 Unified)
+        if (g_intent_engine && g_intent_engine->hasSkill(next_node->id)) {
+            response = g_intent_engine->executeSkill(next_node->id, input_str);
         } 
-        // Phase 4.0: Integrated Hardware Registry in IntentEngine
-        else if (next_node->id >= 4 && next_node->id <= 7) {
-            if (g_intent_engine) {
-                response = g_intent_engine->executeSkill(next_node->id, input_str);
-            }
+        // Fallback for hardware nodes handled by the legacy bridge response string logic
+        else if (next_node->id == 4) {
+            CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
+            response = std::string("Success: Action Initiated - Flashlight ") + (intent.intent_param ? "ON" : "OFF");
+        } else if (next_node->id == 5) {
+            response = "Success: Action Initiated - Locating device...";
+        } else if (next_node->id == 6) {
+            response = std::string("Success: Action Initiated - WiFi (Opening Settings Panel)");
+        } else if (next_node->id == 7) {
+            response = std::string("Success: Action Initiated - Bluetooth (Opening Settings Panel/Request)");
         }
     }
 
