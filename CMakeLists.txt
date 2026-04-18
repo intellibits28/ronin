@@ -123,7 +123,8 @@ if(ANDROID)
                      NO_DEFAULT_PATH)
         set(ORT_LIB_PATH ${ORT_LIB_PATH_INTERNAL})
 
-        add_library(onnxruntime_lib SHARED IMPORTED)        set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+        add_library(onnxruntime_lib SHARED IMPORTED)
+        set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
         target_link_libraries(ronin_core PUBLIC rt onnxruntime_lib)
 
         if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "aarch64")
