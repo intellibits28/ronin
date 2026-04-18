@@ -3,7 +3,7 @@
 #include <string>
 #include <memory>
 
-namespace Ronin::Kernel {
+namespace Ronin::Kernel::Capability {
 
 /**
  * Phase 4.0: Vtable-based Registry Foundation.
@@ -26,4 +26,4 @@ public:
     virtual std::string getName() const = 0;
 };
 
-} // namespace Ronin::Kernel
+} // namespace Ronin::Kernel::Capability
