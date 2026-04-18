@@ -70,13 +70,12 @@ Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel:
   LOGI("RoninJNI", "Executing Node %u via Vtable Registry [v4.0-MODULAR]", nodeId);
   
   // 1. Try Vtable-based Skill Registry first (Phase 4.0)
-  if (nodeId == 2 || nodeId == 3) {
-      auto skill = SkillRegistry::getInstance().getSkill("FileSearchNode");
-      if (skill) {
-          // This is a temporary bridge until all nodes are modularized
-          // execute() now returns a string as per user's BaseSkill requirement
-          return {true, 0}; 
-      }
+  auto skill = SkillRegistry::getInstance().getSkill(nodeId == 2 || nodeId == 3 ? "FileSearchNode" : "");
+  if (skill) {
+      // In Phase 4.0, we prioritize natural language parameters for skills
+      // For now, we use a placeholder or recent context if needed
+      skill->execute(""); 
+      return {true, 0};
   }
 
   // 2. Hardware Execution via Detached Thread (Legacy Bridge for Phase 4.0 stabilization)
@@ -284,17 +283,21 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     }
 
     // 2. Routing
-    CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
+    // In Phase 4.0, we prioritize the Vtable Registry for execution and response generation
     Node* next_node = g_graph_executor->selectNextNode(input_str);
     std::string response = "Input processed via Reasoning Spine (No specific capability triggered).";
 
     if (next_node) {
         if (g_memory_manager) g_memory_manager->clearContext();
         
-        if ((next_node->id == 2 || next_node->id == 3) && g_file_search_node) {
-            auto results = g_file_search_node->search(input_str);
-            if (!results.empty()) response = results[0];
-        } else if (next_node->id == 4) {
+        // Try Vtable-based Skill Registry (Phase 4.0)
+        auto skill = SkillRegistry::getInstance().getSkill(next_node->capability_name);
+        if (skill) {
+            response = skill->execute(input_str);
+        } 
+        // Fallback for hardware nodes not yet modularized
+        else if (next_node->id == 4) {
+            CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
             response = std::string("Success: Action Initiated - Flashlight ") + (intent.intent_param ? "ON" : "OFF");
         } else if (next_node->id == 5) {
             response = "Success: Action Initiated - Locating device...";
