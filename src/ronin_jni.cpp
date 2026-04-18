@@ -67,54 +67,11 @@ Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input
 Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
   LOGI("RoninJNI", "Executing Node %u via Vtable Registry [v4.0-MODULAR]", nodeId);
   
-  // 1. Try Vtable-based Skill Registry (Phase 4.0 Unified)
-  // For stabilization, we ONLY use the registry for non-hardware nodes (1-3)
-  // so the legacy hardware bridge (4-7) can still fire.
-  if (nodeId < 4 && g_intent_engine && g_intent_engine->hasSkill(nodeId)) {
+  // Phase 4.0: Unified modular execution.
+  // We trigger the skill here for kernel-side state updates (if any),
+  // but physical hardware actuation and UI responses are now mastered in processInput.
+  if (g_intent_engine && g_intent_engine->hasSkill(nodeId)) {
       g_intent_engine->executeSkill(nodeId, ""); 
-      return {true, 0};
-  }
-
-  // 2. Hardware Execution via Detached Thread (Legacy Bridge for Phase 4.0 stabilization)
-  if (nodeId >= 4 && nodeId <= 7) {
-      if (!g_vm || !g_engine_instance) {
-          LOGE("RoninJNI", "Exec Error: JNI Instance not cached.");
-          return {false, -1};
-      }
-
-      bool intent_param = state.currentIntent.intent_param;
-
-      // Use a raw thread and detach it to ensure it doesn't block the Kernel spine
-      std::thread([nodeId, intent_param]() {
-          JNIEnv* env = nullptr;
-          JavaVMAttachArgs args;
-          args.version = JNI_VERSION_1_6;
-          args.name = "RoninHardwareThread";
-          args.group = nullptr;
-
-          // Typecast to void** for Android-compatible signature
-          if (g_vm->AttachCurrentThread(reinterpret_cast<JNIEnv**>(&env), &args) == JNI_OK) {
-              jclass cls = env->GetObjectClass(g_engine_instance);
-              jmethodID methodCallback = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
-              
-              if (methodCallback) {
-                  auto start = std::chrono::high_resolution_clock::now();
-                  
-                  LOGI("RoninPerf", ">>> START: OS Hardware Call for Node %u", nodeId);
-                  env->CallBooleanMethod(g_engine_instance, methodCallback, 
-                      static_cast<jint>(nodeId),
-                      static_cast<jboolean>(intent_param));
-                  
-                  auto end = std::chrono::high_resolution_clock::now();
-                  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-                  
-                  LOGI("RoninPerf", "<<< END: OS Hardware Call for Node %u (Latency: %lld ms)", nodeId, (long long)elapsed);
-              }
-              g_vm->DetachCurrentThread();
-          }
-      }).detach();
-
-      return {true, 202}; // Success: Action Initiated
   }
 
   return {true, 0};
