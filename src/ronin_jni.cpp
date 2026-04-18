@@ -114,7 +114,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     // 2. Initialize Checkpoint and File Search
     g_checkpoint_engine = std::make_unique<CheckpointEngine>(base_path + "/checkpoint.bin");
     g_checkpoint_engine->initializeShadowBuffer(1024 * 1024);
-    g_neural_embedding_node = std::make_shared<NeuralEmbeddingNode>(base_path + "/models/model.onnx");
+    g_neural_embedding_node = std::make_shared<NeuralEmbeddingNode>(base_path + "/assets/models/model.onnx");
     g_file_search_node = std::make_shared<FileSearchNode>(g_long_term_memory.get(), g_neural_embedding_node.get());
     
     g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory, g_neural_embedding_node.get());
@@ -218,7 +218,6 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         if (g_memory_manager) g_memory_manager->clearContext();
         std::string response = "ChatNode: Hello! I am Ronin. How can I help you today?";
         if (g_long_term_memory) {
-            g_long_term_memory->storeMessage("user", input_str);
             g_long_term_memory->storeMessage("ronin", response);
         }
         return env->NewStringUTF(response.c_str());
