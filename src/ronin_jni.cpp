@@ -291,6 +291,16 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         // Try Vtable-based Skill Registry (Phase 4.0 Unified)
         if (g_intent_engine && g_intent_engine->hasSkill(next_node->id)) {
             response = g_intent_engine->executeSkill(next_node->id, input_str);
+            
+            // --- RESTORE SEVERED HARDWARE BRIDGE (v4.0 stabilization) ---
+            if (next_node->id >= 4 && next_node->id <= 7) {
+                CognitiveIntent intent = defaultIntentProcessor(minimalist_input);
+                jclass cls = env->GetObjectClass(thiz);
+                jmethodID mid = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
+                if (mid) {
+                    env->CallBooleanMethod(thiz, mid, static_cast<jint>(next_node->id), static_cast<jboolean>(intent.intent_param));
+                }
+            }
         } 
         // Fallback for hardware nodes handled by the legacy bridge response string logic
         else if (next_node->id == 4) {
