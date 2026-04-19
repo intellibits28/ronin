@@ -180,17 +180,29 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     auto tokens = tokenize(input);
     if (tokens.empty()) return {1, 0.0f, true};
 
-    // Tier 1: Greetings Guardrail (Exact Match)
-    std::string first = tokens[0];
-    if (first == "hi" || first == "hello" || first == "hey" || first == "mingalaba") {
-        LOGI(TAG, "> Tier 1 Match: Greeting detected.");
-        return {1, 1.0f, true}; // ChatNode (ID 1)
+    // Tier 1: Dynamic Greeting Detection (Single Source of Truth: ID 1 from manifest)
+    for (const auto& cap : m_capabilities) {
+        if (cap.id == 1) {
+            for (const auto& token : tokens) {
+                for (const auto& sub : cap.subjects) {
+                    if (isFuzzyMatch(token, sub)) {
+                        // Only trigger if it's a pure greeting OR if no other high-confidence match is found later.
+                        // For now, maintain Guardrail behavior as requested.
+                        LOGI(TAG, "> Tier 1 Match: Greeting '%s' detected via manifest.", token.c_str());
+                        return {1, 1.0f, true};
+                    }
+                }
+            }
+            break;
+        }
     }
 
     // Safety-First Negation Logic (v3.9.4)
+    // Synchronized with manifest actions for WiFi/Bluetooth/Flashlight
     bool isOff = (input.find("off") != std::string::npos || 
                   input.find("stop") != std::string::npos || 
-                  input.find("disable") != std::string::npos);
+                  input.find("disable") != std::string::npos ||
+                  input.find("ပိတ်") != std::string::npos);
 
     // Tier 2: Dynamic Matcher (Subject + Action)
     for (const auto& cap : m_capabilities) {

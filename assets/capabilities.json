@@ -9,16 +9,16 @@
   {
     "id": 2,
     "name": "FileSearchNode",
-    "subjects": ["file", "document", "pdf", "jpg", "mp3", "image", "photo", "music", "video", "search", "ဖိုင်", "စာရွက်စာတမ်း"],
-    "actions": ["find", "locate", "search", "show", "ရှာ", "ရှာပေး"],
-    "confidence_threshold": 0.7
+    "subjects": ["file", "document", "pdf"],
+    "actions": ["search", "find", "locate"],
+    "confidence_threshold": 0.8
   },
   {
     "id": 3,
     "name": "NeuralEmbeddingNode",
-    "subjects": ["embedding", "vector", "neural", "semantic"],
-    "actions": ["generate", "compute", "calculate"],
-    "confidence_threshold": 0.9
+    "subjects": ["embed", "vector", "semantic"],
+    "actions": ["calculate", "process"],
+    "confidence_threshold": 0.8
   },
   {
     "id": 4,
@@ -38,14 +38,14 @@
     "id": 6,
     "name": "WiFiNode",
     "subjects": ["wifi", "internet", "connection", "ဝိုင်ဖိုင်", "အင်တာနက်"],
-    "actions": ["on", "off", "enable", "disable", "turn", "switch", "ဖွင့်", "ပိတ်"],
+    "actions": ["on", "off", "enable", "disable", "turn", "switch", "ဖွင့်", "ပိတ်", "stop", "toggle"],
     "confidence_threshold": 0.8
   },
   {
     "id": 7,
     "name": "BluetoothNode",
     "subjects": ["bluetooth", "bt", "ဘလူးတု"],
-    "actions": ["on", "off", "enable", "disable", "turn", "switch", "ဖွင့်", "ပိတ်"],
+    "actions": ["on", "off", "enable", "disable", "turn", "switch", "ဖွင့်", "ပိတ်", "stop", "toggle"],
     "confidence_threshold": 0.8
   }
 ]
