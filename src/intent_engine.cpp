@@ -239,6 +239,14 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             for (const auto& token : tokens) {
                 if (isFuzzyMatch(token, sub)) { 
                     subject_found = true; 
+                    
+                    // Phase 4.0 Optimization: Interrogative Bypass
+                    // If the subject is a standalone interrogative (where, who, what),
+                    // treat it as both subject and action.
+                    if (token == "where" || token == "who" || token == "what") {
+                        action_found = true;
+                        LOGI(TAG, "> Interrogative Bypass: '%s' triggered standalone match.", token.c_str());
+                    }
                     break; 
                 }
             }
@@ -247,31 +255,33 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
         // Check if any action from the manifest exists in the input tokens or as a substring
         // OR if it's an affirmative generic trigger and context_subject is relevant to this cap
-        for (const auto& act : cap.actions) {
-            // Affirmative Mapping ( ok, yes, sure, do it )
-            bool isAffirmative = (first == "ok" || first == "yes" || first == "sure" || input.find("do it") != std::string::npos);
-            
-            if (isAffirmative && subject_found) {
-                action_found = true;
-                break;
-            }
-
-            // Check full string for multi-word actions or explicit word boundaries
-            if (act.length() > 3) {
-                if (input.find(act) != std::string::npos) {
+        if (!action_found) {
+            for (const auto& act : cap.actions) {
+                // Affirmative Mapping ( ok, yes, sure, do it )
+                bool isAffirmative = (first == "ok" || first == "yes" || first == "sure" || input.find("do it") != std::string::npos);
+                
+                if (isAffirmative && subject_found) {
                     action_found = true;
                     break;
                 }
-            }
 
-            // Check individual tokens
-            for (const auto& token : tokens) {
-                if (isFuzzyMatch(token, act)) {
-                    action_found = true;
-                    break;
+                // Check full string for multi-word actions or explicit word boundaries
+                if (act.length() > 3) {
+                    if (input.find(act) != std::string::npos) {
+                        action_found = true;
+                        break;
+                    }
                 }
+
+                // Check individual tokens
+                for (const auto& token : tokens) {
+                    if (isFuzzyMatch(token, act)) {
+                        action_found = true;
+                        break;
+                    }
+                }
+                if (action_found) break;
             }
-            if (action_found) break;
         }
 
         if (subject_found && action_found) {

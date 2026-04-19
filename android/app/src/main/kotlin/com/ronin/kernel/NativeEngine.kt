@@ -5,8 +5,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
+import android.content.ComponentCallbacks2
+import android.content.res.Configuration
 
-class NativeEngine {
+class NativeEngine : ComponentCallbacks2 {
 
     companion object {
         private const val TAG = "RoninNativeEngine"
@@ -64,6 +66,7 @@ class NativeEngine {
 
     // --- System Health JNI Bridges ---
     external fun updateSystemHealth(temperature: Float, ramUsedGB: Float, ramTotalGB: Float): Boolean
+    external fun notifyTrimMemory(level: Int)
     external fun setEngineInstance()
     external fun injectLocation(lat: Double, lon: Double)
 
@@ -100,6 +103,20 @@ class NativeEngine {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
             onKernelMessage?.invoke(message)
         }
+    }
+
+    // --- ComponentCallbacks2 Implementation ---
+    override fun onTrimMemory(level: Int) {
+        // TRIM_MEMORY_RUNNING_CRITICAL (15) or TRIM_MEMORY_COMPLETE (80)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+            Log.w(TAG, "OS Signal: Low Memory (Level $level). Notifying Kernel.")
+            notifyTrimMemory(level)
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {}
+    override fun onLowMemory() {
+        notifyTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
     }
 
     // --- Coroutine Wrappers ---

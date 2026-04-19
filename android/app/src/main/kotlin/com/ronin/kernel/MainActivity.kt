@@ -91,6 +91,9 @@ class MainActivity : ComponentActivity() {
         nativeEngine.setEngineInstance()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
+        // Rule 4 Compliance: Register for push-based OS memory callbacks
+        registerComponentCallbacks(nativeEngine)
+
         setupHardwareCallbacks()
         checkAndRequestStoragePermission()
         checkAndRequestHardwarePermissions()
@@ -441,11 +444,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             chatViewModel.ramUsedGB = usedRAM
             chatViewModel.ramTotalGB = totalRAM
             
-            // Push to C++ Kernel
-            val highPressure = engine.updateSystemHealth(temp, usedRAM, totalRAM)
-            if (highPressure) {
-                reasoningLogs.add(0, "> High Memory Pressure: Pruning KV Cache.")
-            }
+            // Push metrics to C++ Kernel (Metrics only, no pruning logic here)
+            engine.updateSystemHealth(temp, usedRAM, totalRAM)
 
             chatViewModel.lmkPressure = engine.getLMKPressure()
             chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f

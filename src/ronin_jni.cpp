@@ -48,6 +48,9 @@ static std::shared_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
 static JavaVM* g_vm = nullptr;
 static jobject g_engine_instance = nullptr;
 
+// Phase 4.0: Push-based Memory State (Rule 4 Compliance)
+static std::atomic<bool> g_low_memory_mode{false};
+
 namespace {
 class JniCapabilityManager : public Ronin::Kernel::CapabilityManager {
 public:
@@ -326,19 +329,28 @@ Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdo
     }
 }
 
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
+    // 80 = TRIM_MEMORY_COMPLETE, 15 = TRIM_MEMORY_RUNNING_CRITICAL
+    if (level >= 15) {
+        g_low_memory_mode.store(true);
+        LOGW("RoninHealth", ">>> OS PUSH: Low Memory Signal (Level %d). Kernel entering conservative mode.", level);
+        
+        if (g_memory_manager) {
+            g_memory_manager->onMemoryPressure();
+        }
+    } else {
+        g_low_memory_mode.store(false);
+    }
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
-    LOGI("RoninHealth", "System Health Poll: Temp=%.1f C | RAM=%.2f/%.2f GB (%.1f%%)", 
-         temp, used, total, (total > 0 ? (used / total) * 100.0f : 0));
-
-    // Phase 4.0: Report to UI via HardwareBridge callback
+    // Phase 4.0: Report to UI via HardwareBridge callback (Metrics only)
     Ronin::Kernel::Capability::HardwareBridge::reportSystemHealth(temp, used, total);
 
-    // Return true if RAM > 85%
-    if (total > 0 && (used / total) > 0.85f) {
-        LOGW("RoninHealth", "> CRITICAL: High Memory Pressure detected. Signaling Kernel for pruning.");
-        return JNI_TRUE;
-    }
+    // Rule 4 Compliance: NEVER return pruning signal via polling.
+    // Memory pruning is now strictly OS-driven via notifyTrimMemory.
     return JNI_FALSE;
 }
 
