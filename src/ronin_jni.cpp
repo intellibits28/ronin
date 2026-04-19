@@ -12,6 +12,7 @@
 #include "capabilities/file_scanner.h"
 #include "capabilities/neural_embedding_node.h"
 #include "capabilities/hardware_bridge.h"
+#include "checkpoint_manager.h"
 #include "ronin_log.h"
 #include "checkpoint_schema_generated.h"
 #include <cstdint>
@@ -147,6 +148,11 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
+
+    // Phase 4.0: Survival Core Checkpoint Manager
+    auto checkpoint_manager = std::make_shared<Ronin::Kernel::Checkpoint::CheckpointManager>(base_path + "/survival_core.bin");
+    checkpoint_manager->initialize();
+    g_intent_engine->setCheckpointManager(checkpoint_manager);
     
     // Register Modular Skills (Phase 4.0 Unified)
     if (g_file_search_node) {

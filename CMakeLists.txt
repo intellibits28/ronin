@@ -81,6 +81,7 @@ set(RONIN_CORE_SOURCES
     src/intent_engine.cpp
     src/models/inference_engine.cpp
     src/checkpoint_engine.cpp
+    src/checkpoint_manager.cpp
     src/thompson_sampler.cpp
     src/graph_executor.cpp
     src/graph_storage.cpp

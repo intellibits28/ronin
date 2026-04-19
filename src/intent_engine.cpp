@@ -69,7 +69,20 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
         std::string logMsg = "> Deterministic Match: Routing to " + it->second->getName() + " (ID " + std::to_string(nodeId) + ")";
         LOGI(TAG, "%s", logMsg.c_str());
         Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
-        return it->second->execute(param);
+
+        // Survival Core: Commit state BEFORE execution
+        if (m_checkpoint_manager) {
+            m_checkpoint_manager->commit("active_" + std::to_string(nodeId), 1ULL << nodeId, nullptr, 0, 0, "Running: " + param);
+        }
+
+        std::string result = it->second->execute(param);
+
+        // Survival Core: Commit state AFTER successful execution
+        if (m_checkpoint_manager) {
+            m_checkpoint_manager->commit("completed_" + std::to_string(nodeId), 0, nullptr, 0, 0, "Finished: " + param);
+        }
+
+        return result;
     }
     std::string errorMsg = "Error: Modular skill not found for ID " + std::to_string(nodeId);
     LOGE(TAG, "%s", errorMsg.c_str());

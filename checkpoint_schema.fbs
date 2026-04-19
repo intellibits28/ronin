@@ -5,16 +5,28 @@
 namespace Ronin.Kernel.Checkpoint;
 
 table Checkpoint {
-    // 128-dimensional INT8 quantized intent vector
-    // Aligned to 16 bytes for NEON SIMD loading (vld1q_s8)
-    intent_vector:[int8] (force_align: 16);
+    // 1. Header (version/magic)
+    version:uint32;
+    magic:uint32;
 
-    // 64-bit bitmask representing the capability graph's active edge frontier
+    // 2. Intent ID (string/uuid)
+    intent_id:string;
+
+    // 3. Edge Frontier (uint64 bitmask)
     edge_frontier:uint64;
 
-    // KV-cache data blob
+    // 4. Compressed KV state (byte array)
     // Aligned to 4KB (4096 bytes) for direct I/O and page-aligned memory mapping
-    kv_blob:[ubyte] (force_align: 4096);
+    kv_state:[ubyte] (force_align: 4096);
+
+    // 5. LoRA Mask (uint32)
+    lora_mask:uint32;
+
+    // 6. Plan Progress (string/JSON)
+    plan_progress:string;
+
+    // Legacy support (optional)
+    intent_vector:[int8] (force_align: 16);
 }
 
 root_type Checkpoint;

@@ -9,6 +9,7 @@
 #include "ronin_types.hpp"
 #include "models/inference_engine.h"
 #include "capabilities/base_skill.h"
+#include "checkpoint_manager.h"
 
 namespace Ronin::Kernel::Intent {
 
@@ -76,9 +77,17 @@ public:
         m_skill_registry[id] = skill;
     }
 
+    /**
+     * Attaches a checkpoint manager for survival core.
+     */
+    void setCheckpointManager(std::shared_ptr<Ronin::Kernel::Checkpoint::CheckpointManager> cm) {
+        m_checkpoint_manager = cm;
+    }
+
 private:
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
     std::unique_ptr<Model::InferenceEngine> m_inference_engine;
+    std::shared_ptr<Ronin::Kernel::Checkpoint::CheckpointManager> m_checkpoint_manager;
 
     // Phase 4.0: Vtable-based Skill Registry
     std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;
