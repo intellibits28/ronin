@@ -68,6 +68,7 @@ class NativeEngine : ComponentCallbacks2 {
     external fun updateSystemHealth(temperature: Float, ramUsedGB: Float, ramTotalGB: Float): Boolean
     external fun notifyTrimMemory(level: Int)
     external fun setEngineInstance()
+    external fun hydrate()
     external fun injectLocation(lat: Double, lon: Double)
 
     // --- Hardware Control JNI Callbacks ---

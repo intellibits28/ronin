@@ -84,11 +84,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Phase 4.0: Ensure assets are extracted to filesystem for C++ standard I/O access
-        copyAssetsToFilesDir()
+        // Phase 4.0: Use External Files Dir for LMK Survival debugging on unrooted devices
+        val baseDir = getExternalFilesDir(null) ?: filesDir
         
-        nativeEngine.initializeKernel(filesDir.absolutePath)
+        // Ensure assets are extracted to filesystem for C++ standard I/O access
+        copyAssetsToFilesDir(baseDir)
+        
+        nativeEngine.initializeKernel(baseDir.absolutePath)
         nativeEngine.setEngineInstance()
+        nativeEngine.hydrate()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         // Rule 4 Compliance: Register for push-based OS memory callbacks
@@ -104,7 +108,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun copyAssetsToFilesDir() {
+    private fun copyAssetsToFilesDir(targetDir: java.io.File) {
         try {
             val assetManager = assets
             val files = assetManager.list("") ?: return
@@ -113,28 +117,28 @@ class MainActivity : ComponentActivity() {
             for (filename in files) {
                 if (filename == "models" || filename == "images" || filename == "webkit") continue
                 if (filename.contains(".")) {
-                    copyFile(filename, "")
+                    copyFile(filename, "", targetDir)
                 }
             }
             
             // 2. Models directory
             val models = assetManager.list("models") ?: return
-            val modelsDir = java.io.File(filesDir, "assets/models")
+            val modelsDir = java.io.File(targetDir, "assets/models")
             if (!modelsDir.exists()) modelsDir.mkdirs()
             
             for (modelFile in models) {
-                copyFile(modelFile, "models")
+                copyFile(modelFile, "models", targetDir)
             }
             
-            Log.i("RoninBoot", "Assets successfully synchronized to internal storage.")
+            Log.i("RoninBoot", "Assets successfully synchronized to: ${targetDir.absolutePath}")
         } catch (e: Exception) {
             Log.e("RoninBoot", "Failed to sync assets: ${e.message}")
         }
     }
 
-    private fun copyFile(filename: String, subDir: String) {
+    private fun copyFile(filename: String, subDir: String, targetDir: java.io.File) {
         val assetPath = if (subDir.isEmpty()) filename else "$subDir/$filename"
-        val destDir = if (subDir.isEmpty()) java.io.File(filesDir, "assets") else java.io.File(filesDir, "assets/$subDir")
+        val destDir = if (subDir.isEmpty()) java.io.File(targetDir, "assets") else java.io.File(targetDir, "assets/$subDir")
         if (!destDir.exists()) destDir.mkdirs()
         
         val outFile = java.io.File(destDir, filename)
@@ -400,8 +404,12 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
         }
     }
 
-    // Initial history load (REMOVED for v3.9.7 PRIVACY-RECOVERY - Clean slate on startup)
-    // Only fetch history when explicitly requested via /history (Handled in processInput logic)
+    // Initial history load (Restored for LMK Survival)
+    LaunchedEffect(Unit) {
+        if (messages.isEmpty()) {
+            loadNextHistoryPage()
+        }
+    }
 
     // Detect when user scrolls to top to load more history
     LaunchedEffect(chatListState.firstVisibleItemIndex) {

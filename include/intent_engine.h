@@ -84,6 +84,13 @@ public:
         m_checkpoint_manager = cm;
     }
 
+    /**
+     * @return The attached checkpoint manager.
+     */
+    std::shared_ptr<Ronin::Kernel::Checkpoint::CheckpointManager> getCheckpointManager() const {
+        return m_checkpoint_manager;
+    }
+
 private:
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
     std::unique_ptr<Model::InferenceEngine> m_inference_engine;

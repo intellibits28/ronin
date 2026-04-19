@@ -149,9 +149,8 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
 
-    // Phase 4.0: Survival Core Checkpoint Manager
+    // Phase 4.0: Survival Core Checkpoint Manager (Hydration deferred to hydrate())
     auto checkpoint_manager = std::make_shared<Ronin::Kernel::Checkpoint::CheckpointManager>(base_path + "/survival_core.bin");
-    checkpoint_manager->initialize();
     g_intent_engine->setCheckpointManager(checkpoint_manager);
     
     // Register Modular Skills (Phase 4.0 Unified)
@@ -263,11 +262,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         if (g_memory_manager) g_memory_manager->clearContext();
         
         // Phase 4.0: Intent Continuity Guard (LMK Survival)
-        if (g_long_term_memory) {
-            std::string state_serialized = "node_id=" + std::to_string(targetNodeId) + ";param=" + input_str;
-            g_long_term_memory->storeFact("active_intent", state_serialized, Ronin::Kernel::Memory::MemoryPriority::HIGH);
-        }
-
+        // Store in Survival Core (CheckpointManager) for fast reboot hydration
         if (g_intent_engine) {
             response = g_intent_engine->executeSkill(targetNodeId, input_str);
         }
@@ -275,6 +270,27 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
 
     if (g_long_term_memory) g_long_term_memory->storeMessage("ronin", response);
     return env->NewStringUTF(response.c_str());
+}
+
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_hydrate(JNIEnv *env, jobject thiz) {
+    if (g_intent_engine) {
+        auto cm = g_intent_engine->getCheckpointManager();
+        if (cm) {
+            LOGI(TAG, "Triggering Survival Core Hydration sequence...");
+            cm->initialize();
+            
+            auto active = cm->getActiveCheckpoint();
+            if (active) {
+                std::string logMsg = "> SURVIVAL REBIRTH: Restored Intent '" + active->intent_id()->str() + 
+                                     "' with Edge Frontier " + std::to_string(active->edge_frontier());
+                LOGI(TAG, "%s", logMsg.c_str());
+                Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
+            } else {
+                Ronin::Kernel::Capability::HardwareBridge::pushMessage("> SURVIVAL CORE: No active checkpoint found (Clean Rebirth).");
+            }
+        }
+    }
 }
 
 JNIEXPORT jobjectArray JNICALL

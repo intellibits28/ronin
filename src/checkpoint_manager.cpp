@@ -1,4 +1,5 @@
 #include "checkpoint_manager.h"
+#include "capabilities/hardware_bridge.h"
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -51,7 +52,9 @@ bool CheckpointManager::initialize() {
     m_mapped_size = st.st_size;
     m_mapped_ptr = mmap(nullptr, m_mapped_size, PROT_READ, MAP_PRIVATE, m_fd, 0);
     if (m_mapped_ptr == MAP_FAILED) {
-        LOGE(TAG, "mmap failed for survival core checkpoint.");
+        std::string errorMsg = "> SURVIVAL ERROR: mmap failed for checkpoint.";
+        LOGE(TAG, "%s", errorMsg.c_str());
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(errorMsg);
         close(m_fd);
         m_fd = -1;
         return false;
@@ -64,11 +67,16 @@ bool CheckpointManager::initialize() {
      */
     size_t lock_size = std::min(m_mapped_size, (size_t)4096);
     if (mlock(m_mapped_ptr, lock_size) != 0) {
-        LOGW(TAG, "mlock failed. Checkpoint header may be paged out under pressure.");
+        std::string logMsg = "> SURVIVAL WARNING: mlock failed. Header not immune.";
+        LOGW(TAG, "%s", logMsg.c_str());
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
     } else {
-        LOGI(TAG, "Kernel Immunity: Critical checkpoint header pinned in RAM (4KB).");
+        std::string logMsg = "> SURVIVAL CORE: Kernel Immunity active (mlock success).";
+        LOGI(TAG, "%s", logMsg.c_str());
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
     }
 
+    Ronin::Kernel::Capability::HardwareBridge::pushMessage("> SURVIVAL CORE: Hydration ready from " + m_path);
     return true;
 }
 
@@ -126,13 +134,16 @@ bool CheckpointManager::commit(const std::string& intent_id,
 
     // Atomic rename ensures consistent state on disk
     if (rename(tmp_path.c_str(), m_path.c_str()) == -1) {
-        LOGE(TAG, "Atomic swap of checkpoint failed.");
+        std::string errorMsg = "> SURVIVAL ERROR: Atomic rename failed.";
+        LOGE(TAG, "%s", errorMsg.c_str());
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(errorMsg);
         return false;
     }
 
-    LOGI(TAG, "Survival Core: Checkpoint committed atomically (%zu bytes).", size);
+    std::string logMsg = "> SURVIVAL CORE: Atomic commit complete (" + std::to_string(size) + " bytes).";
+    LOGI(TAG, "%s", logMsg.c_str());
+    Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
     
-    // Optional: Re-initialize mmap for subsequent restores
     return true; 
 }
 
