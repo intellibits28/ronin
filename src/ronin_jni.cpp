@@ -150,18 +150,18 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
 
-    // Phase 4.0: LoRA State Diff Serialization & Activation Masking
+    // Phase 2: LoRA State Diff Serialization & Activation Masking
     auto lora_dispatcher = std::make_shared<Ronin::Kernel::Model::LoraDispatcher>();
     
-    // Register Mock LoRAs for demonstration
-    // Note: interference_signature prevents conflicting LoRAs from activating simultaneously.
-    Ronin::Kernel::Model::LoraDeltaBlock chat_lora = {1, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000002}; // Conflicts with bit 1 (Search)
-    Ronin::Kernel::Model::LoraDeltaBlock search_lora = {2, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000001}; // Conflicts with bit 0 (Chat)
-    Ronin::Kernel::Model::LoraDeltaBlock neural_lora = {3, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000000}; // No conflicts
+    // Register Mock LoRAs for demonstration (Phase 2)
+    // Coding (ID 1), Memory (ID 2), Hardware-Control (ID 3)
+    Ronin::Kernel::Model::LoraDeltaBlock coding_lora = {1, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000002}; // Conflicts with Memory
+    Ronin::Kernel::Model::LoraDeltaBlock memory_lora = {2, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000001}; // Conflicts with Coding
+    Ronin::Kernel::Model::LoraDeltaBlock hardware_lora = {3, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000000}; // No conflicts
     
-    lora_dispatcher->registerLora(chat_lora);
-    lora_dispatcher->registerLora(search_lora);
-    lora_dispatcher->registerLora(neural_lora);
+    lora_dispatcher->registerLora(coding_lora);
+    lora_dispatcher->registerLora(memory_lora);
+    lora_dispatcher->registerLora(hardware_lora);
     
     g_intent_engine->setLoraDispatcher(lora_dispatcher);
 
