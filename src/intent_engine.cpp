@@ -21,6 +21,7 @@
 #include "capabilities/hardware_nodes.h"
 #include "capabilities/file_search_node.h"
 #include "capabilities/neural_embedding_node.h"
+#include "capabilities/chat_skill.h"
 
 #define TAG "RoninIntentEngine"
 
@@ -49,7 +50,8 @@ static std::string trim(const std::string& s) {
 IntentEngine::IntentEngine() {
     using namespace Ronin::Kernel::Capability;
     
-    // Phase 4.0: Vtable-based Skill Registration
+    // Phase 4.0: Vtable-based Skill Registration (Unified Interface)
+    m_skill_registry[1] = std::make_shared<ChatSkill>();
     m_skill_registry[2] = std::make_shared<FileSearchNode>();
     m_skill_registry[3] = std::make_shared<NeuralEmbeddingNode>();
     m_skill_registry[4] = std::make_shared<FlashlightNode>();
@@ -174,7 +176,6 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
     // Tier 2: Dynamic Matcher (Subject + Action)
     for (const auto& cap : m_capabilities) {
-        // ... (existing matcher logic)
         bool subject_found = false;
         bool action_found = false;
 
@@ -211,8 +212,6 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                     action_found = true;
                     break;
                 }
-            } else {
-                // For short actions like "on", "off", check tokens only (already handled below)
             }
 
             // Check individual tokens

@@ -83,6 +83,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Phase 4.0: Ensure assets are extracted to filesystem for C++ standard I/O access
+        copyAssetsToFilesDir()
+        
         nativeEngine.initializeKernel(filesDir.absolutePath)
         nativeEngine.setEngineInstance()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -94,6 +98,53 @@ class MainActivity : ComponentActivity() {
         setContent {
             val chatViewModel: ChatViewModel = viewModel()
             RoninChatUI(nativeEngine, chatViewModel)
+        }
+    }
+
+    private fun copyAssetsToFilesDir() {
+        try {
+            val assetManager = assets
+            val files = assetManager.list("") ?: return
+            
+            // 1. Root assets (capabilities.json, etc)
+            for (filename in files) {
+                if (filename == "models" || filename == "images" || filename == "webkit") continue
+                if (filename.contains(".")) {
+                    copyFile(filename, "")
+                }
+            }
+            
+            // 2. Models directory
+            val models = assetManager.list("models") ?: return
+            val modelsDir = java.io.File(filesDir, "assets/models")
+            if (!modelsDir.exists()) modelsDir.mkdirs()
+            
+            for (modelFile in models) {
+                copyFile(modelFile, "models")
+            }
+            
+            Log.i("RoninBoot", "Assets successfully synchronized to internal storage.")
+        } catch (e: Exception) {
+            Log.e("RoninBoot", "Failed to sync assets: ${e.message}")
+        }
+    }
+
+    private fun copyFile(filename: String, subDir: String) {
+        val assetPath = if (subDir.isEmpty()) filename else "$subDir/$filename"
+        val destDir = if (subDir.isEmpty()) java.io.File(filesDir, "assets") else java.io.File(filesDir, "assets/$subDir")
+        if (!destDir.exists()) destDir.mkdirs()
+        
+        val outFile = java.io.File(destDir, filename)
+        
+        // Skip if already exists and size matches (basic optimization)
+        assets.open(assetPath).use { inputStream ->
+            if (outFile.exists() && outFile.length() == inputStream.available().toLong()) {
+                return
+            }
+            
+            java.io.FileOutputStream(outFile).use { outputStream ->
+                inputStream.copyTo(outputStream)
+            }
         }
     }
 
