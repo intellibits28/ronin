@@ -10,6 +10,7 @@
 #include "models/inference_engine.h"
 #include "capabilities/base_skill.h"
 #include "checkpoint_manager.h"
+#include "lora_engine.h"
 
 namespace Ronin::Kernel::Intent {
 
@@ -91,10 +92,18 @@ public:
         return m_checkpoint_manager;
     }
 
+    /**
+     * Phase 4.0: Attaches a LoRA dispatcher for zero-stall swapping.
+     */
+    void setLoraDispatcher(std::shared_ptr<Ronin::Kernel::Model::LoraDispatcher> ld) {
+        m_lora_dispatcher = ld;
+    }
+
 private:
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
     std::unique_ptr<Model::InferenceEngine> m_inference_engine;
     std::shared_ptr<Ronin::Kernel::Checkpoint::CheckpointManager> m_checkpoint_manager;
+    std::shared_ptr<Ronin::Kernel::Model::LoraDispatcher> m_lora_dispatcher;
 
     // Phase 4.0: Vtable-based Skill Registry
     std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;

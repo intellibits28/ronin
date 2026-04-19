@@ -70,16 +70,26 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
         LOGI(TAG, "%s", logMsg.c_str());
         Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
 
-        // Survival Core: Commit state BEFORE execution
+        // Phase 4.0: Zero-Stall LoRA Swap
+        uint32_t loraMask = 0;
+        if (m_lora_dispatcher) {
+            uint32_t loraId = it->second->getLoraId();
+            if (loraId > 0) {
+                m_lora_dispatcher->activateSkill(loraId);
+            }
+            loraMask = m_lora_dispatcher->getActiveMask();
+        }
+
+        // Survival Core: Commit state BEFORE execution (with active LoRA mask)
         if (m_checkpoint_manager) {
-            m_checkpoint_manager->commit("active_" + std::to_string(nodeId), 1ULL << nodeId, nullptr, 0, 0, "Running: " + param);
+            m_checkpoint_manager->commit("active_" + std::to_string(nodeId), 1ULL << nodeId, nullptr, 0, loraMask, "Running: " + param);
         }
 
         std::string result = it->second->execute(param);
 
         // Survival Core: Commit state AFTER successful execution
         if (m_checkpoint_manager) {
-            m_checkpoint_manager->commit("completed_" + std::to_string(nodeId), 0, nullptr, 0, 0, "Finished: " + param);
+            m_checkpoint_manager->commit("completed_" + std::to_string(nodeId), 0, nullptr, 0, loraMask, "Finished: " + param);
         }
 
         return result;

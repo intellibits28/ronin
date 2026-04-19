@@ -13,6 +13,7 @@
 #include "capabilities/neural_embedding_node.h"
 #include "capabilities/hardware_bridge.h"
 #include "checkpoint_manager.h"
+#include "lora_engine.h"
 #include "ronin_log.h"
 #include "checkpoint_schema_generated.h"
 #include <cstdint>
@@ -148,6 +149,21 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
+
+    // Phase 4.0: LoRA State Diff Serialization & Activation Masking
+    auto lora_dispatcher = std::make_shared<Ronin::Kernel::Model::LoraDispatcher>();
+    
+    // Register Mock LoRAs for demonstration
+    // Note: interference_signature prevents conflicting LoRAs from activating simultaneously.
+    Ronin::Kernel::Model::LoraDeltaBlock chat_lora = {1, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000002}; // Conflicts with bit 1 (Search)
+    Ronin::Kernel::Model::LoraDeltaBlock search_lora = {2, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000001}; // Conflicts with bit 0 (Chat)
+    Ronin::Kernel::Model::LoraDeltaBlock neural_lora = {3, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000000}; // No conflicts
+    
+    lora_dispatcher->registerLora(chat_lora);
+    lora_dispatcher->registerLora(search_lora);
+    lora_dispatcher->registerLora(neural_lora);
+    
+    g_intent_engine->setLoraDispatcher(lora_dispatcher);
 
     // Phase 4.0: Survival Core Checkpoint Manager (Hydration deferred to hydrate())
     auto checkpoint_manager = std::make_shared<Ronin::Kernel::Checkpoint::CheckpointManager>(base_path + "/survival_core.bin");

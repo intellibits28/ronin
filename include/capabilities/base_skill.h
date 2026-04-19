@@ -24,6 +24,13 @@ public:
      * @return The internal registration name of this skill.
      */
     virtual std::string getName() const = 0;
+
+    /**
+     * Phase 4.0: LoRA State Diff Integration.
+     * @return The unique ID of the LoRA adapter required for this skill.
+     * Defaults to 0 (No specific LoRA required).
+     */
+    virtual uint32_t getLoraId() const { return 0; }
 };
 
 } // namespace Ronin::Kernel::Capability

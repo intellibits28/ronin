@@ -15,6 +15,7 @@ public:
 
     // BaseSkill Implementation
     std::string getName() const override { return "FileSearchNode"; }
+    uint32_t getLoraId() const override { return 2; }
     std::string execute(const std::string& param) override;
 
     /**

@@ -7,6 +7,7 @@ namespace Ronin::Kernel::Capability {
 class ChatSkill : public BaseSkill {
 public:
     std::string getName() const override { return "ChatSkill"; }
+    uint32_t getLoraId() const override { return 1; }
     
     std::string execute(const std::string& param) override {
         // Phase 4.0: Default chat response for the reasoning spine.
