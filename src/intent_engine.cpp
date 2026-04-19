@@ -179,6 +179,7 @@ bool IntentEngine::isFuzzyMatch(const std::string& word, const std::string& targ
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
     auto tokens = tokenize(input);
     if (tokens.empty()) return {1, 0.0f, true};
+    std::string first = tokens[0];
 
     // Tier 1: Dynamic Greeting Detection (Single Source of Truth: ID 1 from manifest)
     for (const auto& cap : m_capabilities) {
