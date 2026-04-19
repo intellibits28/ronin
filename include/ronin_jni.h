@@ -1,6 +1,26 @@
 #pragma once
 
+#ifdef __ANDROID__
 #include <jni.h>
+#else
+// Stub definitions for JNI types to allow host-side header inclusion
+typedef void* JNIEnv;
+typedef void* jobject;
+typedef void* jstring;
+typedef void* jboolean;
+typedef void* jint;
+typedef void* jfloat;
+typedef void* jdouble;
+typedef void* jobjectArray;
+typedef void* jlong;
+
+#ifndef JNIEXPORT
+#define JNIEXPORT
+#endif
+#ifndef JNICALL
+#define JNICALL
+#endif
+#endif
 
 extern "C" {
 

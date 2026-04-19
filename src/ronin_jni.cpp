@@ -1,3 +1,4 @@
+#ifdef __ANDROID__
 #include "ronin_jni.h"
 #include "intent_engine.h"
 #include "memory_manager.h"
@@ -318,3 +319,4 @@ Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz,
 }
 
 } // extern "C"
+#endif // __ANDROID__

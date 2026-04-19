@@ -10,6 +10,7 @@ JavaVM* HardwareBridge::s_vm = nullptr;
 jobject HardwareBridge::s_instance = nullptr;
 
 void HardwareBridge::initialize(JavaVM* vm, jobject instance) {
+#ifdef __ANDROID__
     s_vm = vm;
     
     // Ensure we have a global reference that persists across JNI calls
@@ -21,17 +22,21 @@ void HardwareBridge::initialize(JavaVM* vm, jobject instance) {
         s_instance = env->NewGlobalRef(instance);
         LOGI(TAG, "HardwareBridge initialized with new GlobalRef.");
     }
+#endif
 }
 
 void HardwareBridge::release(JNIEnv* env) {
+#ifdef __ANDROID__
     if (s_instance && env) {
         env->DeleteGlobalRef(s_instance);
         s_instance = nullptr;
     }
     s_vm = nullptr;
+#endif
 }
 
 void HardwareBridge::triggerAsync(uint32_t nodeId, bool state) {
+#ifdef __ANDROID__
     if (!s_vm || !s_instance) {
         LOGE(TAG, "HardwareBridge NOT initialized. Skipping trigger for Node %u", nodeId);
         return;
@@ -72,6 +77,9 @@ void HardwareBridge::triggerAsync(uint32_t nodeId, bool state) {
             s_vm->DetachCurrentThread();
         }
     }).detach();
+#else
+    LOGI(TAG, "Host Build: Bypassing hardware trigger for Node %u", nodeId);
+#endif
 }
 
 } // namespace Ronin::Kernel::Capability
