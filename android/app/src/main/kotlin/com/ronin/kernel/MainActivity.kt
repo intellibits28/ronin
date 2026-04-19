@@ -349,7 +349,27 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
     // Initialize Kernel Async UI Bridge
     LaunchedEffect(Unit) {
         engine.onKernelMessage = { message ->
-            messages.add("Ronin: $message")
+            // Phase 4.0: JNI Log Bridge for Reasoning Console
+            reasoningLogs.add(0, message)
+            
+            // If it's a system update, also add to chat for user visibility
+            if (message.startsWith("System Update:") || message.startsWith("Current Location:")) {
+                if (!messages.contains("Ronin: $message")) {
+                    messages.add("Ronin: $message")
+                }
+            }
+        }
+
+        engine.onSystemTiersUpdate = { temp, used, total ->
+            // Real-time metrics push from C++ kernel
+            chatViewModel.temperature = temp
+            chatViewModel.ramUsedGB = used
+            chatViewModel.ramTotalGB = total
+            
+            // Re-calculate stability based on newest pressure
+            val pressure = engine.getLMKPressure()
+            chatViewModel.lmkPressure = pressure
+            chatViewModel.stability = (100 - pressure) / 100.0f
         }
     }
 

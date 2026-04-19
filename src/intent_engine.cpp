@@ -22,6 +22,7 @@
 #include "capabilities/file_search_node.h"
 #include "capabilities/neural_embedding_node.h"
 #include "capabilities/chat_skill.h"
+#include "capabilities/hardware_bridge.h"
 
 #define TAG "RoninIntentEngine"
 
@@ -304,11 +305,14 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     if (m_inference_engine && m_inference_engine->isLoaded()) {
         auto intent = m_inference_engine->predict(input);
         
-        LOGI(TAG, ">>> Tier 3 (ONNX) Verification: Input='%s' | Predicted_ID=%u | Confidence=%.2f", 
-             input.c_str(), intent.id, intent.confidence);
+        std::string logMsg = ">>> Tier 3 (ONNX) Verification: Input='" + input + "' | Predicted_ID=" + std::to_string(intent.id) + " | Confidence=" + std::to_string(intent.confidence);
+        LOGI(TAG, "%s", logMsg.c_str());
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
 
         if (intent.confidence >= 0.6f) {
-            LOGI(TAG, "> Tier 3 Match: ONNX Model confirmed ID %u", intent.id);
+            std::string matchMsg = "> Tier 3 Match: ONNX Model confirmed ID " + std::to_string(intent.id);
+            LOGI(TAG, "%s", matchMsg.c_str());
+            Ronin::Kernel::Capability::HardwareBridge::pushMessage(matchMsg);
             intent.intent_param = !isOff;
             return intent;
         } else if (intent.confidence == 0.0f) {
@@ -317,6 +321,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     }
 
     // Tier 4: Default Fallback
+    std::string fallbackMsg = "> Tier 4: No confident match found. Routing to Default Chat Engine.";
+    LOGI(TAG, "%s", fallbackMsg.c_str());
+    Ronin::Kernel::Capability::HardwareBridge::pushMessage(fallbackMsg);
     return {1, 0.5f, true};
 }
 
