@@ -83,53 +83,71 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
     
     LOGI(TAG, "Loading dynamic manifest: v3.9.5-STABLE");
 
-    // Minimalist string-based "JSON" parser for our specific format
+    // Improved minimalist parser (Phase 4.0 stabilization)
     size_t pos = 0;
-    while ((pos = content.find("{\"id\":", pos)) != std::string::npos) {
+    while ((pos = content.find("\"id\":", pos)) != std::string::npos) {
         Ronin::Kernel::CapabilityEntry cap;
         
-        // Extract ID
-        size_t id_start = content.find(":", pos) + 1;
-        cap.id = std::stoul(content.substr(id_start));
+        // Extract ID (skip "id":)
+        pos += 5;
+        while (pos < content.length() && (std::isspace(content[pos]) || content[pos] == ':')) pos++;
+        size_t id_end = content.find_first_of(",} \n\r", pos);
+        cap.id = std::stoul(content.substr(pos, id_end - pos));
 
         // Extract Name
-        size_t name_start = content.find("\"name\": \"", pos) + 9;
+        size_t name_tag = content.find("\"name\":", pos);
+        if (name_tag == std::string::npos) break;
+        size_t name_start = content.find("\"", name_tag + 7) + 1;
         size_t name_end = content.find("\"", name_start);
         cap.name = content.substr(name_start, name_end - name_start);
 
-        // Extract Subjects (naive array parsing)
-        size_t sub_start = content.find("\"subjects\": [", pos) + 12;
-        size_t sub_end = content.find("]", sub_start);
-        std::string subs = content.substr(sub_start, sub_end - sub_start);
-        std::stringstream ss_sub(subs);
-        std::string s;
-        while (std::getline(ss_sub, s, ',')) {
-            size_t s_start = s.find("\"") + 1;
-            size_t s_end = s.find("\"", s_start);
-            if (s_start != std::string::npos && s_end != std::string::npos) {
-                cap.subjects.push_back(trim(s.substr(s_start, s_end - s_start)));
+        // Extract Subjects
+        size_t sub_tag = content.find("\"subjects\":", pos);
+        if (sub_tag != std::string::npos) {
+            size_t sub_start = content.find("[", sub_tag) + 1;
+            size_t sub_end = content.find("]", sub_start);
+            std::string subs = content.substr(sub_start, sub_end - sub_start);
+            std::stringstream ss_sub(subs);
+            std::string s;
+            while (std::getline(ss_sub, s, ',')) {
+                size_t s_start = s.find("\"");
+                if (s_start == std::string::npos) continue;
+                size_t s_end = s.find("\"", s_start + 1);
+                if (s_end != std::string::npos) {
+                    cap.subjects.push_back(trim(s.substr(s_start + 1, s_end - s_start - 1)));
+                }
             }
         }
 
         // Extract Actions
-        size_t act_start = content.find("\"actions\": [", pos) + 11;
-        size_t act_end = content.find("]", act_start);
-        std::string acts = content.substr(act_start, act_end - act_start);
-        std::stringstream ss_act(acts);
-        while (std::getline(ss_act, s, ',')) {
-            size_t a_start = s.find("\"") + 1;
-            size_t a_end = s.find("\"", a_start);
-            if (a_start != std::string::npos && a_end != std::string::npos) {
-                cap.actions.push_back(trim(s.substr(a_start, a_end - a_start)));
+        size_t act_tag = content.find("\"actions\":", pos);
+        if (act_tag != std::string::npos) {
+            size_t act_start = content.find("[", act_tag) + 1;
+            size_t act_end = content.find("]", act_start);
+            std::string acts = content.substr(act_start, act_end - act_start);
+            std::stringstream ss_act(acts);
+            std::string s;
+            while (std::getline(ss_act, s, ',')) {
+                size_t a_start = s.find("\"");
+                if (a_start == std::string::npos) continue;
+                size_t a_end = s.find("\"", a_start + 1);
+                if (a_end != std::string::npos) {
+                    cap.actions.push_back(trim(s.substr(a_start + 1, a_end - a_start - 1)));
+                }
             }
         }
 
         // Extract Threshold
-        size_t conf_start = content.find("\"confidence_threshold\":", pos) + 23;
-        cap.confidence_threshold = std::stof(content.substr(conf_start));
+        size_t conf_tag = content.find("\"confidence_threshold\":", pos);
+        if (conf_tag != std::string::npos) {
+            size_t conf_start = conf_tag + 23;
+            while (conf_start < content.length() && (std::isspace(content[conf_start]) || content[conf_start] == ':')) conf_start++;
+            size_t conf_end = content.find_first_of(",} \n\r", conf_start);
+            cap.confidence_threshold = std::stof(content.substr(conf_start, conf_end - conf_start));
+        }
 
         m_capabilities.push_back(cap);
-        pos = act_end;
+        pos = (act_tag != std::string::npos) ? content.find("}", act_tag) : pos + 1;
     }
     LOGI(TAG, "Dynamic manifest loaded: %zu capabilities registered.", m_capabilities.size());
 }
