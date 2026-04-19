@@ -223,24 +223,38 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         g_ronin_kernel->tick(minimalist_input);
     }
 
-    // 2. Unified Routing & Execution (Phase 4.0)
-    Node* next_node = g_graph_executor->selectNextNode(input_str);
+    CognitiveIntent intent = {1, 0.5f, true};
+    if (g_ronin_kernel) {
+        intent = g_ronin_kernel->getLastIntent();
+    }
+
+    // 2. Routing Decision (Phase 4.0: Deterministic Priority)
+    // If IntentEngine found a high-confidence match (not ID 1), use it directly.
+    uint32_t targetNodeId = 0;
     std::string response = "Input processed via Reasoning Spine (No specific capability triggered).";
 
-    if (next_node) {
+    if (intent.id > 1 && intent.confidence >= 0.7f) {
+        LOGI(TAG, ">>> Routing: Deterministic Match (ID %u) bypassing Thompson Sampling.", intent.id);
+        targetNodeId = intent.id;
+    } else {
+        // Fallback to probabilistic graph executor for reasoning/searching or if confidence is low
+        Node* next_node = g_graph_executor->selectNextNode(input_str);
+        if (next_node) {
+            targetNodeId = next_node->id;
+        }
+    }
+
+    if (targetNodeId > 0) {
         if (g_memory_manager) g_memory_manager->clearContext();
         
         // Phase 4.0: Intent Continuity Guard (LMK Survival)
-        // Serialize active state to L3 (Deep) Store before execution
         if (g_long_term_memory) {
-            std::string state_serialized = "node_id=" + std::to_string(next_node->id) + ";param=" + input_str;
+            std::string state_serialized = "node_id=" + std::to_string(targetNodeId) + ";param=" + input_str;
             g_long_term_memory->storeFact("active_intent", state_serialized, Ronin::Kernel::Memory::MemoryPriority::HIGH);
         }
 
-        // Phase 4.0: Unified Skill Execution Pipeline.
-        // Both cognitive and hardware skills are dispatched via the same registry.
         if (g_intent_engine) {
-            response = g_intent_engine->executeSkill(next_node->id, input_str);
+            response = g_intent_engine->executeSkill(targetNodeId, input_str);
         }
     }
 

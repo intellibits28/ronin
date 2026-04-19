@@ -50,51 +50,12 @@ GraphExecutor::~GraphExecutor() {
 Node* GraphExecutor::selectNextNode(const std::string& input) {
     std::string clean = trim(lowercase(input));
     
-    // --- STRICT HARDWARE BYPASS v3.9.7-AUTO-SCROLL ---
-    bool isOff = (clean.find("off") != std::string::npos || 
-                  clean.find("stop") != std::string::npos || 
-                  clean.find("disable") != std::string::npos);
+    // --- Phase 4.0 Refactoring ---
+    // Deterministic bypasses have been moved to the IntentEngine Tier 1/2 matcher.
+    // GraphExecutor now focuses exclusively on probabilistic selection (Thompson Sampling)
+    // for complex reasoning paths or fallback nodes.
 
-    bool hasVerb = (clean.find("turn on") != std::string::npos || clean.find("turn off") != std::string::npos || 
-                    clean.find("switch on") != std::string::npos || clean.find("switch off") != std::string::npos ||
-                    clean.find("enable") != std::string::npos || clean.find("disable") != std::string::npos ||
-                    clean.find("stop bt") != std::string::npos || clean.find("stop bluetooth") != std::string::npos);
-
-    if (hasVerb) {
-        if (clean.find("flashlight") != std::string::npos || clean.find("torch") != std::string::npos || clean.find("light") != std::string::npos) {
-            LOGI(TAG, "> Route: Strict Bypass (Intent: Flashlight) [v3.9.7-AUTO-SCROLL]");
-            return m_graph.getNode(4);
-        }
-        if (clean.find("wifi") != std::string::npos) {
-            LOGI(TAG, "> Route: Strict Bypass (Intent: WiFi) [v3.9.7-AUTO-SCROLL]");
-            return m_graph.getNode(6);
-        }
-        if (clean.find("bluetooth") != std::string::npos || clean.find("bt") != std::string::npos) {
-            LOGI(TAG, "> Route: Strict Bypass (Intent: Bluetooth) [v3.9.7-AUTO-SCROLL]");
-            return m_graph.getNode(7);
-        }
-    }
-
-    if (clean == "where am i" || clean == "get location" || clean == "gps status") {
-        LOGI(TAG, "> Route: Strict Bypass (Intent: Location) [v3.9.7-AUTO-SCROLL]");
-        return m_graph.getNode(5);
-    }
-
-    // --- SEARCH BYPASS ---
-    bool isSearchPrefix = (clean.find("search ") == 0 || clean.find("find ") == 0 || clean.find("locate ") == 0);
-    bool isFilename = (clean.find(".pdf") != std::string::npos || clean.find(".txt") != std::string::npos || 
-                       clean.find(".jpg") != std::string::npos || clean.find(".jpeg") != std::string::npos || 
-                       clean.find(".mp3") != std::string::npos || clean.find(".zip") != std::string::npos);
-
-    if (isSearchPrefix || isFilename) {
-        Node* searchNode = m_graph.getNodeByID("FileSearchNode");
-        if (searchNode) {
-            LOGI(TAG, "> Route: Neural Bypass (Intent: Search) [v3.9.7-AUTO-SCROLL]");
-            return searchNode;
-        }
-    }
-
-    LOGI(TAG, "> Route: Chat Engine (Intent: General)");
+    LOGI(TAG, "> Probabilistic Routing active for: '%s'", clean.c_str());
     
     return runThompsonSampling(clean);
 }

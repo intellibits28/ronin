@@ -31,6 +31,11 @@ public:
    */
   void tick(const Input &input);
 
+  /**
+   * @return The last cognitive intent identified by the kernel.
+   */
+  CognitiveIntent getLastIntent() const { return lastIntent_; }
+
   // Contextual Subject Management (v3.9)
   void setSuggestedSubject(const std::string& subject) { m_last_suggested_subject = subject; }
   std::string getSuggestedSubject() const { return m_last_suggested_subject; }
@@ -43,6 +48,7 @@ private:
   const HandlerRegistry &registry_;
   CapabilityManager &capManager_;
   CognitiveState state_;
+  CognitiveIntent lastIntent_;
   CircularBuffer<uint32_t, 128> contextStore_;
 
   std::string m_last_suggested_subject;

@@ -20,6 +20,7 @@ void RoninKernel::tick(const Input &input) {
 
   // Initial Intent Processing via Static Dispatch
   state_.currentIntent = registry_.intentProcessor(input);
+  lastIntent_ = state_.currentIntent;
 
   // Tier 3: Reasoning Fallback
   if (state_.currentIntent.confidence < 0.6f) {

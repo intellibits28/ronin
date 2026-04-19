@@ -536,22 +536,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                                 return@launch
                             }
 
-                            val greetings = listOf("hi", "hello", "hey", "mingalaba")
-                            
-                            if (greetings.any { cleanInput == it }) {
-                                reasoningLogs.add(0, "> Dispatching to Chat: Greeting detected.")
-                            } else {
-                                val isSearch = currentInput.contains("search", ignoreCase = true) || 
-                                               currentInput.contains("find", ignoreCase = true) ||
-                                               currentInput.contains("locate", ignoreCase = true)
-                                               
-                                if (isSearch) {
-                                    reasoningLogs.add(0, "Kernel Decision: Reasoning v3.9.6-FILTER-FIX bypass activated.")
-                                } else {
-                                    reasoningLogs.add(0, "Thompson Sampling: Selected 'Reasoning_Engine' for input.")
-                                }
-                            }
-                            
                             val kernelOutput = engine.processInputAsync(currentInput)
 
                             // Check if a tool was engaged
