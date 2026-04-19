@@ -32,3 +32,6 @@ capture/
 
 # FlatBuffers
 *_generated.h
+
+.gemini/
+gha-creds-*.json

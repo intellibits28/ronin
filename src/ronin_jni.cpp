@@ -10,6 +10,7 @@
 #include "capabilities/file_search_node.h"
 #include "capabilities/file_scanner.h"
 #include "capabilities/neural_embedding_node.h"
+#include "capabilities/hardware_bridge.h"
 #include "ronin_log.h"
 #include "checkpoint_schema_generated.h"
 #include <cstdint>
@@ -128,7 +129,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_capability_graph->addNode(1, "Reasoning_Engine");
     g_capability_graph->addNode(2, "FileSearchNode");
     g_capability_graph->addNode(3, "NeuralEmbeddingNode");
-    g_capability_graph->addNode(4, "SystemControlNode");
+    g_capability_graph->addNode(4, "FlashlightNode");
     g_capability_graph->addNode(5, "LocationNode");
     g_capability_graph->addNode(6, "WiFiNode");
     g_capability_graph->addNode(7, "BluetoothNode");
@@ -240,22 +241,10 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     if (next_node) {
         if (g_memory_manager) g_memory_manager->clearContext();
         
-        // Exclusively route via IntentEngine registry
+        // Phase 4.0: Unified Skill Execution Pipeline.
+        // Both cognitive and hardware skills are dispatched via the same registry.
         if (g_intent_engine) {
             response = g_intent_engine->executeSkill(next_node->id, input_str);
-            
-            // --- JNI Hardware Bridge (v4.0 stabilization) ---
-            if (next_node->id >= 4 && next_node->id <= 7) {
-                bool isOff = (input_str.find("off") != std::string::npos || 
-                              input_str.find("stop") != std::string::npos || 
-                              input_str.find("disable") != std::string::npos);
-                
-                jclass cls = env->GetObjectClass(thiz);
-                jmethodID mid = env->GetMethodID(cls, "triggerHardwareAction", "(IZ)Z");
-                if (mid) {
-                    env->CallBooleanMethod(thiz, mid, static_cast<jint>(next_node->id), static_cast<jboolean>(!isOff));
-                }
-            }
         }
     }
 
@@ -291,6 +280,9 @@ Java_com_ronin_kernel_NativeEngine_setEngineInstance(JNIEnv *env, jobject thiz) 
     env->GetJavaVM(&g_vm);
     if (g_engine_instance) env->DeleteGlobalRef(g_engine_instance);
     g_engine_instance = env->NewGlobalRef(thiz);
+    
+    // Phase 4.0: Initialize the Hardware Bridge for Unified Skill Execution
+    HardwareBridge::initialize(g_vm, g_engine_instance);
 }
 
 JNIEXPORT void JNICALL
