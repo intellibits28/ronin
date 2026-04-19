@@ -30,6 +30,11 @@ public:
     static void reportSystemHealth(float temperature, float ramUsedGB, float ramTotalGB);
 
     /**
+     * Pushes a reasoning/decision log message to the Kotlin UI Reasoning Console.
+     */
+    static void pushMessage(const std::string& message);
+
+    /**
      * Synchronously fetches hardware data from the Kotlin side.
      */
     static std::string requestData(uint32_t nodeId);

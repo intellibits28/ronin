@@ -65,9 +65,15 @@ IntentEngine::IntentEngine() {
 std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param) {
     auto it = m_skill_registry.find(nodeId);
     if (it != m_skill_registry.end()) {
+        std::string logMsg = "> Deterministic Match: Routing to " + it->second->getName() + " (ID " + std::to_string(nodeId) + ")";
+        LOGI(TAG, "%s", logMsg.c_str());
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
         return it->second->execute(param);
     }
-    return "Error: Modular skill not found for ID " + std::to_string(nodeId);
+    std::string errorMsg = "Error: Modular skill not found for ID " + std::to_string(nodeId);
+    LOGE(TAG, "%s", errorMsg.c_str());
+    Ronin::Kernel::Capability::HardwareBridge::pushMessage(errorMsg);
+    return errorMsg;
 }
 
 void IntentEngine::loadCapabilities(const std::string& json_path) {
@@ -245,7 +251,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                     // treat it as both subject and action.
                     if (token == "where" || token == "who" || token == "what") {
                         action_found = true;
-                        LOGI(TAG, "> Interrogative Bypass: '%s' triggered standalone match.", token.c_str());
+                        std::string logMsg = "> Interrogative Bypass: '" + token + "' triggered standalone match.";
+                        LOGI(TAG, "%s", logMsg.c_str());
+                        Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
                     }
                     break; 
                 }
@@ -285,7 +293,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         }
 
         if (subject_found && action_found) {
-            LOGI(TAG, "> Dynamic Match: Found intent for %s (ID %u) [v3.9.5-STABLE]", cap.name.c_str(), cap.id);
+            std::string logMsg = "> Dynamic Match: Found intent for " + cap.name + " (ID " + std::to_string(cap.id) + ") [v3.9.5-STABLE]";
+            LOGI(TAG, "%s", logMsg.c_str());
+            Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
             return {cap.id, cap.confidence_threshold, !isOff};
         }
     }

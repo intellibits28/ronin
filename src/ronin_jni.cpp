@@ -237,10 +237,16 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     std::string response = "Input processed via Reasoning Spine (No specific capability triggered).";
 
     if (intent.id > 1 && intent.confidence >= 0.7f) {
-        LOGI(TAG, ">>> Routing: Deterministic Match (ID %u) bypassing Thompson Sampling.", intent.id);
+        std::string logMsg = ">>> Routing: Deterministic Match (ID " + std::to_string(intent.id) + ") bypassing Thompson Sampling.";
+        LOGI(TAG, "%s", logMsg.c_str());
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
         targetNodeId = intent.id;
     } else {
         // Fallback to probabilistic graph executor for reasoning/searching or if confidence is low
+        std::string logMsg = ">>> Routing: Deferring to Probabilistic Graph Executor (Low confidence or ID 1).";
+        LOGI(TAG, "%s", logMsg.c_str());
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
+        
         Node* next_node = g_graph_executor->selectNextNode(input_str);
         if (next_node) {
             targetNodeId = next_node->id;

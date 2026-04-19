@@ -70,6 +70,30 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
 #endif
 }
 
+void HardwareBridge::pushMessage(const std::string& message) {
+#ifdef __ANDROID__
+    if (!s_vm || !s_instance || !s_clazz) return;
+
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
+        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return;
+        attached = true;
+    }
+
+    if (env) {
+        jmethodID mid = env->GetMethodID(s_clazz, "pushKernelMessage", "(Ljava/lang/String;)V");
+        if (mid) {
+            jstring jmsg = env->NewStringUTF(message.c_str());
+            env->CallVoidMethod(s_instance, mid, jmsg);
+            env->DeleteLocalRef(jmsg);
+        }
+    }
+
+    if (attached) s_vm->DetachCurrentThread();
+#endif
+}
+
 std::string HardwareBridge::requestData(uint32_t nodeId) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return "Error: HardwareBridge not initialized.";

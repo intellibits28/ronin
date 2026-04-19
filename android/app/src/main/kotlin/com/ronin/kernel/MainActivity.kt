@@ -365,10 +365,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                 if (newHistory.isEmpty()) {
                     chatViewModel.hasMoreHistory = false
                 } else {
-                    // Prepend history
+                    // Phase 4.0: Deduplicated State Hydration
+                    // Prepend history while filtering out messages already in the active list
                     newHistory.reversed().forEach { (role, content) ->
                         val msg = if (role == "user") "User: $content" else "Ronin: $content"
-                        messages.add(0, msg)
+                        if (!messages.contains(msg)) {
+                            messages.add(0, msg)
+                        }
                     }
                     chatViewModel.historyPage++
                 }
