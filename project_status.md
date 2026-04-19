@@ -6,42 +6,35 @@
 
 ---
 
-## 2. Current Status (v3.9.4-ASYNC-STABLE)
-- [x] **v3.9.3 (PERMISSION-FIX):** Critical hardware permissions added to Manifest.
-- [x] **v3.9.4 (ONNX-LINKED):** libonnxruntime.so verified as correctly linked via GitHub Action Run ID 24439395884.
-- [x] **Safety Logic:** Negation priority implemented. 'OFF' tokens correctly override all positive intents.
-- [x] **Async Hardware Bridge:** JNI `triggerHardwareAction` updated for asynchronous execution.
+## 2. Current Status (v4.0-UNIFIED-STABLE)
+- [x] **v4.0 (UNIFIED-INTERFACE):** Completed transition to a Vtable-based Skill Registry. All cognitive and hardware skills derive from `BaseSkill`.
+- [x] **Hardware Bridge:** JNI asynchronous actuation link fully restored and stabilized.
+- [x] **Asset Synchronization:** Implemented automatic asset extraction from APK to internal storage for C++ I/O access.
+- [x] **Intent ID & Search Calibration:** Fixed conflicts via Strict Bypass and improved File Search isolation.
+- [x] **Memory & Thermal Guards:** System health poll integrated with LMK pressure signaling.
 
 ---
 
-## 3. Active Stabilization (The "Sanitization" Phase)
-- [x] **JNI Thread Safety (v3.9.5):** COMPLETED. Resolved Bluetooth 'Instant Exit'.
-- [x] **Tier 2 Verification:** COMPLETED. Detailed JNI logging active in `IntentEngine.cpp`.
-- [x] **Memory Guard:** COMPLETED. High-frequency RAM monitoring active in JNI `updateSystemHealth`.
-- [x] **Intent ID & Search Calibration (v3.9.7):** COMPLETED. Fixed Bluetooth vs Flashlight conflict via Strict Bypass. Improved File Search isolation for MP3/PDF.
+## 3. Active Phase: Phase 4.1 (Brain Plugins)
+- [ ] **Local Brain (Gemma 4):** Integration of **MediaPipe LLM Inference API (LiteRT)** for on-demand local reasoning.
+- [ ] **Thermal & Battery Guard:** Implementation of a JNI monitor that unloads the Local LLM if device temperature > 40°C or battery < 15%.
 
 ---
 
-## 4. Phase 4.0: The Modular Evolution (NullClaw Patterns)
-- **Modular Skill Interface:** Transition to a **Vtable-based Registry**.
-- **Vtable Registry Implementation:** Decouple `IntentEngine` from specific hardware calls using `BaseSkill` interfaces (Inspired by NullClaw Component-Interface pattern).
+## 4. Phase 4.0: The Modular Evolution (NullClaw Patterns) - COMPLETED
+- [x] **Modular Skill Interface:** Transition to a **Vtable-based Registry**.
+- [x] **Vtable Registry Implementation:** Decoupled `IntentEngine` from specific hardware calls using `BaseSkill` interfaces.
 
 ---
 
-## 5. Phase 4.1: Local Inference Engine (Brain Plugins)
-- **Local Brain (Gemma 4):** Integration of **MediaPipe LLM Inference API (LiteRT)** for on-demand local reasoning.
-- **Thermal & Battery Guard:** Implementation of a JNI monitor that unloads the Local LLM if device temperature > 40°C or battery < 15%.
-
----
-
-## 6. Future Skills & Capabilities (The Roadmap)
+## 5. Future Skills & Capabilities (The Roadmap)
 - **v4.2 (SENSOR-HUB):** Native JNI SensorEventListener for Vibration Analysis (SHM).
-- **v4.3 (SOCIAL-BRIDGE):** `ContactNode` & `SmsNode` for multi-step tasks (e.g., "Send location to Dad").
+- **v4.3 (SOCIAL-BRIDGE):** `ContactNode` & `SmsNode` for multi-step tasks.
 - **v4.4 (DSP-SKILL):** Digital Signal Processing for sensor/audio filtering.
 
 ---
 
-## 7. Compliance & Design Credits
+## 6. Compliance & Design Credits
 - Core logic utilizes clean-room design patterns for minimalist runtime efficiency (Static Dispatch, Unmanaged Structures, Circular Buffers).
 
-*Last Updated: April 15, 2026*
+*Last Updated: April 19, 2026*

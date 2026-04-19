@@ -303,18 +303,14 @@ Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdo
     }
 
     // --- ASYNCHRONOUS UI CALLBACK (Kotlin Bridge) ---
-    if (g_vm && g_engine_instance) {
-        JNIEnv* attached_env;
-        if (g_vm->GetEnv((void**)&attached_env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-            if (g_vm->AttachCurrentThread(&attached_env, nullptr) != 0) return;
-        }
-
-        jclass clazz = attached_env->GetObjectClass(g_engine_instance);
-        jmethodID mid = attached_env->GetMethodID(clazz, "pushKernelMessage", "(Ljava/lang/String;)V");
+    // Since this is called from Kotlin, the thread is already attached to the JVM.
+    if (g_engine_instance) {
+        jclass clazz = env->GetObjectClass(g_engine_instance);
+        jmethodID mid = env->GetMethodID(clazz, "pushKernelMessage", "(Ljava/lang/String;)V");
         if (mid) {
-            jstring jmsg = attached_env->NewStringUTF(buffer);
-            attached_env->CallVoidMethod(g_engine_instance, mid, jmsg);
-            attached_env->DeleteLocalRef(jmsg);
+            jstring jmsg = env->NewStringUTF(buffer);
+            env->CallVoidMethod(g_engine_instance, mid, jmsg);
+            env->DeleteLocalRef(jmsg);
         }
     }
 }
