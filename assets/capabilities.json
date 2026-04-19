@@ -2,36 +2,50 @@
   {
     "id": 1,
     "name": "ChatSkill",
-    "subjects": ["hi", "hello", "hey", "ronin", "mingalaba"],
-    "actions": ["chat", "talk", "ask", "greet"],
+    "subjects": ["hi", "hello", "hey", "ronin", "mingalaba", "ဟယ်လို", "နေကောင်းလား"],
+    "actions": ["chat", "talk", "ask", "greet", "ပြော", "မေး"],
     "confidence_threshold": 0.5
+  },
+  {
+    "id": 2,
+    "name": "FileSearchNode",
+    "subjects": ["file", "document", "pdf", "jpg", "mp3", "image", "photo", "music", "video", "search", "ဖိုင်", "စာရွက်စာတမ်း"],
+    "actions": ["find", "locate", "search", "show", "ရှာ", "ရှာပေး"],
+    "confidence_threshold": 0.7
+  },
+  {
+    "id": 3,
+    "name": "NeuralEmbeddingNode",
+    "subjects": ["embedding", "vector", "neural", "semantic"],
+    "actions": ["generate", "compute", "calculate"],
+    "confidence_threshold": 0.9
   },
   {
     "id": 4,
     "name": "FlashlightNode",
-    "subjects": ["flashlight", "torch", "light"],
-    "actions": ["on", "off", "turn"],
-    "confidence_threshold": 0.9
+    "subjects": ["flashlight", "torch", "light", "ဓါတ်မီး", "မီး"],
+    "actions": ["on", "off", "turn", "switch", "enable", "disable", "ဖွင့်", "ပိတ်"],
+    "confidence_threshold": 0.8
   },
   {
     "id": 5,
     "name": "LocationNode",
-    "subjects": ["location", "gps", "where"],
-    "actions": ["show", "get", "find"],
-    "confidence_threshold": 0.9
+    "subjects": ["location", "gps", "coordinates", "where", "နေရာ", "ဘယ်မှာလဲ"],
+    "actions": ["show", "get", "find", "locate", "ပြပေး", "ရှာပေး"],
+    "confidence_threshold": 0.8
   },
   {
     "id": 6,
     "name": "WiFiNode",
-    "subjects": ["wifi", "internet", "connection"],
-    "actions": ["on", "off", "enable"],
-    "confidence_threshold": 0.9
+    "subjects": ["wifi", "internet", "connection", "ဝိုင်ဖိုင်", "အင်တာနက်"],
+    "actions": ["on", "off", "enable", "disable", "turn", "switch", "ဖွင့်", "ပိတ်"],
+    "confidence_threshold": 0.8
   },
   {
     "id": 7,
     "name": "BluetoothNode",
-    "subjects": ["bluetooth", "bt"],
-    "actions": ["on", "off"],
-    "confidence_threshold": 0.9
+    "subjects": ["bluetooth", "bt", "ဘလူးတု"],
+    "actions": ["on", "off", "enable", "disable", "turn", "switch", "ဖွင့်", "ပိတ်"],
+    "confidence_threshold": 0.8
   }
 ]

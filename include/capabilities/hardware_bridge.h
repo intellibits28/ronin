@@ -25,6 +25,11 @@ public:
     static void release(JNIEnv* env);
 
     /**
+     * Triggers JNI callback to report memory and thermal tiers to the UI.
+     */
+    static void reportSystemHealth(float temperature, float ramUsedGB, float ramTotalGB);
+
+    /**
      * Dispatches a hardware action to the Kotlin side.
      * Guaranteed to be non-blocking for the calling C++ thread.
      */
@@ -33,6 +38,7 @@ public:
 private:
     static JavaVM* s_vm;
     static jobject s_instance;
+    static jclass s_clazz;
 };
 
 } // namespace Ronin::Kernel::Capability

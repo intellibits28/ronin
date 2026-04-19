@@ -8,6 +8,7 @@ namespace Ronin::Kernel::Capability {
 
 JavaVM* HardwareBridge::s_vm = nullptr;
 jobject HardwareBridge::s_instance = nullptr;
+jclass HardwareBridge::s_clazz = nullptr;
 
 void HardwareBridge::initialize(JavaVM* vm, jobject instance) {
 #ifdef __ANDROID__
@@ -19,8 +20,16 @@ void HardwareBridge::initialize(JavaVM* vm, jobject instance) {
         if (s_instance) {
             env->DeleteGlobalRef(s_instance);
         }
+        if (s_clazz) {
+            env->DeleteGlobalRef(s_clazz);
+        }
         s_instance = env->NewGlobalRef(instance);
-        LOGI(TAG, "HardwareBridge initialized with new GlobalRef.");
+        
+        jclass localClazz = env->GetObjectClass(instance);
+        s_clazz = (jclass)env->NewGlobalRef(localClazz);
+        env->DeleteLocalRef(localClazz);
+
+        LOGI(TAG, "HardwareBridge initialized with new GlobalRef and ClassRef.");
     }
 #endif
 }
@@ -31,7 +40,33 @@ void HardwareBridge::release(JNIEnv* env) {
         env->DeleteGlobalRef(s_instance);
         s_instance = nullptr;
     }
+    if (s_clazz && env) {
+        env->DeleteGlobalRef(s_clazz);
+        s_clazz = nullptr;
+    }
     s_vm = nullptr;
+#endif
+}
+
+void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, float ramTotalGB) {
+#ifdef __ANDROID__
+    if (!s_vm || !s_instance || !s_clazz) return;
+
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
+        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return;
+        attached = true;
+    }
+
+    if (env) {
+        jmethodID mid = env->GetMethodID(s_clazz, "updateSystemTiers", "(FFF)V");
+        if (mid) {
+            env->CallVoidMethod(s_instance, mid, temperature, ramUsedGB, ramTotalGB);
+        }
+    }
+
+    if (attached) s_vm->DetachCurrentThread();
 #endif
 }
 

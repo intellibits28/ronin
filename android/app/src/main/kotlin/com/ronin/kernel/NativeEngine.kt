@@ -70,12 +70,12 @@ class NativeEngine {
     // --- Hardware Control JNI Callbacks ---
     var executeHardwareAction: ((Int, Boolean) -> Boolean)? = null
     var onKernelMessage: ((String) -> Unit)? = null
+    var onSystemTiersUpdate: ((Float, Float, Float) -> Unit)? = null
 
-    // Called from C++ ExecHandlers
+    // Called from JNI for real-time stability updates
     @Suppress("unused")
-    fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
-        Log.i(TAG, "Native request: Triggering action for Node $nodeId (State: $state)")
-        return executeHardwareAction?.invoke(nodeId, state) ?: false
+    fun updateSystemTiers(temp: Float, used: Float, total: Float) {
+        onSystemTiersUpdate?.invoke(temp, used, total)
     }
 
     // Called from JNI for asynchronous UI updates

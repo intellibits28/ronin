@@ -230,6 +230,13 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     if (next_node) {
         if (g_memory_manager) g_memory_manager->clearContext();
         
+        // Phase 4.0: Intent Continuity Guard (LMK Survival)
+        // Serialize active state to L3 (Deep) Store before execution
+        if (g_long_term_memory) {
+            std::string state_serialized = "node_id=" + std::to_string(next_node->id) + ";param=" + input_str;
+            g_long_term_memory->storeFact("active_intent", state_serialized, Ronin::Kernel::Memory::MemoryPriority::HIGH);
+        }
+
         // Phase 4.0: Unified Skill Execution Pipeline.
         // Both cognitive and hardware skills are dispatched via the same registry.
         if (g_intent_engine) {
@@ -309,6 +316,9 @@ JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
     LOGI("RoninHealth", "System Health Poll: Temp=%.1f C | RAM=%.2f/%.2f GB (%.1f%%)", 
          temp, used, total, (total > 0 ? (used / total) * 100.0f : 0));
+
+    // Phase 4.0: Report to UI via HardwareBridge callback
+    Ronin::Kernel::Capability::HardwareBridge::reportSystemHealth(temp, used, total);
 
     // Return true if RAM > 85%
     if (total > 0 && (used / total) > 0.85f) {
