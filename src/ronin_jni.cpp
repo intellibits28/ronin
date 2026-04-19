@@ -212,18 +212,6 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
 
     if (g_long_term_memory) g_long_term_memory->storeMessage("user", input_str);
 
-    // 0. Greetings
-    std::string clean_input = input_str;
-    std::transform(clean_input.begin(), clean_input.end(), clean_input.begin(), ::tolower);
-    if (clean_input == "hi" || clean_input == "hello" || clean_input == "hey" || clean_input == "mingalaba") {
-        if (g_memory_manager) g_memory_manager->clearContext();
-        std::string response = "ChatNode: Hello! I am Ronin. How can I help you today?";
-        if (g_long_term_memory) {
-            g_long_term_memory->storeMessage("ronin", response);
-        }
-        return env->NewStringUTF(response.c_str());
-    }
-
     // 1. Kernel Heartbeat (State Management & History)
     Input minimalist_input = {};
     size_t len = std::min(input_str.length(), sizeof(minimalist_input.data) - 1);
@@ -312,6 +300,7 @@ Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdo
             env->CallVoidMethod(g_engine_instance, mid, jmsg);
             env->DeleteLocalRef(jmsg);
         }
+        env->DeleteLocalRef(clazz);
     }
 }
 

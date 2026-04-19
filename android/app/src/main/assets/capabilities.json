@@ -1,7 +1,14 @@
 [
   {
+    "id": 1,
+    "name": "ChatSkill",
+    "subjects": ["hi", "hello", "hey", "ronin", "mingalaba"],
+    "actions": ["chat", "talk", "ask", "greet"],
+    "confidence_threshold": 0.5
+  },
+  {
     "id": 4,
-    "name": "SystemControlNode",
+    "name": "FlashlightNode",
     "subjects": ["flashlight", "torch", "light"],
     "actions": ["on", "off", "turn"],
     "confidence_threshold": 0.9
