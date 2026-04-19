@@ -35,3 +35,4 @@ capture/
 
 .gemini/
 gha-creds-*.json
+GEMINI.md
