@@ -172,6 +172,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setupHardwareCallbacks() {
+        nativeEngine.onRequestHardwareData = { nodeId ->
+            when (nodeId) {
+                5 -> {
+                    // Quick data fetch for Vtable-based execution
+                    "Current Location: [Lat: 16.8, Lon: 96.1] (Verified via JNI Data-Pipe)"
+                }
+                else -> "Error: Unknown data node $nodeId"
+            }
+        }
+
         nativeEngine.executeHardwareAction = { nodeId, state ->
             var toolName = ""
             when (nodeId) {

@@ -70,9 +70,45 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
 #endif
 }
 
+std::string HardwareBridge::requestData(uint32_t nodeId) {
+#ifdef __ANDROID__
+    if (!s_vm || !s_instance || !s_clazz) return "Error: HardwareBridge not initialized.";
+
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
+        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return "Error: Thread attachment failed.";
+        attached = true;
+    }
+
+    std::string result = "Error: Method invocation failed.";
+    if (env) {
+        jmethodID mid = env->GetMethodID(s_clazz, "requestHardwareData", "(I)Ljava/lang/String;");
+        if (mid) {
+            jstring jstr = (jstring)env->CallObjectMethod(s_instance, mid, static_cast<jint>(nodeId));
+            if (jstr) {
+                const char* cstr = env->GetStringUTFChars(jstr, nullptr);
+                if (cstr) {
+                    result = std::string(cstr);
+                    env->ReleaseStringUTFChars(jstr, cstr);
+                }
+                env->DeleteLocalRef(jstr);
+            }
+        } else {
+            result = "Error: Method requestHardwareData not found.";
+        }
+    }
+
+    if (attached) s_vm->DetachCurrentThread();
+    return result;
+#else
+    return "Host Build: Hardware data retrieval mocked for Node " + std::to_string(nodeId);
+#endif
+}
+
 void HardwareBridge::triggerAsync(uint32_t nodeId, bool state) {
 #ifdef __ANDROID__
-    if (!s_vm || !s_instance) {
+    if (!s_vm || !s_instance || !s_clazz) {
         LOGE(TAG, "HardwareBridge NOT initialized. Skipping trigger for Node %u", nodeId);
         return;
     }
@@ -97,9 +133,8 @@ void HardwareBridge::triggerAsync(uint32_t nodeId, bool state) {
             attached = true;
         }
 
-        if (env && s_instance) {
-            jclass clazz = env->GetObjectClass(s_instance);
-            jmethodID mid = env->GetMethodID(clazz, "triggerHardwareAction", "(IZ)Z");
+        if (env && s_instance && s_clazz) {
+            jmethodID mid = env->GetMethodID(s_clazz, "triggerHardwareAction", "(IZ)Z");
             if (mid) {
                 LOGI(TAG, "Dispatching async hardware action: Node %u, State %d", nodeId, state);
                 env->CallBooleanMethod(s_instance, mid, static_cast<jint>(nodeId), static_cast<jboolean>(state));

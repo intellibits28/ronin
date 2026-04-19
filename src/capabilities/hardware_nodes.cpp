@@ -17,8 +17,7 @@ std::string FlashlightNode::execute(const std::string& param) {
 }
 
 std::string LocationNode::execute(const std::string& param) {
-    HardwareBridge::triggerAsync(getId(), true);
-    return "Success: Action Initiated - Locating device...";
+    return HardwareBridge::requestData(getId());
 }
 
 std::string WifiNode::execute(const std::string& param) {

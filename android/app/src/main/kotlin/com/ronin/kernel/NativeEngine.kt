@@ -69,8 +69,23 @@ class NativeEngine {
 
     // --- Hardware Control JNI Callbacks ---
     var executeHardwareAction: ((Int, Boolean) -> Boolean)? = null
+    var onRequestHardwareData: ((Int) -> String)? = null
     var onKernelMessage: ((String) -> Unit)? = null
     var onSystemTiersUpdate: ((Float, Float, Float) -> Unit)? = null
+
+    // Called from C++ ExecHandlers for state toggles
+    @Suppress("unused")
+    fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
+        Log.i(TAG, "Native request: Triggering action for Node $nodeId (State: $state)")
+        return executeHardwareAction?.invoke(nodeId, state) ?: false
+    }
+
+    // Called from C++ ExecHandlers for data retrieval
+    @Suppress("unused")
+    fun requestHardwareData(nodeId: Int): String {
+        Log.i(TAG, "Native request: Fetching data for Node $nodeId")
+        return onRequestHardwareData?.invoke(nodeId) ?: "Error: Hardware data provider not ready."
+    }
 
     // Called from JNI for real-time stability updates
     @Suppress("unused")

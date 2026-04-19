@@ -30,6 +30,11 @@ public:
     static void reportSystemHealth(float temperature, float ramUsedGB, float ramTotalGB);
 
     /**
+     * Synchronously fetches hardware data from the Kotlin side.
+     */
+    static std::string requestData(uint32_t nodeId);
+
+    /**
      * Dispatches a hardware action to the Kotlin side.
      * Guaranteed to be non-blocking for the calling C++ thread.
      */
