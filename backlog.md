@@ -2,7 +2,7 @@
 
 ## Priority 1: Phase 4.1 (Local Brain & Guards)
 - [ ] **Local Brain (Gemma 4):** Integration of MediaPipe LLM Inference API (LiteRT).
-- [ ] **Thermal & Battery Guard:** JNI monitor for LLM unloading based on temperature/battery.
+- [ ] **Thermal & Battery Guard:** Dynamic Thermal Throttling (Step-down generation speed at 40°C, unload at critical limits).
 - [ ] **Data Protocol Optimization:** Transition JNI payloads from raw strings to structured JSON.
 
 ## Priority 2: Future Roadmap (v4.2 - v4.4)

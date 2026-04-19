@@ -11,13 +11,13 @@
 - [x] **Hardware Bridge:** JNI asynchronous actuation link fully restored and stabilized.
 - [x] **Asset Synchronization:** Implemented automatic asset extraction from APK to internal storage for C++ I/O access.
 - [x] **Intent ID & Search Calibration:** Fixed conflicts via Strict Bypass and improved File Search isolation.
-- [x] **Memory & Thermal Guards:** System health poll integrated with LMK pressure signaling.
+- [x] **Memory & Thermal Guards:** OS-driven Memory Guard via ComponentCallbacks2.onTrimMemory().
 
 ---
 
 ## 3. Active Phase: Phase 4.1 (Brain Plugins)
 - [ ] **Local Brain (Gemma 4):** Integration of **MediaPipe LLM Inference API (LiteRT)** for on-demand local reasoning.
-- [ ] **Thermal & Battery Guard:** Implementation of a JNI monitor that unloads the Local LLM if device temperature > 40°C or battery < 15%.
+- [ ] **Thermal & Battery Guard:** Dynamic Thermal Throttling (Step-down generation speed at 40°C, unload at critical limits).
 
 ---
 
@@ -29,7 +29,7 @@
 
 ## 5. Future Skills & Capabilities (The Roadmap)
 - **v4.2 (SENSOR-HUB):** Native JNI SensorEventListener for Vibration Analysis (SHM).
-- **v4.3 (SOCIAL-BRIDGE):** `ContactNode` & `SmsNode` for multi-step tasks.
+- **v4.3 (SOCIAL-BRIDGE):** `ContactNode` & `SmsNode` for multi-step tasks (e.g., "Send location to Dad").
 - **v4.4 (DSP-SKILL):** Digital Signal Processing for sensor/audio filtering.
 
 ---

@@ -22,10 +22,10 @@ We are currently transitioning to a **Vtable-based Registry**. This evolution de
 
 ## 🧠 Memory & System Integrity
 
-- **LMK-Awareness:** High-frequency RAM monitoring via JNI `updateSystemHealth`. The kernel automatically prunes KV caches and triggers L3 persistence when memory pressure exceeds 85%.
+- **LMK-Awareness:** OS-driven Memory Guard via ComponentCallbacks2.onTrimMemory(). The kernel automatically prunes KV caches and triggers L3 persistence when memory pressure exceeds 85%.
 - **Zero-Copy Access:** Utilizes DirectByteBuffers for efficient data transfer between Kotlin and the C++ reasoning spine.
 - **Global Reference Management:** Rigorous JNI lifecycle management to prevent memory leaks and ensure thread safety across detached hardware threads.
-- **Thermal Guard:** Real-time throttling of inference engines if device temperature exceeds 40°C.
+- **Thermal Guard:** Dynamic Thermal Throttling (Step-down generation speed at 40°C, unload at critical limits).
 
 ## 🛠️ Status (v3.9.7-RECOVERY)
 
