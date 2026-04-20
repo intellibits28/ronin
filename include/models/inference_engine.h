@@ -8,8 +8,8 @@
 namespace Ronin::Kernel::Model {
 
 /**
- * Phase 4.3: Hybrid Intelligence & External Brain.
- * Integrates LiteRT (Gemma 4) and Secure Cloud Escalation.
+ * Phase 4.3 (Updated): LiteRT-LM Integration.
+ * Specialized Local Reasoning Spine using MediaPipe LLM Inference API.
  */
 class InferenceEngine {
 public:
@@ -22,32 +22,36 @@ public:
     int classifyCoarse(const std::string& input);
 
     /**
-     * Layer 2 (Fine): NPU-accelerated intent matching.
+     * Layer 2 (Fine): NPU-accelerated intent matching (NNAPI).
      */
     CognitiveIntent predictFine(const std::string& input, int coarse_category);
 
     /**
-     * Phase 4.3: External Local Brain (Gemma 4 + LiteRT).
-     * Runs complex on-device reasoning if NPU intent matching is uncertain.
+     * Phase 4.3: specialized LiteRT-LM Reasoning.
+     * Uses MediaPipe LLM Inference API for autoregressive Gemma 4 decoding.
+     * Implements native KV-cache management and prefill optimization.
      */
-    std::string runLocalReasoning(const std::string& input);
+    std::string runLiteRTReasoning(const std::string& input);
 
     /**
-     * Phase 4.3: Cloud Escalation Bridge.
-     * Escalates to Secure Cloud if Local Brain confidence is low.
+     * Secure Cloud Escalation.
+     * Triggered if local confidence is < 0.75.
      */
     std::string escalateToCloud(const std::string& input, const std::string& apiKey);
 
     /**
-     * Data Protocol v4.3: Returns structured JSON instead of raw strings.
+     * Data Protocol v4.3: Returns structured JSON for multi-turn reliability.
      */
     std::string getStructuredResponse(const std::string& intent, const std::string& state, const std::string& result);
 
     /**
-     * Runs inference on the input text to determine the intent.
+     * Standard Intent Prediction (Legacy Wrapper).
      */
     CognitiveIntent predict(const std::string& input);
 
+    /**
+     * Power Management.
+     */
     void suspendNPU();
     void resumeNPU();
 

@@ -284,14 +284,14 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     uint32_t targetNodeId = 0;
     std::string response = "Input processed via Reasoning Spine (No specific capability triggered).";
 
-    if (intent.id > 1 && intent.confidence >= 0.7f) {
+    if (intent.id > 1 && intent.confidence >= 0.75f) {
         std::string logMsg = ">>> Routing: Deterministic Match (ID " + std::to_string(intent.id) + ") bypassing Thompson Sampling.";
         LOGI(TAG, "%s", logMsg.c_str());
         Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
         targetNodeId = intent.id;
     } else {
         // Fallback to probabilistic graph executor for reasoning/searching or if confidence is low
-        std::string logMsg = ">>> Routing: Deferring to Probabilistic Graph Executor (Low confidence or ID 1).";
+        std::string logMsg = ">>> Routing: Deferring to Probabilistic Graph Executor (Low confidence < 0.75 or ID 1).";
         LOGI(TAG, "%s", logMsg.c_str());
         Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
         
@@ -310,13 +310,13 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
             response = g_intent_engine->executeSkill(targetNodeId, input_str);
         }
     } else {
-        // Phase 4.3: Hybrid Intelligence & External Brain
+        // Phase 4.3 (Updated): LiteRT-LM Integration
         auto inference = g_intent_engine ? g_intent_engine->getInferenceEngine() : nullptr;
         if (inference) {
-            std::string localReasoning = inference->runLocalReasoning(input_str);
+            std::string localReasoning = inference->runLiteRTReasoning(input_str);
             
-            // Escalation Logic: If input is tagged as "complex" or Local Brain returns low confidence
-            if (input_str.find("complex") != std::string::npos || input_str.find("calculate") != std::string::npos) {
+            // Escalation Logic: If input is tagged as "complex" or Local Brain confidence was < 0.75
+            if (input_str.find("complex") != std::string::npos || intent.confidence < 0.75f) {
                 std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey("Gemini");
                 response = inference->escalateToCloud(input_str, apiKey);
             } else {
