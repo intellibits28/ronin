@@ -1,40 +1,40 @@
 # Ronin Kernel: Project Status & Strategic Roadmap
 
 ## 1. Project Overview
-**Name:** Ronin Kernel (v3.9.4 -> v4.0 Evolution)
-**Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G, utilizing a Hybrid Intent System and Clean-Room minimalist design patterns.
+**Name:** Ronin Kernel (v4.3.0 Evolution)
+**Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G, utilizing a Hybrid Intent System and specialized LiteRT-LM reasoning spine.
 
 ---
 
-## 2. Current Status (v4.0-UNIFIED-STABLE)
-- [x] **v4.0 (UNIFIED-INTERFACE):** Completed transition to a Vtable-based Skill Registry. All cognitive and hardware skills derive from `BaseSkill`.
-- [x] **Hardware Bridge:** JNI asynchronous actuation link fully restored and stabilized.
-- [x] **Asset Synchronization:** Implemented automatic asset extraction from APK to internal storage for C++ I/O access.
-- [x] **Intent ID & Search Calibration:** Fixed conflicts via Strict Bypass and improved File Search isolation.
-- [x] **Memory & Thermal Guards:** OS-driven Memory Guard via ComponentCallbacks2.onTrimMemory().
+## 2. Current Status (v4.3-HYBRID-STABLE)
+- [x] **v4.3 (LITERT-LM):** Integrated specialized MediaPipe LLM Inference API for Gemma 4 reasoning.
+- [x] **v4.2 (NPU-INTEGRATION):** NNAPI-accelerated hierarchical routing (Coarse/Fine) for Snapdragon 778G active.
+- [x] **v4.1 (HARDWARE-REALITY):** FusedLocation hardware bridge and Intent Anchoring (GPS) stabilized.
+- [x] **v4.0 (UNIFIED-INTERFACE):** Completed transition to Vtable-based Skill Registry (BaseSkill).
+- [x] **Memory & Thermal Guards:** Push-based OS callbacks and Dynamic Thermal Throttling active.
 
 ---
 
-## 3. Active Phase: Phase 4.1 (Brain Plugins)
-- [ ] **Local Brain (Gemma 4):** Integration of **MediaPipe LLM Inference API (LiteRT)** for on-demand local reasoning.
-- [ ] **Thermal & Battery Guard:** Dynamic Thermal Throttling (Step-down generation speed at 40°C, unload at critical limits).
+## 3. Active Phase: Phase 4.4 (Extended Sensory Hub)
+- [ ] **Native Sensor JNI:** Implementation of Native JNI `SensorEventListener` for low-latency vibration/IMU analysis.
+- [ ] **Vibration Analysis (SHM):** Specialized node for Structural Health Monitoring (SHM) via native sensors.
 
 ---
 
-## 4. Phase 4.0: The Modular Evolution (NullClaw Patterns) - COMPLETED
-- [x] **Modular Skill Interface:** Transition to a **Vtable-based Registry**.
-- [x] **Vtable Registry Implementation:** Decoupled `IntentEngine` from specific hardware calls using `BaseSkill` interfaces.
+## 4. Phase 4.3: LiteRT-LM Integration - COMPLETED
+- [x] **Specialized Runtime:** Transitioned from generic TFLite to MediaPipe LLM Inference API.
+- [x] **Gemma 4 Hydration:** External model loading from `/storage/emulated/0/Ronin/models/`.
+- [x] **Secure Cloud Bridge:** KeyStore-backed escalation for complex reasoning.
 
 ---
 
-## 5. Future Skills & Capabilities (The Roadmap)
-- **v4.2 (SENSOR-HUB):** Native JNI SensorEventListener for Vibration Analysis (SHM).
-- **v4.3 (SOCIAL-BRIDGE):** `ContactNode` & `SmsNode` for multi-step tasks (e.g., "Send location to Dad").
-- **v4.4 (DSP-SKILL):** Digital Signal Processing for sensor/audio filtering.
+## 5. Future Roadmap (v4.5+)
+- **v4.5 (SOCIAL-BRIDGE):** `ContactNode` & `SmsNode` for multi-step tasks.
+- **v4.6 (DSP-SKILL):** Digital Signal Processing for real-time audio filtering.
 
 ---
 
 ## 6. Compliance & Design Credits
 - Core logic utilizes clean-room design patterns for minimalist runtime efficiency (Static Dispatch, Unmanaged Structures, Circular Buffers).
 
-*Last Updated: April 19, 2026*
+*Last Updated: April 20, 2026*
