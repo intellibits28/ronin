@@ -76,6 +76,14 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
         LOGI(TAG, "%s", logMsg.c_str());
         Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
 
+        // RULE 4: Respect g_thermal_state (v4.1 Hardware Reality)
+        if (nodeId == 5 && g_thermal_state == ThermalState::SEVERE) {
+            LOGW(TAG, "Thermal SEVERE: Falling back to cached GPS coordinates.");
+            std::string cachedMsg = "Current Location (Cached): (" + std::to_string(m_last_lat) + ", " + std::to_string(m_last_lon) + ")";
+            Ronin::Kernel::Capability::HardwareBridge::pushMessage("> SURVIVAL: Thermal Fallback active. Using cached GPS.");
+            return cachedMsg;
+        }
+
         // Phase 4.0: Zero-Stall LoRA Swap
         uint32_t loraMask = 0;
         if (m_lora_dispatcher) {
@@ -86,16 +94,32 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
             loraMask = m_lora_dispatcher->getActiveMask();
         }
 
-        // Survival Core: Commit state BEFORE execution (with active LoRA mask)
+        // Survival Core: Commit state BEFORE execution (with active LoRA mask and GPS)
         if (m_checkpoint_manager) {
-            m_checkpoint_manager->commit("active_" + std::to_string(nodeId), 1ULL << nodeId, nullptr, 0, loraMask, "Running: " + param);
+            m_checkpoint_manager->commit("active_" + std::to_string(nodeId), 1ULL << nodeId, nullptr, 0, loraMask, "Running: " + param, m_last_lat, m_last_lon);
         }
 
         std::string result = it->second->execute(param);
 
+        // Update cached GPS if this was a location request
+        if (nodeId == 5 && result.find("(") != std::string::npos) {
+            try {
+                // Naive parse of "(lat, lon)"
+                size_t start = result.find("(") + 1;
+                size_t comma = result.find(",");
+                size_t end = result.find(")");
+                if (comma != std::string::npos && end != std::string::npos) {
+                    m_last_lat = std::stod(result.substr(start, comma - start));
+                    m_last_lon = std::stod(result.substr(comma + 1, end - comma - 1));
+                }
+            } catch (...) {
+                LOGE(TAG, "Failed to parse GPS coordinates from hardware bridge.");
+            }
+        }
+
         // Survival Core: Commit state AFTER successful execution
         if (m_checkpoint_manager) {
-            m_checkpoint_manager->commit("completed_" + std::to_string(nodeId), 0, nullptr, 0, loraMask, "Finished: " + param);
+            m_checkpoint_manager->commit("completed_" + std::to_string(nodeId), 0, nullptr, 0, loraMask, "Finished: " + param, m_last_lat, m_last_lon);
         }
 
         return result;

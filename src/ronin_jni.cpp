@@ -150,20 +150,26 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
 
-    // Phase 2: LoRA State Diff Serialization & Activation Masking
+    // Phase 4.0: LoRA State Diff Serialization & Activation Masking
     auto lora_dispatcher = std::make_shared<Ronin::Kernel::Model::LoraDispatcher>();
-    
+
+    // RULE 1: Memory Pinning (v4.1 Hardware Reality)
+    static uint8_t mock_weights[1024 * 1024]; // 1MB mock base weights
+    lora_dispatcher->pinBaseWeights(mock_weights, sizeof(mock_weights));
+
     // Register Mock LoRAs for demonstration (Phase 2)
     // Coding (ID 1), Memory (ID 2), Hardware-Control (ID 3)
-    Ronin::Kernel::Model::LoraDeltaBlock coding_lora = {1, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000002}; // Conflicts with Memory
-    Ronin::Kernel::Model::LoraDeltaBlock memory_lora = {2, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000001}; // Conflicts with Coding
+    // Note: interference_signature prevents conflicting LoRAs from activating simultaneously.
+    Ronin::Kernel::Model::LoraDeltaBlock coding_lora = {1, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000002}; // Conflicts with bit 1 (Memory)
+    Ronin::Kernel::Model::LoraDeltaBlock memory_lora = {2, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000001}; // Conflicts with bit 0 (Coding)
     Ronin::Kernel::Model::LoraDeltaBlock hardware_lora = {3, nullptr, nullptr, 4096, 4096, 16, 1.0f, 0x00000000}; // No conflicts
-    
+
     lora_dispatcher->registerLora(coding_lora);
     lora_dispatcher->registerLora(memory_lora);
     lora_dispatcher->registerLora(hardware_lora);
-    
+
     g_intent_engine->setLoraDispatcher(lora_dispatcher);
+
 
     // Phase 4.0: Survival Core Checkpoint Manager (Hydration deferred to hydrate())
     auto checkpoint_manager = std::make_shared<Ronin::Kernel::Checkpoint::CheckpointManager>(base_path + "/survival_core.bin");
@@ -250,6 +256,17 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     CognitiveIntent intent = {1, 0.5f, true};
     if (g_ronin_kernel) {
         intent = g_ronin_kernel->getLastIntent();
+    }
+
+    // Phase 4.1: Re-awakening Protocol (Temporal Causal Stitching)
+    if (g_intent_engine) {
+        auto cm = g_intent_engine->getCheckpointManager();
+        if (cm) {
+            bool resumed = cm->stitchContext("intent_" + std::to_string(intent.id));
+            if (resumed) {
+                LOGI(TAG, "LMK Survival: Context stitched successfully. Resuming session.");
+            }
+        }
     }
 
     // 2. Routing Decision (Phase 4.0: Deterministic Priority)

@@ -99,6 +99,10 @@ public:
         m_lora_dispatcher = ld;
     }
 
+    // Phase 4.1: Hardware Reality tracking
+    double m_last_lat = 0.0;
+    double m_last_lon = 0.0;
+
 private:
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
     std::unique_ptr<Model::InferenceEngine> m_inference_engine;

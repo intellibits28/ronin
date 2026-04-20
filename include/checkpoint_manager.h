@@ -20,13 +20,21 @@ public:
     bool initialize();
 
     // Atomic Commit: Writes to .tmp, fsyncs, and renames to active checkpoint.
-    // This ensures no partial writes occur during LMK or power loss.
+    // Includes GPS coordinates for Intent Anchoring (v4.1).
     bool commit(const std::string& intent_id, 
                 uint64_t edge_frontier,
                 const uint8_t* kv_data, 
                 size_t kv_size,
                 uint32_t lora_mask, 
-                const std::string& plan_progress);
+                const std::string& plan_progress,
+                double latitude,
+                double longitude);
+
+    /**
+     * RULE 3: Re-awakening Protocol.
+     * Uses Temporal Causal Stitching to decide between context continuation or new session.
+     */
+    bool stitchContext(const std::string& current_intent_id);
 
     // RESTORATION: Provides direct read-only access to the mmap'ed FlatBuffer.
     const Checkpoint* getActiveCheckpoint() const;

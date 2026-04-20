@@ -85,7 +85,9 @@ bool CheckpointManager::commit(const std::string& intent_id,
                                const uint8_t* kv_data, 
                                size_t kv_size,
                                uint32_t lora_mask, 
-                               const std::string& plan_progress) {
+                               const std::string& plan_progress,
+                               double latitude,
+                               double longitude) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // RULE 1: Zero-Copy Serialization via FlatBuffers
@@ -103,6 +105,8 @@ bool CheckpointManager::commit(const std::string& intent_id,
     cb.add_kv_state(kv_off);
     cb.add_lora_mask(lora_mask);
     cb.add_plan_progress(plan_off);
+    cb.add_latitude(latitude);
+    cb.add_longitude(longitude);
 
     auto root = cb.Finish();
     builder.Finish(root);
@@ -145,6 +149,24 @@ bool CheckpointManager::commit(const std::string& intent_id,
     Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
     
     return true; 
+}
+
+bool CheckpointManager::stitchContext(const std::string& current_intent_id) {
+    auto last = getActiveCheckpoint();
+    if (!last) return false;
+
+    // Temporal Causal Stitching: Compare intent ID to decide branch.
+    bool same_intent = (last->intent_id()->str() == current_intent_id);
+    
+    if (same_intent) {
+        LOGI(TAG, "Temporal Causal Stitching: Intent matched. Continuing session branch.");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("> SURVIVAL: Temporal Causal Stitch matched. Resuming session.");
+    } else {
+        LOGI(TAG, "Temporal Causal Stitching: Intent changed. Branching new context.");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("> SURVIVAL: Intent mismatch. Branching new context.");
+    }
+
+    return same_intent;
 }
 
 const Checkpoint* CheckpointManager::getActiveCheckpoint() const {

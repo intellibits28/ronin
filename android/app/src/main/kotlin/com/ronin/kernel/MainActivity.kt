@@ -183,8 +183,27 @@ class MainActivity : ComponentActivity() {
         nativeEngine.onRequestHardwareData = { nodeId ->
             when (nodeId) {
                 5 -> {
-                    // Quick data fetch for Vtable-based execution
-                    "Current Location: [Lat: 16.8, Lon: 96.1] (Verified via JNI Data-Pipe)"
+                    // RULE 2: FusedLocation Integration (Hardware Reality v4.1)
+                    // Synchronous JNI Return using Tasks.await()
+                    try {
+                        val hasFine = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        val hasCoarse = checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        
+                        if (hasFine || hasCoarse) {
+                            val locationTask = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                            val location = com.google.android.gms.tasks.Tasks.await(locationTask)
+                            if (location != null) {
+                                "(${location.latitude}, ${location.longitude})"
+                            } else {
+                                "GPS_ERROR: Location Null"
+                            }
+                        } else {
+                            "GPS_ERROR: Permission Denied"
+                        }
+                    } catch (e: Exception) {
+                        Log.e("RoninUI", "Hardware Data Bridge Failed: ${e.message}")
+                        "GPS_ERROR: ${e.message}"
+                    }
                 }
                 else -> "Error: Unknown data node $nodeId"
             }
