@@ -26,6 +26,9 @@ import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.ViewModelProvider
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -142,6 +145,7 @@ class MainActivity : ComponentActivity() {
         registerComponentCallbacks(nativeEngine)
 
         setupHardwareCallbacks()
+        loadCloudProvidersFromDisk()
         checkAndRequestStoragePermission()
         checkAndRequestHardwarePermissions()
 
@@ -401,22 +405,49 @@ class MainActivity : ComponentActivity() {
         if (file.exists()) {
             try {
                 val json = file.readText()
-                // In production, use Gson or kotlinx.serialization
+                val jsonArray = JSONArray(json)
+                val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+                chatViewModel.cloudProviders.clear()
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    chatViewModel.cloudProviders.add(CloudProvider(
+                        obj.getString("name"),
+                        obj.getString("endpoint"),
+                        obj.getString("model_id"),
+                        obj.getString("auth_type")
+                    ))
+                }
+                Log.i("RoninUI", "Loaded ${jsonArray.length()} cloud providers.")
             } catch (e: Exception) {
                 Log.e("RoninUI", "Failed to load providers: ${e.message}")
             }
         }
     }
 
-    private fun saveCloudProvider(provider: CloudProvider, apiKey: String) {
+    fun saveCloudProvider(provider: CloudProvider, apiKey: String) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        
         // 1. Secure Credential Decoupling (Requirement 3)
         sharedPreferences.edit().putString(provider.name, apiKey).apply()
 
         // 2. Update Manifest (Requirement 2)
-        val providersJson = "{\"name\": \"${provider.name}\", \"endpoint\": \"${provider.endpoint}\", \"model_id\": \"${provider.modelId}\", \"auth_type\": \"${provider.authType}\"}"
-        nativeEngine.updateCloudProviders(providersJson)
-        
-        Toast.makeText(this, "Provider ${provider.name} saved securely.", Toast.LENGTH_SHORT).show()
+        try {
+            val jsonArray = JSONArray()
+            chatViewModel.cloudProviders.forEach { p ->
+                val obj = JSONObject()
+                obj.put("name", p.name)
+                obj.put("endpoint", p.endpoint)
+                obj.put("model_id", p.modelId)
+                obj.put("auth_type", p.authType)
+                jsonArray.put(obj)
+            }
+            
+            val providersJson = jsonArray.toString(2)
+            nativeEngine.updateCloudProviders(providersJson)
+            Toast.makeText(this, "Provider ${provider.name} saved securely.", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("RoninUI", "Failed to save providers: ${e.message}")
+        }
     }
 
     private fun checkAndRequestStoragePermission() {
@@ -911,30 +942,39 @@ fun SettingsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Ronin Kernel Settings", color = Color.White) },
+        title = { Text("Ronin Kernel Settings", color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
-            Column {
-                Text("Local Model Path", fontWeight = FontWeight.Bold, color = Color.Gray)
-                Text(currentModelPath, fontSize = 10.sp, color = Color.LightGray)
-                Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) {
-                    Text("Choose Model File")
+            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                Text("LOCAL BRAIN (Gemma 4)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Cyan)
+                Text("Active Path:", fontSize = 10.sp, color = Color.Gray)
+                Text(currentModelPath, fontSize = 10.sp, color = Color.LightGray, modifier = Modifier.padding(bottom = 4.dp))
+                Button(onClick = onSelectModel, modifier = Modifier.fillMaxWidth()) {
+                    Text("Switch Model File")
                 }
                 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(24.dp))
                 
-                Text("Cloud Providers", fontWeight = FontWeight.Bold, color = Color.Gray)
-                providers.forEach { provider ->
-                    Text("${provider.name} (${provider.modelId})", color = Color.White)
+                Text("CLOUD ESCALATION", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Yellow)
+                if (providers.isEmpty()) {
+                    Text("No providers configured.", fontSize = 10.sp, color = Color.Gray)
+                } else {
+                    providers.forEach { provider ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                            Icon(Icons.Default.Settings, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("${provider.name} -> ${provider.modelId}", fontSize = 11.sp, color = Color.White)
+                        }
+                    }
                 }
-                Button(onClick = onAddProvider, modifier = Modifier.padding(top = 4.dp)) {
-                    Text("Add Cloud Provider")
+                Button(onClick = onAddProvider, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray)) {
+                    Text("Add Provider", color = Color.White)
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = onDismiss) { Text("CLOSE", color = Color.Cyan) }
         },
-        backgroundColor = Color(0xFF222222),
+        backgroundColor = Color(0xFF1E1E1E),
         contentColor = Color.White
     )
 }
