@@ -212,12 +212,22 @@ Java_com_ronin_kernel_NativeEngine_loadCheckpoint(JNIEnv *env, jobject thiz, job
 
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_updateLifecycleState(JNIEnv *env, jobject thiz, jint lifecycle_state) {
-    if (lifecycle_state == 0) {
-        Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::SEVERE;
+    // Phase 4.2: NPU Hibernation & Lifecycle Sync
+    if (lifecycle_state == 0) { // BACKGROUND
         if (g_checkpoint_engine) g_checkpoint_engine->onLMKSignal();
         if (g_graph_executor) g_graph_executor->triggerAsyncSync();
-    } else {
-        Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::NORMAL;
+        
+        if (g_intent_engine) {
+            auto inference = g_intent_engine->getInferenceEngine();
+            if (inference) inference->suspendNPU();
+        }
+        LOGI(TAG, "Kernel Backgrounded: NPU Hibernation active.");
+    } else { // FOREGROUND
+        if (g_intent_engine) {
+            auto inference = g_intent_engine->getInferenceEngine();
+            if (inference) inference->resumeNPU();
+        }
+        LOGI(TAG, "Kernel Foregrounded: NPU resumed.");
     }
 }
 

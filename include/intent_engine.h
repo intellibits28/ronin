@@ -52,6 +52,13 @@ public:
     }
 
     /**
+     * @return The attached inference engine.
+     */
+    Model::InferenceEngine* getInferenceEngine() const {
+        return m_inference_engine.get();
+    }
+
+    /**
      * Processes raw input to determine the high-level intent score.
      */
     CognitiveIntent process(const std::string& input, const std::string& context_subject = "");

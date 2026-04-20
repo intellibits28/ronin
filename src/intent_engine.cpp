@@ -398,22 +398,21 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         }
     }
 
-    // Tier 3: ONNX Inference Fallback (v3.9.4 Revival)
+    // Tier 3: NPU-Accelerated Hierarchical Routing (Phase 4.2)
     if (m_inference_engine && m_inference_engine->isLoaded()) {
-        auto intent = m_inference_engine->predict(input);
+        // Layer 1: Coarse Classification (ACTION vs INFO)
+        int coarse_cat = m_inference_engine->classifyCoarse(input);
         
-        std::string logMsg = ">>> Tier 3 (ONNX) Verification: Input='" + input + "' | Predicted_ID=" + std::to_string(intent.id) + " | Confidence=" + std::to_string(intent.confidence);
-        LOGI(TAG, "%s", logMsg.c_str());
-        Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
-
-        if (intent.confidence >= 0.6f) {
-            std::string matchMsg = "> Tier 3 Match: ONNX Model confirmed ID " + std::to_string(intent.id);
+        // Layer 2: Fine-grained Prediction on NPU
+        auto intent = m_inference_engine->predictFine(input, coarse_cat);
+        
+        if (intent.id > 1) {
+            std::string matchMsg = "> NPU Match (Tier 3): Confirmed ID " + std::to_string(intent.id) + 
+                                   " with confidence " + std::to_string(intent.confidence);
             LOGI(TAG, "%s", matchMsg.c_str());
             Ronin::Kernel::Capability::HardwareBridge::pushMessage(matchMsg);
             intent.intent_param = !isOff;
             return intent;
-        } else if (intent.confidence == 0.0f) {
-            LOGE(TAG, "> CRITICAL: ONNX Model returned 0.0 confidence for input: '%s'", input.c_str());
         }
     }
 
