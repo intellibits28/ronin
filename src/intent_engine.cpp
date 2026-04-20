@@ -32,10 +32,16 @@ namespace Ronin::Kernel::Intent {
 ThermalState g_thermal_state = ThermalState::NORMAL;
 
 // Helper to strip non-alphanumeric chars for tokenizer
+// PATCH 1: UTF-8 Safeproofing (Preserve multi-byte characters)
 static std::string strip_punctuation(const std::string& s) {
     std::string out;
-    for (char c : s) {
-        if (std::isalnum(c) || std::isspace(c)) out += c;
+    for (unsigned char c : s) {
+        if (c & 0x80) { 
+            // Keep UTF-8 multi-byte bytes intact
+            out += c; 
+        } else if (std::isalnum(c) || std::isspace(c)) { 
+            out += c; 
+        }
     }
     return out;
 }
@@ -212,7 +218,16 @@ std::vector<std::string> IntentEngine::tokenize(const std::string& input) {
     return tokens;
 }
 
+// PATCH 2: Byte-safe constraints for UTF-8 Fuzzy Matching
 bool IntentEngine::isFuzzyMatch(std::string_view word, std::string_view target) {
+    // Fast UTF-8 check: Exact match only for multi-byte characters to prevent corruption
+    for (unsigned char c : word) {
+        if (c & 0x80) return word == target;
+    }
+    for (unsigned char c : target) {
+        if (c & 0x80) return word == target;
+    }
+
     if (word == target) return true;
     if (std::abs((int)word.length() - (int)target.length()) > 1) return false;
     
@@ -225,6 +240,7 @@ bool IntentEngine::isFuzzyMatch(std::string_view word, std::string_view target) 
     return diff <= 1;
 }
 
+// PATCH 3: Enforce Early Exit to prevent Pipeline Leak
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
     std::string_view sv_input = input;
     
@@ -265,8 +281,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             for (std::string_view token : tokens) {
                 for (std::string_view sub : cap.subjects) {
                     if (isFuzzyMatch(token, sub)) {
-                        LOGI(TAG, "> Tier 1 Match: Greeting '%s' detected via manifest.", token.data());
-                        return {1, 1.0f, true};
+                        LOGI(TAG, "> Tier 1 Match: Greeting detected via manifest.");
+                        return {1, 1.0f, true}; // EARLY EXIT
                     }
                 }
             }
@@ -302,9 +318,11 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                     // treat it as both subject and action.
                     if (token == "where" || token == "who" || token == "what") {
                         action_found = true;
-                        std::string logMsg = "> Interrogative Bypass: '" + token + "' triggered standalone match.";
+                        std::string logMsg = "> Interrogative Bypass: '" + std::string(token) + "' triggered standalone match.";
                         LOGI(TAG, "%s", logMsg.c_str());
                         Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
+                        // ENFORCE EARLY EXIT for Interrogative match
+                        return {cap.id, cap.confidence_threshold, !isOff};
                     }
                     break; 
                 }
