@@ -182,7 +182,11 @@ class MainActivity : ComponentActivity() {
 
     private fun copyFile(filename: String, subDir: String, targetDir: java.io.File) {
         val assetPath = if (subDir.isEmpty()) filename else "$subDir/$filename"
-        val destDir = if (subDir.isEmpty()) java.io.File(targetDir, "assets") else java.io.File(targetDir, "assets/$subDir")
+        val destDir = if (subDir.isEmpty()) {
+            java.io.File(targetDir, "assets")
+        } else {
+            java.io.File(targetDir, "assets/$subDir")
+        }
         if (!destDir.exists()) destDir.mkdirs()
         val outFile = java.io.File(destDir, filename)
         assets.open(assetPath).use { inputStream ->
@@ -204,8 +208,12 @@ class MainActivity : ComponentActivity() {
         permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
         permissions.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
         permissions.add(android.Manifest.permission.CAMERA)
-        val missing = permissions.filter { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
-        if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 1001)
+        val missing = permissions.filter { 
+            checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED 
+        }
+        if (missing.isNotEmpty()) {
+            requestPermissions(missing.toTypedArray(), 1001)
+        }
     }
 
     private fun setupHardwareCallbacks() {
@@ -369,7 +377,11 @@ class MainActivity : ComponentActivity() {
                 val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
                 val uri = Uri.fromParts("package", packageName, null)
                 intent.data = uri
-                try { startActivity(intent) } catch (e: Exception) { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+                try { 
+                    startActivity(intent) 
+                } catch (e: Exception) { 
+                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) 
+                }
             }
         }
     }
@@ -411,7 +423,9 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
         engine.onKernelMessage = { message ->
             reasoningLogs.add(0, message)
             if (message.startsWith("System Update:") || message.startsWith("Current Location:")) {
-                if (!messages.contains("Ronin: $message")) messages.add("Ronin: $message")
+                if (!messages.contains("Ronin: $message")) {
+                    messages.add("Ronin: $message")
+                }
             }
         }
         engine.onSystemTiersUpdate = { temp, used, total ->
@@ -436,7 +450,9 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                 } else {
                     newHistory.reversed().forEach { (role, content) ->
                         val msg = if (role == "user") "User: $content" else "Ronin: $content"
-                        if (!messages.contains(msg)) messages.add(0, msg)
+                        if (!messages.contains(msg)) {
+                            messages.add(0, msg)
+                        }
                     }
                     chatViewModel.historyPage++
                 }
@@ -445,9 +461,16 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
         }
     }
 
-    LaunchedEffect(Unit) { if (messages.isEmpty()) loadNextHistoryPage() }
+    LaunchedEffect(Unit) { 
+        if (messages.isEmpty()) {
+            loadNextHistoryPage() 
+        }
+    }
+    
     LaunchedEffect(chatListState.firstVisibleItemIndex) {
-        if (chatListState.firstVisibleItemIndex == 0 && messages.isNotEmpty() && !chatViewModel.isLoadingHistory) loadNextHistoryPage()
+        if (chatListState.firstVisibleItemIndex == 0 && messages.isNotEmpty() && !chatViewModel.isLoadingHistory) {
+            loadNextHistoryPage()
+        }
     }
 
     LaunchedEffect(messages.size) {
@@ -456,12 +479,22 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             val visibleItemsInfo = layoutInfo.visibleItemsInfo
             val lastMsg = messages.last()
             val isUserMsg = lastMsg.startsWith("User:")
-            val isAtBottom = if (visibleItemsInfo.isEmpty()) true else visibleItemsInfo.last().index >= layoutInfo.totalItemsCount - 2
-            if (isUserMsg || isAtBottom) chatListState.animateScrollToItem(messages.size - 1)
+            val isAtBottom = if (visibleItemsInfo.isEmpty()) {
+                true 
+            } else {
+                visibleItemsInfo.last().index >= layoutInfo.totalItemsCount - 2
+            }
+            if (isUserMsg || isAtBottom) {
+                chatListState.animateScrollToItem(messages.size - 1)
+            }
         }
     }
 
-    LaunchedEffect(reasoningLogs.size) { if (reasoningLogs.isNotEmpty()) reasoningListState.animateScrollToItem(0) }
+    LaunchedEffect(reasoningLogs.size) { 
+        if (reasoningLogs.isNotEmpty()) {
+            reasoningListState.animateScrollToItem(0) 
+        }
+    }
 
     LaunchedEffect(Unit) {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -469,7 +502,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
         while (true) {
             activityManager.getMemoryInfo(memInfo)
             val totalRAM = memInfo.totalMem / (1024f * 1024f * 1024f)
-            val usedRAM = totalRAM - (memInfo.availMem / (1024f * 1024f * 1024f))
+            val availableRAM = memInfo.availMem / (1024f * 1024f * 1024f)
+            val usedRAM = totalRAM - availableRAM
             val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             val temp = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
             chatViewModel.temperature = temp
@@ -486,10 +520,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
         scaffoldState = scaffoldState,
         topBar = {
             TopAppBar(
-                title = { Row(verticalAlignment = Alignment.CenterVertically) { Text("Ronin Kernel v4.4-DYNAMIC"); Spacer(Modifier.width(8.dp)); StabilityHeartbeat(chatViewModel.lmkPressure) } },
+                title = { 
+                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                        Text("Ronin Kernel v4.4-DYNAMIC")
+                        Spacer(Modifier.width(8.dp))
+                        StabilityHeartbeat(chatViewModel.lmkPressure) 
+                    } 
+                },
                 actions = {
-                    IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, "Settings", tint = Color.White) }
-                    IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.Info, "Info", tint = if (chatViewModel.showSysInfo) Color.Cyan else Color.Gray) }
+                    IconButton(onClick = { chatViewModel.showSettings = true }) { 
+                        Icon(Icons.Default.Settings, "Settings", tint = Color.White) 
+                    }
+                    IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { 
+                        Icon(Icons.Default.Info, "Info", tint = if (chatViewModel.showSysInfo) Color.Cyan else Color.Gray) 
+                    }
                     StabilityMeter(chatViewModel.stability)
                 },
                 backgroundColor = Color(0xFF121212),
@@ -501,27 +545,66 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             ContextTimeline(chatViewModel.l1Count, chatViewModel.l2Count, chatViewModel.l3Count)
-            if (chatViewModel.isLoadingHistory) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(2.dp), color = Color.Cyan, backgroundColor = Color.Transparent)
-            LazyColumn(state = chatListState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.Bottom) {
+            
+            if (chatViewModel.isLoadingHistory) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp), 
+                    color = Color.Cyan, 
+                    backgroundColor = Color.Transparent
+                )
+            }
+            
+            LazyColumn(
+                state = chatListState, 
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), 
+                verticalArrangement = Arrangement.Bottom
+            ) {
                 items(messages) { msg -> ChatBubble(msg) }
             }
+            
             ReasoningConsole(reasoningLogs, reasoningListState)
+            
             ChatInput(value = inputText, onValueChange = { inputText = it }, onSend = {
                 if (inputText.isNotBlank()) {
                     messages.add("User: $inputText")
                     val currentInput = inputText
                     inputText = ""
-                    chatViewModel.l1Count = 0; chatViewModel.l2Count = 0; chatViewModel.l3Count = 0
+                    chatViewModel.l1Count = 0
+                    chatViewModel.l2Count = 0
+                    chatViewModel.l3Count = 0
                     scope.launch {
-                        if (currentInput.trim().lowercase() == "/history") { loadNextHistoryPage(); return@launch }
+                        if (currentInput.trim().lowercase() == "/history") { 
+                            loadNextHistoryPage()
+                            return@launch 
+                        }
                         val kernelRawOutput = engine.processInputAsync(currentInput)
-                        val kernelOutput = try { if (kernelRawOutput.startsWith("{")) { val start = kernelRawOutput.indexOf("\"result\": \"") + 11; val end = kernelRawOutput.lastIndexOf("\""); kernelRawOutput.substring(start, end) } else kernelRawOutput } catch (e: Exception) { kernelRawOutput }
+                        val kernelOutput = try { 
+                            if (kernelRawOutput.startsWith("{")) { 
+                                val start = kernelRawOutput.indexOf("\"result\": \"") + 11
+                                val end = kernelRawOutput.lastIndexOf("\"")
+                                if (start in 11 until end) {
+                                    kernelRawOutput.substring(start, end)
+                                } else {
+                                    kernelRawOutput
+                                }
+                            } else {
+                                kernelRawOutput 
+                            }
+                        } catch (e: Exception) { 
+                            kernelRawOutput 
+                        }
                         messages.add("Ronin: $kernelOutput")
-                        launch { delay(100); chatListState.animateScrollToItem(messages.size - 1) }
+                        launch { 
+                            delay(100)
+                            chatListState.animateScrollToItem(messages.size - 1) 
+                        }
                     }
                 }
             })
-            if (chatViewModel.showSysInfo) SystemHealthOverlay(chatViewModel.temperature, chatViewModel.ramUsedGB, chatViewModel.ramTotalGB)
+            
+            if (chatViewModel.showSysInfo) {
+                SystemHealthOverlay(chatViewModel.temperature, chatViewModel.ramUsedGB, chatViewModel.ramTotalGB)
+            }
         }
     }
 }
@@ -598,26 +681,90 @@ fun ChatInput(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit
 
 @Composable
 fun SettingsDialog(onDismiss: () -> Unit, onSelectModel: () -> Unit, currentModelPath: String, providers: List<CloudProvider>, onAddProvider: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Ronin Kernel Settings", color = Color.White) }, text = {
-        Column {
-            Text("Local Model Path", fontWeight = FontWeight.Bold, color = Color.Gray); Text(currentModelPath, fontSize = 10.sp, color = Color.LightGray)
-            Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) { Text("Choose Model File") }
-            Spacer(Modifier.height(16.dp)); Text("Cloud Providers", fontWeight = FontWeight.Bold, color = Color.Gray)
-            providers.forEach { Text("${it.name} (${it.modelId})", color = Color.White) }
-            Button(onClick = onAddProvider, modifier = Modifier.padding(top = 4.dp)) { Text("Add Cloud Provider") }
-        }
-    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }, backgroundColor = Color(0xFF222222), contentColor = Color.White)
+    AlertDialog(
+        onDismissRequest = onDismiss, 
+        title = { 
+            Text("Ronin Kernel Settings", color = Color.White) 
+        }, 
+        text = {
+            Column {
+                Text("Local Model Path", fontWeight = FontWeight.Bold, color = Color.Gray)
+                Text(currentModelPath, fontSize = 10.sp, color = Color.LightGray)
+                Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) { 
+                    Text("Choose Model File") 
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("Cloud Providers", fontWeight = FontWeight.Bold, color = Color.Gray)
+                providers.forEach { 
+                    Text("${it.name} (${it.modelId})", color = Color.White) 
+                }
+                Button(onClick = onAddProvider, modifier = Modifier.padding(top = 4.dp)) { 
+                    Text("Add Cloud Provider") 
+                }
+            }
+        }, 
+        confirmButton = { 
+            TextButton(onClick = onDismiss) { 
+                Text("Close") 
+            } 
+        }, 
+        backgroundColor = Color(0xFF222222), 
+        contentColor = Color.White
+    )
 }
 
 @Composable
 fun AddProviderDialog(onDismiss: () -> Unit, onSave: (CloudProvider, String) -> Unit) {
-    var name by remember { mutableStateOf("") }; var endpoint by remember { mutableStateOf("") }; var modelId by remember { mutableStateOf("") }; var apiKey by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Add Cloud Provider", color = Color.White) }, text = {
-        Column {
-            TextField(name, { name = it }, label = { Text("Name") }); TextField(endpoint, { endpoint = it }, label = { Text("Endpoint") })
-            TextField(modelId, { modelId = it }, label = { Text("Model ID") }); TextField(apiKey, { apiKey = it }, label = { Text("API Key") })
-        }
-    }, confirmButton = { Button(onClick = { onSave(CloudProvider(name, endpoint, modelId, "api_key"), apiKey); onDismiss() }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }, backgroundColor = Color(0xFF222222), contentColor = Color.White)
+    var name by remember { mutableStateOf("") }
+    var endpoint by remember { mutableStateOf("") }
+    var modelId by remember { mutableStateOf("") }
+    var apiKey by remember { mutableStateOf("") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss, 
+        title = { 
+            Text("Add Cloud Provider", color = Color.White) 
+        }, 
+        text = {
+            Column {
+                TextField(
+                    value = name, 
+                    onValueChange = { name = it }, 
+                    label = { Text("Name") }
+                )
+                TextField(
+                    value = endpoint, 
+                    onValueChange = { endpoint = it }, 
+                    label = { Text("Endpoint") }
+                )
+                TextField(
+                    value = modelId, 
+                    onValueChange = { modelId = it }, 
+                    label = { Text("Model ID") }
+                )
+                TextField(
+                    value = apiKey, 
+                    onValueChange = { apiKey = it }, 
+                    label = { Text("API Key") }
+                )
+            }
+        }, 
+        confirmButton = { 
+            Button(onClick = { 
+                onSave(CloudProvider(name, endpoint, modelId, "api_key"), apiKey)
+                onDismiss() 
+            }) { 
+                Text("Save") 
+            } 
+        }, 
+        dismissButton = { 
+            TextButton(onClick = onDismiss) { 
+                Text("Cancel") 
+            } 
+        }, 
+        backgroundColor = Color(0xFF222222), 
+        contentColor = Color.White
+    )
 }
 
 @Composable

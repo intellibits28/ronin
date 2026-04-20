@@ -24,6 +24,8 @@
 #include <thread>
 #include <future>
 #include <chrono>
+#include <fstream>
+#include <cstdlib>
 
 #define TAG "RoninNativeEngine"
 
@@ -361,7 +363,20 @@ Java_com_ronin_kernel_NativeEngine_hydrate(JNIEnv *env, jobject thiz) {
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
+Java_com_ronin_kernel_NativeEngine_getChatHistory__(JNIEnv *env, jobject thiz) {
+    if (!g_long_term_memory) return nullptr;
+    auto history = g_long_term_memory->getHistory(100, 0); // Default to 100
+    jclass stringClass = env->FindClass("java/lang/String");
+    jobjectArray result = env->NewObjectArray(history.size() * 2, stringClass, nullptr);
+    for (size_t i = 0; i < history.size(); ++i) {
+        env->SetObjectArrayElement(result, i * 2, env->NewStringUTF(history[i].first.c_str()));
+        env->SetObjectArrayElement(result, i * 2 + 1, env->NewStringUTF(history[i].second.c_str()));
+    }
+    return result;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_ronin_kernel_NativeEngine_getChatHistory__II(JNIEnv *env, jobject thiz, jint limit, jint offset) {
     if (!g_long_term_memory) return nullptr;
     auto history = g_long_term_memory->getHistory(limit, offset);
     jclass stringClass = env->FindClass("java/lang/String");
