@@ -247,17 +247,17 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // Layer 0: O(1) Deterministic Match (Bypass Tokenizer & Loop)
     // Fast-path for unambiguous hardware and system commands.
     if (sv_input.find("flashlight") != std::string_view::npos || sv_input.find("torch") != std::string_view::npos || sv_input.find("ဓါတ်မီး") != std::string_view::npos) {
-        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("stop") != std::string_view::npos || sv_input.find("ပိတ်") != std::string_view::npos;
+        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("stop") != std::string_view::npos || sv_input.find("\xE1\x80\x95\xE1\x80\xAD\xE1\x80\x90\xE1\x80\xBA") != std::string_view::npos;
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 4) bypassing Thompson Sampling.");
         return {4, 1.0f, !off};
     }
     if (sv_input.find("wifi") != std::string_view::npos || sv_input.find("ဝိုင်ဖိုင်") != std::string_view::npos) {
-        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("disable") != std::string_view::npos || sv_input.find("ပိတ်") != std::string_view::npos;
+        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("disable") != std::string_view::npos || sv_input.find("\xE1\x80\x95\xE1\x80\xAD\xE1\x80\x90\xE1\x80\xBA") != std::string_view::npos;
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 6) bypassing Thompson Sampling.");
         return {6, 1.0f, !off};
     }
     if (sv_input.find("bluetooth") != std::string_view::npos || sv_input.find("bt") != std::string_view::npos || sv_input.find("ဘလူးတု") != std::string_view::npos) {
-        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("disable") != std::string_view::npos || sv_input.find("ပိတ်") != std::string_view::npos;
+        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("disable") != std::string_view::npos || sv_input.find("\xE1\x80\x95\xE1\x80\xAD\xE1\x80\x90\xE1\x80\xBA") != std::string_view::npos;
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 7) bypassing Thompson Sampling.");
         return {7, 1.0f, !off};
     }
@@ -294,8 +294,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // Synchronized with manifest actions for WiFi/Bluetooth/Flashlight
     bool isOff = (input.find("off") != std::string::npos || 
                   input.find("stop") != std::string::npos || 
-                  input.find("disable") != std::string::npos ||
-                  input.find("ပိတ်") != std::string::npos);
+                  input.find("disable") != std::string::npos || 
+                  input.find("\xE1\x80\x95\xE1\x80\xAD\xE1\x80\x90\xE1\x80\xBA") != std::string::npos); // Exact UTF-8 Hex for "ပိတ်"
 
     // Tier 2: Dynamic Matcher (Subject + Action)
     for (const auto& cap : m_capabilities) {
