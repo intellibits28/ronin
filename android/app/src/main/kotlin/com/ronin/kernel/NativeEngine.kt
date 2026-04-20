@@ -7,6 +7,9 @@ import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import android.content.ComponentCallbacks2
 import android.content.res.Configuration
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraAccessException
+import android.content.Context
 
 class NativeEngine : ComponentCallbacks2 {
 
@@ -21,6 +24,13 @@ class NativeEngine : ComponentCallbacks2 {
                 Log.e(TAG, "Failed to load ronin_kernel library: ${e.message}")
             }
         }
+    }
+
+    private var cameraManager: CameraManager? = null
+    private var isFlashlightOn = false
+
+    fun setCameraManager(context: Context) {
+        this.cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     }
 
     /**
@@ -81,7 +91,42 @@ class NativeEngine : ComponentCallbacks2 {
     @Suppress("unused")
     fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
         Log.i(TAG, "Native request: Triggering action for Node $nodeId (State: $state)")
-        return executeHardwareAction?.invoke(nodeId, state) ?: false
+
+        // RULE 1: Flashlight State Tracking & HAL Protection
+        if (nodeId == 4) {
+            if (state == isFlashlightOn) {
+                Log.i(TAG, "Flashlight state already $state. Ignoring redundant HAL request.")
+                return true
+            }
+
+            try {
+                val manager = cameraManager
+                if (manager != null) {
+                    val cameraId = manager.cameraIdList[0]
+                    manager.setTorchMode(cameraId, state)
+                    isFlashlightOn = state
+                    Log.i(TAG, "Camera HAL: Torch mode set to $state")
+                    return true
+                } else {
+                    Log.e(TAG, "CameraManager not initialized.")
+                }
+            } catch (e: CameraAccessException) {
+                Log.e(TAG, "Camera HAL lockup prevented: ${e.message}")
+                return false
+            } catch (e: Exception) {
+                Log.e(TAG, "Hardware actuation failed for Flashlight", e)
+                return false
+            }
+        }
+
+        val success = try {
+            executeHardwareAction?.invoke(nodeId, state) ?: false
+        } catch (e: Exception) {
+            Log.e(TAG, "CRITICAL: Hardware actuation failed for Node $nodeId", e)
+            false
+        }
+
+        return success
     }
 
     // Called from C++ ExecHandlers for data retrieval

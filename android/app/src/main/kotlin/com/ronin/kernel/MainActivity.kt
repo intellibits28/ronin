@@ -91,6 +91,7 @@ class MainActivity : ComponentActivity() {
         copyAssetsToFilesDir(baseDir)
         
         nativeEngine.initializeKernel(baseDir.absolutePath)
+        nativeEngine.setCameraManager(this)
         nativeEngine.setEngineInstance()
         nativeEngine.hydrate()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -207,9 +208,7 @@ class MainActivity : ComponentActivity() {
             try {
                 when (nodeId) {
                     4 -> {
-                        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                        val cameraId = cameraManager.cameraIdList[0]
-                        cameraManager.setTorchMode(cameraId, state) 
+                        // Managed in NativeEngine for state safety
                         success = true
                     }
                     5 -> {

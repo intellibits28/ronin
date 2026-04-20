@@ -244,22 +244,29 @@ bool IntentEngine::isFuzzyMatch(std::string_view word, std::string_view target) 
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
     std::string_view sv_input = input;
     
+    // Phase 4.0: Default to OFF (false). Only set to ON (true) if explicit positive keywords are detected.
+    // This is more robust against NDK encoding hostility for "off" commands.
+    bool intent_param = false;
+    if (sv_input.find("on") != std::string_view::npos || 
+        sv_input.find("enable") != std::string_view::npos || 
+        sv_input.find("\xE1\x80\x81\xE1\x80\xBC\xE1\x80\x84\xE1\x80\xB9\xE1\x80\x90\xE1\x80\xBA") != std::string_view::npos || // Hex for 'ဖွင့်'
+        sv_input.find("\xE1\x80\x96\xE1\x80\xBD\xE1\x80\x84\xE1\x80\xB7\xE1\x80\xB9") != std::string_view::npos) { // Hex for 'ဖွင့်' (Alt)
+        intent_param = true;
+    }
+
     // Layer 0: O(1) Deterministic Match (Bypass Tokenizer & Loop)
     // Fast-path for unambiguous hardware and system commands.
-    if (sv_input.find("flashlight") != std::string_view::npos || sv_input.find("torch") != std::string_view::npos || sv_input.find("ဓါတ်မီး") != std::string_view::npos) {
-        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("stop") != std::string_view::npos || sv_input.find("\xE1\x80\x95\xE1\x80\xAD\xE1\x80\x90\xE1\x80\xBA") != std::string_view::npos;
+    if (sv_input.find("flashlight") != std::string_view::npos || sv_input.find("torch") != std::string_view::npos || sv_input.find("\xE1\x80\x92\xE1\x80\xB9\xE1\x80\xAC\xE1\x80\x90\xE1\x80\xB9\xE1\x80\x99\xE1\x80\xB8") != std::string_view::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 4) bypassing Thompson Sampling.");
-        return {4, 1.0f, !off};
+        return {4, 1.0f, intent_param};
     }
-    if (sv_input.find("wifi") != std::string_view::npos || sv_input.find("ဝိုင်ဖိုင်") != std::string_view::npos) {
-        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("disable") != std::string_view::npos || sv_input.find("\xE1\x80\x95\xE1\x80\xAD\xE1\x80\x90\xE1\x80\xBA") != std::string_view::npos;
+    if (sv_input.find("wifi") != std::string_view::npos || sv_input.find("\xE1\x80\x8D\xE1\x80\xAD\xE1\x80\xAF\xE1\x80\x84\xE1\x80\xB9\xE1\x80\x96\xE1\x80\xAD\xE1\x80\xAF\xE1\x80\x84\xE1\x80\xB9") != std::string_view::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 6) bypassing Thompson Sampling.");
-        return {6, 1.0f, !off};
+        return {6, 1.0f, intent_param};
     }
-    if (sv_input.find("bluetooth") != std::string_view::npos || sv_input.find("bt") != std::string_view::npos || sv_input.find("ဘလူးတု") != std::string_view::npos) {
-        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("disable") != std::string_view::npos || sv_input.find("\xE1\x80\x95\xE1\x80\xAD\xE1\x80\x90\xE1\x80\xBA") != std::string_view::npos;
+    if (sv_input.find("bluetooth") != std::string_view::npos || sv_input.find("bt") != std::string_view::npos || sv_input.find("\xE1\x80\x98\xE1\x80\xAC\xE1\x80\x9C\xE1\x80\xB0\xE1\x80\xB8\xE1\x80\x90\xE1\x80\xAF") != std::string_view::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 7) bypassing Thompson Sampling.");
-        return {7, 1.0f, !off};
+        return {7, 1.0f, intent_param};
     }
     if (sv_input == "where am i" || sv_input == "where" || sv_input == "gps" || sv_input == "coordinates") {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 5) bypassing Thompson Sampling.");
@@ -290,12 +297,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         }
     }
 
-    // Safety-First Negation Logic (v3.9.4)
-    // Synchronized with manifest actions for WiFi/Bluetooth/Flashlight
-    bool isOff = (input.find("off") != std::string::npos || 
-                  input.find("stop") != std::string::npos || 
-                  input.find("disable") != std::string::npos || 
-                  input.find("\xE1\x80\x95\xE1\x80\xAD\xE1\x80\x90\xE1\x80\xBA") != std::string::npos); // Exact UTF-8 Hex for "ပိတ်"
+    // Safety-First Negation Logic (v3.9.4) - REVERSED in Phase 4.0 Optimization
+    // Defaulting to OFF and matching positive triggers is more robust for NDK/UTF-8.
 
     // Tier 2: Dynamic Matcher (Subject + Action)
     for (const auto& cap : m_capabilities) {
@@ -322,7 +325,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                         LOGI(TAG, "%s", logMsg.c_str());
                         Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
                         // ENFORCE EARLY EXIT for Interrogative match
-                        return {cap.id, cap.confidence_threshold, !isOff};
+                        return {cap.id, cap.confidence_threshold, intent_param};
                     }
                     break; 
                 }
@@ -365,7 +368,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             std::string logMsg = "> Dynamic Match: Found intent for " + cap.name + " (ID " + std::to_string(cap.id) + ") [v3.9.5-STABLE]";
             LOGI(TAG, "%s", logMsg.c_str());
             Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
-            return {cap.id, cap.confidence_threshold, !isOff};
+            return {cap.id, cap.confidence_threshold, intent_param};
         }
     }
 
@@ -381,7 +384,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             std::string matchMsg = "> Tier 3 Match: ONNX Model confirmed ID " + std::to_string(intent.id);
             LOGI(TAG, "%s", matchMsg.c_str());
             Ronin::Kernel::Capability::HardwareBridge::pushMessage(matchMsg);
-            intent.intent_param = !isOff;
+            intent.intent_param = intent_param;
             return intent;
         } else if (intent.confidence == 0.0f) {
             LOGE(TAG, "> CRITICAL: ONNX Model returned 0.0 confidence for input: '%s'", input.c_str());
