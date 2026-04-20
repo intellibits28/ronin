@@ -112,7 +112,7 @@ private:
     std::vector<std::string> tokenize(const std::string& input);
 
     // Simple fuzzy match for typos (e.g., 'flashlite' vs 'flashlight')
-    bool isFuzzyMatch(const std::string& word, const std::string& target);
+    bool isFuzzyMatch(std::string_view word, std::string_view target);
 };
 
 } // namespace Ronin::Kernel::Intent

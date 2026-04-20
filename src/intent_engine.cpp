@@ -212,7 +212,7 @@ std::vector<std::string> IntentEngine::tokenize(const std::string& input) {
     return tokens;
 }
 
-bool IntentEngine::isFuzzyMatch(const std::string& word, const std::string& target) {
+bool IntentEngine::isFuzzyMatch(std::string_view word, std::string_view target) {
     if (word == target) return true;
     if (std::abs((int)word.length() - (int)target.length()) > 1) return false;
     
@@ -226,19 +226,46 @@ bool IntentEngine::isFuzzyMatch(const std::string& word, const std::string& targ
 }
 
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
+    std::string_view sv_input = input;
+    
+    // Layer 0: O(1) Deterministic Match (Bypass Tokenizer & Loop)
+    // Fast-path for unambiguous hardware and system commands.
+    if (sv_input.find("flashlight") != std::string_view::npos || sv_input.find("torch") != std::string_view::npos) {
+        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("stop") != std::string_view::npos;
+        LOGI(TAG, ">>> Routing: Deterministic Match (ID 4) bypassing Thompson Sampling.");
+        return {4, 1.0f, !off};
+    }
+    if (sv_input.find("wifi") != std::string_view::npos) {
+        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("disable") != std::string_view::npos;
+        LOGI(TAG, ">>> Routing: Deterministic Match (ID 6) bypassing Thompson Sampling.");
+        return {6, 1.0f, !off};
+    }
+    if (sv_input.find("bluetooth") != std::string_view::npos || sv_input.find("bt") != std::string_view::npos) {
+        bool off = sv_input.find("off") != std::string_view::npos || sv_input.find("disable") != std::string_view::npos;
+        LOGI(TAG, ">>> Routing: Deterministic Match (ID 7) bypassing Thompson Sampling.");
+        return {7, 1.0f, !off};
+    }
+    if (sv_input == "where am i" || sv_input == "where" || sv_input == "gps" || sv_input == "coordinates") {
+        LOGI(TAG, ">>> Routing: Deterministic Match (ID 5) bypassing Thompson Sampling.");
+        return {5, 1.0f, true};
+    }
+    if (sv_input.starts_with("search ") || sv_input.starts_with("find ") || sv_input.starts_with("locate ")) {
+        LOGI(TAG, ">>> Routing: Deterministic Match (ID 2) bypassing Thompson Sampling.");
+        return {2, 1.0f, true};
+    }
+
     auto tokens = tokenize(input);
     if (tokens.empty()) return {1, 0.0f, true};
-    std::string first = tokens[0];
+    std::string_view first = tokens[0];
 
     // Tier 1: Dynamic Greeting Detection (Single Source of Truth: ID 1 from manifest)
+    // Optimized with std::string_view to reduce allocation overhead.
     for (const auto& cap : m_capabilities) {
         if (cap.id == 1) {
-            for (const auto& token : tokens) {
-                for (const auto& sub : cap.subjects) {
+            for (std::string_view token : tokens) {
+                for (std::string_view sub : cap.subjects) {
                     if (isFuzzyMatch(token, sub)) {
-                        // Only trigger if it's a pure greeting OR if no other high-confidence match is found later.
-                        // For now, maintain Guardrail behavior as requested.
-                        LOGI(TAG, "> Tier 1 Match: Greeting '%s' detected via manifest.", token.c_str());
+                        LOGI(TAG, "> Tier 1 Match: Greeting '%s' detected via manifest.", token.data());
                         return {1, 1.0f, true};
                     }
                 }
