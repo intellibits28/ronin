@@ -130,6 +130,33 @@ std::string HardwareBridge::requestData(uint32_t nodeId) {
 #endif
 }
 
+bool HardwareBridge::triggerSync(uint32_t nodeId, bool state) {
+#ifdef __ANDROID__
+    if (!s_vm || !s_instance || !s_clazz) return state;
+
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
+        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return state;
+        attached = true;
+    }
+
+    bool actual_state = state;
+    if (env) {
+        jmethodID mid = env->GetMethodID(s_clazz, "triggerHardwareAction", "(IZ)Z");
+        if (mid) {
+            actual_state = (bool)env->CallBooleanMethod(s_instance, mid, static_cast<jint>(nodeId), static_cast<jboolean>(state));
+        }
+    }
+
+    if (attached) s_vm->DetachCurrentThread();
+    return actual_state;
+#else
+    LOGI(TAG, "Host Build: Bypassing synchronous hardware trigger for Node %u", nodeId);
+    return state;
+#endif
+}
+
 void HardwareBridge::triggerAsync(uint32_t nodeId, bool state) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) {

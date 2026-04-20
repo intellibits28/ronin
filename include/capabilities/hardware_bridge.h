@@ -40,6 +40,11 @@ public:
     static std::string requestData(uint32_t nodeId);
 
     /**
+     * Synchronously dispatches a hardware action and returns the actual state.
+     */
+    static bool triggerSync(uint32_t nodeId, bool state);
+
+    /**
      * Dispatches a hardware action to the Kotlin side.
      * Guaranteed to be non-blocking for the calling C++ thread.
      */

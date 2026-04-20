@@ -11,9 +11,9 @@ static bool isActionOff(const std::string& param) {
 }
 
 std::string FlashlightNode::execute(const std::string& param) {
-    bool isOff = isActionOff(param);
-    HardwareBridge::triggerAsync(getId(), !isOff);
-    return std::string("Success: Action Initiated - Flashlight ") + (isOff ? "OFF" : "ON");
+    bool intent_param = !isActionOff(param);
+    bool actual_state = HardwareBridge::triggerSync(getId(), intent_param);
+    return actual_state ? "Success: Action Initiated - Flashlight ON" : "Success: Action Initiated - Flashlight OFF";
 }
 
 std::string LocationNode::execute(const std::string& param) {
@@ -21,15 +21,15 @@ std::string LocationNode::execute(const std::string& param) {
 }
 
 std::string WifiNode::execute(const std::string& param) {
-    bool isOff = isActionOff(param);
-    HardwareBridge::triggerAsync(getId(), !isOff);
-    return std::string("Success: Action Initiated - WiFi ") + (isOff ? "DISABLE" : "ENABLE") + " (Opening Settings Panel)";
+    bool intent_param = !isActionOff(param);
+    bool actual_state = HardwareBridge::triggerSync(getId(), intent_param);
+    return actual_state ? "Success: Action Initiated - WiFi ENABLE" : "Success: Action Initiated - WiFi DISABLE";
 }
 
 std::string BluetoothNode::execute(const std::string& param) {
-    bool isOff = isActionOff(param);
-    HardwareBridge::triggerAsync(getId(), !isOff);
-    return std::string("Success: Action Initiated - Bluetooth ") + (isOff ? "DISABLE" : "ENABLE") + " (Opening Settings Panel/Request)";
+    bool intent_param = !isActionOff(param);
+    bool actual_state = HardwareBridge::triggerSync(getId(), intent_param);
+    return actual_state ? "Success: Action Initiated - Bluetooth ENABLE" : "Success: Action Initiated - Bluetooth DISABLE";
 }
 
 
