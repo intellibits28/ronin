@@ -243,30 +243,35 @@ bool IntentEngine::isFuzzyMatch(std::string_view word, std::string_view target) 
 // PATCH 3: Enforce Early Exit to prevent Pipeline Leak
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
     std::string_view sv_input = input;
-    
-    // Phase 4.0: Default to OFF (false). Only set to ON (true) if explicit positive keywords are detected.
-    // This is more robust against NDK encoding hostility for "off" commands.
-    bool intent_param = false;
-    if (sv_input.find("on") != std::string_view::npos || 
-        sv_input.find("enable") != std::string_view::npos || 
-        sv_input.find("\xE1\x80\x81\xE1\x80\xBC\xE1\x80\x84\xE1\x80\xB9\xE1\x80\x90\xE1\x80\xBA") != std::string_view::npos || // Hex for 'ဖွင့်'
-        sv_input.find("\xE1\x80\x96\xE1\x80\xBD\xE1\x80\x84\xE1\x80\xB7\xE1\x80\xB9") != std::string_view::npos) { // Hex for 'ဖွင့်' (Alt)
-        intent_param = true;
-    }
+
+    // Correct 12-byte UTF-8 representation for "ပိတ်" (Turn off)
+    // Forced into memory as a raw char array to bypass NDK literal destruction
+    const char mm_off[] = { 
+        (char)0xE1, (char)0x80, (char)0x95, // ပ
+        (char)0xE1, (char)0x80, (char)0xAD, // ိ
+        (char)0xE1, (char)0x80, (char)0x90, // တ
+        (char)0xE1, (char)0x80, (char)0xBA, // ်
+        '\0' 
+    };
+
+    bool isOff = (input.find("off") != std::string::npos || 
+                  input.find("stop") != std::string::npos || 
+                  input.find("disable") != std::string::npos || 
+                  input.find(mm_off) != std::string::npos);
 
     // Layer 0: O(1) Deterministic Match (Bypass Tokenizer & Loop)
     // Fast-path for unambiguous hardware and system commands.
     if (sv_input.find("flashlight") != std::string_view::npos || sv_input.find("torch") != std::string_view::npos || sv_input.find("\xE1\x80\x92\xE1\x80\xB9\xE1\x80\xAC\xE1\x80\x90\xE1\x80\xB9\xE1\x80\x99\xE1\x80\xB8") != std::string_view::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 4) bypassing Thompson Sampling.");
-        return {4, 1.0f, intent_param};
+        return {4, 1.0f, !isOff};
     }
     if (sv_input.find("wifi") != std::string_view::npos || sv_input.find("\xE1\x80\x8D\xE1\x80\xAD\xE1\x80\xAF\xE1\x80\x84\xE1\x80\xB9\xE1\x80\x96\xE1\x80\xAD\xE1\x80\xAF\xE1\x80\x84\xE1\x80\xB9") != std::string_view::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 6) bypassing Thompson Sampling.");
-        return {6, 1.0f, intent_param};
+        return {6, 1.0f, !isOff};
     }
     if (sv_input.find("bluetooth") != std::string_view::npos || sv_input.find("bt") != std::string_view::npos || sv_input.find("\xE1\x80\x98\xE1\x80\xAC\xE1\x80\x9C\xE1\x80\xB0\xE1\x80\xB8\xE1\x80\x90\xE1\x80\xAF") != std::string_view::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 7) bypassing Thompson Sampling.");
-        return {7, 1.0f, intent_param};
+        return {7, 1.0f, !isOff};
     }
     if (sv_input == "where am i" || sv_input == "where" || sv_input == "gps" || sv_input == "coordinates") {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 5) bypassing Thompson Sampling.");
@@ -296,14 +301,6 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             break;
         }
     }
-
-    // Force-inject raw UTF-8 bytes into memory to bypass NDK encoding destruction
-    const char mm_off[] = { (char)0xE1, (char)0x80, (char)0x95, (char)0xAD, (char)0x90, (char)0xBA, '\0' };
-
-    bool isOff = (input.find("off") != std::string::npos || 
-                  input.find("stop") != std::string::npos || 
-                  input.find("disable") != std::string::npos || 
-                  input.find(mm_off) != std::string::npos);
 
     // Tier 2: Dynamic Matcher (Subject + Action)
     for (const auto& cap : m_capabilities) {
@@ -389,7 +386,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             std::string matchMsg = "> Tier 3 Match: ONNX Model confirmed ID " + std::to_string(intent.id);
             LOGI(TAG, "%s", matchMsg.c_str());
             Ronin::Kernel::Capability::HardwareBridge::pushMessage(matchMsg);
-            intent.intent_param = intent_param;
+            intent.intent_param = !isOff;
             return intent;
         } else if (intent.confidence == 0.0f) {
             LOGE(TAG, "> CRITICAL: ONNX Model returned 0.0 confidence for input: '%s'", input.c_str());
