@@ -179,8 +179,9 @@ class MainActivity : ComponentActivity() {
             requestPermissions(missing.toTypedArray(), 1001)
         }
     }
-private fun setupHardwareCallbacks() {
-    nativeEngine.getSecureApiKey = { provider ->
+
+    private fun setupHardwareCallbacks() {
+        nativeEngine.getSecureApiKey = { provider ->
         // Phase 4.3: Secure Credential Sovereignty (KeyStore Mock)
         when (provider) {
             "Gemini" -> "AIzaSy_MOCK_GEMINI_KEY_UNROOTED"
@@ -190,9 +191,8 @@ private fun setupHardwareCallbacks() {
     }
 
     nativeEngine.onRequestHardwareData = { nodeId ->
-...
-            when (nodeId) {
-                5 -> {
+        when (nodeId) {
+            5 -> {
                     // RULE 2: FusedLocation Integration (Hardware Reality v4.1)
                     // Synchronous JNI Return using Tasks.await()
                     try {
