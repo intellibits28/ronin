@@ -297,8 +297,13 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         }
     }
 
-    // Safety-First Negation Logic (v3.9.4) - REVERSED in Phase 4.0 Optimization
-    // Defaulting to OFF and matching positive triggers is more robust for NDK/UTF-8.
+    // Force-inject raw UTF-8 bytes into memory to bypass NDK encoding destruction
+    const char mm_off[] = { (char)0xE1, (char)0x80, (char)0x95, (char)0xAD, (char)0x90, (char)0xBA, '\0' };
+
+    bool isOff = (input.find("off") != std::string::npos || 
+                  input.find("stop") != std::string::npos || 
+                  input.find("disable") != std::string::npos || 
+                  input.find(mm_off) != std::string::npos);
 
     // Tier 2: Dynamic Matcher (Subject + Action)
     for (const auto& cap : m_capabilities) {
@@ -325,7 +330,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                         LOGI(TAG, "%s", logMsg.c_str());
                         Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
                         // ENFORCE EARLY EXIT for Interrogative match
-                        return {cap.id, cap.confidence_threshold, intent_param};
+                        return {cap.id, cap.confidence_threshold, !isOff};
                     }
                     break; 
                 }
@@ -368,7 +373,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             std::string logMsg = "> Dynamic Match: Found intent for " + cap.name + " (ID " + std::to_string(cap.id) + ") [v3.9.5-STABLE]";
             LOGI(TAG, "%s", logMsg.c_str());
             Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
-            return {cap.id, cap.confidence_threshold, intent_param};
+            return {cap.id, cap.confidence_threshold, !isOff};
         }
     }
 
