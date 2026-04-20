@@ -116,15 +116,15 @@ class NativeEngine : ComponentCallbacks2 {
                         manager.setTorchMode(cameraId, targetState)
                         isFlashlightOn = targetState
                         Log.i(TAG, "Kotlin Shield: Flashlight state verified and set to $targetState")
-                        return true
+                        return isFlashlightOn // Explicitly return state
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Camera HAL lockup prevented: ${e.message}")
-                    return false
+                    return isFlashlightOn // Return current state on failure
                 }
             } else {
                 Log.i(TAG, "Kotlin Shield: Flashlight already in requested state $targetState. Ignoring.")
-                return true
+                return isFlashlightOn // Explicitly return existing state
             }
         }
 
