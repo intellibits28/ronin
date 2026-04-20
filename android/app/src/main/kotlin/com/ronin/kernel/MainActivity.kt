@@ -754,7 +754,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                             messages.add("Ronin: $kernelOutput")
 
                             // Explicitly scroll to bottom after response, ensuring UI thread post
-                            launch {
+                            scope.launch {
                                 delay(100)
                                 chatListState.animateScrollToItem(messages.size - 1)
                             }
