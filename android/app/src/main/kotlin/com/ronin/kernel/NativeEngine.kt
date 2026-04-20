@@ -85,8 +85,16 @@ class NativeEngine : ComponentCallbacks2 {
     // --- Hardware Control JNI Callbacks ---
     var executeHardwareAction: ((Int, Boolean) -> Boolean)? = null
     var onRequestHardwareData: ((Int) -> String)? = null
+    var getSecureApiKey: ((String) -> String)? = null
     var onKernelMessage: ((String) -> Unit)? = null
     var onSystemTiersUpdate: ((Float, Float, Float) -> Unit)? = null
+
+    // Called from JNI to retrieve encrypted keys from KeyStore
+    @Suppress("unused")
+    fun getSecureApiKey(provider: String): String {
+        Log.i(TAG, "Native request: Retrieving secure key for $provider")
+        return getSecureApiKey?.invoke(provider) ?: ""
+    }
 
     // Called from C++ ExecHandlers for state toggles
     @Suppress("unused")

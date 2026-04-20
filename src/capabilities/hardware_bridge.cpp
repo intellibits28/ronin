@@ -70,6 +70,42 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
 #endif
 }
 
+std::string HardwareBridge::getCloudApiKey(const std::string& provider) {
+#ifdef __ANDROID__
+    if (!s_vm || !s_instance || !s_clazz) return "";
+
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
+        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return "";
+        attached = true;
+    }
+
+    std::string result = "";
+    if (env) {
+        jmethodID mid = env->GetMethodID(s_clazz, "getSecureApiKey", "(Ljava/lang/String;)Ljava/lang/String;");
+        if (mid) {
+            jstring jprovider = env->NewStringUTF(provider.c_str());
+            jstring jkey = (jstring)env->CallObjectMethod(s_instance, mid, jprovider);
+            if (jkey) {
+                const char* cstr = env->GetStringUTFChars(jkey, nullptr);
+                if (cstr) {
+                    result = std::string(cstr);
+                    env->ReleaseStringUTFChars(jkey, cstr);
+                }
+                env->DeleteLocalRef(jkey);
+            }
+            env->DeleteLocalRef(jprovider);
+        }
+    }
+
+    if (attached) s_vm->DetachCurrentThread();
+    return result;
+#else
+    return "mock_key_host_build";
+#endif
+}
+
 void HardwareBridge::pushMessage(const std::string& message) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return;

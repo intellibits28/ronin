@@ -178,9 +178,18 @@ class MainActivity : ComponentActivity() {
             requestPermissions(missing.toTypedArray(), 1001)
         }
     }
+private fun setupHardwareCallbacks() {
+    nativeEngine.getSecureApiKey = { provider ->
+        // Phase 4.3: Secure Credential Sovereignty (KeyStore Mock)
+        when (provider) {
+            "Gemini" -> "AIzaSy_MOCK_GEMINI_KEY_UNROOTED"
+            "OpenRouter" -> "sk-or-v1-MOCK_KEY"
+            else -> ""
+        }
+    }
 
-    private fun setupHardwareCallbacks() {
-        nativeEngine.onRequestHardwareData = { nodeId ->
+    nativeEngine.onRequestHardwareData = { nodeId ->
+...
             when (nodeId) {
                 5 -> {
                     // RULE 2: FusedLocation Integration (Hardware Reality v4.1)
@@ -585,7 +594,21 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                                 return@launch
                             }
 
-                            val kernelOutput = engine.processInputAsync(currentInput)
+                            val kernelRawOutput = engine.processInputAsync(currentInput)
+                            
+                            // Phase 4.3: Structured JSON Protocol Parsing
+                            val kernelOutput = try {
+                                // Simple manual JSON extraction for prototype
+                                if (kernelRawOutput.startsWith("{")) {
+                                    val resultStart = kernelRawOutput.indexOf("\"result\": \"") + 11
+                                    val resultEnd = kernelRawOutput.lastIndexOf("\"")
+                                    if (resultStart in 11 until resultEnd) {
+                                        kernelRawOutput.substring(resultStart, resultEnd)
+                                    } else kernelRawOutput
+                                } else kernelRawOutput
+                            } catch (e: Exception) {
+                                kernelRawOutput
+                            }
 
                             // Check if a tool was engaged
                             if (kernelOutput.contains("Action Initiated - Flashlight")) {

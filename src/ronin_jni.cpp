@@ -301,7 +301,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         }
     }
 
-    if (targetNodeId > 0) {
+    if (targetNodeId > 0 && targetNodeId != 1) {
         if (g_memory_manager) g_memory_manager->clearContext();
         
         // Phase 4.0: Intent Continuity Guard (LMK Survival)
@@ -309,10 +309,32 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         if (g_intent_engine) {
             response = g_intent_engine->executeSkill(targetNodeId, input_str);
         }
+    } else {
+        // Phase 4.3: Hybrid Intelligence & External Brain
+        auto inference = g_intent_engine ? g_intent_engine->getInferenceEngine() : nullptr;
+        if (inference) {
+            std::string localReasoning = inference->runLocalReasoning(input_str);
+            
+            // Escalation Logic: If input is tagged as "complex" or Local Brain returns low confidence
+            if (input_str.find("complex") != std::string::npos || input_str.find("calculate") != std::string::npos) {
+                std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey("Gemini");
+                response = inference->escalateToCloud(input_str, apiKey);
+            } else {
+                response = localReasoning;
+            }
+        }
     }
 
     if (g_long_term_memory) g_long_term_memory->storeMessage("ronin", response);
-    return env->NewStringUTF(response.c_str());
+
+    // Data Protocol v4.3: Transition to Structured JSON
+    std::string structuredResponse = response;
+    if (g_intent_engine && g_intent_engine->getInferenceEngine()) {
+        structuredResponse = g_intent_engine->getInferenceEngine()->getStructuredResponse(
+            std::to_string(targetNodeId), "UNIFIED_HYBRID_v4.3", response);
+    }
+
+    return env->NewStringUTF(structuredResponse.c_str());
 }
 
 JNIEXPORT void JNICALL

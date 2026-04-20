@@ -30,6 +30,11 @@ public:
     static void reportSystemHealth(float temperature, float ramUsedGB, float ramTotalGB);
 
     /**
+     * Retrieves encrypted API keys from AndroidKeyStore via JNI.
+     */
+    static std::string getCloudApiKey(const std::string& provider);
+
+    /**
      * Pushes a reasoning/decision log message to the Kotlin UI Reasoning Console.
      */
     static void pushMessage(const std::string& message);

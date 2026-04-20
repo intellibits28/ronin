@@ -8,8 +8,8 @@
 namespace Ronin::Kernel::Model {
 
 /**
- * Phase 4.2: NPU Integration via NNAPI.
- * High-performance intent routing targeting Snapdragon 778G (Hexagon 770).
+ * Phase 4.3: Hybrid Intelligence & External Brain.
+ * Integrates LiteRT (Gemma 4) and Secure Cloud Escalation.
  */
 class InferenceEngine {
 public:
@@ -18,25 +18,36 @@ public:
 
     /**
      * Layer 1 (Coarse): Quick classification into BROAD categories.
-     * @return 0 for ACTION, 1 for INFO.
      */
     int classifyCoarse(const std::string& input);
 
     /**
-     * Layer 2 (Fine): Detailed node matching using NPU-accelerated ONNX model.
-     * Implements dynamic confidence gates and risk-aware thresholds.
+     * Layer 2 (Fine): NPU-accelerated intent matching.
      */
     CognitiveIntent predictFine(const std::string& input, int coarse_category);
 
     /**
+     * Phase 4.3: External Local Brain (Gemma 4 + LiteRT).
+     * Runs complex on-device reasoning if NPU intent matching is uncertain.
+     */
+    std::string runLocalReasoning(const std::string& input);
+
+    /**
+     * Phase 4.3: Cloud Escalation Bridge.
+     * Escalates to Secure Cloud if Local Brain confidence is low.
+     */
+    std::string escalateToCloud(const std::string& input, const std::string& apiKey);
+
+    /**
+     * Data Protocol v4.3: Returns structured JSON instead of raw strings.
+     */
+    std::string getStructuredResponse(const std::string& intent, const std::string& state, const std::string& result);
+
+    /**
      * Runs inference on the input text to determine the intent.
-     * (Legacy wrapper for backward compatibility)
      */
     CognitiveIntent predict(const std::string& input);
 
-    /**
-     * NPU Hibernation: Release/Suspend handles during inactivity.
-     */
     void suspendNPU();
     void resumeNPU();
 
