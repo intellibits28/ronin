@@ -28,6 +28,7 @@ class NativeEngine : ComponentCallbacks2 {
 
     private var cameraManager: CameraManager? = null
     private var isFlashlightOn = false
+    private var lastUserInput = ""
 
     fun setCameraManager(context: Context) {
         this.cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -89,38 +90,47 @@ class NativeEngine : ComponentCallbacks2 {
 
     // Called from C++ ExecHandlers for state toggles
     @Suppress("unused")
-    fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
-        Log.i(TAG, "Native request: Triggering action for Node $nodeId (State: $state)")
+    fun triggerHardwareAction(nodeId: Int, cppState: Boolean): Boolean {
+        Log.i(TAG, "Native request: Triggering action for Node $nodeId (C++ Suggested State: $cppState)")
 
-        // RULE 1: Flashlight State Tracking & HAL Protection
+        // RULE 1: Kotlin-Level Intent Interception for Flashlight (ID 4)
+        // Bypasses C++ encoding failures and provides hardware state awareness.
         if (nodeId == 4) {
-            if (state == isFlashlightOn) {
-                Log.i(TAG, "Flashlight state already $state. Ignoring redundant HAL request.")
-                return true
+            val input = lastUserInput
+            
+            // Native string matching handles ZWSP and Unicode variants better than C++ byte-matching
+            val explicitOff = input.contains("ပိတ်") || input.contains("off") || input.contains("stop") || input.contains("disable")
+            val explicitOn = input.contains("ဖွင့်") || input.contains("on") || input.contains("enable")
+            
+            val targetState = when {
+                explicitOff -> false
+                explicitOn -> true
+                else -> !isFlashlightOn // Smart Toggle if the intent is ambiguous (e.g., just "Flashlight" or "မီး")
             }
 
-            try {
-                val manager = cameraManager
-                if (manager != null) {
-                    val cameraId = manager.cameraIdList[0]
-                    manager.setTorchMode(cameraId, state)
-                    isFlashlightOn = state
-                    Log.i(TAG, "Camera HAL: Torch mode set to $state")
-                    return true
-                } else {
-                    Log.e(TAG, "CameraManager not initialized.")
+            if (targetState != isFlashlightOn) {
+                try {
+                    val manager = cameraManager
+                    if (manager != null) {
+                        val cameraId = manager.cameraIdList[0]
+                        manager.setTorchMode(cameraId, targetState)
+                        isFlashlightOn = targetState
+                        Log.i(TAG, "Kotlin Shield: Flashlight state verified and set to $targetState")
+                        return true
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Camera HAL lockup prevented: ${e.message}")
+                    return false
                 }
-            } catch (e: CameraAccessException) {
-                Log.e(TAG, "Camera HAL lockup prevented: ${e.message}")
-                return false
-            } catch (e: Exception) {
-                Log.e(TAG, "Hardware actuation failed for Flashlight", e)
-                return false
+            } else {
+                Log.i(TAG, "Kotlin Shield: Flashlight already in requested state $targetState. Ignoring.")
+                return true
             }
         }
 
+        // Standard routing for other hardware (WiFi, BT) using C++ logic
         val success = try {
-            executeHardwareAction?.invoke(nodeId, state) ?: false
+            executeHardwareAction?.invoke(nodeId, cppState) ?: false
         } catch (e: Exception) {
             Log.e(TAG, "CRITICAL: Hardware actuation failed for Node $nodeId", e)
             false
@@ -187,6 +197,7 @@ class NativeEngine : ComponentCallbacks2 {
     }
 
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
+        lastUserInput = input // Cache raw input for native callback verification
         processInput(input)
     }
 }
