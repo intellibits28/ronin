@@ -19,6 +19,10 @@ struct InferenceEngine::Impl {
     bool npu_active = false;
 
     Impl(const std::string& path) : model_path(path) {
+        load(path);
+    }
+
+    void load(const std::string& path) {
         /**
          * RULE 1: LiteRT-LM Specialized Runtime.
          * Using MediaPipe LLM Inference API for Snapdragon 778G optimization.
@@ -26,7 +30,8 @@ struct InferenceEngine::Impl {
         LOGI(TAG, "Configuring LiteRT-LM for Hexagon Tensor Processor (HTP)...");
         
         // Phase 4.3 (Updated): External Model Hydration
-        gemma_path = "/storage/emulated/0/Ronin/models/gemma_4.litertlm";
+        // Phase 4.4: Prioritize user-selected path
+        gemma_path = path.empty() ? "/storage/emulated/0/Ronin/models/gemma_4.litertlm" : path;
         
         /**
          * RULE 2: Quantization Alignment (E2B/E4B).
@@ -44,6 +49,14 @@ InferenceEngine::InferenceEngine(const std::string& model_path) {
 }
 
 InferenceEngine::~InferenceEngine() = default;
+
+bool InferenceEngine::loadModel(const std::string& path) {
+    if (m_impl) {
+        m_impl->load(path);
+        return m_impl->loaded;
+    }
+    return false;
+}
 
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     /**

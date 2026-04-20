@@ -81,6 +81,8 @@ class NativeEngine : ComponentCallbacks2 {
     external fun setEngineInstance()
     external fun hydrate()
     external fun injectLocation(lat: Double, lon: Double)
+    external fun loadModel(path: String): Boolean
+    external fun updateCloudProviders(json: String): Boolean
 
     // --- Hardware Control JNI Callbacks ---
     var executeHardwareAction: ((Int, Boolean) -> Boolean)? = null

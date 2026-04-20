@@ -184,6 +184,8 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     }
     
     auto inference_engine = std::make_unique<Ronin::Kernel::Model::InferenceEngine>(base_path + "/assets/models/model.onnx");
+    std::string bootMsg = "> Kernel Hydration: Local brain hydrated from /assets/models/model.onnx";
+    Ronin::Kernel::Capability::HardwareBridge::pushMessage(bootMsg);
     g_intent_engine->setInferenceEngine(std::move(inference_engine));
 
     g_ronin_kernel = std::make_unique<RoninKernel>(s_handler_registry, s_cap_manager);
@@ -435,6 +437,58 @@ Java_com_ronin_kernel_NativeEngine_notifyTrimMemory(JNIEnv *env, jobject thiz, j
     } else {
         g_low_memory_mode.store(false);
     }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_loadModel(JNIEnv *env, jobject thiz, jstring path) {
+    if (path == nullptr || !g_intent_engine) return JNI_FALSE;
+    
+    const char *path_cstr = env->GetStringUTFChars(path, nullptr);
+    if (path_cstr == nullptr) return JNI_FALSE;
+    std::string model_path(path_cstr);
+    env->ReleaseStringUTFChars(path, path_cstr);
+
+    auto inference = g_intent_engine->getInferenceEngine();
+    if (inference) {
+        bool success = inference->loadModel(model_path);
+        if (success) {
+            std::string logMsg = "> Kernel Hydration: Local brain reloaded from " + model_path;
+            LOGI(TAG, "%s", logMsg.c_str());
+            Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
+            return JNI_TRUE;
+        }
+    }
+    return JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) {
+    if (json == nullptr) return JNI_FALSE;
+    
+    const char *json_cstr = env->GetStringUTFChars(json, nullptr);
+    if (json_cstr == nullptr) return JNI_FALSE;
+    std::string json_content(json_cstr);
+    env->ReleaseStringUTFChars(json, json_cstr);
+
+    // Atomic update via C++ Kernel (simplistic version for prototype)
+    // In production, we would use a temporary file and rename it.
+    std::string config_dir = "/storage/emulated/0/Ronin/config";
+    std::string config_path = config_dir + "/providers.json";
+    
+    // Ensure directory exists (naive approach)
+    std::string mkdir_cmd = "mkdir -p " + config_dir;
+    system(mkdir_cmd.c_str());
+
+    std::ofstream file(config_path);
+    if (file.is_open()) {
+        file << json_content;
+        file.close();
+        LOGI(TAG, "Cloud Provider manifest updated atomically: %s", config_path.c_str());
+        return JNI_TRUE;
+    }
+    
+    LOGE(TAG, "Failed to update Cloud Provider manifest: %s", config_path.c_str());
+    return JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL

@@ -56,6 +56,15 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+
+data class CloudProvider(
+    val name: String,
+    val endpoint: String,
+    val modelId: String,
+    val authType: String
+)
 
 class ChatViewModel : ViewModel() {
     val messages = mutableStateListOf<String>()
@@ -76,15 +85,47 @@ class ChatViewModel : ViewModel() {
     var temperature by mutableStateOf(0f)
     var ramUsedGB by mutableStateOf(0f)
     var ramTotalGB by mutableStateOf(0f)
+
+    // Phase 4.4: Dynamic Configuration
+    var showSettings by mutableStateOf(false)
+    var localModelPath by mutableStateOf("/storage/emulated/0/Ronin/models/gemma_4.litertlm")
+    val cloudProviders = mutableStateListOf<CloudProvider>()
 }
 
 class MainActivity : ComponentActivity() {
     private val nativeEngine = NativeEngine()
     private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var sharedPreferences: android.content.SharedPreferences
+
+    private val modelPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let {
+            val path = getPathFromUri(it)
+            if (path != null) {
+                val success = nativeEngine.loadModel(path)
+                if (success) {
+                    Toast.makeText(this, "Model reloaded successfully.", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Failed to load model.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Initialize EncryptedSharedPreferences (Phase 4.4)
+        val masterKey = MasterKey.Builder(this)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        sharedPreferences = EncryptedSharedPreferences.create(
+            this,
+            "ronin_secure_keys",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+
         // Phase 4.0: Use External Files Dir for LMK Survival debugging on unrooted devices
         val baseDir = getExternalFilesDir(null) ?: filesDir
         
@@ -106,7 +147,19 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val chatViewModel: ChatViewModel = viewModel()
-            RoninChatUI(nativeEngine, chatViewModel)
+            RoninChatUI(nativeEngine, chatViewModel, modelPickerLauncher)
+        }
+    }
+
+    private fun getPathFromUri(uri: Uri): String? {
+        // Use content resolver to get the actual path if possible
+        // For prototype, we use a simplified version
+        return uri.path?.let { path ->
+            if (path.contains("primary:")) {
+                "/storage/emulated/0/${path.substringAfter("primary:")}"
+            } else {
+                path
+            }
         }
     }
 
@@ -182,17 +235,13 @@ class MainActivity : ComponentActivity() {
 
     private fun setupHardwareCallbacks() {
         nativeEngine.getSecureApiKey = { provider ->
-        // Phase 4.3: Secure Credential Sovereignty (KeyStore Mock)
-        when (provider) {
-            "Gemini" -> "AIzaSy_MOCK_GEMINI_KEY_UNROOTED"
-            "OpenRouter" -> "sk-or-v1-MOCK_KEY"
-            else -> ""
+            // Phase 4.4: Secure Credential Sovereignty
+            sharedPreferences.getString(provider, "") ?: ""
         }
-    }
 
-    nativeEngine.onRequestHardwareData = { nodeId ->
-        when (nodeId) {
-            5 -> {
+        nativeEngine.onRequestHardwareData = { nodeId ->
+            when (nodeId) {
+                5 -> {
                     // RULE 2: FusedLocation Integration (Hardware Reality v4.1)
                     // Synchronous JNI Return using Tasks.await()
                     try {
@@ -237,7 +286,9 @@ class MainActivity : ComponentActivity() {
             try {
                 when (nodeId) {
                     4 -> {
-                        // Managed in NativeEngine for state safety
+                        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                        val cameraId = cameraManager.cameraIdList[0]
+                        cameraManager.setTorchMode(cameraId, state) 
                         success = true
                     }
                     5 -> {
@@ -345,6 +396,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun loadCloudProvidersFromDisk() {
+        val file = java.io.File(getExternalFilesDir(null), "config/providers.json")
+        if (file.exists()) {
+            try {
+                val json = file.readText()
+                // In production, use Gson or kotlinx.serialization
+            } catch (e: Exception) {
+                Log.e("RoninUI", "Failed to load providers: ${e.message}")
+            }
+        }
+    }
+
+    private fun saveCloudProvider(provider: CloudProvider, apiKey: String) {
+        // 1. Secure Credential Decoupling (Requirement 3)
+        sharedPreferences.edit().putString(provider.name, apiKey).apply()
+
+        // 2. Update Manifest (Requirement 2)
+        val providersJson = "{\"name\": \"${provider.name}\", \"endpoint\": \"${provider.endpoint}\", \"model_id\": \"${provider.modelId}\", \"auth_type\": \"${provider.authType}\"}"
+        nativeEngine.updateCloudProviders(providersJson)
+        
+        Toast.makeText(this, "Provider ${provider.name} saved securely.", Toast.LENGTH_SHORT).show()
+    }
 
     private fun checkAndRequestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -365,7 +438,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()) {
+fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel(), modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>) {
     var inputText by remember { mutableStateOf("") }
     val messages = chatViewModel.messages
     val reasoningLogs = chatViewModel.reasoningLogs
@@ -377,6 +450,27 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
     val reasoningListState = rememberLazyListState()
     
     val scope = rememberCoroutineScope()
+    var showAddProvider by remember { mutableStateOf(false) }
+
+    if (chatViewModel.showSettings) {
+        SettingsDialog(
+            onDismiss = { chatViewModel.showSettings = false },
+            onSelectModel = { modelPicker.launch(arrayOf("*/*")) },
+            currentModelPath = chatViewModel.localModelPath,
+            providers = chatViewModel.cloudProviders,
+            onAddProvider = { showAddProvider = true }
+        )
+    }
+
+    if (showAddProvider) {
+        AddProviderDialog(
+            onDismiss = { showAddProvider = false },
+            onSave = { provider, key ->
+                chatViewModel.cloudProviders.add(provider)
+                (context as? MainActivity)?.saveCloudProvider(provider, key)
+            }
+        )
+    }
 
     // Initialize Kernel Async UI Bridge
     LaunchedEffect(Unit) {
@@ -519,14 +613,17 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel v3.9.7-AUTO-SCROLL")
+                        Text("Ronin Kernel v4.4-DYNAMIC")
                         Spacer(Modifier.width(8.dp))
                         StabilityHeartbeat(lmkPressure)
                     }
                 },
                 actions = {
+                    IconButton(onClick = { chatViewModel.showSettings = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+                    }
                     IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Toggle Info", tint = if (chatViewModel.showSysInfo) Color.Cyan else Color.Gray)
+                        Icon(Icons.Default.Info, contentDescription = "Toggle Info", tint = if (chatViewModel.showSysInfo) Color.Cyan else Color.Gray)
                     }
                     StabilityMeter(stability)
                 },
@@ -802,6 +899,79 @@ fun ChatInput(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit
             }
         }
     }
+}
+
+@Composable
+fun SettingsDialog(
+    onDismiss: () -> Unit,
+    onSelectModel: () -> Unit,
+    currentModelPath: String,
+    providers: List<CloudProvider>,
+    onAddProvider: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ronin Kernel Settings", color = Color.White) },
+        text = {
+            Column {
+                Text("Local Model Path", fontWeight = FontWeight.Bold, color = Color.Gray)
+                Text(currentModelPath, fontSize = 10.sp, color = Color.LightGray)
+                Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) {
+                    Text("Choose Model File")
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                
+                Text("Cloud Providers", fontWeight = FontWeight.Bold, color = Color.Gray)
+                providers.forEach { provider ->
+                    Text("${provider.name} (${provider.modelId})", color = Color.White)
+                }
+                Button(onClick = onAddProvider, modifier = Modifier.padding(top = 4.dp)) {
+                    Text("Add Cloud Provider")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+        backgroundColor = Color(0xFF222222),
+        contentColor = Color.White
+    )
+}
+
+@Composable
+fun AddProviderDialog(
+    onDismiss: () -> Unit,
+    onSave: (CloudProvider, String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var endpoint by remember { mutableStateOf("") }
+    var modelId by remember { mutableStateOf("") }
+    var apiKey by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Cloud Provider", color = Color.White) },
+        text = {
+            Column {
+                TextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
+                TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint") })
+                TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID") })
+                TextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("API Key") })
+            }
+        },
+        confirmButton = {
+            Button(onClick = { 
+                onSave(CloudProvider(name, endpoint, modelId, "api_key"), apiKey)
+                onDismiss()
+            }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        backgroundColor = Color(0xFF222222),
+        contentColor = Color.White
+    )
 }
 
 @Composable
