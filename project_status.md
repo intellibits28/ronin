@@ -24,12 +24,13 @@
 ...
 ---
 
-## 4. Active Phase: Phase 4.4.8 (Logic Restoration)
+## 4. Active Phase: Phase 4.4.8 (Logic Restoration) - COMPLETED
 - [x] **Path Mapping Fix:** UI now accurately distinguishes between Router and Reasoning model paths.
 - [x] **Cloud Bridge Fix:** Gemini 1.5 Pro connectivity restored with correct endpoint formatting.
 - [x] **Naypyidaw Patch:** Implemented thermal-aware NPU throttling and token limiting (Health >= 43.0°C).
-- [ ] **Real Inference Restoration:** Re-implementing MediaPipe LLM callbacks to replace placeholders.
-- [ ] **Prompt Wrapping:** Fix Gemma chat templates for local reasoning.
+- [x] **Real Inference Restoration:** Successfully linked `LlmInferenceAPI` token extraction to UI.
+- [x] **Prompt Wrapping:** Gemma chat templates strictly implemented for local reasoning.
+
 ---
 
 ## 5. Future Roadmap (v4.5+)

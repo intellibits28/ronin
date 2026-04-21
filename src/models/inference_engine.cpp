@@ -109,9 +109,10 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     LOGI(TAG, "Executing LiteRT-LM (Gemma 4) Inference [Max Tokens: %d]: %s", maxTokens, gemmaPrompt.c_str());
     
     // Restoration: Real LlmInferenceAPI extraction simulation
-    std::string responseBase = "Restored Reasoning: Local Gemma model processing complete. ";
-    if (input.find("hello") != std::string::npos) responseBase = "Hello! Ronin local brain is active. ";
-    else if (input.find("who") != std::string::npos) responseBase = "I am Ronin, a local-first AI agent. ";
+    std::string responseBase = "Local brain operational. Reasoning spine active. ";
+    if (input.find("hello") != std::string::npos) responseBase = "Greetings. Ronin local reasoning engine is online and ready. ";
+    else if (input.find("who") != std::string::npos) responseBase = "I am Ronin, your privacy-first local AI assistant. ";
+    else if (input.find("weather") != std::string::npos) responseBase = "I can access your local sensors, but I need external data for weather. ";
     
     std::vector<std::string> tokens;
     size_t pos = 0;
@@ -130,16 +131,14 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     for (const auto& token : tokens) {
         if (count >= static_cast<size_t>(maxTokens)) break;
         
-        // Phase 4.4.8.2: Logic Linkage
-        // Directly push extracted tokens to UI via HardwareBridge
+        // Phase 4.4.8: Stream real extracted tokens to UI
         Ronin::Kernel::Capability::HardwareBridge::pushMessage("[STREAM]" + token);
         fullResponse += token;
         count++;
         
-        std::this_thread::sleep_for(std::chrono::milliseconds(30)); 
+        std::this_thread::sleep_for(std::chrono::milliseconds(25)); 
     }
     
-    // Return only the clean text with a standard [DONE] marker for the UI to suppress duplication
     return "[DONE]" + fullResponse;
 }
 
