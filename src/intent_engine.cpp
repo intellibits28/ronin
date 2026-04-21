@@ -516,10 +516,13 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     }
 
     // Tier 4: Default Fallback
-    std::string fallbackMsg = "> Tier 4: No confident match found. Routing to Default Chat Engine.";
+    // Phase 4.4.9.5: Router Confidence Boost
+    // Any input that reaches this tier is force-routed to ChatSkill (ID 1)
+    // to ensure the local reasoning engine handles all non-hardware tasks.
+    std::string fallbackMsg = "> Tier 4: Confidence Boost. Routing to Default Chat Engine (ID 1).";
     LOGI(TAG, "%s", fallbackMsg.c_str());
     Ronin::Kernel::Capability::HardwareBridge::pushMessage(fallbackMsg);
-    return {1, 0.5f, true};
+    return {1, 1.0f, true};
 }
 
 /**
