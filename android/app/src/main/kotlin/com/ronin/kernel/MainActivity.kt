@@ -87,6 +87,7 @@ class ChatViewModel : ViewModel() {
 
     // Phase 4.4: Dynamic Configuration
     var showSettings by mutableStateOf(false)
+    var offlineMode by mutableStateOf(false)
     var localModelPath by mutableStateOf("/storage/emulated/0/Ronin/models/gemma_4.litertlm")
     val cloudProviders = mutableStateListOf<CloudProvider>()
 }
@@ -160,11 +161,15 @@ class MainActivity : ComponentActivity() {
         checkAndRequestStoragePermission()
         checkAndRequestHardwarePermissions()
 
+        val offline = sharedPreferences.getBoolean("offline_mode", false)
+        nativeEngine.setOfflineMode(offline)
+
         setContent {
             val chatViewModel: ChatViewModel = viewModel()
             // Sync active path from Engine before showing UI
             LaunchedEffect(Unit) {
                 chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
+                chatViewModel.offlineMode = offline
             }
             RoninChatUI(nativeEngine, chatViewModel, modelPickerLauncher)
         }
@@ -393,6 +398,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun saveOfflineMode(offline: Boolean) {
+        sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
+    }
+
     private fun checkAndRequestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
@@ -420,6 +429,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
     val reasoningListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var showAddProvider by remember { mutableStateOf(false) }
+    var showCommands by remember { mutableStateOf(false) }
+    val commands = listOf("/status", "/skills", "/model", "/reset")
+    val filteredCommands = commands.filter { it.startsWith(inputText) && it != inputText }
+
+    LaunchedEffect(inputText) {
+        showCommands = inputText.startsWith("/") && filteredCommands.isNotEmpty()
+    }
 
     if (chatViewModel.showSettings) {
         SettingsDialog(
@@ -427,7 +443,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             onSelectModel = { modelPicker.launch(arrayOf("*/*")) },
             currentModelPath = chatViewModel.localModelPath,
             providers = chatViewModel.cloudProviders,
-            onAddProvider = { showAddProvider = true }
+            onAddProvider = { showAddProvider = true },
+            offlineMode = chatViewModel.offlineMode,
+            onOfflineModeChange = { 
+                chatViewModel.offlineMode = it
+                engine.setOfflineMode(it)
+                (context as? MainActivity)?.saveOfflineMode(it)
+            }
         )
     }
 
@@ -444,11 +466,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
     LaunchedEffect(Unit) {
         engine.onKernelMessage = { message ->
             reasoningLogs.add(0, message)
-            if (message.startsWith("System Update:") || message.startsWith("Current Location:")) {
-                if (!messages.contains("Ronin: $message")) {
-                    messages.add("Ronin: $message")
-                }
-            }
+            // Phase 4.4.5: Keep chat UI clean. 
+            // System updates and hardware logs stay in reasoning console only.
         }
         engine.onSystemTiersUpdate = { temp, used, total ->
             chatViewModel.temperature = temp
@@ -586,6 +605,31 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             
             ReasoningConsole(reasoningLogs, reasoningListState)
             
+            AnimatedVisibility(visible = showCommands) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    elevation = 8.dp,
+                    shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
+                    color = MaterialTheme.colors.surface
+                ) {
+                    Column {
+                        filteredCommands.forEach { cmd ->
+                            Text(
+                                text = cmd,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { 
+                                        inputText = cmd
+                                        showCommands = false
+                                    }
+                                    .padding(12.dp),
+                                color = MaterialTheme.colors.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+
             ChatInput(value = inputText, onValueChange = { inputText = it }, onSend = {
                 if (inputText.isNotBlank()) {
                     messages.add("User: $inputText")
@@ -740,7 +784,7 @@ fun ChatInput(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit
 }
 
 @Composable
-fun SettingsDialog(onDismiss: () -> Unit, onSelectModel: () -> Unit, currentModelPath: String, providers: List<CloudProvider>, onAddProvider: () -> Unit) {
+fun SettingsDialog(onDismiss: () -> Unit, onSelectModel: () -> Unit, currentModelPath: String, providers: List<CloudProvider>, onAddProvider: () -> Unit, offlineMode: Boolean, onOfflineModeChange: (Boolean) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss, 
         title = { 
@@ -748,6 +792,11 @@ fun SettingsDialog(onDismiss: () -> Unit, onSelectModel: () -> Unit, currentMode
         }, 
         text = {
             Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Offline-only Mode", modifier = Modifier.weight(1f), color = MaterialTheme.colors.onSurface)
+                    Switch(checked = offlineMode, onCheckedChange = onOfflineModeChange)
+                }
+                Spacer(Modifier.height(8.dp))
                 Text("Local Model Path", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
                 Text(currentModelPath, fontSize = 10.sp, color = MaterialTheme.colors.onSurface)
                 Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) { 

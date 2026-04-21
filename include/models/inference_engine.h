@@ -63,6 +63,7 @@ public:
 
     bool isLoaded() const;
     std::string getModelPath() const;
+    std::string getRouterPath() const;
     std::string getRuntimeInfo() const;
     long verifyModel();
 

@@ -117,10 +117,22 @@ public:
     }
 
     /**
-     * Phase 4.0: Attaches a LoRA dispatcher for zero-stall swapping.
+     * Phase 4.4: Attaches a LoRA dispatcher for zero-stall swapping.
      */
     void setLoraDispatcher(std::shared_ptr<Ronin::Kernel::Model::LoraDispatcher> ld) {
         m_lora_dispatcher = ld;
+    }
+
+    /**
+     * Phase 4.4.5: Privacy Layer
+     * Toggles whether cloud escalation is allowed.
+     */
+    void setOfflineMode(bool offline) {
+        m_offline_mode = offline;
+    }
+
+    bool isOfflineMode() const {
+        return m_offline_mode;
     }
 
     // Phase 4.1: Hardware Reality tracking
@@ -133,6 +145,7 @@ private:
     Memory::MemoryManager* m_memory_manager = nullptr;
     std::shared_ptr<Ronin::Kernel::Checkpoint::CheckpointManager> m_checkpoint_manager;
     std::shared_ptr<Ronin::Kernel::Model::LoraDispatcher> m_lora_dispatcher;
+    bool m_offline_mode = false;
 
     // Phase 4.0: Vtable-based Skill Registry
     std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;

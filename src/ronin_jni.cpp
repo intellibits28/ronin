@@ -245,12 +245,20 @@ Java_com_ronin_kernel_NativeEngine_computeSimilarity(JNIEnv *env, jobject thiz, 
         static_cast<const int8_t*>(ptr_a), static_cast<const int8_t*>(ptr_b)));
 }
 
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) {
+    if (g_intent_engine) {
+        g_intent_engine->setOfflineMode(offline == JNI_TRUE);
+    }
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_getActiveModelPath(JNIEnv *env, jobject thiz) {
     if (g_intent_engine) {
         auto inference = g_intent_engine->getInferenceEngine();
         if (inference) {
-            return env->NewStringUTF(inference->getModelPath().c_str());
+            std::string combined = "Router: " + inference->getRouterPath() + " | Reasoning: " + inference->getModelPath();
+            return env->NewStringUTF(combined.c_str());
         }
     }
     return env->NewStringUTF("None");
@@ -347,12 +355,17 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         if (inference) {
             std::string localReasoning = inference->runLiteRTReasoning(input_str);
             
+            bool offline = g_intent_engine ? g_intent_engine->isOfflineMode() : false;
             // Escalation Logic: If input is tagged as "complex" or Local Brain confidence was < 0.75
-            if (input_str.find("complex") != std::string::npos || intent.confidence < 0.75f) {
+            if (!offline && (input_str.find("complex") != std::string::npos || intent.confidence < 0.75f)) {
                 std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey("Gemini");
                 response = inference->escalateToCloud(input_str, apiKey);
             } else {
-                response = localReasoning;
+                if (offline && (input_str.find("complex") != std::string::npos || intent.confidence < 0.75f)) {
+                    response = localReasoning + "\n[OFFLINE] Cloud escalation suppressed by user.";
+                } else {
+                    response = localReasoning;
+                }
             }
         }
     }
@@ -452,10 +465,6 @@ Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdo
         snprintf(buffer, sizeof(buffer), "System Update: GPS Error: Location Unavailable.");
     } else {
         snprintf(buffer, sizeof(buffer), "System Update: GPS Coordinates injected [%.6f, %.6f]", (double)lat, (double)lon);
-    }
-
-    if (g_long_term_memory) {
-        g_long_term_memory->storeMessage("ronin", buffer);
     }
 
     // --- ASYNCHRONOUS UI CALLBACK (Kotlin Bridge) ---

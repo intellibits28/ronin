@@ -61,6 +61,11 @@ class NativeEngine : ComponentCallbacks2 {
     private external fun processInput(input: String): String
 
     /**
+     * Toggles whether cloud escalation is allowed (Phase 4.4.5 Privacy Layer).
+     */
+    external fun setOfflineMode(offline: Boolean)
+
+    /**
      * Returns the absolute path of the currently loaded model.
      */
     external fun getActiveModelPath(): String
