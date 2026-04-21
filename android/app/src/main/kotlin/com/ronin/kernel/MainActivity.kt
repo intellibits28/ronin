@@ -815,10 +815,10 @@ fun SettingsDialog(onDismiss: () -> Unit, onSelectModel: () -> Unit, currentMode
                     Switch(checked = offlineMode, onCheckedChange = onOfflineModeChange)
                 }
                 Spacer(Modifier.height(8.dp))
-                Text("Local Model Path", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
-                Text(currentModelPath, fontSize = 10.sp, color = MaterialTheme.colors.onSurface)
+                Text("Active Engine Paths", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
+                Text(currentModelPath, fontSize = 10.sp, color = MaterialTheme.colors.onSurface, fontFamily = FontFamily.Monospace)
                 Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) { 
-                    Text("Choose Model File") 
+                    Text("Change Reasoning Model (.bin)") 
                 }
                 Spacer(Modifier.height(16.dp))
                 Text("Cloud Providers", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))

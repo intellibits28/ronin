@@ -58,10 +58,14 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
     s_last_ram_total = ramTotalGB;
 
     // Phase 4.4.7: Stability Guard (Thermal)
-    if (temperature >= 42.0f) {
+    if (temperature >= 43.0f) {
+        LOGW(TAG, "CRITICAL THERMAL (%.1f°C). Naypyidaw Patch: Forced LOW Power + 64 Token Limit.", temperature);
+        // Node 1 (Reasoning Spine) forced to LOW power state (false)
+        triggerSync(1, false); 
+    } else if (temperature >= 42.0f) {
         LOGW(TAG, "Thermal THRESHOLD REACHED (%.1f°C). Switching NPU to POWER_SAVE mode.", temperature);
-        // Synchronously notify Kotlin to adjust power profile
-        triggerSync(1, false); // Node 1 (Reasoning Spine) forced to POWER_SAVE (false)
+        // Node 1 (Reasoning Spine) forced to POWER_SAVE (false)
+        triggerSync(1, false); 
     }
 
 #ifdef __ANDROID__
