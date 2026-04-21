@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <sys/mman.h>
+#include <cstdlib>
 #include <thread>
 #include <future>
 #include <chrono>

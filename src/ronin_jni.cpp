@@ -21,6 +21,8 @@
 #include <string>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstring>
 #include <thread>
 #include <future>
 #include <chrono>
