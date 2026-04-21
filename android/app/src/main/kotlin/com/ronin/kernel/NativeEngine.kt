@@ -188,9 +188,9 @@ class NativeEngine : ComponentCallbacks2 {
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
 
         // Phase 4.4.7: Fixed Gemini 1.5 Pro endpoint formatting
-        // Phase 4.5.0: Reverting to v1beta for better stability on Gemini 1.5 Pro
+        // Phase 4.5.4: Using v1 stable endpoint with Gemini 1.5 Flash
         val endpoint = when(provider) {
-            "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=$apiKey"
+            "Gemini" -> "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=$apiKey"
             "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
             else -> return "Error: Unknown provider $provider"
         }

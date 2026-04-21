@@ -36,13 +36,11 @@ ThermalState g_thermal_state = ThermalState::NORMAL;
 // PATCH 1: UTF-8 Safeproofing (Preserve multi-byte characters)
 static std::string strip_punctuation(const std::string& s) {
     std::string out;
-    for (size_t i = 0; i < s.length(); ++i) {
-        unsigned char c = s[i];
+    for (unsigned char c : s) {
         if (c >= 0x80) { 
-            // Keep UTF-8 multi-byte characters intact
-            out += c; 
+            out += (char)c; 
         } else if (std::isalnum(c) || std::isspace(c)) { 
-            out += c; 
+            out += (char)c; 
         }
     }
     return out;
@@ -363,8 +361,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // Force-route greetings to ChatSkill (ID 1) to ensure LiteRT-LM handles them.
     if (sv_input.find("hi") != std::string_view::npos || 
         sv_input.find("hello") != std::string_view::npos || 
-        sv_input.find("\xE1\x80\x91\xE1\x80\xB1\xE1\x80\xB8") != std::string_view::npos || 
-        sv_input.find("\xE1\x80\x99\xE1\x80\x84\xE1\x80\xB9\xE1\x80\x82\xE1\x80\xAB\xE1\x80\x95\xE1\x80\xAC") != std::string_view::npos) {
+        sv_input.find("ဟေး") != std::string_view::npos || 
+        sv_input.find("မင်္ဂလာပါ") != std::string_view::npos) {
         LOGI(TAG, ">>> Routing: Greeting Match (ID 1) bypassing confidence check.");
         return {1, 1.0f, true};
     }
