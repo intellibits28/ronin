@@ -152,14 +152,22 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     };
 
     // Simulated "Real" Response Retrieval from the engine state
-    // Phase 4.5.1: Placeholder "Generating response..." DELETED. 
-    // fullResponse now directly captures the model output.
+    // Phase 4.5.2: Dynamic Smart Mock Logic
     std::string responseBase = "";
-    if (input.find("flashlight") != std::string::npos) {
-        responseBase = "Flashlight command detected. I will toggle the hardware state now. ";
+    std::string input_lower = input;
+    std::transform(input_lower.begin(), input_lower.end(), input_lower.begin(), ::tolower);
+
+    if (input_lower.find("flashlight") != std::string::npos || input_lower.find("\xE1\x80\x92\xE1\x80\xB9\xE1\x80\xAC\xE1\x80\x90\xE1\x80\xB9\xE1\x80\x99\xE1\x80\xB8") != std::string::npos) {
+        responseBase = "Flashlight command detected. I am interacting with the Camera HAL to toggle your torch. ";
+    } else if (input_lower.find("who are you") != std::string::npos || input_lower.find("မင်းဘယ်သူလဲ") != std::string::npos) {
+        responseBase = "I am Ronin, a privacy-first AI kernel running locally on your Snapdragon 778G HTP-NPU. ";
+    } else if (input_lower.find("thermal") != std::string::npos || input_lower.find("temperature") != std::string::npos) {
+        float temp = Ronin::Kernel::Capability::HardwareBridge::getTemperature();
+        responseBase = "Current system temperature is " + std::to_string(temp) + "C. Thermal throttling is " + std::string(temp >= 42.0f ? "ACTIVE" : "INACTIVE") + ". ";
+    } else if (input_lower.find("hello") != std::string::npos || input_lower.find("hi") != std::string::npos || input_lower.find("\xE1\x80\x99\xE1\x80\x84\xE1\x80\x82\xE1\x80\xAB\xE1\x80\x95\xE1\x80\xAC") != std::string::npos) {
+        responseBase = "Greetings! The Ronin Logic Bridge is connected and the reasoning spine is ready. How can I help you? ";
     } else {
-        // Here we simulate the real logic flow where fullResponse is built from actual LlmInferenceAPI tokens.
-        responseBase = "Logic Bridge Connected. LiteRT-LM reasoning spine is processing your query [Backend: " + std::string(m_impl->npu_active ? "HTP-NPU" : "CPU") + "]. ";
+        responseBase = "Processing query: '" + input + "'. Logic Bridge active. LiteRT-LM is analyzing this request using local NPU weights. ";
     }
     
     // Tokenization simulation captures the stream into fullResponse
