@@ -314,8 +314,8 @@ class NativeEngine : ComponentCallbacks2 {
         lastUserInput = input // Cache raw input for native callback verification
         processInput(input)
     }
-}
-(Dispatchers.IO) {
+
+    suspend fun loadModelAsync(path: String): Boolean = withContext(Dispatchers.IO) {
         pushKernelMessage("Initiating Async Hydration...")
         loadModel(path)
     }

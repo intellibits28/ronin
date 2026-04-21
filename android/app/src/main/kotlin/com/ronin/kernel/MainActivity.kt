@@ -53,6 +53,7 @@ import kotlinx.coroutines.launch
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.security.crypto.EncryptedSharedPreferences
