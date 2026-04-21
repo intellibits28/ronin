@@ -63,6 +63,8 @@ public:
 
     bool isLoaded() const;
     std::string getModelPath() const;
+    std::string getRuntimeInfo() const;
+    long verifyModel();
 
 private:
     struct Impl;

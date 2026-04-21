@@ -61,6 +61,16 @@ class NativeEngine : ComponentCallbacks2 {
     private external fun processInput(input: String): String
 
     /**
+     * Returns the absolute path of the currently loaded model.
+     */
+    external fun getActiveModelPath(): String
+
+    /**
+     * Runs a 1-token benchmark and returns latency in ms.
+     */
+    external fun verifyModel(): Long
+
+    /**
      * Retrieves chat history from SQLite (Kernel source of truth).
      */
     private external fun getChatHistory(): Array<String>?

@@ -166,4 +166,22 @@ std::string InferenceEngine::getModelPath() const {
     return m_impl ? m_impl->gemma_path : "None";
 }
 
+std::string InferenceEngine::getRuntimeInfo() const {
+    if (!m_impl || !m_impl->loaded) return "Runtime: Not Initialized";
+    std::string backend = m_impl->npu_active ? "HTP-NPU" : "CPU-Scalar";
+    return "Runtime: LiteRT-LM / Backend: " + backend;
+}
+
+long InferenceEngine::verifyModel() {
+    if (!isLoaded()) return -1;
+    
+    auto start = std::chrono::high_resolution_clock::now();
+    
+    // Simulate a 1-token reasoning pass
+    std::string dummy = runLiteRTReasoning("benchmark_token");
+    
+    auto end = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+}
+
 } // namespace Ronin::Kernel::Model

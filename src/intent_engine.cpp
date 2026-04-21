@@ -65,9 +65,10 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
 
     if (cmd == "/status") {
         std::stringstream ss;
-        ss << "System Health: " << std::fixed << std::setprecision(1) << HardwareBridge::getTemperature() << "°C | ";
+        ss << (m_inference_engine ? m_inference_engine->getRuntimeInfo() : "Runtime: LiteRT-LM / Backend: Unknown") << " | ";
+        ss << "Health: " << std::fixed << std::setprecision(1) << HardwareBridge::getTemperature() << "°C | ";
         ss << std::setprecision(2) << HardwareBridge::getRamUsed() << "/" << HardwareBridge::getRamTotal() << "GB | ";
-        ss << "LMK Pressure: " << (m_memory_manager ? m_memory_manager->getPressureScore() : 0) << "%";
+        ss << "LMK: " << (m_memory_manager ? m_memory_manager->getPressureScore() : 0) << "%";
         output = ss.str();
         return true;
     } 
@@ -90,6 +91,20 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
             output = "Loaded Brain: " + m_inference_engine->getModelPath();
         } else {
             output = "Loaded Brain: None (No inference engine attached)";
+        }
+        return true;
+    }
+
+    if (cmd == "/model --verify") {
+        if (m_inference_engine) {
+            long latency = m_inference_engine->verifyModel();
+            if (latency >= 0) {
+                output = "[VERIFY] " + m_inference_engine->getRuntimeInfo() + " | Latency: " + std::to_string(latency) + "ms";
+            } else {
+                output = "[VERIFY] Failed: Engine not loaded.";
+            }
+        } else {
+            output = "[VERIFY] Error: Inference Engine missing.";
         }
         return true;
     }

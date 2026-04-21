@@ -246,6 +246,28 @@ Java_com_ronin_kernel_NativeEngine_computeSimilarity(JNIEnv *env, jobject thiz, 
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_ronin_kernel_NativeEngine_getActiveModelPath(JNIEnv *env, jobject thiz) {
+    if (g_intent_engine) {
+        auto inference = g_intent_engine->getInferenceEngine();
+        if (inference) {
+            return env->NewStringUTF(inference->getModelPath().c_str());
+        }
+    }
+    return env->NewStringUTF("None");
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_ronin_kernel_NativeEngine_verifyModel(JNIEnv *env, jobject thiz) {
+    if (g_intent_engine) {
+        auto inference = g_intent_engine->getInferenceEngine();
+        if (inference) {
+            return static_cast<jlong>(inference->verifyModel());
+        }
+    }
+    return -1;
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstring input) {
     if (input == nullptr || !g_graph_executor) {
         return env->NewStringUTF("Kernel Error: Graph Executor not ready.");
@@ -335,7 +357,12 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         }
     }
 
-    if (g_long_term_memory) g_long_term_memory->storeMessage("ronin", response);
+    // 4. Persistence Exclusion (Phase 4.4.3)
+    // Only store reasoning/chat results in SQLite. 
+    // Hardware actions (IDs > 1) are shown in console but not history.
+    if (g_long_term_memory && targetNodeId <= 1) {
+        g_long_term_memory->storeMessage("ronin", response);
+    }
 
     // Data Protocol v4.3: Transition to Structured JSON
     std::string structuredResponse = response;

@@ -136,6 +136,24 @@ class MainActivity : ComponentActivity() {
         registerComponentCallbacks(nativeEngine)
 
         copyAssetsToFilesDir(filesDir)
+        
+        // Phase 4.4.3: Initial Hydration of Provider Templates
+        val configDir = java.io.File(getExternalFilesDir(null), "config")
+        if (!configDir.exists()) configDir.mkdirs()
+        val providersFile = java.io.File(configDir, "providers.json")
+        if (!providersFile.exists()) {
+            try {
+                assets.open("providers.json").use { input ->
+                    java.io.FileOutputStream(providersFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Log.i("RoninBoot", "Initial provider templates hydrated.")
+            } catch (e: Exception) {
+                Log.e("RoninBoot", "Failed to hydrate providers: ${e.message}")
+            }
+        }
+
         setupHardwareCallbacks()
         loadCloudProvidersFromDisk()
         
@@ -144,6 +162,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val chatViewModel: ChatViewModel = viewModel()
+            // Sync active path from Engine before showing UI
+            LaunchedEffect(Unit) {
+                chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
+            }
             RoninChatUI(nativeEngine, chatViewModel, modelPickerLauncher)
         }
     }
@@ -676,17 +698,43 @@ fun ChatBubble(message: String) {
     val isUser = message.startsWith("User:")
     val text = message.substringAfter(": ")
     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart) {
-        Text(text, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (isUser) Color(0xFF3D5AFE) else Color(0xFF333333)).padding(12.dp), color = Color.White, fontSize = 14.sp)
+        Text(
+            text = text, 
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (isUser) MaterialTheme.colors.primary else MaterialTheme.colors.surface)
+                .padding(12.dp), 
+            color = MaterialTheme.colors.onPrimary.takeIf { isUser } ?: MaterialTheme.colors.onSurface, 
+            fontSize = 14.sp
+        )
     }
 }
 
 @Composable
 fun ChatInput(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit) {
-    Surface(elevation = 8.dp, color = Color(0xFF121212)) {
+    Surface(elevation = 8.dp, color = MaterialTheme.colors.surface) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextField(value = value, onValueChange = onValueChange, modifier = Modifier.weight(1f), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF252525), textColor = Color.White, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent), shape = RoundedCornerShape(24.dp), placeholder = { Text("Ask Ronin...", color = Color.Gray) })
+            TextField(
+                value = value, 
+                onValueChange = onValueChange, 
+                modifier = Modifier.weight(1f), 
+                colors = TextFieldDefaults.textFieldColors(
+                    backgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.1f), 
+                    textColor = MaterialTheme.colors.onSurface, 
+                    focusedIndicatorColor = Color.Transparent, 
+                    unfocusedIndicatorColor = Color.Transparent
+                ), 
+                shape = RoundedCornerShape(24.dp), 
+                placeholder = { Text("Ask Ronin...", color = MaterialTheme.colors.onSurface.copy(alpha = 0.4f)) }
+            )
             Spacer(Modifier.width(8.dp))
-            Button(onClick = onSend, shape = RoundedCornerShape(24.dp), colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF3D5AFE))) { Text("Send", color = Color.White) }
+            Button(
+                onClick = onSend, 
+                shape = RoundedCornerShape(24.dp), 
+                colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.primary)
+            ) { 
+                Text("Send", color = MaterialTheme.colors.onPrimary) 
+            }
         }
     }
 }
@@ -696,19 +744,19 @@ fun SettingsDialog(onDismiss: () -> Unit, onSelectModel: () -> Unit, currentMode
     AlertDialog(
         onDismissRequest = onDismiss, 
         title = { 
-            Text("Ronin Kernel Settings", color = Color.White) 
+            Text("Ronin Kernel Settings", color = MaterialTheme.colors.onSurface) 
         }, 
         text = {
             Column {
-                Text("Local Model Path", fontWeight = FontWeight.Bold, color = Color.Gray)
-                Text(currentModelPath, fontSize = 10.sp, color = Color.LightGray)
+                Text("Local Model Path", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
+                Text(currentModelPath, fontSize = 10.sp, color = MaterialTheme.colors.onSurface)
                 Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) { 
                     Text("Choose Model File") 
                 }
                 Spacer(Modifier.height(16.dp))
-                Text("Cloud Providers", fontWeight = FontWeight.Bold, color = Color.Gray)
+                Text("Cloud Providers", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
                 providers.forEach { 
-                    Text("${it.name} (${it.modelId})", color = Color.White) 
+                    Text("${it.name} (${it.modelId})", color = MaterialTheme.colors.onSurface) 
                 }
                 Button(onClick = onAddProvider, modifier = Modifier.padding(top = 4.dp)) { 
                     Text("Add Cloud Provider") 
@@ -720,8 +768,8 @@ fun SettingsDialog(onDismiss: () -> Unit, onSelectModel: () -> Unit, currentMode
                 Text("Close") 
             } 
         }, 
-        backgroundColor = Color(0xFF222222), 
-        contentColor = Color.White
+        backgroundColor = MaterialTheme.colors.surface, 
+        contentColor = MaterialTheme.colors.onSurface
     )
 }
 
@@ -731,33 +779,62 @@ fun AddProviderDialog(onDismiss: () -> Unit, onSave: (CloudProvider, String) -> 
     var endpoint by remember { mutableStateOf("") }
     var modelId by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
+    var expanded by remember { mutableStateOf(false) }
     
+    val templates = listOf(
+        CloudProvider("Gemini", "https://generativelanguage.googleapis.com/v1beta/models/", "gemini-1.5-pro", "api_key"),
+        CloudProvider("OpenAI", "https://api.openai.com/v1/chat/completions", "gpt-4-turbo", "api_key"),
+        CloudProvider("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", "meta-llama/llama-3-70b", "api_key")
+    )
+
     AlertDialog(
         onDismissRequest = onDismiss, 
         title = { 
-            Text("Add Cloud Provider", color = Color.White) 
+            Text("Add Cloud Provider", color = MaterialTheme.colors.onSurface) 
         }, 
         text = {
             Column {
+                Box {
+                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (name.isEmpty()) "Select Template" else "Template: $name")
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        templates.forEach { template ->
+                            DropdownMenuItem(onClick = {
+                                name = template.name
+                                endpoint = template.endpoint
+                                modelId = template.modelId
+                                expanded = false
+                            }) {
+                                Text(template.name)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 TextField(
                     value = name, 
                     onValueChange = { name = it }, 
-                    label = { Text("Name") }
+                    label = { Text("Name") },
+                    colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
                 )
                 TextField(
                     value = endpoint, 
                     onValueChange = { endpoint = it }, 
-                    label = { Text("Endpoint") }
+                    label = { Text("Endpoint") },
+                    colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
                 )
                 TextField(
                     value = modelId, 
                     onValueChange = { modelId = it }, 
-                    label = { Text("Model ID") }
+                    label = { Text("Model ID") },
+                    colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
                 )
                 TextField(
                     value = apiKey, 
                     onValueChange = { apiKey = it }, 
-                    label = { Text("API Key") }
+                    label = { Text("API Key") },
+                    colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
                 )
             }
         }, 
@@ -774,8 +851,8 @@ fun AddProviderDialog(onDismiss: () -> Unit, onSave: (CloudProvider, String) -> 
                 Text("Cancel") 
             } 
         }, 
-        backgroundColor = Color(0xFF222222), 
-        contentColor = Color.White
+        backgroundColor = MaterialTheme.colors.surface, 
+        contentColor = MaterialTheme.colors.onSurface
     )
 }
 
@@ -783,7 +860,7 @@ fun AddProviderDialog(onDismiss: () -> Unit, onSave: (CloudProvider, String) -> 
 fun StabilityMeter(stability: Float) {
     val color = when { stability > 0.7f -> Color.Green; stability > 0.4f -> Color.Yellow; else -> Color.Red }
     Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(end = 16.dp)) {
-        Text("Stability", style = MaterialTheme.typography.caption, color = Color.White)
-        LinearProgressIndicator(progress = stability, color = color, backgroundColor = Color.DarkGray, modifier = Modifier.width(100.dp))
+        Text("Stability", style = MaterialTheme.typography.caption, color = MaterialTheme.colors.onSurface)
+        LinearProgressIndicator(progress = stability, color = color, backgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.1f), modifier = Modifier.width(100.dp))
     }
 }
