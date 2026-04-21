@@ -29,6 +29,10 @@ public:
      */
     static void reportSystemHealth(float temperature, float ramUsedGB, float ramTotalGB);
 
+    static float getTemperature() { return s_last_temp; }
+    static float getRamUsed() { return s_last_ram_used; }
+    static float getRamTotal() { return s_last_ram_total; }
+
     /**
      * Retrieves encrypted API keys from AndroidKeyStore via JNI.
      */
@@ -59,6 +63,10 @@ private:
     static JavaVM* s_vm;
     static jobject s_instance;
     static jclass s_clazz;
+
+    static float s_last_temp;
+    static float s_last_ram_used;
+    static float s_last_ram_total;
 };
 
 } // namespace Ronin::Kernel::Capability

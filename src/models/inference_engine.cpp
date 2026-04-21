@@ -162,4 +162,8 @@ bool InferenceEngine::isLoaded() const {
     return m_impl && m_impl->loaded;
 }
 
+std::string InferenceEngine::getModelPath() const {
+    return m_impl ? m_impl->gemma_path : "None";
+}
+
 } // namespace Ronin::Kernel::Model

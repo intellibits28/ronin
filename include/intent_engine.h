@@ -11,6 +11,7 @@
 #include "capabilities/base_skill.h"
 #include "checkpoint_manager.h"
 #include "lora_engine.h"
+#include "memory_manager.h"
 
 namespace Ronin::Kernel::Intent {
 
@@ -59,9 +60,25 @@ public:
     }
 
     /**
+     * Attaches a memory manager for system status commands.
+     */
+    void setMemoryManager(Memory::MemoryManager* mm) {
+        m_memory_manager = mm;
+    }
+
+    /**
      * Processes raw input to determine the high-level intent score.
      */
     CognitiveIntent process(const std::string& input, const std::string& context_subject = "");
+
+    /**
+     * Tier 0: Command Interface
+     * Intercepts and executes system commands starting with '/'.
+     * @param input The raw user input.
+     * @param output The response string to display in the UI console.
+     * @return True if a command was handled.
+     */
+    bool handleCommand(const std::string& input, std::string& output);
 
     /**
      * Phase 4.0: Vtable-based Skill Execution
@@ -113,6 +130,7 @@ public:
 private:
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
     std::unique_ptr<Model::InferenceEngine> m_inference_engine;
+    Memory::MemoryManager* m_memory_manager = nullptr;
     std::shared_ptr<Ronin::Kernel::Checkpoint::CheckpointManager> m_checkpoint_manager;
     std::shared_ptr<Ronin::Kernel::Model::LoraDispatcher> m_lora_dispatcher;
 

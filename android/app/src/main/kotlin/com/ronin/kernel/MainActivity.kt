@@ -652,7 +652,19 @@ fun ReasoningConsole(logs: List<String>, scrollState: LazyListState) {
         if (expanded) {
             Box(modifier = Modifier.height(120.dp).padding(horizontal = 12.dp, vertical = 4.dp)) {
                 LazyColumn(state = scrollState) {
-                    items(logs) { log -> Text("> $log", color = Color(0xFF00FF00), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(vertical = 2.dp)) }
+                    items(logs) { log -> 
+                        val isCommand = log.startsWith("[COMMAND]")
+                        val displayLog = if (isCommand) log.substringAfter("[COMMAND] ") else log
+                        val textColor = if (isCommand) Color.Cyan else Color(0xFF00FF00)
+                        
+                        Text(
+                            text = "> $displayLog", 
+                            color = textColor, 
+                            fontSize = 11.sp, 
+                            fontFamily = FontFamily.Monospace, 
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        ) 
+                    }
                 }
             }
         }

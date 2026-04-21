@@ -150,6 +150,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
 
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
+    g_intent_engine->setMemoryManager(g_memory_manager.get());
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
 
     // Phase 4.0: LoRA State Diff Serialization & Activation Masking
@@ -270,6 +271,11 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     CognitiveIntent intent = {1, 0.5f, true};
     if (g_ronin_kernel) {
         intent = g_ronin_kernel->getLastIntent();
+    }
+
+    // Tier 0: Command Fast-path
+    if (intent.id == 0) {
+        return env->NewStringUTF("System: Command Executed.");
     }
 
     // Phase 4.1: Re-awakening Protocol (Temporal Causal Stitching)

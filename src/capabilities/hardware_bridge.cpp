@@ -10,6 +10,10 @@ JavaVM* HardwareBridge::s_vm = nullptr;
 jobject HardwareBridge::s_instance = nullptr;
 jclass HardwareBridge::s_clazz = nullptr;
 
+float HardwareBridge::s_last_temp = 0.0f;
+float HardwareBridge::s_last_ram_used = 0.0f;
+float HardwareBridge::s_last_ram_total = 0.0f;
+
 void HardwareBridge::initialize(JavaVM* vm, jobject instance) {
 #ifdef __ANDROID__
     s_vm = vm;
@@ -49,6 +53,10 @@ void HardwareBridge::release(JNIEnv* env) {
 }
 
 void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, float ramTotalGB) {
+    s_last_temp = temperature;
+    s_last_ram_used = ramUsedGB;
+    s_last_ram_total = ramTotalGB;
+
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return;
 

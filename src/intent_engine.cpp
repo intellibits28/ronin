@@ -17,6 +17,7 @@
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+#include <iomanip>
 #include "ronin_log.h"
 #include "capabilities/hardware_nodes.h"
 #include "capabilities/file_search_node.h"
@@ -52,6 +53,57 @@ static std::string trim(const std::string& s) {
     if (start == std::string::npos) return "";
     auto end = s.find_last_not_of(" \t\n\r");
     return s.substr(start, end - start + 1);
+}
+
+bool IntentEngine::handleCommand(const std::string& input, std::string& output) {
+    if (input.empty() || input[0] != '/') return false;
+
+    std::string cmd = trim(input);
+    std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
+
+    using namespace Ronin::Kernel::Capability;
+
+    if (cmd == "/status") {
+        std::stringstream ss;
+        ss << "System Health: " << std::fixed << std::setprecision(1) << HardwareBridge::getTemperature() << "°C | ";
+        ss << std::setprecision(2) << HardwareBridge::getRamUsed() << "/" << HardwareBridge::getRamTotal() << "GB | ";
+        ss << "LMK Pressure: " << (m_memory_manager ? m_memory_manager->getPressureScore() : 0) << "%";
+        output = ss.str();
+        return true;
+    } 
+    
+    if (cmd == "/skills") {
+        std::stringstream ss;
+        ss << "Registered Skills: ";
+        bool first = true;
+        for (auto const& [id, skill] : m_skill_registry) {
+            if (!first) ss << ", ";
+            ss << skill->getName() << " (ID " << id << ")";
+            first = false;
+        }
+        output = ss.str();
+        return true;
+    }
+
+    if (cmd == "/model") {
+        if (m_inference_engine) {
+            output = "Loaded Brain: " + m_inference_engine->getModelPath();
+        } else {
+            output = "Loaded Brain: None (No inference engine attached)";
+        }
+        return true;
+    }
+
+    if (cmd == "/reset") {
+        if (m_memory_manager) {
+            m_memory_manager->clearContext();
+        }
+        output = "Kernel State Purged. Memory Anchors Zeroed.";
+        return true;
+    }
+
+    output = "Unknown command: " + input;
+    return true;
 }
 
 IntentEngine::IntentEngine() {
@@ -267,6 +319,13 @@ bool IntentEngine::isFuzzyMatch(std::string_view word, std::string_view target) 
 // PATCH 3: Enforce Early Exit to prevent Pipeline Leak
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
     std::string_view sv_input = input;
+
+    // Layer 0: Command Interface Interception (O(1) fast-path)
+    std::string cmdOutput;
+    if (handleCommand(input, cmdOutput)) {
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[COMMAND] " + cmdOutput);
+        return {0, 1.0f, true}; // ID 0 signal for Command Handled
+    }
 
     // Correct 12-byte UTF-8 representation for "ပိတ်" (Turn off)
     // Forced into memory as a raw char array to bypass NDK literal destruction

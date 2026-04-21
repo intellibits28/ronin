@@ -62,6 +62,7 @@ public:
     void resumeNPU();
 
     bool isLoaded() const;
+    std::string getModelPath() const;
 
 private:
     struct Impl;
