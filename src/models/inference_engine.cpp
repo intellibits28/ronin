@@ -8,6 +8,7 @@
 #include <cmath>
 #include <sys/mman.h>
 #include <cstdlib>
+#include <vector>
 #include <thread>
 #include <future>
 #include <chrono>

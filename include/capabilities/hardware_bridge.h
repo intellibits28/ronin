@@ -1,15 +1,6 @@
 #pragma once
 
-#ifdef __ANDROID__
-#include <jni.h>
-#else
-// Stub definitions for JNI types to allow host compilation of unit tests
-typedef void* JNIEnv;
-typedef void* jobject;
-typedef void* jclass;
-typedef void* JavaVM;
-#endif
-
+#include "ronin_jni_stubs.h"
 #include <string>
 #include <future>
 
