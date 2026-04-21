@@ -156,17 +156,21 @@ bool CheckpointManager::stitchContext(const std::string& current_intent_id) {
     if (!last) return false;
 
     // Temporal Causal Stitching: Compare intent ID to decide branch.
+    // Phase 4.5.1: If current intent is Chat (ID 1), always allow stitching to maintain conversation flow.
+    bool is_chat = (current_intent_id == "intent_1");
     bool same_intent = (last->intent_id()->str() == current_intent_id);
-    
-    if (same_intent) {
-        LOGI(TAG, "Temporal Causal Stitching: Intent matched. Continuing session branch.");
-        Ronin::Kernel::Capability::HardwareBridge::pushMessage("> SURVIVAL: Temporal Causal Stitch matched. Resuming session.");
+    bool should_stitch = is_chat || same_intent;
+
+    if (should_stitch) {
+        LOGI(TAG, "Temporal Causal Stitching: Intent matched or Chat bypass. Continuing session branch.");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("> SURVIVAL: Temporal Causal Stitch active. Resuming session.");
     } else {
         LOGI(TAG, "Temporal Causal Stitching: Intent changed. Branching new context.");
         Ronin::Kernel::Capability::HardwareBridge::pushMessage("> SURVIVAL: Intent mismatch. Branching new context.");
     }
 
-    return same_intent;
+    return should_stitch;
+
 }
 
 const Checkpoint* CheckpointManager::getActiveCheckpoint() const {

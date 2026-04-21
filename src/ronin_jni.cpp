@@ -322,18 +322,20 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     }
 
     // 2. Routing Decision (Phase 4.0: Deterministic Priority)
-    // If IntentEngine found a high-confidence match (not ID 1), use it directly.
+    // Phase 4.5.1: If ID is 1 (ChatSkill), bypass the 0.75 confidence threshold.
     uint32_t targetNodeId = 0;
     std::string response = "Input processed via Reasoning Spine (No specific capability triggered).";
 
-    if (intent.id > 1 && intent.confidence >= 0.75f) {
-        std::string logMsg = ">>> Routing: Deterministic Match (ID " + std::to_string(intent.id) + ") bypassing Thompson Sampling.";
-        LOGI(TAG, "%s", logMsg.c_str());
-        Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
+    if (intent.id == 1 || (intent.id > 1 && intent.confidence >= 0.75f)) {
+        if (intent.id > 1) {
+            std::string logMsg = ">>> Routing: Deterministic Match (ID " + std::to_string(intent.id) + ") bypassing Thompson Sampling.";
+            LOGI(TAG, "%s", logMsg.c_str());
+            Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
+        }
         targetNodeId = intent.id;
     } else {
-        // Fallback to probabilistic graph executor for reasoning/searching or if confidence is low
-        std::string logMsg = ">>> Routing: Deferring to Probabilistic Graph Executor (Low confidence < 0.75 or ID 1).";
+        // Fallback to probabilistic graph executor for hardware nodes if confidence is low
+        std::string logMsg = ">>> Routing: Deferring to Probabilistic Graph Executor (Low confidence hardware intent).";
         LOGI(TAG, "%s", logMsg.c_str());
         Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
         
