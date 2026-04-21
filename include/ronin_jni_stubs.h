@@ -10,6 +10,7 @@ typedef void* jclass;
 typedef void* jstring;
 typedef void* jmethodID;
 typedef void* jobjectArray;
+typedef void* JavaVM;
 typedef int jint;
 typedef bool jboolean;
 typedef float jfloat;
