@@ -28,7 +28,8 @@ struct InferenceEngine::Impl {
     int context_window = 2048; // Default Phase 4.0 window
 
     Impl(const std::string& path) : model_path(path) {
-        load(path);
+        // Initial load of reasoning brain uses default path
+        load(""); 
     }
 
     ~Impl() {

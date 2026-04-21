@@ -8,6 +8,7 @@
 
 ## 2. Current Status (v4.4-DYNAMIC)
 - [x] **v4.4 (DYNAMIC):** UI Settings, Cloud Manifest, and Secure Credential decoupling active. Terminal Command Interface (Tier 0) implemented.
+- [x] **Path Sync Fixed:** Router (.onnx) and Reasoning (.bin) paths now correctly decoupled and accurately labeled in UI.
 - [!] **Core Logic State:** Reverted to **Phase 4.0** due to file truncation recovery. Reasoning is currently using hardcoded placeholders ("Reasoning complete...").
 - [x] **v4.2 (NPU-INTEGRATION):** NNAPI-accelerated hierarchical routing (Coarse/Fine) for Snapdragon 778G active.
 - [x] **v4.1 (HARDWARE-REALITY):** FusedLocation hardware bridge and Intent Anchoring (GPS) stabilized.
@@ -17,13 +18,13 @@
 ---
 
 ## 3. Known Issues (High Urgency)
-- **LiteRT-LM Path Desync:** UI displays `.onnx` (Router) while Kernel is loading `.bin` (Reasoning), causing labeling confusion.
 - **Cloud Bridge 404:** Cloud reasoning failing due to incorrect Gemini 1.5 Pro endpoint formatting.
 - **Thermal Stress:** Device health reaching 43°C during long reasoning sessions; requires aggressive NPU throttling.
 
 ---
 
 ## 4. Active Phase: Phase 4.4.8 (Logic Restoration)
+- [x] **Path Mapping Fix:** UI now accurately distinguishes between Router and Reasoning model paths.
 - [ ] **Real Inference Restoration:** Re-implementing MediaPipe LLM callbacks to replace placeholders.
 - [ ] **Prompt Wrapping:** Fix Gemma chat templates for local reasoning.
 

@@ -105,6 +105,8 @@ class MainActivity : ComponentActivity() {
             if (path != null) {
                 val success = nativeEngine.loadModel(path)
                 if (success) {
+                    val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
+                    chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
                     Toast.makeText(this, "Model reloaded successfully.", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, "Failed to load model.", Toast.LENGTH_SHORT).show()

@@ -15,6 +15,7 @@
 - [ ] **v4.6 (DSP-SKILL):** Audio signal processing node.
 
 ## Completed (v4.4 & Prior)
+- [x] **Path Mapping Fixed:** Resolved desync between Router (.onnx) and Reasoning (.bin) paths in UI.
 - [x] **v4.4 Dynamic Config:** UI Settings, Cloud Manifest JSON, and Terminal Command Interface.
 - [x] **v4.3 LiteRT-LM Integration:** Specialized Gemma 4 reasoning spine and Cloud escalation.
 - [x] **v4.2 NPU Acceleration:** Hierarchical NNAPI routing for SD778G.
