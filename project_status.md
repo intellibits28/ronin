@@ -1,30 +1,31 @@
 # Ronin Kernel: Project Status & Strategic Roadmap
 
 ## 1. Project Overview
-**Name:** Ronin Kernel (v4.3.0 Evolution)
+**Name:** Ronin Kernel (v4.4-DYNAMIC Evolution)
 **Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G, utilizing a Hybrid Intent System and specialized LiteRT-LM reasoning spine.
 
 ---
 
-## 2. Current Status (v4.3-HYBRID-STABLE)
-- [x] **v4.3 (LITERT-LM):** Integrated specialized MediaPipe LLM Inference API for Gemma 4 reasoning.
+## 2. Current Status (v4.4-DYNAMIC)
+- [x] **v4.4 (DYNAMIC):** UI Settings, Cloud Manifest, and Secure Credential decoupling active. Terminal Command Interface (Tier 0) implemented.
+- [!] **Core Logic State:** Reverted to **Phase 4.0** due to file truncation recovery. Reasoning is currently using hardcoded placeholders ("Reasoning complete...").
 - [x] **v4.2 (NPU-INTEGRATION):** NNAPI-accelerated hierarchical routing (Coarse/Fine) for Snapdragon 778G active.
 - [x] **v4.1 (HARDWARE-REALITY):** FusedLocation hardware bridge and Intent Anchoring (GPS) stabilized.
 - [x] **v4.0 (UNIFIED-INTERFACE):** Completed transition to Vtable-based Skill Registry (BaseSkill).
-- [x] **Memory & Thermal Guards:** Push-based OS callbacks and Dynamic Thermal Throttling active.
+- [x] **Memory & Thermal Guards:** Push-based OS callbacks and basic Thermal Throttling active.
 
 ---
 
-## 3. Active Phase: Phase 4.4 (Extended Sensory Hub)
-- [ ] **Native Sensor JNI:** Implementation of Native JNI `SensorEventListener` for low-latency vibration/IMU analysis.
-- [ ] **Vibration Analysis (SHM):** Specialized node for Structural Health Monitoring (SHM) via native sensors.
+## 3. Known Issues (High Urgency)
+- **LiteRT-LM Path Desync:** UI displays `.onnx` (Router) while Kernel is loading `.bin` (Reasoning), causing labeling confusion.
+- **Cloud Bridge 404:** Cloud reasoning failing due to incorrect Gemini 1.5 Pro endpoint formatting.
+- **Thermal Stress:** Device health reaching 43°C during long reasoning sessions; requires aggressive NPU throttling.
 
 ---
 
-## 4. Phase 4.3: LiteRT-LM Integration - COMPLETED
-- [x] **Specialized Runtime:** Transitioned from generic TFLite to MediaPipe LLM Inference API.
-- [x] **Gemma 4 Hydration:** External model loading from `/storage/emulated/0/Ronin/models/`.
-- [x] **Secure Cloud Bridge:** KeyStore-backed escalation for complex reasoning.
+## 4. Active Phase: Phase 4.4.8 (Logic Restoration)
+- [ ] **Real Inference Restoration:** Re-implementing MediaPipe LLM callbacks to replace placeholders.
+- [ ] **Prompt Wrapping:** Fix Gemma chat templates for local reasoning.
 
 ---
 
@@ -37,4 +38,4 @@
 ## 6. Compliance & Design Credits
 - Core logic utilizes clean-room design patterns for minimalist runtime efficiency (Static Dispatch, Unmanaged Structures, Circular Buffers).
 
-*Last Updated: April 20, 2026*
+*Last Updated: April 21, 2026*
