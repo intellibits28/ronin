@@ -1,6 +1,7 @@
 #include "models/inference_engine.h"
 #include "ronin_log.h"
 #include "intent_engine.h"
+#include "capabilities/hardware_bridge.h"
 #include <string>
 #include <algorithm>
 #include <cctype>
