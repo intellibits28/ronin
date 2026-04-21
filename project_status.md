@@ -14,21 +14,22 @@
 - [x] **v4.2 (NPU-INTEGRATION):** NNAPI-accelerated hierarchical routing (Coarse/Fine) for Snapdragon 778G active.
 - [x] **v4.1 (HARDWARE-REALITY):** FusedLocation hardware bridge and Intent Anchoring (GPS) stabilized.
 - [x] **v4.0 (UNIFIED-INTERFACE):** Completed transition to Vtable-based Skill Registry (BaseSkill).
-- [x] **Memory & Thermal Guards:** Push-based OS callbacks and basic Thermal Throttling active.
+- [x] **Stability Guard Active:** Aggressive NPU throttling (Naypyidaw Patch) implemented for device temperatures >= 42.0°C and >= 43.0°C.
+- [x] **Memory & Thermal Guards:** Push-based OS callbacks and advanced Thermal Throttling active.
 
 ---
 
 ## 3. Known Issues (High Urgency)
-- **Thermal Stress:** Device health reaching 43°C during long reasoning sessions; requires aggressive NPU throttling.
-
+- **Placeholder Usage:** Reversion to Phase 4.0 after truncation means reasoning is still using hardcoded tokens in some paths. (Priority 1)
+...
 ---
 
 ## 4. Active Phase: Phase 4.4.8 (Logic Restoration)
 - [x] **Path Mapping Fix:** UI now accurately distinguishes between Router and Reasoning model paths.
 - [x] **Cloud Bridge Fix:** Gemini 1.5 Pro connectivity restored with correct endpoint formatting.
+- [x] **Naypyidaw Patch:** Implemented thermal-aware NPU throttling and token limiting (Health >= 43.0°C).
 - [ ] **Real Inference Restoration:** Re-implementing MediaPipe LLM callbacks to replace placeholders.
 - [ ] **Prompt Wrapping:** Fix Gemma chat templates for local reasoning.
-
 ---
 
 ## 5. Future Roadmap (v4.5+)

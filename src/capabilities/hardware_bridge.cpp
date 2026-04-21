@@ -57,15 +57,19 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
     s_last_ram_used = ramUsedGB;
     s_last_ram_total = ramTotalGB;
 
-    // Phase 4.4.7: Stability Guard (Thermal)
+    // Phase 4.4.7 & 4.4.8: Stability Guard (Thermal) & Naypyidaw Patch
     if (temperature >= 43.0f) {
+        Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::SEVERE;
         LOGW(TAG, "CRITICAL THERMAL (%.1f°C). Naypyidaw Patch: Forced LOW Power + 64 Token Limit.", temperature);
         // Node 1 (Reasoning Spine) forced to LOW power state (false)
         triggerSync(1, false); 
     } else if (temperature >= 42.0f) {
+        Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::MODERATE;
         LOGW(TAG, "Thermal THRESHOLD REACHED (%.1f°C). Switching NPU to POWER_SAVE mode.", temperature);
         // Node 1 (Reasoning Spine) forced to POWER_SAVE (false)
         triggerSync(1, false); 
+    } else {
+        Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::NORMAL;
     }
 
 #ifdef __ANDROID__

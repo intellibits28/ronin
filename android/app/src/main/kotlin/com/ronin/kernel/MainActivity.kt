@@ -276,84 +276,93 @@ class MainActivity : ComponentActivity() {
         nativeEngine.executeHardwareAction = { nodeId, state ->
             var toolName = ""
             when (nodeId) {
+                1 -> toolName = "Reasoning Spine (Power Profile)"
                 4 -> toolName = "Flashlight"
                 5 -> toolName = "GPS"
                 6 -> toolName = "WiFi"
                 7 -> toolName = "Bluetooth"
             }
-            runOnUiThread { Toast.makeText(this, "Kernel: Initiating $toolName toggle...", Toast.LENGTH_SHORT).show() }
-            var success = false
-            try {
-                when (nodeId) {
-                    4 -> {
-                        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                        val cameraId = cameraManager.cameraIdList[0]
-                        cameraManager.setTorchMode(cameraId, state)
-                        success = true
-                    }
-                    5 -> {
-                        val hasFine = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                        val hasCoarse = checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                        if (hasFine || hasCoarse) {
-                            val cancellationToken = CancellationTokenSource()
-                            val locationFound = AtomicBoolean(false)
-                            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationToken.token)
-                                .addOnSuccessListener { loc ->
-                                    if (loc != null && !locationFound.get()) {
-                                        locationFound.set(true)
-                                        nativeEngine.injectLocation(loc.latitude, loc.longitude)
-                                    }
-                                }
-                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                if (!locationFound.get()) {
-                                    cancellationToken.cancel()
-                                    @Suppress("MissingPermission")
-                                    fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc ->
-                                        if (lastLoc != null) {
+            if (nodeId == 1) {
+                 runOnUiThread { 
+                     val message = if (state) "Kernel: NPU Power Level RESTORED." else "Kernel: NPU Throttling ACTIVE (Thermal Protection)."
+                     Toast.makeText(this, message, Toast.LENGTH_SHORT).show() 
+                 }
+                 true
+            } else {
+                runOnUiThread { Toast.makeText(this, "Kernel: Initiating $toolName toggle...", Toast.LENGTH_SHORT).show() }
+                var success = false
+                try {
+                    when (nodeId) {
+                        4 -> {
+                            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                            val cameraId = cameraManager.cameraIdList[0]
+                            cameraManager.setTorchMode(cameraId, state)
+                            success = true
+                        }
+                        5 -> {
+                            val hasFine = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            val hasCoarse = checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            if (hasFine || hasCoarse) {
+                                val cancellationToken = CancellationTokenSource()
+                                val locationFound = AtomicBoolean(false)
+                                fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationToken.token)
+                                    .addOnSuccessListener { loc ->
+                                        if (loc != null && !locationFound.get()) {
                                             locationFound.set(true)
-                                            nativeEngine.injectLocation(lastLoc.latitude, lastLoc.longitude)
-                                        } else {
-                                            nativeEngine.injectLocation(0.0, 0.0)
+                                            nativeEngine.injectLocation(loc.latitude, loc.longitude)
                                         }
-                                    }.addOnFailureListener { nativeEngine.injectLocation(0.0, 0.0) }
-                                }
-                            }, 10000)
-                            success = true
-                        } else {
-                            nativeEngine.injectLocation(0.0, 0.0)
-                        }
-                    }
-                    6 -> {
-                        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            startActivity(Intent(Settings.Panel.ACTION_WIFI))
-                            success = true
-                        } else {
-                            @Suppress("DEPRECATION")
-                            success = wifiManager.setWifiEnabled(state)
-                        }
-                    }
-                    7 -> {
-                        val bluetoothAdapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
-                        if (bluetoothAdapter != null) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                                    }
+                                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                    if (!locationFound.get()) {
+                                        cancellationToken.cancel()
+                                        @Suppress("MissingPermission")
+                                        fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc ->
+                                            if (lastLoc != null) {
+                                                locationFound.set(true)
+                                                nativeEngine.injectLocation(lastLoc.latitude, lastLoc.longitude)
+                                            } else {
+                                                nativeEngine.injectLocation(0.0, 0.0)
+                                            }
+                                        }.addOnFailureListener { nativeEngine.injectLocation(0.0, 0.0) }
+                                    }
+                                }, 10000)
                                 success = true
-                            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            } else {
+                                nativeEngine.injectLocation(0.0, 0.0)
+                            }
+                        }
+                        6 -> {
+                            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                startActivity(Intent(Settings.Panel.ACTION_WIFI))
+                                success = true
+                            } else {
+                                @Suppress("DEPRECATION")
+                                success = wifiManager.setWifiEnabled(state)
+                            }
+                        }
+                        7 -> {
+                            val bluetoothAdapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
+                            if (bluetoothAdapter != null) {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                                    success = true
+                                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                        success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
+                                    }
+                                } else {
+                                    @Suppress("MissingPermission")
                                     success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
                                 }
-                            } else {
-                                @Suppress("MissingPermission")
-                                success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    Log.e("RoninUI", "Hardware Node $nodeId failed", e)
                 }
-            } catch (e: Exception) {
-                Log.e("RoninUI", "Hardware Node $nodeId failed", e)
+                success
             }
-            success
         }
     }
 
