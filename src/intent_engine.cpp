@@ -35,11 +35,21 @@ ThermalState g_thermal_state = ThermalState::NORMAL;
 // Helper to strip non-alphanumeric chars for tokenizer
 // PATCH 1: UTF-8 Safeproofing (Preserve multi-byte characters)
 static std::string strip_punctuation(const std::string& s) {
+    // Phase 4.5.5: Zero-Strip Policy
+    // If we detect any non-ASCII character, we bypass stripping entirely 
+    // to preserve UTF-8 integrity (Burmese, etc.)
+    bool has_unicode = false;
+    for (unsigned char c : s) {
+        if (c >= 0x80) {
+            has_unicode = true;
+            break;
+        }
+    }
+    if (has_unicode) return s;
+
     std::string out;
     for (unsigned char c : s) {
-        if (c >= 0x80) { 
-            out += (char)c; 
-        } else if (std::isalnum(c) || std::isspace(c)) { 
+        if (std::isalnum(c) || std::isspace(c)) { 
             out += (char)c; 
         }
     }
