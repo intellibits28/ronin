@@ -188,8 +188,9 @@ class NativeEngine : ComponentCallbacks2 {
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
 
         // Phase 4.4.7: Fixed Gemini 1.5 Pro endpoint formatting
+        // Phase 4.5.0: Using v1 stable endpoint for production-ready logic
         val endpoint = when(provider) {
-            "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=$apiKey"
+            "Gemini" -> "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=$apiKey"
             "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
             else -> return "Error: Unknown provider $provider"
         }
@@ -210,10 +211,10 @@ class NativeEngine : ComponentCallbacks2 {
             }
 
             // Phase 4.4.7: Disable forward-slash escaping to prevent 404/API errors
-            // We use a manual replacement on the string output to ensure clean URLs and model names.
+            // Phase 4.5.0: Mandatory Gemini Schema (role-based contents)
             val jsonBody = if (provider == "Gemini") {
                 JSONObject().put("contents", JSONArray().put(
-                    JSONObject().put("parts", JSONArray().put(
+                    JSONObject().put("role", "user").put("parts", JSONArray().put(
                         JSONObject().put("text", input)
                     ))
                 ))
@@ -312,5 +313,10 @@ class NativeEngine : ComponentCallbacks2 {
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
         lastUserInput = input // Cache raw input for native callback verification
         processInput(input)
+    }
+}
+(Dispatchers.IO) {
+        pushKernelMessage("Initiating Async Hydration...")
+        loadModel(path)
     }
 }

@@ -103,14 +103,17 @@ class MainActivity : ComponentActivity() {
         uri?.let {
             val path = getPathFromUri(it)
             if (path != null) {
-                val success = nativeEngine.loadModel(path)
-                if (success) {
-                    sharedPreferences.edit().putString("local_model_path", path).apply()
-                    val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
-                    chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
-                    Toast.makeText(this, "Model reloaded successfully.", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "Failed to load model.", Toast.LENGTH_SHORT).show()
+                val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
+                chatViewModel.reasoningLogs.add(0, "Hydration Triggered: $path")
+                lifecycleScope.launch {
+                    val success = nativeEngine.loadModelAsync(path)
+                    if (success) {
+                        sharedPreferences.edit().putString("local_model_path", path).apply()
+                        chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
+                        Toast.makeText(this@MainActivity, "Model reloaded successfully.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Failed to load model.", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -166,8 +169,10 @@ class MainActivity : ComponentActivity() {
         // Phase 4.4.8.1: Settings Memory
         val savedModelPath = sharedPreferences.getString("local_model_path", "")
         if (!savedModelPath.isNullOrEmpty()) {
-            nativeEngine.loadModel(savedModelPath)
-            Log.i("RoninBoot", "Auto-hydrated model from: $savedModelPath")
+            lifecycleScope.launch {
+                nativeEngine.loadModelAsync(savedModelPath)
+                Log.i("RoninBoot", "Auto-hydrated model from: $savedModelPath")
+            }
         }
 
         checkAndRequestStoragePermission()

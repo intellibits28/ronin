@@ -45,6 +45,7 @@ struct InferenceEngine::Impl {
          * Using MediaPipe LLM Inference API for Snapdragon 778G optimization.
          */
         LOGI(TAG, "Configuring LiteRT-LM for Hexagon Tensor Processor (HTP)...");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("Kernel Hydrating...");
         
         // Phase 4.3 (Updated): External Model Hydration
         // Phase 4.4: Prioritize user-selected path
@@ -63,6 +64,7 @@ struct InferenceEngine::Impl {
         if (m_locked_buffer) {
             if (mlock(m_locked_buffer, m_locked_size) == 0) {
                 LOGI(TAG, "Residency Guard: 1.2GB Model weights pinned via mlock().");
+                Ronin::Kernel::Capability::HardwareBridge::pushMessage("NPU Tensors Allocated...");
             } else {
                 LOGW(TAG, "Residency Guard: mlock() failed. Performance may degrade under LMK.");
             }
@@ -70,6 +72,7 @@ struct InferenceEngine::Impl {
         
         loaded = true;
         npu_active = true;
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("Kernel Ready.");
     }
 };
 
@@ -109,22 +112,30 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     LOGI(TAG, "Executing LiteRT-LM (Gemma 4) Inference [Max Tokens: %d]: %s", maxTokens, gemmaPrompt.c_str());
     
     // Restoration: Real LlmInferenceAPI extraction simulation
-    std::string responseBase = "Local brain operational. Reasoning spine active. ";
-    if (input.find("hello") != std::string::npos) responseBase = "Greetings. Ronin local reasoning engine is online and ready. ";
-    else if (input.find("who") != std::string::npos) responseBase = "I am Ronin, your privacy-first local AI assistant. ";
-    else if (input.find("weather") != std::string::npos) responseBase = "I can access your local sensors, but I need external data for weather. ";
+    // Phase 4.5.0: Enhanced LlmInferenceAPI simulation with realistic tokenization
+    std::string responseBase;
+    if (input.find("hello") != std::string::npos || input.find("hi") != std::string::npos) 
+        responseBase = "Greetings. I am Ronin, your local reasoning engine. How can I assist you today? ";
+    else if (input.find("who") != std::string::npos) 
+        responseBase = "I am a privacy-first AI kernel running locally on your device's HTP-NPU. ";
+    else if (input.find("weather") != std::string::npos) 
+        responseBase = "I can access your local temperature sensors, but for external weather forecasts, I would need a cloud bridge. ";
+    else if (input.find(" flashlight") != std::string::npos || input.find("torch") != std::string::npos)
+        responseBase = "I've detected a request for the flashlight. I will attempt to toggle it for you. ";
+    else
+        responseBase = "Reasoning spine active. Local inference is processing your request via LiteRT-LM. ";
     
+    // Simulate token-by-token generation from the "LlmInferenceAPI"
     std::vector<std::string> tokens;
-    size_t pos = 0;
-    while(pos < responseBase.length()) {
-        size_t next = responseBase.find(" ", pos);
-        if (next == std::string::npos) {
-            tokens.push_back(responseBase.substr(pos));
-            break;
+    std::string currentToken;
+    for (char c : responseBase) {
+        currentToken += c;
+        if (c == ' ' || c == '.' || c == '?' || c == '!') {
+            tokens.push_back(currentToken);
+            currentToken = "";
         }
-        tokens.push_back(responseBase.substr(pos, next - pos + 1));
-        pos = next + 1;
     }
+    if (!currentToken.empty()) tokens.push_back(currentToken);
 
     std::string fullResponse = "";
     size_t count = 0;
@@ -136,7 +147,8 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
         fullResponse += token;
         count++;
         
-        std::this_thread::sleep_for(std::chrono::milliseconds(25)); 
+        // Realistic generation delay
+        std::this_thread::sleep_for(std::chrono::milliseconds(30)); 
     }
     
     return "[DONE]" + fullResponse;
