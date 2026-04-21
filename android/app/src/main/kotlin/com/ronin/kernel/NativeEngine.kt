@@ -10,6 +10,8 @@ import android.content.res.Configuration
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CameraAccessException
 import android.content.Context
+import org.json.JSONObject
+import org.json.JSONArray
 
 class NativeEngine : ComponentCallbacks2 {
 
@@ -210,7 +212,7 @@ class NativeEngine : ComponentCallbacks2 {
             }
 
             conn.outputStream.use { os ->
-                val inputBytes = jsonInputString.toByteArray(Charsets.UTF_8)
+                val inputBytes = jsonInputString.toByteArray(java.nio.charset.StandardCharsets.UTF_8)
                 os.write(inputBytes, 0, inputBytes.size)
             }
 
