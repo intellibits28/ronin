@@ -1,16 +1,23 @@
 # Ronin Kernel Task Backlog
 
-## Priority 1: Phase 4.4.9 (Sensory Hub)
+## Priority 1: Phase 4.5.x (Sensory Hub)
 - [ ] **Native JNI Sensors:** Implement `ASensorManager` bridge for IMU/Vibration access.
 - [ ] **SHM Node:** Develop specialized skill for vibration-based structural health monitoring.
 
-## Priority 2: Future Roadmap (v4.5+)
-- [ ] **v4.5 (SOCIAL-BRIDGE):** Contacts/SMS integration.
-- [ ] **v4.6 (DSP-SKILL):** Audio signal processing node.
+## Priority 2: Future Roadmap (v4.6+)
+- [ ] **v4.6 (SOCIAL-BRIDGE):** Contacts/SMS integration.
+- [ ] **v4.7 (DSP-SKILL):** Audio signal processing node.
 
-## Completed (v4.4 & Prior)
+## Completed (v4.4.9 / v4.5.0 Patch)
+- [x] **Priority 1 (Phase 4.5.0):** Implement Async Model Loading with JNI status updates ("Kernel Hydrating...", "NPU Tensors Allocated...", "Kernel Ready.").
+- [x] **Priority 2 (Phase 4.4.9):** Hard-wire Intent Routing for Greetings (hi, hello, မင်္ဂလာပါ) to bypass confidence loops.
+- [x] **Priority 3 (Phase 4.4.9):** Replace placeholder replies with real `LlmInferenceAPI` token generation and streaming.
+- [x] **Priority 4 (Phase 4.5.0):** Refactor Cloud Bridge with mandatory Gemini JSON schema and stable v1 endpoint to fix 404 errors.
+- [x] **Priority 5 (Phase 4.5.0):** Restore State Persistence (Saving model paths and providers across app restarts using EncryptedSharedPreferences).
+
+## Completed (Legacy v4.4 & Prior)
 - [x] **Logic Restoration (4.4.8):** Real token extraction, Gemma templates, and Naypyidaw Patch.
-- [x] **Cloud Bridge Fixed:** Corrected Gemini 1.5 Pro endpoint formatting and JSON escaping.
+- [x] **Cloud Bridge Fixed:** Initial correction of Gemini endpoint formatting and JSON escaping.
 - [x] **Path Mapping Fixed:** Resolved desync between Router (.onnx) and Reasoning (.bin) paths in UI.
 - [x] **v4.4 Dynamic Config:** UI Settings, Cloud Manifest JSON, and Terminal Command Interface.
 - [x] **v4.3 LiteRT-LM Integration:** Specialized Gemma 4 reasoning spine and Cloud escalation.
