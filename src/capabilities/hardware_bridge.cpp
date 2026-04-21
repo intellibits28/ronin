@@ -57,6 +57,13 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
     s_last_ram_used = ramUsedGB;
     s_last_ram_total = ramTotalGB;
 
+    // Phase 4.4.7: Stability Guard (Thermal)
+    if (temperature >= 42.0f) {
+        LOGW(TAG, "Thermal THRESHOLD REACHED (%.1f°C). Switching NPU to POWER_SAVE mode.", temperature);
+        // Synchronously notify Kotlin to adjust power profile
+        triggerSync(1, false); // Node 1 (Reasoning Spine) forced to POWER_SAVE (false)
+    }
+
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return;
 

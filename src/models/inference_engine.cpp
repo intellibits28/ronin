@@ -103,8 +103,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     
     // Simulate real streaming inference
     std::vector<std::string> simulatedTokens = {
-        "Reasoning ", "(LiteRT-LM): ", "Gemma ", "model ", "processing ", "complete. ", 
-        "Output ", "mapped ", "to ", "cognitive ", "state."
+        "Reasoning ", "complete. ", "Input ", "mapped ", "to ", "cognitive ", "state."
     };
 
     std::string fullResponse = "";
@@ -170,7 +169,7 @@ CognitiveIntent InferenceEngine::predictFine(const std::string& input, int coars
     std::string s = input;
     std::transform(s.begin(), s.end(), s.begin(), ::tolower);
 
-    CognitiveIntent intent = {1, 0.4f, true};
+    CognitiveIntent intent = {1, 1.0f, true}; // Default to ChatSkill (ID 1) with full confidence
 
     if (s.find("light") != std::string::npos || s.find("torch") != std::string::npos) {
         intent = {4, 0.98f, true};
@@ -184,15 +183,14 @@ CognitiveIntent InferenceEngine::predictFine(const std::string& input, int coars
         intent = {2, 0.85f, true};
     }
 
-    /**
-     * RULE 3: Secure Bridge Escalation.
-     * Escalation triggered if local confidence < 0.75.
-     */
+    // Phase 4.4.7: Tier 3 Routing Calibration
+    // If ID is 1 (ChatSkill), return immediately with high confidence to prevent loops.
+    if (intent.id == 1) return intent;
+
     float threshold = 0.75f;
-    
     if (intent.confidence < threshold) {
         LOGW(TAG, "Local confidence %.2f below 0.75. Triggering escalation/reasoning.", intent.confidence);
-        return {1, 0.5f, true}; // Signal for escalation
+        return {1, 1.0f, true}; // Force route to reasoning
     }
 
     return intent;

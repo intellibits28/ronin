@@ -198,17 +198,30 @@ class NativeEngine : ComponentCallbacks2 {
         return try {
             val url = java.net.URL(endpoint)
             val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 15000
+            conn.readTimeout = 15000
             conn.requestMethod = "POST"
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
+            
             if (provider == "OpenRouter") {
                 conn.setRequestProperty("Authorization", "Bearer $apiKey")
+                conn.setRequestProperty("HTTP-Referer", "https://github.com/intellibits28/ronin")
+                conn.setRequestProperty("X-Title", "Ronin Kernel")
             }
 
             val jsonInputString = if (provider == "Gemini") {
-                "{\"contents\": [{\"parts\":[{\"text\": \"$input\"}]}]}"
+                JSONObject().put("contents", JSONArray().put(
+                    JSONObject().put("parts", JSONArray().put(
+                        JSONObject().put("text", input)
+                    ))
+                )).toString()
             } else {
-                "{\"model\": \"meta-llama/llama-3-70b\", \"messages\": [{\"role\": \"user\", \"content\": \"$input\"}]}"
+                JSONObject()
+                    .put("model", "meta-llama/llama-3-70b")
+                    .put("messages", JSONArray().put(
+                        JSONObject().put("role", "user").put("content", input)
+                    )).toString()
             }
 
             conn.outputStream.use { os ->
@@ -229,17 +242,18 @@ class NativeEngine : ComponentCallbacks2 {
                             .getJSONObject(0)
                             .getString("text")
                     } else {
-                        // OpenRouter / OpenAI format
                         json.getJSONArray("choices")
                             .getJSONObject(0)
                             .getJSONObject("message")
                             .getString("content")
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Cloud JSON parsing failed, returning raw: ${e.message}")
-                    response
+                    Log.w(TAG, "Cloud JSON parsing failed: ${e.message}")
+                    "Error: Response parsing failed."
                 }
             } else {
+                val errorMsg = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "No error details"
+                Log.e(TAG, "Cloud request failed ($responseCode): $errorMsg")
                 "Error: Cloud request failed with code $responseCode"
             }
         } catch (e: Exception) {
