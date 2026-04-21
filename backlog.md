@@ -3,7 +3,7 @@
 ## Priority 1: Phase 4.4.8 (Logic Restoration)
 - [ ] **Real Inference Injection:** Replace hardcoded placeholders with real `LlmInferenceAPI` token extraction.
 - [ ] **Gemma Prompt Wrapping:** Implement official Gemma chat templates for local reasoning.
-- [ ] **Cloud Bridge Fix:** Correct the Gemini 1.5 Pro endpoint URL and JSON schema to resolve 404 errors.
+- [x] **Cloud Bridge Fixed:** Correct the Gemini 1.5 Pro endpoint URL and JSON schema to resolve 404 errors.
 - [ ] **Naypyidaw Patch (Thermal):** Implement aggressive NPU throttling (Low-power mode + 64 max tokens) at >= 43°C.
 
 ## Priority 2: Phase 4.4.9 (Sensory Hub)
@@ -15,6 +15,7 @@
 - [ ] **v4.6 (DSP-SKILL):** Audio signal processing node.
 
 ## Completed (v4.4 & Prior)
+- [x] **Cloud Bridge Fixed:** Corrected Gemini 1.5 Pro endpoint formatting and JSON escaping.
 - [x] **Path Mapping Fixed:** Resolved desync between Router (.onnx) and Reasoning (.bin) paths in UI.
 - [x] **v4.4 Dynamic Config:** UI Settings, Cloud Manifest JSON, and Terminal Command Interface.
 - [x] **v4.3 LiteRT-LM Integration:** Specialized Gemma 4 reasoning spine and Cloud escalation.

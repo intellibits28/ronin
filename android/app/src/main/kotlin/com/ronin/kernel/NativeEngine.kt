@@ -184,11 +184,10 @@ class NativeEngine : ComponentCallbacks2 {
     @Suppress("unused")
     fun performCloudInference(input: String, provider: String): String {
         Log.i(TAG, "Cloud Bridge: Initiating request to $provider")
-        val apiKey = getSecureApiKey(provider)
+        val apiKey = getSecureApiKey(provider).trim()
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
 
-        // Retrieve endpoint and model_id from providers.json (conceptually)
-        // For prototype, we use hardcoded templates if not found in sharedPrefs
+        // Phase 4.4.7: Fixed Gemini 1.5 Pro endpoint formatting
         val endpoint = when(provider) {
             "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=$apiKey"
             "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
@@ -210,18 +209,22 @@ class NativeEngine : ComponentCallbacks2 {
                 conn.setRequestProperty("X-Title", "Ronin Kernel")
             }
 
+            // Phase 4.4.7: Prevent forward-slash escaping in JSON
             val jsonInputString = if (provider == "Gemini") {
-                JSONObject().put("contents", JSONArray().put(
+                val contents = JSONArray().put(
                     JSONObject().put("parts", JSONArray().put(
                         JSONObject().put("text", input)
                     ))
-                )).toString()
+                )
+                JSONObject().put("contents", contents).toString().replace("\\/", "/")
             } else {
+                val messages = JSONArray().put(
+                    JSONObject().put("role", "user").put("content", input)
+                )
                 JSONObject()
                     .put("model", "meta-llama/llama-3-70b")
-                    .put("messages", JSONArray().put(
-                        JSONObject().put("role", "user").put("content", input)
-                    )).toString()
+                    .put("messages", messages)
+                    .toString().replace("\\/", "/")
             }
 
             conn.outputStream.use { os ->
