@@ -1,5 +1,6 @@
 #include "capabilities/hardware_bridge.h"
 #include "ronin_log.h"
+#include "intent_engine.h"
 #include <thread>
 
 #define TAG "RoninHardwareBridge"
