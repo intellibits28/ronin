@@ -362,6 +362,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // Force-route greetings to ChatSkill (ID 1) to ensure LiteRT-LM handles them.
     if (sv_input.find("hi") != std::string_view::npos || 
         sv_input.find("hello") != std::string_view::npos || 
+        sv_input.find("\xE1\x80\x91\xE1\x80\xB1\xE1\x80\xB8") != std::string_view::npos || 
         sv_input.find("\xE1\x80\x99\xE1\x80\x84\xE1\x80\xB9\xE1\x80\x82\xE1\x80\xAB\xE1\x80\x95\xE1\x80\xAC") != std::string_view::npos) {
         LOGI(TAG, ">>> Routing: Greeting Match (ID 1) bypassing confidence check.");
         return {1, 1.0f, true};
