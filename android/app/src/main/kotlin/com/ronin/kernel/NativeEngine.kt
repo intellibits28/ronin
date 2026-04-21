@@ -209,23 +209,23 @@ class NativeEngine : ComponentCallbacks2 {
                 conn.setRequestProperty("X-Title", "Ronin Kernel")
             }
 
-            // Phase 4.4.7: Prevent forward-slash escaping in JSON
-            val jsonInputString = if (provider == "Gemini") {
-                val contents = JSONArray().put(
+            // Phase 4.4.7: Disable forward-slash escaping to prevent 404/API errors
+            // We use a manual replacement on the string output to ensure clean URLs and model names.
+            val jsonBody = if (provider == "Gemini") {
+                JSONObject().put("contents", JSONArray().put(
                     JSONObject().put("parts", JSONArray().put(
                         JSONObject().put("text", input)
                     ))
-                )
-                JSONObject().put("contents", contents).toString().replace("\\/", "/")
+                ))
             } else {
-                val messages = JSONArray().put(
-                    JSONObject().put("role", "user").put("content", input)
-                )
                 JSONObject()
                     .put("model", "meta-llama/llama-3-70b")
-                    .put("messages", messages)
-                    .toString().replace("\\/", "/")
+                    .put("messages", JSONArray().put(
+                        JSONObject().put("role", "user").put("content", input)
+                    ))
             }
+
+            val jsonInputString = jsonBody.toString().replace("\\/", "/")
 
             conn.outputStream.use { os ->
                 val inputBytes = jsonInputString.toByteArray(java.nio.charset.StandardCharsets.UTF_8)

@@ -250,7 +250,7 @@ class MainActivity : ComponentActivity() {
     private fun setupHardwareCallbacks() {
         nativeEngine.getSecureApiKey = { provider ->
             // Phase 4.4: Secure Credential Sovereignty
-            sharedPreferences.getString(provider, "") ?: ""
+            sharedPreferences.getString(provider, "")?.trim() ?: ""
         }
 
         nativeEngine.onRequestHardwareData = { nodeId ->

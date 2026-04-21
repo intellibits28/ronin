@@ -138,7 +138,7 @@ std::string InferenceEngine::escalateToCloud(const std::string& input, const std
 
     // Phase 4.4.6: Actual Cloud Bridge Activation
     // Determine provider based on key format or state (default to Gemini for prototype)
-    std::string provider = (apiKey.find("AIza") == 0) ? "Gemini" : "OpenRouter";
+    std::string provider = (apiKey.find("AIza") != std::string::npos) ? "Gemini" : "OpenRouter";
     std::string response = Ronin::Kernel::Capability::HardwareBridge::fetchCloudResponse(input, provider);
 
     auto end = std::chrono::high_resolution_clock::now();
