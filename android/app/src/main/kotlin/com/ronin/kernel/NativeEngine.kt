@@ -177,6 +177,75 @@ class NativeEngine : ComponentCallbacks2 {
         onSystemTiersUpdate?.invoke(temp, used, total)
     }
 
+    // Phase 4.4.6: Cloud Bridge Activation
+    // Called from JNI to perform actual HTTPS POST requests to AI providers
+    @Suppress("unused")
+    fun performCloudInference(input: String, provider: String): String {
+        Log.i(TAG, "Cloud Bridge: Initiating request to $provider")
+        val apiKey = getSecureApiKey(provider)
+        if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
+
+        // Retrieve endpoint and model_id from providers.json (conceptually)
+        // For prototype, we use hardcoded templates if not found in sharedPrefs
+        val endpoint = when(provider) {
+            "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=$apiKey"
+            "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
+            else -> return "Error: Unknown provider $provider"
+        }
+
+        return try {
+            val url = java.net.URL(endpoint)
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            if (provider == "OpenRouter") {
+                conn.setRequestProperty("Authorization", "Bearer $apiKey")
+            }
+
+            val jsonInputString = if (provider == "Gemini") {
+                "{\"contents\": [{\"parts\":[{\"text\": \"$input\"}]}]}"
+            } else {
+                "{\"model\": \"meta-llama/llama-3-70b\", \"messages\": [{\"role\": \"user\", \"content\": \"$input\"}]}"
+            }
+
+            conn.outputStream.use { os ->
+                val inputBytes = jsonInputString.toByteArray(Charsets.UTF_8)
+                os.write(inputBytes, 0, inputBytes.size)
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode == 200) {
+                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                try {
+                    val json = JSONObject(response)
+                    if (provider == "Gemini") {
+                        json.getJSONArray("candidates")
+                            .getJSONObject(0)
+                            .getJSONObject("content")
+                            .getJSONArray("parts")
+                            .getJSONObject(0)
+                            .getString("text")
+                    } else {
+                        // OpenRouter / OpenAI format
+                        json.getJSONArray("choices")
+                            .getJSONObject(0)
+                            .getJSONObject("message")
+                            .getString("content")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Cloud JSON parsing failed, returning raw: ${e.message}")
+                    response
+                }
+            } else {
+                "Error: Cloud request failed with code $responseCode"
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Cloud Bridge Fatal: ${e.message}")
+            "Error: ${e.message}"
+        }
+    }
+
     // Called from JNI for asynchronous UI updates
     @Suppress("unused")
     fun pushKernelMessage(message: String) {

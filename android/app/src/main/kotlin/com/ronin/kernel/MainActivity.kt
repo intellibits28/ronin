@@ -467,9 +467,17 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
 
     LaunchedEffect(Unit) {
         engine.onKernelMessage = { message ->
-            reasoningLogs.add(0, message)
-            // Phase 4.4.5: Keep chat UI clean. 
-            // System updates and hardware logs stay in reasoning console only.
+            if (message.startsWith("[STREAM]")) {
+                val token = message.substringAfter("[STREAM]")
+                if (messages.isNotEmpty() && messages.last().startsWith("Ronin:")) {
+                    val lastMsg = messages.last()
+                    messages[messages.size - 1] = lastMsg + token
+                } else {
+                    messages.add("Ronin: $token")
+                }
+            } else {
+                reasoningLogs.add(0, message)
+            }
         }
         engine.onSystemTiersUpdate = { temp, used, total ->
             chatViewModel.temperature = temp
@@ -651,17 +659,25 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                                 val start = kernelRawOutput.indexOf("\"result\": \"") + 11
                                 val end = kernelRawOutput.lastIndexOf("\"")
                                 if (start in 11 until end) {
-                                    kernelRawOutput.substring(start, end)
+                                    val result = kernelRawOutput.substring(start, end)
+                                    if (result.startsWith("[STREAM_COMPLETE]")) {
+                                        // Already handled by stream tokens
+                                        ""
+                                    } else {
+                                        result
+                                    }
                                 } else {
                                     kernelRawOutput
                                 }
                             } else {
-                                kernelRawOutput 
+                                if (kernelRawOutput.startsWith("[STREAM_COMPLETE]")) "" else kernelRawOutput 
                             }
                         } catch (e: Exception) { 
                             kernelRawOutput 
                         }
-                        messages.add("Ronin: $kernelOutput")
+                        if (kernelOutput.isNotEmpty()) {
+                            messages.add("Ronin: $kernelOutput")
+                        }
                         launch { 
                             delay(100)
                             chatListState.animateScrollToItem(messages.size - 1) 

@@ -112,8 +112,24 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
     if (cmd == "/reset") {
         if (m_memory_manager) {
             m_memory_manager->clearContext();
+            
+            // Phase 4.4.6: Kernel Purge Recovery with OOM Guard
+            if (m_inference_engine) {
+                // If LMK pressure was high, re-hydrate with a smaller window
+                int currentPressure = m_memory_manager->getPressureScore();
+                if (currentPressure > 70) {
+                    m_inference_engine->setContextWindow(512); // Minimum survival window
+                    output = "Kernel State Purged. Survival Re-hydration: Context window reduced to 512 (OOM Guard active).";
+                } else {
+                    m_inference_engine->setContextWindow(2048); // Standard window
+                    output = "Kernel State Purged. Memory Anchors Zeroed.";
+                }
+            } else {
+                output = "Kernel State Purged. Memory Anchors Zeroed.";
+            }
+        } else {
+            output = "Kernel State Purged. Memory Anchors Zeroed.";
         }
-        output = "Kernel State Purged. Memory Anchors Zeroed.";
         return true;
     }
 

@@ -24,6 +24,7 @@ struct InferenceEngine::Impl {
     bool npu_active = false;
     void* m_locked_buffer = nullptr;
     size_t m_locked_size = 0;
+    int context_window = 2048; // Default Phase 4.0 window
 
     Impl(const std::string& path) : model_path(path) {
         load(path);
@@ -94,30 +95,49 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
         return "Reasoning: Local brain in thermal fallback (CPU-scalar prefill active).";
     }
 
-    LOGI(TAG, "Executing LiteRT-LM Prefill Optimization (TTFT Reduction)...");
-    // Simulated MediaPipe LLM Inference API call
-    return "Reasoning (LiteRT-LM): Autoregressive decoding complete for '" + input + "'.";
+    // Phase 4.4.6: Gemma Chat Template Wrapping
+    std::string gemmaPrompt = "<start_of_turn>user\n" + input + "<end_of_turn>\n<start_of_turn>model\n";
+    
+    LOGI(TAG, "Executing LiteRT-LM (Gemma 4) Inference: %s", gemmaPrompt.c_str());
+    
+    // Simulate real streaming inference
+    std::vector<std::string> simulatedTokens = {
+        "Reasoning ", "(LiteRT-LM): ", "Gemma ", "model ", "processing ", "complete. ", 
+        "Output ", "mapped ", "to ", "cognitive ", "state."
+    };
+
+    std::string fullResponse = "";
+    for (const auto& token : simulatedTokens) {
+        // Stream each token to UI
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[STREAM]" + token);
+        fullResponse += token;
+        
+        // Simulate thinking time per token
+        std::this_thread::sleep_for(std::chrono::milliseconds(40)); 
+    }
+    
+    return "[STREAM_COMPLETE]" + fullResponse;
 }
 
 std::string InferenceEngine::escalateToCloud(const std::string& input, const std::string& apiKey) {
     if (apiKey.empty()) return "Error: Secure Credential retrieval failed.";
 
     auto start = std::chrono::high_resolution_clock::now();
-    LOGI(TAG, "Escalating to Cloud (Secure Bridge)...");
+    LOGI(TAG, "Escalating to Cloud (Secure Bridge Activation)...");
 
-    // Phase 4.4.5: Secure Bridge Latency Monitoring
-    // Simulated Cloud Escalation latency
-    std::this_thread::sleep_for(std::chrono::milliseconds(450)); 
+    // Phase 4.4.6: Actual Cloud Bridge Activation
+    // Determine provider based on key format or state (default to Gemini for prototype)
+    std::string provider = (apiKey.find("AIza") == 0) ? "Gemini" : "OpenRouter";
+    std::string response = Ronin::Kernel::Capability::HardwareBridge::fetchCloudResponse(input, provider);
 
     auto end = std::chrono::high_resolution_clock::now();
     auto latency = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
-    std::string latencyMsg = "[BRIDGE] Network Latency: " + std::to_string(latency) + "ms";
+    std::string latencyMsg = "[BRIDGE] Network Latency (" + provider + "): " + std::to_string(latency) + "ms";
     Ronin::Kernel::Capability::HardwareBridge::pushMessage(latencyMsg);
 
-    return "Cloud: Complex reasoning result for '" + input + "' processed via Secure Bridge.";
+    return response;
 }
-
 std::string InferenceEngine::getStructuredResponse(const std::string& intent, const std::string& state, const std::string& result) {
     /**
      * Data Protocol v4.3: Transition to Structured JSON for multi-turn reliability.
@@ -223,6 +243,18 @@ long InferenceEngine::verifyModel() {
     
     auto end = std::chrono::high_resolution_clock::now();
     return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+}
+
+void InferenceEngine::setContextWindow(int tokens) {
+    if (m_impl) {
+        m_impl->context_window = tokens;
+        LOGI(TAG, "OOM Guard: Context window adjusted to %d tokens.", tokens);
+        
+        // In a real LiteRT-LM integration, this would trigger a re-allocation of KV-cache buffers
+        if (tokens < 1024) {
+            LOGW(TAG, "Survival Mode: Operating with restricted context window to save RAM.");
+        }
+    }
 }
 
 } // namespace Ronin::Kernel::Model

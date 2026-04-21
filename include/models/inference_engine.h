@@ -67,6 +67,12 @@ public:
     std::string getRuntimeInfo() const;
     long verifyModel();
 
+    /**
+     * Phase 4.4.6: OOM Guard
+     * Adjusts the context window to manage RAM pressure.
+     */
+    void setContextWindow(int tokens);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

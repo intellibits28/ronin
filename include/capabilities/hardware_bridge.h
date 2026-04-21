@@ -59,6 +59,12 @@ public:
      */
     static void triggerAsync(uint32_t nodeId, bool state);
 
+    /**
+     * Phase 4.4.6: Cloud Bridge Activation
+     * Performs a synchronous (but off-main-thread) network request via Kotlin.
+     */
+    static std::string fetchCloudResponse(const std::string& input, const std::string& provider);
+
 private:
     static JavaVM* s_vm;
     static jobject s_instance;
