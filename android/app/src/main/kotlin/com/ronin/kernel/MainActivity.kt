@@ -105,6 +105,7 @@ class MainActivity : ComponentActivity() {
             if (path != null) {
                 val success = nativeEngine.loadModel(path)
                 if (success) {
+                    sharedPreferences.edit().putString("local_model_path", path).apply()
                     val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
                     chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
                     Toast.makeText(this, "Model reloaded successfully.", Toast.LENGTH_SHORT).show()
@@ -143,7 +144,7 @@ class MainActivity : ComponentActivity() {
         copyAssetsToFilesDir(filesDir)
         
         // Phase 4.4.3: Initial Hydration of Provider Templates
-        val configDir = java.io.File(getExternalFilesDir(null), "config")
+        val configDir = java.io.File("/storage/emulated/0/Ronin/config")
         if (!configDir.exists()) configDir.mkdirs()
         val providersFile = java.io.File(configDir, "providers.json")
         if (!providersFile.exists()) {
@@ -162,6 +163,13 @@ class MainActivity : ComponentActivity() {
         setupHardwareCallbacks()
         loadCloudProvidersFromDisk()
         
+        // Phase 4.4.8.1: Settings Memory
+        val savedModelPath = sharedPreferences.getString("local_model_path", "")
+        if (!savedModelPath.isNullOrEmpty()) {
+            nativeEngine.loadModel(savedModelPath)
+            Log.i("RoninBoot", "Auto-hydrated model from: $savedModelPath")
+        }
+
         checkAndRequestStoragePermission()
         checkAndRequestHardwarePermissions()
 
@@ -367,7 +375,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadCloudProvidersFromDisk() {
-        val file = java.io.File(getExternalFilesDir(null), "config/providers.json")
+        val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
         if (file.exists()) {
             try {
                 val json = file.readText()
@@ -404,6 +412,9 @@ class MainActivity : ComponentActivity() {
                 jsonArray.put(obj)
             }
             val providersJson = jsonArray.toString(2)
+            // Phase 4.4.8.1: Persistent Settings Memory
+            java.io.File("/storage/emulated/0/Ronin/config/providers.json").writeText(providersJson)
+            
             nativeEngine.updateCloudProviders(providersJson)
             Toast.makeText(this, "Provider ${provider.name} saved securely.", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
