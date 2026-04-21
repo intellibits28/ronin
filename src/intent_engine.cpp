@@ -36,9 +36,10 @@ ThermalState g_thermal_state = ThermalState::NORMAL;
 // PATCH 1: UTF-8 Safeproofing (Preserve multi-byte characters)
 static std::string strip_punctuation(const std::string& s) {
     std::string out;
-    for (unsigned char c : s) {
-        if (c & 0x80) { 
-            // Keep UTF-8 multi-byte bytes intact
+    for (size_t i = 0; i < s.length(); ++i) {
+        unsigned char c = s[i];
+        if (c >= 0x80) { 
+            // Keep UTF-8 multi-byte characters intact
             out += c; 
         } else if (std::isalnum(c) || std::isspace(c)) { 
             out += c; 

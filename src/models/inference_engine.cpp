@@ -166,6 +166,8 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
         responseBase = "Current system temperature is " + std::to_string(temp) + "C. Thermal throttling is " + std::string(temp >= 42.0f ? "ACTIVE" : "INACTIVE") + ". ";
     } else if (input_lower.find("hello") != std::string::npos || input_lower.find("hi") != std::string::npos || input_lower.find("\xE1\x80\x99\xE1\x80\x84\xE1\x80\x82\xE1\x80\xAB\xE1\x80\x95\xE1\x80\xAC") != std::string::npos) {
         responseBase = "Greetings! The Ronin Logic Bridge is connected and the reasoning spine is ready. How can I help you? ";
+    } else if (input_lower.find("\xE1\x80\x94\xE1\x80\xBel\xE1\x80\x80\xE1\x80\xAB\xE1\x80\x84\xE1\x80\xB9\xE1\x80\xAB\xE1\x80\xB8") != std::string::npos || input_lower.find("နေကောင်းလား") != std::string::npos) {
+        responseBase = "ကျွန်တော် နေကောင်းပါတယ်။ Ronin AI အနေနဲ့ ဘာများ ကူညီပေးရမလဲခင်ဗျာ။ ";
     } else {
         responseBase = "Processing query: '" + input + "'. Logic Bridge active. LiteRT-LM is analyzing this request using local NPU weights. ";
     }
