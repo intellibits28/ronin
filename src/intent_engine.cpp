@@ -406,7 +406,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 7) bypassing Thompson Sampling.");
         return {7, 1.0f, !isOff};
     }
-    if (sv_input.find("location") != std::string_view::npos || sv_input == "where am i" || sv_input == "where" || sv_input == "gps" || sv_input == "coordinates") {
+    if (sv_input.find("location") != std::string_view::npos || sv_input == "where am i" || sv_input == "where" || sv_input == "gps" || sv_input == "coordinates" ||
+        sv_input.find("ဘယ်ရောက်နေလဲ") != std::string_view::npos || sv_input.find("ငါဘယ်မှာလဲ") != std::string_view::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 5) bypassing Thompson Sampling.");
         return {5, 1.0f, true};
     }
