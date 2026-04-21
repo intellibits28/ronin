@@ -1,6 +1,6 @@
 {
   "templates": [
-    {"name": "Gemini", "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/", "model_id": "gemini-1.5-pro"},
+    {"name": "Gemini", "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent", "model_id": "gemini-1.5-pro"},
     {"name": "OpenRouter", "endpoint": "https://openrouter.ai/api/v1/chat/completions", "model_id": "meta-llama/llama-3-70b"}
   ]
 }

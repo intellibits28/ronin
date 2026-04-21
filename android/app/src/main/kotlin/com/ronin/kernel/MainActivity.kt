@@ -411,7 +411,7 @@ class MainActivity : ComponentActivity() {
                 obj.put("auth_type", p.authType)
                 jsonArray.put(obj)
             }
-            val providersJson = jsonArray.toString(2)
+            val providersJson = jsonArray.toString(2).replace("\\/", "/")
             // Phase 4.4.8.1: Persistent Settings Memory
             java.io.File("/storage/emulated/0/Ronin/config/providers.json").writeText(providersJson)
             
@@ -682,7 +682,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                                 val end = kernelRawOutput.lastIndexOf("\"")
                                 if (start in 11 until end) {
                                     val result = kernelRawOutput.substring(start, end)
-                                    if (result.startsWith("[STREAM_COMPLETE]")) {
+                                    if (result.startsWith("[DONE]") || result.startsWith("[STREAM_COMPLETE]")) {
                                         // Already handled by stream tokens
                                         ""
                                     } else {
@@ -692,7 +692,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
                                     kernelRawOutput
                                 }
                             } else {
-                                if (kernelRawOutput.startsWith("[STREAM_COMPLETE]")) "" else kernelRawOutput 
+                                if (kernelRawOutput.startsWith("[DONE]") || kernelRawOutput.startsWith("[STREAM_COMPLETE]")) "" else kernelRawOutput 
                             }
                         } catch (e: Exception) { 
                             kernelRawOutput 
@@ -871,7 +871,7 @@ fun AddProviderDialog(onDismiss: () -> Unit, onSave: (CloudProvider, String) -> 
     var expanded by remember { mutableStateOf(false) }
     
     val templates = listOf(
-        CloudProvider("Gemini", "https://generativelanguage.googleapis.com/v1beta/models/", "gemini-1.5-pro", "api_key"),
+        CloudProvider("Gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent", "gemini-1.5-pro", "api_key"),
         CloudProvider("OpenAI", "https://api.openai.com/v1/chat/completions", "gpt-4-turbo", "api_key"),
         CloudProvider("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", "meta-llama/llama-3-70b", "api_key")
     )
