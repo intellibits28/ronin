@@ -180,20 +180,77 @@ class NativeEngine : ComponentCallbacks2 {
     }
 
     // Phase 4.4.6: Cloud Bridge Activation
-    // Called from JNI to perform actual HTTPS POST requests to AI providers
+    // Phase 4.5.9: Multi-Cloud Registry & Auto-Fallback
     @Suppress("unused")
-    fun performCloudInference(input: String, provider: String): String {
-        Log.i(TAG, "Cloud Bridge: Initiating request to $provider")
+    fun performCloudInference(input: String, primaryProvider: String): String {
+        Log.i(TAG, "Cloud Bridge: Initiating request with primary: $primaryProvider")
+        
+        // 1. Get all providers from disk for fallback chain
+        val providers = mutableListOf<String>()
+        try {
+            val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
+            if (file.exists()) {
+                val jsonArray = JSONArray(file.readText())
+                for (i in 0 until jsonArray.length()) {
+                    providers.add(jsonArray.getJSONObject(i).getString("name"))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load provider registry for fallback: ${e.message}")
+        }
+
+        // 2. Re-order chain so primary is first
+        val chain = mutableListOf<String>()
+        if (primaryProvider.isNotEmpty()) chain.add(primaryProvider)
+        providers.filter { it != primaryProvider }.forEach { chain.add(it) }
+        
+        if (chain.isEmpty()) return "Error: No cloud providers configured."
+
+        // 3. Attempt inference through the chain
+        var lastError = ""
+        for (provider in chain) {
+            Log.i(TAG, "Attempting inference with: $provider")
+            val result = executeSingleInference(input, provider)
+            if (!result.startsWith("Error:")) {
+                return result
+            }
+            lastError = result
+            Log.w(TAG, "Provider $provider failed, falling back...")
+            pushKernelMessage("> FALLBACK: Provider $provider failed. Attempting next...")
+        }
+
+        return lastError
+    }
+
+    private fun executeSingleInference(input: String, provider: String): String {
         val apiKey = getSecureApiKey(provider).trim()
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
 
-        // Phase 4.4.7: Fixed Gemini 1.5 Pro endpoint formatting
-        // Phase 4.5.7: Using v1beta for maximum compatibility across regions
+        // Phase 4.5.6: Final stable endpoint logic
         val endpoint = when(provider) {
             "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
             "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
-            else -> return "Error: Unknown provider $provider"
+            else -> {
+                // Try to find custom endpoint from providers.json
+                try {
+                    val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
+                    val jsonArray = JSONArray(file.readText())
+                    var customUrl = ""
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        if (obj.getString("name") == provider) {
+                            customUrl = obj.getString("endpoint")
+                            break
+                        }
+                    }
+                    if (customUrl.isNotEmpty()) {
+                        if (customUrl.contains("?key=")) customUrl else "$customUrl?key=$apiKey"
+                    } else "Error"
+                } catch (e: Exception) { "Error" }
+            }
         }
+
+        if (endpoint == "Error") return "Error: Unknown provider $provider"
 
         return try {
             val url = java.net.URL(endpoint)
@@ -210,8 +267,7 @@ class NativeEngine : ComponentCallbacks2 {
                 conn.setRequestProperty("X-Title", "Ronin Kernel")
             }
 
-            // Phase 4.4.7: Disable forward-slash escaping to prevent 404/API errors
-            // Phase 4.5.8: Mandatory Gemini Schema (contents array with parts)
+            // Phase 4.5.8: Mandatory Gemini/OpenRouter Schemas
             val jsonBody = if (provider == "Gemini") {
                 val parts = JSONArray().put(JSONObject().put("text", input))
                 val contents = JSONArray().put(JSONObject().put("parts", parts))
@@ -224,6 +280,7 @@ class NativeEngine : ComponentCallbacks2 {
                     ))
             }
 
+            // Phase 4.5.9: Strictly disable escaping for clean URL/Path serialization
             val jsonInputString = jsonBody.toString().replace("\\/", "/")
 
             conn.outputStream.use { os ->

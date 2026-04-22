@@ -92,7 +92,9 @@ class ChatViewModel : ViewModel() {
     var showSettings by mutableStateOf(false)
     var offlineMode by mutableStateOf(false)
     var localModelPath by mutableStateOf("/storage/emulated/0/Ronin/models/gemma_4.litertlm")
+    var primaryCloudProvider by mutableStateOf("Gemini")
     val cloudProviders = mutableStateListOf<CloudProvider>()
+    val discoveredModels = mutableStateListOf<String>()
 }
 
 class MainActivity : ComponentActivity() {
@@ -104,19 +106,105 @@ class MainActivity : ComponentActivity() {
         uri?.let {
             val path = getPathFromUri(it)
             if (path != null) {
-                val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
-                chatViewModel.reasoningLogs.add(0, "Hydration Triggered: $path")
-                lifecycleScope.launch {
-                    val success = nativeEngine.loadModelAsync(path)
-                    if (success) {
-                        sharedPreferences.edit().putString("local_model_path", path).apply()
-                        chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
-                        Toast.makeText(this@MainActivity, "Model reloaded successfully.", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Failed to load model.", Toast.LENGTH_SHORT).show()
+                hydrateModel(path)
+            }
+        }
+    }
+
+    private fun hydrateModel(path: String) {
+        val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
+        
+        // Phase 4.6.1: Model Fingerprinting & Integrity Check
+        val file = java.io.File(path)
+        if (!file.exists()) {
+            Toast.makeText(this, "Model file not found at: $path", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val currentFingerprint = calculateFingerprint(file)
+        val savedFingerprint = sharedPreferences.getString("fingerprint_$path", "")
+
+        if (!savedFingerprint.isNullOrEmpty() && savedFingerprint != currentFingerprint) {
+             runOnUiThread {
+                 AlertDialog.Builder(this)
+                     .setTitle("Anti-Swap Protection")
+                     .setMessage("Warning: Model data changed or corrupted for '$path'. Re-verify model?")
+                     .setPositiveButton("Load Anyway") { _, _ -> performHydration(path, currentFingerprint) }
+                     .setNegativeButton("Cancel", null)
+                     .show()
+             }
+        } else {
+            performHydration(path, currentFingerprint)
+        }
+    }
+
+    private fun performHydration(path: String, fingerprint: String) {
+        val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
+        chatViewModel.reasoningLogs.add(0, "Hydration Triggered: $path")
+        lifecycleScope.launch {
+            val success = nativeEngine.loadModelAsync(path)
+            if (success) {
+                sharedPreferences.edit().putString("local_model_path", path).apply()
+                sharedPreferences.edit().putString("fingerprint_$path", fingerprint).apply()
+                chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
+                Toast.makeText(this@MainActivity, "Model hydrated successfully.", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MainActivity, "Kernel rejected model hydration.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun calculateFingerprint(file: java.io.File): String {
+        return try {
+            val size = file.length()
+            val lastModified = file.lastModified()
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            
+            java.io.FileInputStream(file).use { fis ->
+                val buffer = ByteArray(8192)
+                // Partial Hash: First 10MB
+                var totalRead = 0L
+                val maxPartial = 10 * 1024 * 1024L
+                while (totalRead < maxPartial) {
+                    val read = fis.read(buffer)
+                    if (read == -1) break
+                    md.update(buffer, 0, read)
+                    totalRead += read
+                }
+                
+                // Jump to Last 10MB
+                if (size > maxPartial * 2) {
+                    fis.channel.position(size - maxPartial)
+                    while (true) {
+                        val read = fis.read(buffer)
+                        if (read == -1) break
+                        md.update(buffer, 0, read)
                     }
                 }
             }
+            val hash = md.digest().joinToString("") { "%02x".format(it) }
+            "sz:${size}_ts:${lastModified}_h:${hash.take(16)}"
+        } catch (e: Exception) {
+            "error_${e.message}"
+        }
+    }
+
+    private fun scanLocalModels() {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        val modelsDir = java.io.File("/storage/emulated/0/Ronin/models")
+        if (!modelsDir.exists()) modelsDir.mkdirs()
+        
+        val models = modelsDir.listFiles { _, name -> 
+            name.endsWith(".bin") || name.endsWith(".litertlm") 
+        } ?: emptyArray()
+
+        chatViewModel.discoveredModels.clear()
+        models.forEach { chatViewModel.discoveredModels.add(it.absolutePath) }
+
+        if (models.isEmpty()) {
+            nativeEngine.pushKernelMessage("Warning: No Reasoning Brain detected. Please add models to /storage/emulated/0/Ronin/models/")
+        } else {
+            Log.i("RoninScan", "Discovered ${models.size} models.")
         }
     }
 
@@ -166,14 +254,15 @@ class MainActivity : ComponentActivity() {
 
         setupHardwareCallbacks()
         loadCloudProvidersFromDisk()
+        scanLocalModels()
         
+        val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
+
         // Phase 4.4.8.1: Settings Memory
         val savedModelPath = sharedPreferences.getString("local_model_path", "")
         if (!savedModelPath.isNullOrEmpty()) {
-            lifecycleScope.launch {
-                nativeEngine.loadModelAsync(savedModelPath)
-                Log.i("RoninBoot", "Auto-hydrated model from: $savedModelPath")
-            }
+            hydrateModel(savedModelPath)
+            Log.i("RoninBoot", "Auto-hydrated model from: $savedModelPath")
         }
 
         checkAndRequestStoragePermission()
@@ -184,10 +273,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val chatViewModel: ChatViewModel = viewModel()
-            // Sync active path from Engine before showing UI
+            // Sync active path and provider from Engine/Prefs before showing UI
             LaunchedEffect(Unit) {
                 chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
                 chatViewModel.offlineMode = offline
+                chatViewModel.primaryCloudProvider = lastProvider
             }
             RoninChatUI(nativeEngine, chatViewModel, modelPickerLauncher)
         }
@@ -473,6 +563,12 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             onSelectModel = { modelPicker.launch(arrayOf("*/*")) },
             currentModelPath = chatViewModel.localModelPath,
             providers = chatViewModel.cloudProviders,
+            discoveredModels = chatViewModel.discoveredModels,
+            primaryProvider = chatViewModel.primaryCloudProvider,
+            onPrimaryProviderChange = { 
+                chatViewModel.primaryCloudProvider = it
+                (context as? MainActivity)?.savePrimaryCloudProvider(it)
+            },
             onAddProvider = { showAddProvider = true },
             offlineMode = chatViewModel.offlineMode,
             onOfflineModeChange = { 
@@ -830,7 +926,18 @@ fun ChatInput(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit
 }
 
 @Composable
-fun SettingsDialog(onDismiss: () -> Unit, onSelectModel: () -> Unit, currentModelPath: String, providers: List<CloudProvider>, onAddProvider: () -> Unit, offlineMode: Boolean, onOfflineModeChange: (Boolean) -> Unit) {
+fun SettingsDialog(
+    onDismiss: () -> Unit, 
+    onSelectModel: () -> Unit, 
+    currentModelPath: String, 
+    providers: List<CloudProvider>, 
+    discoveredModels: List<String>,
+    primaryProvider: String,
+    onPrimaryProviderChange: (String) -> Unit,
+    onAddProvider: () -> Unit, 
+    offlineMode: Boolean, 
+    onOfflineModeChange: (Boolean) -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss, 
         title = { 
@@ -843,15 +950,29 @@ fun SettingsDialog(onDismiss: () -> Unit, onSelectModel: () -> Unit, currentMode
                     Switch(checked = offlineMode, onCheckedChange = onOfflineModeChange)
                 }
                 Spacer(Modifier.height(8.dp))
-                Text("Active Engine Paths", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
-                Text(currentModelPath, fontSize = 10.sp, color = MaterialTheme.colors.onSurface, fontFamily = FontFamily.Monospace)
-                Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) { 
-                    Text("Change Reasoning Model (.bin)") 
+                Text("Reasoning Brains", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
+                if (discoveredModels.isEmpty()) {
+                    Text("No models detected in /Ronin/models/", color = Color.Red, fontSize = 10.sp)
+                } else {
+                    discoveredModels.forEach { path ->
+                        val name = path.substringAfterLast("/")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = path == currentModelPath, onClick = { /* Picked via OpenDocument for now */ })
+                            Text(name, fontSize = 10.sp, color = MaterialTheme.colors.onSurface)
+                        }
+                    }
                 }
+                Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) { 
+                    Text("Load External Model") 
+                }
+                
                 Spacer(Modifier.height(16.dp))
-                Text("Cloud Providers", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
-                providers.forEach { 
-                    Text("${it.name} (${it.modelId})", color = MaterialTheme.colors.onSurface) 
+                Text("Cloud Registry", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
+                providers.forEach { provider ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = provider.name == primaryProvider, onClick = { onPrimaryProviderChange(provider.name) })
+                        Text("${provider.name} (${provider.modelId})", color = MaterialTheme.colors.onSurface)
+                    }
                 }
                 Button(onClick = onAddProvider, modifier = Modifier.padding(top = 4.dp)) { 
                     Text("Add Cloud Provider") 
