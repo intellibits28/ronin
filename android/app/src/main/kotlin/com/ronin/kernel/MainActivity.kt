@@ -33,7 +33,25 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.*
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Surface
+import androidx.compose.material.Text
+import androidx.compose.material.TopAppBar
+import androidx.compose.material.IconButton
+import androidx.compose.material.Icon
+import androidx.compose.material.Scaffold
+import androidx.compose.material.rememberScaffoldState
+import androidx.compose.material.LinearProgressIndicator
+import androidx.compose.material.TextField
+import androidx.compose.material.TextFieldDefaults
+import androidx.compose.material.Button
+import androidx.compose.material.TextButton
+import androidx.compose.material.Switch
+import androidx.compose.material.RadioButton
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.OutlinedButton
+import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
@@ -126,14 +144,19 @@ class MainActivity : ComponentActivity() {
 
         if (!savedFingerprint.isNullOrEmpty() && savedFingerprint != currentFingerprint) {
              runOnUiThread {
-                 AlertDialog.Builder(this)
-                     .setTitle("Anti-Swap Protection")
-                     .setMessage("Warning: Model data changed or corrupted for '$path'. Re-verify model?")
-                     .setPositiveButton("Load Anyway") { _, _ -> performHydration(path, currentFingerprint) }
-                     .setNegativeButton("Cancel", null)
-                     .show()
+                 val builder = android.app.AlertDialog.Builder(this@MainActivity)
+                 builder.setTitle("Anti-Swap Protection")
+                 builder.setMessage("Warning: Model data changed or corrupted for '$path'. Re-verify model?")
+                 builder.setPositiveButton("Load Anyway") { dialog: android.content.DialogInterface, which: Int -> 
+                     performHydration(path, currentFingerprint) 
+                 }
+                 builder.setNegativeButton("Cancel") { dialog: android.content.DialogInterface, which: Int -> 
+                     dialog.dismiss() 
+                 }
+                 builder.show()
              }
-        } else {
+        }
+ else {
             performHydration(path, currentFingerprint)
         }
     }
@@ -543,7 +566,13 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel(), modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>) {
+fun RoninChatUI(
+    engine: NativeEngine, 
+    chatViewModel: ChatViewModel = viewModel(), 
+    modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+    onSaveOfflineMode: (Boolean) -> Unit,
+    onSavePrimaryCloudProvider: (String) -> Unit
+) {
     var inputText by remember { mutableStateOf("") }
     val messages = chatViewModel.messages
     val reasoningLogs = chatViewModel.reasoningLogs
@@ -571,14 +600,14 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel = viewModel()
             primaryProvider = chatViewModel.primaryCloudProvider,
             onPrimaryProviderChange = { 
                 chatViewModel.primaryCloudProvider = it
-                (context as? MainActivity)?.savePrimaryCloudProvider(it)
+                onSavePrimaryCloudProvider(it)
             },
             onAddProvider = { showAddProvider = true },
             offlineMode = chatViewModel.offlineMode,
             onOfflineModeChange = { 
                 chatViewModel.offlineMode = it
                 engine.setOfflineMode(it)
-                (context as? MainActivity)?.saveOfflineMode(it)
+                onSaveOfflineMode(it)
             }
         )
     }
@@ -1083,4 +1112,6 @@ fun StabilityMeter(stability: Float) {
         Text("Stability", style = MaterialTheme.typography.caption, color = MaterialTheme.colors.onSurface)
         LinearProgressIndicator(progress = stability, color = color, backgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.1f), modifier = Modifier.width(100.dp))
     }
+}
+}
 }
