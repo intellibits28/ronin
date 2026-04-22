@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.AlertDialog
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
@@ -130,8 +131,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun hydrateModel(path: String) {
-        val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
-        
         // Phase 4.6.1: Model Fingerprinting & Integrity Check
         val file = java.io.File(path)
         if (!file.exists()) {
@@ -155,8 +154,7 @@ class MainActivity : ComponentActivity() {
                  }
                  builder.show()
              }
-        }
- else {
+        } else {
             performHydration(path, currentFingerprint)
         }
     }
@@ -302,7 +300,13 @@ class MainActivity : ComponentActivity() {
                 chatViewModel.offlineMode = offline
                 chatViewModel.primaryCloudProvider = lastProvider
             }
-            RoninChatUI(nativeEngine, chatViewModel, modelPickerLauncher)
+            RoninChatUI(
+                engine = nativeEngine, 
+                chatViewModel = chatViewModel, 
+                modelPicker = modelPickerLauncher,
+                onSaveOfflineMode = { saveOfflineMode(it) },
+                onSavePrimaryCloudProvider = { savePrimaryCloudProvider(it) }
+            )
         }
     }
 
@@ -1112,6 +1116,4 @@ fun StabilityMeter(stability: Float) {
         Text("Stability", style = MaterialTheme.typography.caption, color = MaterialTheme.colors.onSurface)
         LinearProgressIndicator(progress = stability, color = color, backgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.1f), modifier = Modifier.width(100.dp))
     }
-}
-}
 }
