@@ -120,12 +120,42 @@ class MainActivity : ComponentActivity() {
     private val nativeEngine = NativeEngine()
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var sharedPreferences: android.content.SharedPreferences
+    private var lastPermissionState = false
 
     private val modelPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
             val path = getPathFromUri(it)
             if (path != null) {
                 hydrateModel(path)
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Phase 4.6.6: OnResume Refresh Logic
+        val currentPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+
+        if (currentPermission && !lastPermissionState) {
+            Log.i("RoninLifecycle", "Permission granted while resumed. Refreshing registry.")
+            refreshRegistry()
+        }
+        lastPermissionState = currentPermission
+    }
+
+    private fun refreshRegistry() {
+        lifecycleScope.launch {
+            // All Files Access Guard: wait 500ms for OS filesystem sync
+            delay(500)
+            scanLocalModels()
+            
+            val savedModelPath = sharedPreferences.getString("local_model_path", "")
+            if (!savedModelPath.isNullOrEmpty()) {
+                hydrateModel(savedModelPath)
             }
         }
     }
@@ -275,13 +305,22 @@ class MainActivity : ComponentActivity() {
 
         setupHardwareCallbacks()
         loadCloudProvidersFromDisk()
-        scanLocalModels()
+        
+        lastPermissionState = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+
+        if (lastPermissionState) {
+            scanLocalModels()
+        }
         
         val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
 
         // Phase 4.4.8.1: Settings Memory
         val savedModelPath = sharedPreferences.getString("local_model_path", "")
-        if (!savedModelPath.isNullOrEmpty()) {
+        if (!savedModelPath.isNullOrEmpty() && lastPermissionState) {
             hydrateModel(savedModelPath)
             Log.i("RoninBoot", "Auto-hydrated model from: $savedModelPath")
         }
@@ -524,6 +563,15 @@ class MainActivity : ComponentActivity() {
     fun saveCloudProvider(provider: CloudProvider, apiKey: String) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         sharedPreferences.edit().putString(provider.name, apiKey).apply()
+        
+        // Phase 4.6.5: Configuration Deduplication
+        val existingIndex = chatViewModel.cloudProviders.indexOfFirst { it.name == provider.name }
+        if (existingIndex != -1) {
+            chatViewModel.cloudProviders[existingIndex] = provider
+        } else {
+            chatViewModel.cloudProviders.add(provider)
+        }
+
         try {
             val jsonArray = JSONArray()
             chatViewModel.cloudProviders.forEach { p ->
@@ -621,7 +669,6 @@ fun RoninChatUI(
         AddProviderDialog(
             onDismiss = { showAddProvider = false },
             onSave = { provider, key ->
-                chatViewModel.cloudProviders.add(provider)
                 (context as? MainActivity)?.saveCloudProvider(provider, key)
             }
         )
