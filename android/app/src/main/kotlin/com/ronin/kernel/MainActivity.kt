@@ -522,6 +522,10 @@ class MainActivity : ComponentActivity() {
         sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
     }
 
+    fun savePrimaryCloudProvider(name: String) {
+        sharedPreferences.edit().putString("primary_cloud_provider", name).apply()
+    }
+
     private fun checkAndRequestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
