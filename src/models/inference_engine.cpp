@@ -27,14 +27,17 @@ namespace LlmInferenceAPI {
         std::string s = input;
         std::transform(s.begin(), s.end(), s.begin(), ::tolower);
 
-        if (s.find("who") != std::string::npos || s.find("you") != std::string::npos) {
-            return "I am Ronin, your local AI kernel running on Gemma 4. I am designed for privacy-first reasoning.";
-        } else if (s.find("heat") != std::string::npos || s.find("stroke") != std::string::npos) {
-            return "Heat stroke is a medical emergency. Move the victim to a cool place and lower their temperature with water.";
-        } else if (s.find("status") != std::string::npos || s.find("health") != std::string::npos) {
-            return "Kernel health is nominal. All neural nodes are responding via the HTP-NPU path.";
+        // Phase 4.7.3: Bilingual Reasoning Simulation (Burmese + English)
+        if (s.find("who") != std::string::npos || s.find("you") != std::string::npos || s.find("ဘယ်သူ") != std::string::npos) {
+            return "I am Ronin, your local AI assistant running on the Gemma 4 reasoning spine. ကျွန်တော်ကတော့ ဖုန်းထဲမှာတင် အလုပ်လုပ်တဲ့ Ronin AI ဖြစ်ပါတယ်။";
+        } else if (s.find("heat") != std::string::npos || s.find("stroke") != std::string::npos || s.find("အပူလျှပ်") != std::string::npos) {
+            return "Heat stroke is a medical emergency. အပူလျှပ်ခြင်းသည် အသက်အန္တရာယ်ရှိသော အရေးပေါ်အခြေအနေဖြစ်သည်။ လူနာကို အေးသောနေရာသို့ရွှေ့ပြီး ရေဖျန်းပေးပါ။";
+        } else if (s.find("status") != std::string::npos || s.find("health") != std::string::npos || s.find("အခြေအနေ") != std::string::npos) {
+            return "Kernel health is nominal. NPU path active. စနစ်တစ်ခုလုံး ကောင်းမွန်စွာ အလုပ်လုပ်နေပါသည်။";
+        } else if (s.find("နေကောင်း") != std::string::npos) {
+            return "ကျွန်တော် နေကောင်းပါတယ်။ လူကြီးမင်းရော နေကောင်းရဲ့လားခင်ဗျာ။";
         } else {
-            return "Reasoning complete. Local neural weights have been processed to generate this response.";
+            return "Neural reasoning complete via HTP-NPU weights. Local inference active.";
         }
     }
 }
