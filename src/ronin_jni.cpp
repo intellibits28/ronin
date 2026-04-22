@@ -317,6 +317,10 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
             bool resumed = cm->stitchContext("intent_" + std::to_string(intent.id));
             if (resumed) {
                 LOGI(TAG, "LMK Survival: Context stitched successfully. Resuming session.");
+            } else {
+                // Phase 4.6.9: Intent mismatch requires clearing buffers for a fresh session
+                LOGW(TAG, "LMK Survival: Intent changed. Clearing local memory buffers.");
+                if (g_memory_manager) g_memory_manager->clearContext();
             }
         }
     }
