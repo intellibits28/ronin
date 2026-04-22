@@ -96,6 +96,7 @@ class NativeEngine : ComponentCallbacks2 {
     external fun updateSystemHealth(temperature: Float, ramUsedGB: Float, ramTotalGB: Float): Boolean
     external fun notifyTrimMemory(level: Int)
     external fun setEngineInstance()
+    external fun setPrimaryCloudProvider(provider: String)
     external fun hydrate()
     external fun injectLocation(lat: Double, lon: Double)
     external fun loadModel(path: String): Boolean
@@ -226,31 +227,40 @@ class NativeEngine : ComponentCallbacks2 {
         val apiKey = getSecureApiKey(provider).trim()
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
 
-        // Phase 4.5.6: Final stable endpoint logic
-        val endpoint = when(provider) {
-            "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
-            "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
-            else -> {
-                // Try to find custom endpoint from providers.json
-                try {
-                    val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
-                    val jsonArray = JSONArray(file.readText())
-                    var customUrl = ""
-                    for (i in 0 until jsonArray.length()) {
-                        val obj = jsonArray.getJSONObject(i)
-                        if (obj.getString("name") == provider) {
-                            customUrl = obj.getString("endpoint")
-                            break
-                        }
+        // Phase 4.6.3: Multi-Provider Logic Marriage
+        var finalEndpoint = ""
+        var modelId = "gemini-1.5-flash" // Default
+
+        // Load specific config for this provider
+        try {
+            val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
+            if (file.exists()) {
+                val jsonArray = JSONArray(file.readText())
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    if (obj.getString("name") == provider) {
+                        finalEndpoint = obj.getString("endpoint")
+                        modelId = obj.getString("model_id")
+                        break
                     }
-                    if (customUrl.isNotEmpty()) {
-                        if (customUrl.contains("?key=")) customUrl else "$customUrl?key=$apiKey"
-                    } else "Error"
-                } catch (e: Exception) { "Error" }
+                }
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Fallback to hardcoded endpoint logic for $provider")
         }
 
-        if (endpoint == "Error") return "Error: Unknown provider $provider"
+        // Security: Ensure API key is appended correctly for Gemini
+        val endpoint = if (finalEndpoint.isEmpty()) {
+            when(provider) {
+                "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
+                "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
+                else -> return "Error: Unknown provider $provider"
+            }
+        } else {
+            if (provider == "Gemini" && !finalEndpoint.contains("key=")) {
+                if (finalEndpoint.contains("?")) "$finalEndpoint&key=$apiKey" else "$finalEndpoint?key=$apiKey"
+            } else finalEndpoint
+        }
 
         return try {
             val url = java.net.URL(endpoint)
@@ -267,14 +277,15 @@ class NativeEngine : ComponentCallbacks2 {
                 conn.setRequestProperty("X-Title", "Ronin Kernel")
             }
 
-            // Phase 4.5.8: Mandatory Gemini/OpenRouter Schemas
+            // Phase 4.6.3: Provider-Specific Payload Logic
             val jsonBody = if (provider == "Gemini") {
                 val parts = JSONArray().put(JSONObject().put("text", input))
                 val contents = JSONArray().put(JSONObject().put("parts", parts))
                 JSONObject().put("contents", contents)
             } else {
+                // OpenAI / OpenRouter compatible schema
                 JSONObject()
-                    .put("model", "meta-llama/llama-3-70b")
+                    .put("model", modelId)
                     .put("messages", JSONArray().put(
                         JSONObject().put("role", "user").put("content", input)
                     ))

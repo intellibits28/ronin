@@ -124,7 +124,7 @@ public:
     }
 
     /**
-     * Phase 4.4.5: Privacy Layer
+     * Phase 4.6.3: Multi-Provider Logic Marriage
      * Toggles whether cloud escalation is allowed.
      */
     void setOfflineMode(bool offline) {
@@ -133,6 +133,14 @@ public:
 
     bool isOfflineMode() const {
         return m_offline_mode;
+    }
+
+    void setPrimaryCloudProvider(const std::string& provider) {
+        m_primary_cloud_provider = provider;
+    }
+
+    std::string getPrimaryCloudProvider() const {
+        return m_primary_cloud_provider;
     }
 
     // Phase 4.1: Hardware Reality tracking
@@ -146,6 +154,7 @@ private:
     std::shared_ptr<Ronin::Kernel::Checkpoint::CheckpointManager> m_checkpoint_manager;
     std::shared_ptr<Ronin::Kernel::Model::LoraDispatcher> m_lora_dispatcher;
     bool m_offline_mode = false;
+    std::string m_primary_cloud_provider = "Gemini";
 
     // Phase 4.0: Vtable-based Skill Registry
     std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;

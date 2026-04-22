@@ -604,7 +604,8 @@ fun RoninChatUI(
             primaryProvider = chatViewModel.primaryCloudProvider,
             onPrimaryProviderChange = { 
                 chatViewModel.primaryCloudProvider = it
-                onSavePrimaryCloudProvider(it)
+                engine.setPrimaryCloudProvider(it)
+                (context as? MainActivity)?.savePrimaryCloudProvider(it)
             },
             onAddProvider = { showAddProvider = true },
             offlineMode = chatViewModel.offlineMode,
@@ -1006,7 +1007,10 @@ fun SettingsDialog(
                 Spacer(Modifier.height(16.dp))
                 Text("Cloud Registry", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
                 providers.forEach { provider ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { onPrimaryProviderChange(provider.name) }.padding(vertical = 4.dp)
+                    ) {
                         RadioButton(selected = provider.name == primaryProvider, onClick = { onPrimaryProviderChange(provider.name) })
                         Text("${provider.name} (${provider.modelId})", color = MaterialTheme.colors.onSurface)
                     }

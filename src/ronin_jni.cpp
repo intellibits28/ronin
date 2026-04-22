@@ -362,8 +362,9 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
             bool offline = g_intent_engine ? g_intent_engine->isOfflineMode() : false;
             // Escalation Logic: If input is tagged as "complex" or Local Brain confidence was < 0.75
             if (!offline && (input_str.find("complex") != std::string::npos || intent.confidence < 0.75f)) {
-                std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey("Gemini");
-                response = inference->escalateToCloud(input_str, apiKey);
+                std::string primaryProvider = g_intent_engine ? g_intent_engine->getPrimaryCloudProvider() : "Gemini";
+                std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey(primaryProvider);
+                response = inference->escalateToCloud(input_str, apiKey, primaryProvider);
             } else {
                 if (offline && (input_str.find("complex") != std::string::npos || intent.confidence < 0.75f)) {
                     response = localReasoning + "\n[OFFLINE] Cloud escalation suppressed by user.";
@@ -389,6 +390,15 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     }
 
     return env->NewStringUTF(structuredResponse.c_str());
+}
+
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) {
+    if (g_intent_engine) {
+        const char *provider_str = env->GetStringUTFChars(provider, nullptr);
+        g_intent_engine->setPrimaryCloudProvider(provider_str);
+        env->ReleaseStringUTFChars(provider, provider_str);
+    }
 }
 
 JNIEXPORT void JNICALL

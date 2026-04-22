@@ -37,7 +37,7 @@ public:
      * Secure Cloud Escalation.
      * Triggered if local confidence is < 0.75.
      */
-    std::string escalateToCloud(const std::string& input, const std::string& apiKey);
+    std::string escalateToCloud(const std::string& input, const std::string& apiKey, const std::string& provider);
 
     /**
      * Data Protocol v4.3: Returns structured JSON for multi-turn reliability.
