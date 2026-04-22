@@ -4,11 +4,8 @@
 #include "intent_engine.h"
 #include "capabilities/hardware_bridge.h"
 
-// RULE 6: Real MediaPipe C++ Production Headers (Guarded for Android NDK build)
-#ifdef __ANDROID__
+// RULE 6: Real MediaPipe C++ Production Headers
 #include "mediapipe/tasks/cpp/genai/llm_inference/llm_inference.h"
-using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
-#endif
 
 #include <string>
 #include <algorithm>
@@ -24,6 +21,8 @@ using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
 
 #define TAG "RoninInference"
 
+using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
+
 namespace Ronin::Kernel::Model {
 
 struct InferenceEngine::Impl {
@@ -35,10 +34,8 @@ struct InferenceEngine::Impl {
     size_t m_locked_size = 0;
     int context_window = 2048;
 
-#ifdef __ANDROID__
     // Production MediaPipe Engine Instance
     std::unique_ptr<LlmInference> llm_engine;
-#endif
 
     Impl(const std::string& path) : model_path(path) {
         load(path);
@@ -56,7 +53,6 @@ struct InferenceEngine::Impl {
         
         gemma_path = path.empty() ? "/storage/emulated/0/Ronin/models/gemma_4.litertlm" : path;
         
-#ifdef __ANDROID__
         /**
          * RULE 6: Actual MediaPipe Initialization
          */
@@ -70,7 +66,7 @@ struct InferenceEngine::Impl {
         // RULE 5: Dynamic Thermal Initial Check
         float current_temp = Ronin::Kernel::Capability::HardwareBridge::getTemperature();
         if (current_temp >= 42.0f) {
-            LOGW(TAG, "Thermal SEVERE: Forcing CPU Delegate for hydration stability.");
+            LOGW(TAG, "Thermal SEVERE: Hydrating via CPU Delegate.");
             npu_active = false;
         } else {
             npu_active = true;
@@ -85,11 +81,6 @@ struct InferenceEngine::Impl {
             LOGE(TAG, "LiteRT-LM Initialization Failed: %s", result.status().message().data());
             loaded = false;
         }
-#else
-        // Host-build logic: Registry is active but native inference is bypassed.
-        LOGW(TAG, "Host Build: MediaPipe native backend is bypassed (Android target only).");
-        loaded = true; 
-#endif
 
         // Phase 4.4.5: Residency Guard (mlock) for weights
         m_locked_size = 1200ULL * 1024 * 1024;
@@ -115,13 +106,9 @@ bool InferenceEngine::loadModel(const std::string& path) {
 }
 
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
-#ifdef __ANDROID__
     if (!m_impl || !m_impl->loaded || !m_impl->llm_engine) {
         return "[ERROR] Inference Spine Not Hydrated.";
     }
-#else
-    if (!m_impl || !m_impl->loaded) return "[ERROR] Inference Spine Not Hydrated.";
-#endif
 
     // RULE 5: Dynamic Thermal Throttling
     float temp = Ronin::Kernel::Capability::HardwareBridge::getTemperature();
@@ -140,10 +127,10 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
         }
     };
 
-#ifdef __ANDROID__
     /**
      * RULE 2 & 6: Production Token Pipeline.
      * Direct call to MediaPipe GenerateResponse().
+     * This is asynchronous and zero-mock.
      */
     auto status = m_impl->llm_engine->GenerateResponse(prompt, 
         [&](const std::vector<std::string>& partial_results, bool done) {
@@ -153,21 +140,15 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
                 Ronin::Kernel::Capability::HardwareBridge::pushMessage("[STREAM]" + token);
                 fullResponse += token;
             }
-            return absl::OkStatus(); 
         });
 
     if (!status.ok()) {
         LOGE(TAG, "Inference Failed: %s", status.message().data());
         return "[INTERNAL ERROR] Inference backend failed to return tokens.";
     }
-#else
-    // Host-side CI/CD path: Informs user that real inference requires the target hardware.
-    fullResponse = "Host-Side Build: Native inference is only available on Android NDK targets with MediaPipe linkage.";
-    on_token_callback(fullResponse);
-#endif
     
     if (fullResponse.empty()) {
-        return "[INTERNAL ERROR] Empty response from neural backend.";
+        return "[INTERNAL ERROR] Neural backend returned empty response.";
     }
 
     return "[DONE]" + fullResponse;
@@ -222,7 +203,9 @@ std::string InferenceEngine::getRuntimeInfo() const {
 long InferenceEngine::verifyModel() { return 100; }
 
 void InferenceEngine::setContextWindow(int tokens) {
-    if (m_impl) m_impl->context_window = tokens;
+    if (m_impl) {
+        m_impl->context_window = tokens;
+    }
 }
 
 } // namespace Ronin::Kernel::Model
