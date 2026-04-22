@@ -684,6 +684,10 @@ fun RoninChatUI(
                 } else {
                     messages.add("Ronin: $token")
                 }
+            } else if (message.startsWith("[THINKING]")) {
+                // Phase 4.6.9 Preview: Thinking UI Readiness
+                val thought = message.substringAfter("[THINKING]")
+                reasoningLogs.add(0, "> THOUGHT: $thought")
             } else {
                 reasoningLogs.add(0, message)
             }
