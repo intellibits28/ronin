@@ -528,13 +528,13 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     }
 
     // Tier 4: Default Fallback
-    // Phase 4.4.9.5: Router Confidence Boost (Updated 4.5.2)
-    // Any input that reaches this tier is routed to ChatSkill (ID 1)
-    // with 0.5 confidence to allow Cloud Bridge escalation if online.
-    std::string fallbackMsg = "> Tier 4: Fallback Routing. Deferring to Chat Engine (ID 1) [Confidence: 0.5].";
+    // Phase 4.6.7: Local Gemma 4 Core Integration
+    // Any input that reaches this tier is force-routed to ChatSkill (ID 1)
+    // with 1.0 confidence to ensure local reasoning is triggered.
+    std::string fallbackMsg = "> Tier 4: Fallback Routing. Triggering Local Reasoning Spine (ID 1).";
     LOGI(TAG, "%s", fallbackMsg.c_str());
     Ronin::Kernel::Capability::HardwareBridge::pushMessage(fallbackMsg);
-    return {1, 0.5f, true};
+    return {1, 1.0f, true};
 }
 
 /**
