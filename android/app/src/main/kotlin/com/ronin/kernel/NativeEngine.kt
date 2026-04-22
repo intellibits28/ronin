@@ -121,19 +121,15 @@ class NativeEngine : ComponentCallbacks2 {
     fun triggerHardwareAction(nodeId: Int, cppState: Boolean): Boolean {
         Log.i(TAG, "Native request: Triggering action for Node $nodeId (C++ Suggested State: $cppState)")
 
-        // RULE 1: Kotlin-Level Intent Interception for Flashlight (ID 4)
-        // Bypasses C++ encoding failures and provides hardware state awareness.
         if (nodeId == 4) {
             val input = lastUserInput
-            
-            // Native string matching handles ZWSP and Unicode variants better than C++ byte-matching
             val explicitOff = input.contains("ပိတ်") || input.contains("off") || input.contains("stop") || input.contains("disable")
             val explicitOn = input.contains("ဖွင့်") || input.contains("on") || input.contains("enable")
             
             val targetState = when {
                 explicitOff -> false
                 explicitOn -> true
-                else -> !isFlashlightOn // Smart Toggle if the intent is ambiguous (e.g., just "Flashlight" or "မီး")
+                else -> !isFlashlightOn
             }
 
             if (targetState != isFlashlightOn) {
@@ -143,20 +139,17 @@ class NativeEngine : ComponentCallbacks2 {
                         val cameraId = manager.cameraIdList[0]
                         manager.setTorchMode(cameraId, targetState)
                         isFlashlightOn = targetState
-                        Log.i(TAG, "Kotlin Shield: Flashlight state verified and set to $targetState")
-                        return isFlashlightOn // Explicitly return state
+                        return isFlashlightOn
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Camera HAL lockup prevented: ${e.message}")
-                    return isFlashlightOn // Return current state on failure
+                    return isFlashlightOn
                 }
             } else {
-                Log.i(TAG, "Kotlin Shield: Flashlight already in requested state $targetState. Ignoring.")
-                return isFlashlightOn // Explicitly return existing state
+                return isFlashlightOn
             }
         }
 
-        // Standard routing for other hardware (WiFi, BT) using C++ logic
         val success = try {
             executeHardwareAction?.invoke(nodeId, cppState) ?: false
         } catch (e: Exception) {
@@ -167,26 +160,20 @@ class NativeEngine : ComponentCallbacks2 {
         return success
     }
 
-    // Called from C++ ExecHandlers for data retrieval
     @Suppress("unused")
     fun requestHardwareData(nodeId: Int): String {
-        Log.i(TAG, "Native request: Fetching data for Node $nodeId")
         return onRequestHardwareData?.invoke(nodeId) ?: "Error: Hardware data provider not ready."
     }
 
-    // Called from JNI for real-time stability updates
     @Suppress("unused")
     fun updateSystemTiers(temp: Float, used: Float, total: Float) {
         onSystemTiersUpdate?.invoke(temp, used, total)
     }
 
-    // Phase 4.4.6: Cloud Bridge Activation
-    // Phase 4.5.9: Multi-Cloud Registry & Auto-Fallback
     @Suppress("unused")
     fun performCloudInference(input: String, primaryProvider: String): String {
         Log.i(TAG, "Cloud Bridge: Initiating request with primary: $primaryProvider")
         
-        // 1. Get all providers from disk for fallback chain
         val providers = mutableListOf<String>()
         try {
             val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
@@ -200,14 +187,12 @@ class NativeEngine : ComponentCallbacks2 {
             Log.e(TAG, "Failed to load provider registry for fallback: ${e.message}")
         }
 
-        // 2. Re-order chain so primary is first
         val chain = mutableListOf<String>()
         if (primaryProvider.isNotEmpty()) chain.add(primaryProvider)
         providers.filter { it != primaryProvider }.forEach { chain.add(it) }
         
         if (chain.isEmpty()) return "Error: No cloud providers configured."
 
-        // 3. Attempt inference through the chain
         var lastError = ""
         for (provider in chain) {
             Log.i(TAG, "Attempting inference with: $provider")
@@ -227,11 +212,9 @@ class NativeEngine : ComponentCallbacks2 {
         val apiKey = getSecureApiKey(provider).trim()
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
 
-        // Phase 4.6.8: Model ID Migration & URL Hardening
         var finalEndpoint = ""
-        var modelId = "gemini-pro-latest" // 2026 Default
+        var modelId = "gemini-pro-latest"
 
-        // Load specific config for this provider
         try {
             val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
             if (file.exists()) {
@@ -249,7 +232,6 @@ class NativeEngine : ComponentCallbacks2 {
             Log.w(TAG, "Fallback to hardened builder for $provider")
         }
 
-        // Phase 4.6.8: Strictly use the v1 stable pattern for Google providers
         val endpoint = if (finalEndpoint.isEmpty() || provider.contains("Gemini")) {
             if (provider.contains("Gemini")) {
                 "https://generativelanguage.googleapis.com/v1/models/$modelId:generateContent?key=$apiKey"
@@ -264,6 +246,11 @@ class NativeEngine : ComponentCallbacks2 {
         }
 
         if (endpoint == "Error" || endpoint.isEmpty()) return "Error: Could not resolve endpoint for $provider"
+
+        return try {
+            val url = java.net.URL(endpoint)
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 15000
             conn.readTimeout = 15000
             conn.requestMethod = "POST"
             conn.doOutput = true
@@ -275,13 +262,11 @@ class NativeEngine : ComponentCallbacks2 {
                 conn.setRequestProperty("X-Title", "Ronin Kernel")
             }
 
-            // Phase 4.6.3: Provider-Specific Payload Logic
             val jsonBody = if (provider == "Gemini") {
                 val parts = JSONArray().put(JSONObject().put("text", input))
                 val contents = JSONArray().put(JSONObject().put("parts", parts))
                 JSONObject().put("contents", contents)
             } else {
-                // OpenAI / OpenRouter compatible schema
                 JSONObject()
                     .put("model", modelId)
                     .put("messages", JSONArray().put(
@@ -289,7 +274,6 @@ class NativeEngine : ComponentCallbacks2 {
                     ))
             }
 
-            // Phase 4.5.9: Strictly disable escaping for clean URL/Path serialization
             val jsonInputString = jsonBody.toString().replace("\\/", "/")
 
             conn.outputStream.use { os ->
@@ -330,7 +314,6 @@ class NativeEngine : ComponentCallbacks2 {
         }
     }
 
-    // Called from JNI for asynchronous UI updates
     @Suppress("unused")
     fun pushKernelMessage(message: String) {
         Log.i(TAG, "Kernel push: $message")
@@ -339,9 +322,7 @@ class NativeEngine : ComponentCallbacks2 {
         }
     }
 
-    // --- ComponentCallbacks2 Implementation ---
     override fun onTrimMemory(level: Int) {
-        // TRIM_MEMORY_RUNNING_CRITICAL (15) or TRIM_MEMORY_COMPLETE (80)
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
             Log.w(TAG, "OS Signal: Low Memory (Level $level). Notifying Kernel.")
             notifyTrimMemory(level)
@@ -352,8 +333,6 @@ class NativeEngine : ComponentCallbacks2 {
     override fun onLowMemory() {
         notifyTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
     }
-
-    // --- Coroutine Wrappers ---
 
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         val raw = getChatHistory(limit, offset) ?: return@withContext emptyList<Pair<String, String>>()
@@ -375,7 +354,7 @@ class NativeEngine : ComponentCallbacks2 {
     }
 
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
-        lastUserInput = input // Cache raw input for native callback verification
+        lastUserInput = input 
         processInput(input)
     }
 

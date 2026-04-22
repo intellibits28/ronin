@@ -704,11 +704,12 @@ fun RoninChatUI(
             scope.launch {
                 val pageSize = 20
                 val offset = chatViewModel.historyPage * pageSize
-                val newHistory = engine.getChatHistoryAsync(pageSize, offset)
+                val newHistory: List<Pair<String, String>> = engine.getChatHistoryAsync(pageSize, offset)
                 if (newHistory.isEmpty()) {
                     chatViewModel.hasMoreHistory = false
                 } else {
-                    newHistory.reversed().forEach { (role, content) ->
+                    for (pair in newHistory.reversed()) {
+                        val (role, content) = pair
                         val msg = if (role == "user") "User: $content" else "Ronin: $content"
                         if (!messages.contains(msg)) {
                             messages.add(0, msg)
