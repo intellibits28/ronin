@@ -372,8 +372,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     if (sv_input.find("hi") != std::string_view::npos || 
         sv_input.find("hello") != std::string_view::npos || 
         sv_input.find("ဟေး") != std::string_view::npos || 
-        sv_input.find("မင်္ဂလာပါ") != std::string_view::npos) {
-        LOGI(TAG, ">>> Routing: Greeting Match (ID 1) bypassing confidence check.");
+        sv_input.find("မင်္ဂလာပါ") != std::string_view::npos ||
+        sv_input.find("မင်းဘယ်မှာလဲ") != std::string_view::npos) {
+        LOGI(TAG, ">>> Routing: Greeting/Personal Match (ID 1) bypassing confidence check.");
         return {1, 1.0f, true};
     }
 

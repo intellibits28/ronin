@@ -211,14 +211,11 @@ class NativeEngine : ComponentCallbacks2 {
             }
 
             // Phase 4.4.7: Disable forward-slash escaping to prevent 404/API errors
-            // Phase 4.5.0: Mandatory Gemini Schema (contents -> parts -> text)
-            // Phase 4.4.9.5: Strict Schema Alignment
+            // Phase 4.5.8: Mandatory Gemini Schema (contents array with parts)
             val jsonBody = if (provider == "Gemini") {
-                JSONObject().put("contents", JSONArray().put(
-                    JSONObject().put("parts", JSONArray().put(
-                        JSONObject().put("text", input)
-                    ))
-                ))
+                val parts = JSONArray().put(JSONObject().put("text", input))
+                val contents = JSONArray().put(JSONObject().put("parts", parts))
+                JSONObject().put("contents", contents)
             } else {
                 JSONObject()
                     .put("model", "meta-llama/llama-3-70b")
