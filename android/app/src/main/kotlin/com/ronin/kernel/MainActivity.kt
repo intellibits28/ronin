@@ -1086,9 +1086,10 @@ fun AddProviderDialog(onDismiss: () -> Unit, onSave: (CloudProvider, String) -> 
     var expanded by remember { mutableStateOf(false) }
     
     val templates = listOf(
-        CloudProvider("Gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent", "gemini-1.5-pro", "api_key"),
-        CloudProvider("OpenAI", "https://api.openai.com/v1/chat/completions", "gpt-4-turbo", "api_key"),
-        CloudProvider("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", "meta-llama/llama-3-70b", "api_key")
+        CloudProvider("Gemini", "https://generativelanguage.googleapis.com/v1/models/gemini-pro-latest:generateContent", "gemini-pro-latest", "api_key"),
+        CloudProvider("Gemini-Flash", "https://generativelanguage.googleapis.com/v1/models/gemini-flash-latest:generateContent", "gemini-flash-latest", "api_key"),
+        CloudProvider("Gemini-3.1-Preview", "https://generativelanguage.googleapis.com/v1/models/gemini-3.1-pro-preview:generateContent", "gemini-3.1-pro-preview", "api_key"),
+        CloudProvider("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", "meta-llama/llama-3.1-70b", "api_key")
     )
 
     AlertDialog(

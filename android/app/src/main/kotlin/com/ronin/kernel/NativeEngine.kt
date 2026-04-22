@@ -227,9 +227,9 @@ class NativeEngine : ComponentCallbacks2 {
         val apiKey = getSecureApiKey(provider).trim()
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
 
-        // Phase 4.6.3: Multi-Provider Logic Marriage
+        // Phase 4.6.8: Model ID Migration & URL Hardening
         var finalEndpoint = ""
-        var modelId = "gemini-1.5-flash" // Default
+        var modelId = "gemini-pro-latest" // 2026 Default
 
         // Load specific config for this provider
         try {
@@ -246,26 +246,24 @@ class NativeEngine : ComponentCallbacks2 {
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Fallback to hardcoded endpoint logic for $provider")
+            Log.w(TAG, "Fallback to hardened builder for $provider")
         }
 
-        // Security: Ensure API key is appended correctly for Gemini
-        val endpoint = if (finalEndpoint.isEmpty()) {
-            when(provider) {
-                "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
-                "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
-                else -> return "Error: Unknown provider $provider"
+        // Phase 4.6.8: Strictly use the v1 stable pattern for Google providers
+        val endpoint = if (finalEndpoint.isEmpty() || provider.contains("Gemini")) {
+            if (provider.contains("Gemini")) {
+                "https://generativelanguage.googleapis.com/v1/models/$modelId:generateContent?key=$apiKey"
+            } else {
+                when(provider) {
+                    "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
+                    else -> finalEndpoint.ifEmpty { "Error" }
+                }
             }
         } else {
-            if (provider == "Gemini" && !finalEndpoint.contains("key=")) {
-                if (finalEndpoint.contains("?")) "$finalEndpoint&key=$apiKey" else "$finalEndpoint?key=$apiKey"
-            } else finalEndpoint
+            finalEndpoint
         }
 
-        return try {
-            val url = java.net.URL(endpoint)
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 15000
+        if (endpoint == "Error" || endpoint.isEmpty()) return "Error: Could not resolve endpoint for $provider"
             conn.readTimeout = 15000
             conn.requestMethod = "POST"
             conn.doOutput = true
