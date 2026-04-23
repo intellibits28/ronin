@@ -8,6 +8,7 @@
 #define LOGE(tag, ...) __android_log_print(ANDROID_LOG_ERROR, tag, __VA_ARGS__)
 #else
 #include <cstdio>
+#define LOGD(tag, ...) printf("[%s] DEBUG: ", tag); printf(__VA_ARGS__); printf("\n")
 #define LOGI(tag, ...) printf("[%s] INFO: ", tag); printf(__VA_ARGS__); printf("\n")
 #define LOGW(tag, ...) printf("[%s] WARN: ", tag); printf(__VA_ARGS__); printf("\n")
 #define LOGE(tag, ...) fprintf(stderr, "[%s] ERROR: ", tag); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n")
