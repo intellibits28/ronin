@@ -45,6 +45,12 @@ public:
     std::string getStructuredResponse(const std::string& intent, const std::string& state, const std::string& result);
 
     /**
+     * Phase 4.8.1: Unified Hydration.
+     * Hydrates the core router model (.onnx).
+     */
+    bool loadRouterModel(const std::string& path);
+
+    /**
      * Phase 4.4: Dynamic Model Loading.
      * Prioritizes user-selected path over default directory.
      */

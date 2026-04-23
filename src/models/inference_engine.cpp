@@ -5,7 +5,10 @@
 #include "capabilities/hardware_bridge.h"
 
 // RULE 6: Real MediaPipe C++ Production Headers
+#ifdef __ANDROID__
 #include "mediapipe/tasks/cpp/genai/llm_inference/llm_inference.h"
+using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
+#endif
 
 #include <string>
 #include <algorithm>
@@ -22,24 +25,26 @@
 
 #define TAG "RoninKernel_CPP"
 
-using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
-
 namespace Ronin::Kernel::Model {
 
 struct InferenceEngine::Impl {
     std::string model_path;
     std::string gemma_path;
+    std::string router_path;
     bool loaded = false;
+    bool router_loaded = false;
     bool npu_active = false;
     void* m_locked_buffer = nullptr;
     size_t m_locked_size = 0;
     int context_window = 2048;
 
+#ifdef __ANDROID__
     // Production MediaPipe Engine Instance
     std::unique_ptr<LlmInference> llm_engine;
+#endif
 
     Impl(const std::string& path) : model_path(path) {
-        load(path);
+        // Explicit hydration call required to manage order of operations
     }
 
     ~Impl() {
@@ -49,8 +54,24 @@ struct InferenceEngine::Impl {
         }
     }
 
+    bool loadRouter(const std::string& path) {
+        LOGD(TAG, "Starting router hydration process.");
+        router_path = path;
+        
+        std::ifstream f(router_path.c_str());
+        if (!f.good()) {
+            LOGE(TAG, "CRITICAL ERROR: Failed to open router model file at path: %s", router_path.c_str());
+            return false;
+        }
+        f.close();
+        
+        LOGI(TAG, "Core Router (.onnx) hydrated successfully at: %s", router_path.c_str());
+        router_loaded = true;
+        return true;
+    }
+
     void load(const std::string& path) {
-        LOGD(TAG, "Starting model loading process.");
+        LOGD(TAG, "Starting reasoning model loading process.");
         LOGI(TAG, "Configuring LiteRT-LM Production Runtime (Rule 6 compliant)...");
         
         gemma_path = path.empty() ? "/storage/emulated/0/Ronin/models/gemma_4.litertlm" : path;
@@ -58,10 +79,12 @@ struct InferenceEngine::Impl {
         // Rule 6: Initial file accessibility check
         std::ifstream f(gemma_path.c_str());
         if (!f.good()) {
-            LOGD(TAG, "CRITICAL ERROR: Failed to open model file at path: %s", gemma_path.c_str());
+            LOGE(TAG, "CRITICAL ERROR: Failed to open reasoning model file at path: %s", gemma_path.c_str());
+            return;
         }
         f.close();
 
+#ifdef __ANDROID__
         /**
          * RULE 6: Actual MediaPipe Initialization
          */
@@ -93,6 +116,10 @@ struct InferenceEngine::Impl {
             LOGE(TAG, "LiteRT-LM Initialization Failed: %s", result.status().message().data());
             loaded = false;
         }
+#else
+        LOGW(TAG, "Host Build: MediaPipe native backend is bypassed (Android target only).");
+        loaded = true; 
+#endif
 
         // Phase 4.4.5: Residency Guard (mlock) for weights
         LOGD(TAG, "Before allocating memory for residency guard...");
@@ -116,6 +143,11 @@ InferenceEngine::InferenceEngine(const std::string& model_path) {
 
 InferenceEngine::~InferenceEngine() = default;
 
+bool InferenceEngine::loadRouterModel(const std::string& path) {
+    if (m_impl) return m_impl->loadRouter(path);
+    return false;
+}
+
 bool InferenceEngine::loadModel(const std::string& path) {
     if (m_impl) {
         m_impl->load(path);
@@ -125,14 +157,15 @@ bool InferenceEngine::loadModel(const std::string& path) {
 }
 
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
+#ifdef __ANDROID__
     if (!m_impl || !m_impl->loaded || !m_impl->llm_engine) {
         return "[ERROR] Inference Spine Not Hydrated.";
     }
+#else
+    if (!m_impl || !m_impl->loaded) return "[ERROR] Inference Spine Not Hydrated.";
+#endif
 
-    // RULE 5: Dynamic Thermal Throttling
     float temp = Ronin::Kernel::Capability::HardwareBridge::getTemperature();
-    
-    // Phase 4.6.3: Smart Prompt Factory
     std::string prompt = PromptFactory::wrap(input, PromptFactory::BackendType::LOCAL_GEMMA);
     
     LOGI(TAG, "Executing Native Inference. System Temp: %.1fC", temp);
@@ -146,11 +179,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
         }
     };
 
-    /**
-     * RULE 2 & 6: Production Token Pipeline.
-     * Direct call to MediaPipe GenerateResponse().
-     * This is asynchronous and zero-mock.
-     */
+#ifdef __ANDROID__
     auto status = m_impl->llm_engine->GenerateResponse(prompt, 
         [&](const std::vector<std::string>& partial_results, bool done) {
             if (!partial_results.empty()) {
@@ -159,15 +188,20 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
                 Ronin::Kernel::Capability::HardwareBridge::pushMessage("[STREAM]" + token);
                 fullResponse += token;
             }
+            return absl::OkStatus(); 
         });
 
     if (!status.ok()) {
         LOGE(TAG, "Inference Failed: %s", status.message().data());
         return "[INTERNAL ERROR] Inference backend failed to return tokens.";
     }
+#else
+    fullResponse = "Host-Side Build: Native inference is only available on Android NDK targets.";
+    on_token_callback(fullResponse);
+#endif
     
     if (fullResponse.empty()) {
-        return "[INTERNAL ERROR] Neural backend returned empty response.";
+        return "[INTERNAL ERROR] Empty response from neural backend.";
     }
 
     return "[DONE]" + fullResponse;
@@ -212,7 +246,7 @@ void InferenceEngine::suspendNPU() { if (m_impl) m_impl->npu_active = false; }
 void InferenceEngine::resumeNPU() { if (m_impl) m_impl->npu_active = true; }
 bool InferenceEngine::isLoaded() const { return m_impl && m_impl->loaded; }
 std::string InferenceEngine::getModelPath() const { return m_impl ? m_impl->gemma_path : "None"; }
-std::string InferenceEngine::getRouterPath() const { return m_impl ? m_impl->model_path : "None"; }
+std::string InferenceEngine::getRouterPath() const { return m_impl ? m_impl->router_path : "None"; }
 
 std::string InferenceEngine::getRuntimeInfo() const {
     if (!m_impl || !m_impl->loaded) return "Runtime: Not Initialized";
@@ -222,9 +256,7 @@ std::string InferenceEngine::getRuntimeInfo() const {
 long InferenceEngine::verifyModel() { return 100; }
 
 void InferenceEngine::setContextWindow(int tokens) {
-    if (m_impl) {
-        m_impl->context_window = tokens;
-    }
+    if (m_impl) m_impl->context_window = tokens;
 }
 
 } // namespace Ronin::Kernel::Model

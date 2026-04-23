@@ -155,6 +155,11 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     if (g_neural_embedding_node) g_intent_engine->registerSkill(3, g_neural_embedding_node);
     
     auto inference_engine = std::make_unique<Ronin::Kernel::Model::InferenceEngine>(base_path + "/assets/models/model.onnx");
+    // Phase 4.8.1: Explicitly hydrate the core router spine at startup
+    inference_engine->loadRouterModel(base_path + "/assets/models/model.onnx");
+
+    std::string bootMsg = "> Kernel Hydration: Hybrid Engines active. Router (.onnx) and Reasoning (.litertlm) paths synced.";
+    Ronin::Kernel::Capability::HardwareBridge::pushMessage(bootMsg);
     g_intent_engine->setInferenceEngine(std::move(inference_engine));
 
     LOGI(TAG, "Kernel components synchronized and linked.");

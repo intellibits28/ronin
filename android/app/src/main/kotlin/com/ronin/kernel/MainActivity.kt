@@ -298,14 +298,16 @@ class MainActivity : ComponentActivity() {
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         
+        // Phase 4.8.1: Critical Initialization Order Fix
+        // Ensure assets (model.onnx) are physically copied to storage before JNI hydration
+        copyAssetsToFilesDir(filesDir)
+
         // Engine Initialization & Lifecycle Guards
         nativeEngine.initializeKernel(filesDir.absolutePath)
         nativeEngine.setCameraManager(this)
         nativeEngine.setEngineInstance()
         nativeEngine.hydrate()
         registerComponentCallbacks(nativeEngine)
-
-        copyAssetsToFilesDir(filesDir)
         
         // Phase 4.4.3: Initial Hydration of Provider Templates
         val configDir = java.io.File("/storage/emulated/0/Ronin/config")

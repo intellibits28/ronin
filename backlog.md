@@ -8,6 +8,11 @@
 - [ ] **v4.6 (SOCIAL-BRIDGE):** Contacts/SMS integration.
 - [ ] **v4.7 (DSP-SKILL):** Audio signal processing node.
 
+## Completed (v4.8.1 Patch)
+- [x] **Startup Fix:** Resolved race condition between asset synchronization and JNI kernel initialization.
+- [x] **Unified Hydration:** Refactored InferenceEngine to manage both Core Router (.onnx) and Reasoning (.bin) brains.
+- [x] **Zero-Mock Policy (Rule 6):** Removed all hardcoded system echo strings.
+
 ## Completed (v4.4.9 / v4.5.0 Patch)
 - [x] **Priority 1 (Phase 4.5.0):** Implement Async Model Loading with JNI status updates ("Kernel Hydrating...", "NPU Tensors Allocated...", "Kernel Ready.").
 - [x] **Priority 2 (Phase 4.4.9):** Hard-wire Intent Routing for Greetings (hi, hello, မင်္ဂလာပါ) to bypass confidence loops.

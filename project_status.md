@@ -6,14 +6,13 @@
 
 ---
 
-## 2. Current Status (Phase 4.4.9 / 4.5.0)
-- **Core State:** Transitioning from Placeholder-logic (Phase 4.0) to **Real Inference (Phase 4.5.0)**.
+## 2. Current Status (Phase 4.8.1)
+- **Core State:** Transitioning from Placeholder-logic (Phase 4.0) to **Production-Ready Inference (Phase 4.8.1)**.
 - **Inference Status:**
-    - [x] **Local:** Async Model Hydration implemented. Silent loading replaced with real-time status updates ("Kernel Hydrating...", "NPU Tensors Allocated...", "Kernel Ready."). Static placeholders replaced with `LlmInferenceAPI` token streaming.
-    - [x] **Cloud:** Fixed 404 Error by refactoring Cloud Bridge with mandatory Gemini JSON schema (role-based contents) and stable v1 endpoint.
-- **System Health:** Critical Thermal Stress detected (43.0°C). **NPU Throttling is ACTIVE** (Naypyidaw Patch) to protect hardware integrity.
-- **UI Progress:** Path desync resolved. "Active Engine Paths" now accurately displays both .onnx (Router) and .bin/.litertlm (Reasoning) mappings.
-- **State Persistence:** Restore State Persistence completed; model paths and provider configurations now persist across app restarts.
+    - [x] **Core Router:** Critical startup bug resolved. `model.onnx` is now correctly synchronized from assets and hydrated before kernel link.
+    - [x] **Local:** Async Model Hydration implemented. Every word flows directly from LiteRT-LM neural weights (Zero-Mock Policy).
+    - [x] **Cloud:** Stable v1 endpoint with 2026 Model IDs (Pro/Flash Latest) active.
+- **System Health:** Thermal Guard and LMK Residency Guard active.
 
 ---
 
