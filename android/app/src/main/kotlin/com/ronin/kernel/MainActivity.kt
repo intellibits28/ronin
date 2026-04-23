@@ -122,6 +122,21 @@ class MainActivity : ComponentActivity() {
     private lateinit var sharedPreferences: android.content.SharedPreferences
     private var lastPermissionState = false
 
+    // JNI Bridge Repair (Requirement 2)
+    private external fun loadModelAndHydrate(modelPath: String): Boolean
+
+    companion object {
+        // JNI Bridge Repair (Requirement 1)
+        init {
+            try {
+                System.loadLibrary("ronin_kernel")
+                Log.i("RoninKernel_Kotlin", "ronin_kernel library loaded successfully.")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e("RoninKernel_Kotlin", "CRITICAL: Failed to load ronin_kernel: ${e.message}")
+            }
+        }
+    }
+
     private val modelPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
             val path = getPathFromUri(it)
@@ -192,6 +207,11 @@ class MainActivity : ComponentActivity() {
     private fun performHydration(path: String, fingerprint: String) {
         val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
         chatViewModel.reasoningLogs.add(0, "Hydration Triggered: $path")
+        
+        // JNI Connection Test (Requirement 3)
+        val jniSuccess = loadModelAndHydrate(path)
+        Log.i("RoninKernel_Kotlin", "JNI loadModelAndHydrate test returned: $jniSuccess")
+
         lifecycleScope.launch {
             val success = nativeEngine.loadModelAsync(path)
             if (success) {
