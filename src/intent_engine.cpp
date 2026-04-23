@@ -369,11 +369,11 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
     // Phase 4.4.9: Hard-Wired Greeting Routing (Logic)
     // Force-route greetings to ChatSkill (ID 1) to ensure LiteRT-LM handles them.
-    if (sv_input.find("hi") != std::string_view::npos || 
-        sv_input.find("hello") != std::string_view::npos || 
-        sv_input.find("ဟေး") != std::string_view::npos || 
-        sv_input.find("မင်္ဂလာပါ") != std::string_view::npos ||
-        sv_input.find("မင်းဘယ်မှာလဲ") != std::string_view::npos) {
+    if (sv_input.find("hi") != std::string::npos || 
+        sv_input.find("hello") != std::string::npos || 
+        sv_input.find("ဟေး") != std::string::npos || 
+        sv_input.find("မင်္ဂလာပါ") != std::string::npos ||
+        sv_input.find("မင်းဘယ်မှာလဲ") != std::string::npos) {
         LOGI(TAG, ">>> Routing: Greeting/Personal Match (ID 1) bypassing confidence check.");
         return {1, 1.0f, true};
     }
@@ -395,20 +395,23 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
     // Layer 0: O(1) Deterministic Match (Bypass Tokenizer & Loop)
     // Fast-path for unambiguous hardware and system commands.
-    if (sv_input.find("flashlight") != std::string_view::npos || sv_input.find("torch") != std::string_view::npos || sv_input.find("\xE1\x80\x92\xE1\x80\xB9\xE1\x80\xAC\xE1\x80\x90\xE1\x80\xB9\xE1\x80\x99\xE1\x80\xB8") != std::string_view::npos) {
+    if (sv_input.find("flashlight") != std::string::npos || sv_input.find("torch") != std::string::npos || 
+        sv_input.find("မီးဖွင့်") != std::string::npos || sv_input.find("မီးပိတ်") != std::string::npos || 
+        sv_input.find("ဓာတ်မီး") != std::string::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 4) bypassing Thompson Sampling.");
         return {4, 1.0f, !isOff};
     }
-    if (sv_input.find("wifi") != std::string_view::npos || sv_input.find("\xE1\x80\x8D\xE1\x80\xAD\xE1\x80\xAF\xE1\x80\x84\xE1\x80\xB9\xE1\x80\x96\xE1\x80\xAD\xE1\x80\xAF\xE1\x80\x84\xE1\x80\xB9") != std::string_view::npos) {
+    if (sv_input.find("wifi") != std::string::npos || sv_input.find("ဝိုင်ဖိုင်") != std::string::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 6) bypassing Thompson Sampling.");
         return {6, 1.0f, !isOff};
     }
-    if (sv_input.find("bluetooth") != std::string_view::npos || sv_input.find("bt") != std::string_view::npos || sv_input.find("\xE1\x80\x98\xE1\x80\xAC\xE1\x80\x9C\xE1\x80\xB0\xE1\x80\xB8\xE1\x80\x90\xE1\x80\xAF") != std::string_view::npos) {
+    if (sv_input.find("bluetooth") != std::string::npos || sv_input.find("bt") != std::string::npos || 
+        sv_input.find("ဘလူးတု") != std::string::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 7) bypassing Thompson Sampling.");
         return {7, 1.0f, !isOff};
     }
-    if (sv_input.find("location") != std::string_view::npos || sv_input == "where am i" || sv_input == "where" || sv_input == "gps" || sv_input == "coordinates" ||
-        sv_input.find("ဘယ်ရောက်နေလဲ") != std::string_view::npos || sv_input.find("ငါဘယ်မှာလဲ") != std::string_view::npos) {
+    if (sv_input.find("location") != std::string::npos || sv_input.find("gps") != std::string::npos || 
+        sv_input.find("ဘယ်ရောက်နေလဲ") != std::string::npos || sv_input.find("ငါဘယ်မှာလဲ") != std::string::npos) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 5) bypassing Thompson Sampling.");
         return {5, 1.0f, true};
     }
