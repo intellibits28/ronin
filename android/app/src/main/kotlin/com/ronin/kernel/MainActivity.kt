@@ -392,6 +392,12 @@ class MainActivity : ComponentActivity() {
     private fun copyAssetsToFilesDir(targetDir: java.io.File) {
         try {
             val assetManager = assets
+            
+            // Phase 4.8.1: Hardened Asset Discovery
+            val assetsList = assetManager.list("models") ?: emptyArray()
+            val modelExists = assetsList.contains("model.onnx")
+            Log.i("RoninBoot", "Asset Verification: assets/models/model.onnx found = $modelExists")
+
             val files = assetManager.list("") ?: return
             for (filename in files) {
                 if (filename == "models" || filename == "images" || filename == "webkit") continue
@@ -399,9 +405,8 @@ class MainActivity : ComponentActivity() {
                     copyFile(filename, "", targetDir)
                 }
             }
+
             val models = assetManager.list("models") ?: return
-            val modelsDir = java.io.File(targetDir, "assets/models")
-            if (!modelsDir.exists()) modelsDir.mkdirs()
             for (modelFile in models) {
                 copyFile(modelFile, "models", targetDir)
             }
@@ -419,12 +424,32 @@ class MainActivity : ComponentActivity() {
             java.io.File(targetDir, "assets/$subDir")
         }
         if (!destDir.exists()) destDir.mkdirs()
+        
         val outFile = java.io.File(destDir, filename)
-        assets.open(assetPath).use { inputStream ->
-            if (outFile.exists() && outFile.length() == inputStream.available().toLong()) return
-            java.io.FileOutputStream(outFile).use { outputStream ->
-                inputStream.copyTo(outputStream)
+        
+        try {
+            assets.open(assetPath).use { inputStream ->
+                val assetSize = inputStream.available().toLong()
+                
+                // Requirement 2: Overwrite logic (Skip if size matches)
+                if (outFile.exists() && outFile.length() == assetSize) {
+                    Log.i("RoninBoot", "Skipping $filename (Size matches: $assetSize bytes)")
+                    return
+                }
+
+                // Requirement 3: Path Verification
+                Log.i("RoninBoot", "Copying asset: $assetPath -> ${outFile.absolutePath}")
+                
+                java.io.FileOutputStream(outFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+                
+                if (filename == "model.onnx") {
+                    Log.i("RoninBoot", "CRITICAL ASSET PLACED: ${outFile.absolutePath} (Size: ${outFile.length()})")
+                }
             }
+        } catch (e: Exception) {
+            Log.e("RoninBoot", "Failed to copy $filename: ${e.message}")
         }
     }
 

@@ -50,11 +50,15 @@ struct InferenceEngine::Impl {
     }
 
     bool loadRouter(const std::string& path) {
-        LOGD(TAG, "Starting router hydration process.");
+        LOGD(TAG, "Starting router hydration process using path: %s", path.c_str());
         router_path = path;
         std::ifstream f(router_path.c_str());
-        if (!f.good()) return false;
+        if (!f.good()) {
+            LOGE(TAG, "CRITICAL ERROR: Failed to open router model file at path: %s", router_path.c_str());
+            return false;
+        }
         f.close();
+        LOGI(TAG, "Core Router (.onnx) hydrated successfully at: %s", router_path.c_str());
         router_loaded = true;
         return true;
     }
