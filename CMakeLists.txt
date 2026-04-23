@@ -114,9 +114,9 @@ if(ANDROID)
         # Link system libraries to core so tests inherit them
         target_link_libraries(ronin_core PUBLIC ${log-lib} ${android-lib} onnxruntime_lib)
 
-        # JNI Bridge Library
+        # JNI Bridge Library (Requirement 4)
         add_library(ronin_kernel SHARED src/ronin_jni.cpp)
-        target_link_libraries(ronin_kernel ronin_core sqlite3_lib onnxruntime_lib)
+        target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib onnxruntime_lib ${log-lib})
 
         # Enable ARMv8.2-A Dot Product extension only for arm64-v8a
         if(ANDROID_ABI STREQUAL "arm64-v8a")

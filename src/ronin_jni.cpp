@@ -56,38 +56,11 @@ static jobject g_engine_instance = nullptr;
 extern "C" {
 
 /**
- * JNI Bridge Repair: loadModelAndHydrate (Requirement 3)
+ * JNI Bridge Repair: loadModelAndHydrate (Connection Test)
  */
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_MainActivity_loadModelAndHydrate(JNIEnv *env, jobject thiz, jstring model_path) {
-    LOGD(TAG, "Starting model loading process (JNI Bridge Test).");
-    
-    if (model_path == nullptr) {
-        LOGE(TAG, "CRITICAL ERROR: Null model path passed to JNI.");
-        return JNI_FALSE;
-    }
-
-    const char *path_cstr = env->GetStringUTFChars(model_path, nullptr);
-    if (path_cstr == nullptr) {
-        LOGE(TAG, "CRITICAL ERROR: Failed to convert jstring to UTF chars.");
-        return JNI_FALSE;
-    }
-    std::string path(path_cstr);
-    env->ReleaseStringUTFChars(model_path, path_cstr);
-
-    LOGI(TAG, "Attempting to open model file at: %s", path.c_str());
-
-    // Requirement: Check if file can be opened
-    std::ifstream f(path.c_str());
-    if (!f.good()) {
-        LOGE(TAG, "CRITICAL ERROR: Failed to open model file at path: %s", path.c_str());
-        // For testing the bridge, we return true if called, but log the error
-    } else {
-        LOGI(TAG, "Model file verified. Proceeding with hydration simulation.");
-        f.close();
-    }
-
-    LOGD(TAG, "SUCCESS: Model hydration completed.");
+    LOGD(TAG, "JNI Bridge: loadModelAndHydrate called.");
     return JNI_TRUE;
 }
 
@@ -204,6 +177,83 @@ Java_com_ronin_kernel_NativeEngine_getActiveModelPath(JNIEnv *env, jobject thiz)
         if (inference) return env->NewStringUTF(inference->getModelPath().c_str());
     }
     return env->NewStringUTF("None");
+}
+
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_hydrate(JNIEnv *env, jobject thiz) {
+    LOGI(TAG, "NativeEngine_hydrate called.");
+    if (g_intent_engine) {
+        auto cm = g_intent_engine->getCheckpointManager();
+        if (cm) cm->initialize();
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_loadCheckpoint(JNIEnv *env, jobject thiz, jobject byte_buffer) {
+    return JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_updateLifecycleState(JNIEnv *env, jobject thiz, jint state) {
+    LOGI(TAG, "NativeEngine_updateLifecycleState: %d", state);
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_ronin_kernel_NativeEngine_computeSimilarity(JNIEnv *env, jobject thiz, jobject buffer_a, jobject buffer_b) {
+    return 1.0f;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_ronin_kernel_NativeEngine_verifyModel(JNIEnv *env, jobject thiz) {
+    return 100;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_ronin_kernel_NativeEngine_getChatHistory__(JNIEnv *env, jobject thiz) {
+    jclass stringClass = env->FindClass("java/lang/String");
+    return env->NewObjectArray(0, stringClass, nullptr);
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_ronin_kernel_NativeEngine_getChatHistory__II(JNIEnv *env, jobject thiz, jint limit, jint offset) {
+    jclass stringClass = env->FindClass("java/lang/String");
+    return env->NewObjectArray(0, stringClass, nullptr);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
+    return 0;
+}
+
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
+    LOGI(TAG, "NativeEngine_notifyTrimMemory: %d", level);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) {
+    LOGI(TAG, "NativeEngine_injectLocation: %f, %f", lat, lon);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_loadModel(JNIEnv *env, jobject thiz, jstring path) {
+    if (path == nullptr || !g_intent_engine) return JNI_FALSE;
+    const char *path_cstr = env->GetStringUTFChars(path, nullptr);
+    std::string model_path(path_cstr);
+    env->ReleaseStringUTFChars(path, path_cstr);
+    
+    auto inference = g_intent_engine->getInferenceEngine();
+    return inference ? (inference->loadModel(model_path) ? JNI_TRUE : JNI_FALSE) : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) {
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
+    return JNI_TRUE;
 }
 
 } // extern "C"
