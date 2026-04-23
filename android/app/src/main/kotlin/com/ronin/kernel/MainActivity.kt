@@ -110,6 +110,7 @@ class ChatViewModel : ViewModel() {
     // Phase 4.4: Dynamic Configuration
     var showSettings by mutableStateOf(false)
     var offlineMode by mutableStateOf(false)
+    var isKernelHydrated by mutableStateOf(false)
     var localModelPath by mutableStateOf("/storage/emulated/0/Ronin/models/gemma_4.litertlm")
     var primaryCloudProvider by mutableStateOf("Gemini")
     val cloudProviders = mutableStateListOf<CloudProvider>()
@@ -876,6 +877,12 @@ fun RoninChatUI(
 
             ChatInput(value = inputText, onValueChange = { inputText = it }, onSend = {
                 if (inputText.isNotBlank()) {
+                    // Requirement 3: Synchronize the Inference Spine
+                    if (!chatViewModel.isKernelHydrated) {
+                        Toast.makeText(context, "Inference Blocked: Kernel Not Hydrated.", Toast.LENGTH_SHORT).show()
+                        return@ChatInput
+                    }
+
                     messages.add("User: $inputText")
                     val currentInput = inputText
                     inputText = ""

@@ -56,12 +56,39 @@ static jobject g_engine_instance = nullptr;
 extern "C" {
 
 /**
- * JNI Bridge Repair: loadModelAndHydrate (Connection Test)
+ * JNI Bridge Repair: loadModelAndHydrate (Requirement 1 & 3)
+ * Synchronizes the Kotlin state with the C++ Inference Spine.
  */
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_MainActivity_loadModelAndHydrate(JNIEnv *env, jobject thiz, jstring model_path) {
-    LOGD(TAG, "JNI Bridge: loadModelAndHydrate called.");
-    return JNI_TRUE;
+    LOGD(TAG, "JNI Bridge: loadModelAndHydrate sequence initiated.");
+    
+    if (model_path == nullptr || !g_intent_engine) {
+        LOGE(TAG, "CRITICAL ERROR: JNI Bridge not ready or null path.");
+        return JNI_FALSE;
+    }
+
+    const char *path_cstr = env->GetStringUTFChars(model_path, nullptr);
+    std::string path(path_cstr);
+    env->ReleaseStringUTFChars(model_path, path_cstr);
+
+    auto inference = g_intent_engine->getInferenceEngine();
+    if (!inference) {
+        LOGE(TAG, "CRITICAL ERROR: Inference Spine object is NULL.");
+        return JNI_FALSE;
+    }
+
+    // Trigger the real production loading logic
+    bool success = inference->loadModel(path);
+    
+    if (success) {
+        LOGD(TAG, "SUCCESS: Model hydration completed.");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("> Kernel Ready for Inference.");
+        return JNI_TRUE;
+    } else {
+        LOGE(TAG, "CRITICAL ERROR: Model hydration failed in InferenceEngine.");
+        return JNI_FALSE;
+    }
 }
 
 JNIEXPORT void JNICALL
