@@ -68,6 +68,11 @@ class NativeEngine : ComponentCallbacks2 {
     external fun setOfflineMode(offline: Boolean)
 
     /**
+     * Checks if the native inference spine is hydrated.
+     */
+    external fun isLoaded(): Boolean
+
+    /**
      * Returns the absolute path of the currently loaded model.
      */
     external fun getActiveModelPath(): String

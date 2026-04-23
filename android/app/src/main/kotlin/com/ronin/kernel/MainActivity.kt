@@ -209,19 +209,23 @@ class MainActivity : ComponentActivity() {
         val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
         chatViewModel.reasoningLogs.add(0, "Hydration Triggered: $path")
         
-        // JNI Connection Test (Requirement 3)
-        val jniSuccess = loadModelAndHydrate(path)
-        Log.i("RoninKernel_Kotlin", "JNI loadModelAndHydrate test returned: $jniSuccess")
-
         lifecycleScope.launch {
-            val success = nativeEngine.loadModelAsync(path)
-            if (success) {
+            // JNI Bridge Sync: Use the dedicated production hydration call
+            val jniSuccess = withContext(Dispatchers.IO) {
+                loadModelAndHydrate(path)
+            }
+
+            if (jniSuccess) {
+                chatViewModel.isKernelHydrated = true
                 sharedPreferences.edit().putString("local_model_path", path).apply()
                 sharedPreferences.edit().putString("fingerprint_$path", fingerprint).apply()
                 chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
-                Toast.makeText(this@MainActivity, "Model hydrated successfully.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Kernel Hydrated Successfully.", Toast.LENGTH_SHORT).show()
+                Log.i("RoninKernel_Kotlin", "SUCCESS: Inference Spine is now active.")
             } else {
-                Toast.makeText(this@MainActivity, "Kernel rejected model hydration.", Toast.LENGTH_SHORT).show()
+                chatViewModel.isKernelHydrated = false
+                Toast.makeText(this@MainActivity, "CRITICAL: Kernel Hydration Failed.", Toast.LENGTH_LONG).show()
+                Log.e("RoninKernel_Kotlin", "FAILURE: JNI Bridge rejected hydration.")
             }
         }
     }
@@ -361,6 +365,7 @@ class MainActivity : ComponentActivity() {
                 chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
                 chatViewModel.offlineMode = offline
                 chatViewModel.primaryCloudProvider = lastProvider
+                chatViewModel.isKernelHydrated = nativeEngine.isLoaded()
             }
             RoninChatUI(
                 engine = nativeEngine, 

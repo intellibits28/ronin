@@ -202,6 +202,15 @@ Java_com_ronin_kernel_NativeEngine_setOfflineMode(JNIEnv *env, jobject thiz, jbo
     if (g_intent_engine) g_intent_engine->setOfflineMode(offline == JNI_TRUE);
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_isLoaded(JNIEnv *env, jobject thiz) {
+    if (g_intent_engine) {
+        auto inference = g_intent_engine->getInferenceEngine();
+        if (inference) return inference->isLoaded() ? JNI_TRUE : JNI_FALSE;
+    }
+    return JNI_FALSE;
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_getActiveModelPath(JNIEnv *env, jobject thiz) {
     if (g_intent_engine) {
