@@ -166,6 +166,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshRegistry() {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
             // All Files Access Guard: wait 500ms for OS filesystem sync
             delay(500)
@@ -174,6 +175,11 @@ class MainActivity : ComponentActivity() {
             val savedModelPath = sharedPreferences.getString("local_model_path", "")
             if (!savedModelPath.isNullOrEmpty()) {
                 hydrateModel(savedModelPath)
+            } else if (chatViewModel.discoveredModels.isNotEmpty()) {
+                // Phase 4.8.5: Auto-select first available model on first run
+                val autoPath = chatViewModel.discoveredModels[0]
+                Log.i("RoninBoot", "First Run: Auto-selecting model $autoPath")
+                hydrateModel(autoPath)
             }
         }
     }
@@ -911,9 +917,12 @@ fun RoninChatUI(
 
             ChatInput(value = inputText, onValueChange = { inputText = it }, onSend = {
                 if (inputText.isNotBlank()) {
-                    // Requirement 3: Synchronize the Inference Spine
-                    if (!chatViewModel.isKernelHydrated) {
-                        Toast.makeText(context, "Inference Blocked: Kernel Not Hydrated.", Toast.LENGTH_SHORT).show()
+                    val isCommand = inputText.trim().startsWith("/")
+                    
+                    // Phase 4.8.5: Smart Bypass
+                    // Block only if local inference is required but not ready
+                    if (!isCommand && chatViewModel.offlineMode && !chatViewModel.isKernelHydrated) {
+                        Toast.makeText(context, "Local Inference Blocked: Model Not Hydrated.", Toast.LENGTH_SHORT).show()
                         return@ChatInput
                     }
 
