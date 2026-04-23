@@ -18,8 +18,9 @@
 #include <future>
 #include <chrono>
 #include <mutex>
+#include <fstream>
 
-#define TAG "RoninInference"
+#define TAG "RoninKernel_CPP"
 
 using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
 
@@ -49,10 +50,18 @@ struct InferenceEngine::Impl {
     }
 
     void load(const std::string& path) {
+        LOGD(TAG, "Starting model loading process.");
         LOGI(TAG, "Configuring LiteRT-LM Production Runtime (Rule 6 compliant)...");
         
         gemma_path = path.empty() ? "/storage/emulated/0/Ronin/models/gemma_4.litertlm" : path;
         
+        // Rule 6: Initial file accessibility check
+        std::ifstream f(gemma_path.c_str());
+        if (!f.good()) {
+            LOGD(TAG, "CRITICAL ERROR: Failed to open model file at path: %s", gemma_path.c_str());
+        }
+        f.close();
+
         /**
          * RULE 6: Actual MediaPipe Initialization
          */
@@ -72,7 +81,10 @@ struct InferenceEngine::Impl {
             npu_active = true;
         }
 
+        LOGD(TAG, "Before reading the model file (LlmInference::Create)...");
         auto result = LlmInference::Create(options);
+        LOGD(TAG, "After reading the model file.");
+
         if (result.ok()) {
             llm_engine = std::move(*result);
             loaded = true;
@@ -83,10 +95,17 @@ struct InferenceEngine::Impl {
         }
 
         // Phase 4.4.5: Residency Guard (mlock) for weights
+        LOGD(TAG, "Before allocating memory for residency guard...");
         m_locked_size = 1200ULL * 1024 * 1024;
         m_locked_buffer = malloc(m_locked_size);
+        LOGD(TAG, "After allocating memory for residency guard.");
+
         if (m_locked_buffer) {
             mlock(m_locked_buffer, m_locked_size);
+        }
+
+        if (loaded) {
+            LOGD(TAG, "SUCCESS: Model hydration completed.");
         }
     }
 };
