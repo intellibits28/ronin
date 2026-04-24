@@ -142,11 +142,58 @@ class MainActivity : ComponentActivity() {
 
     private val modelPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
-            val path = getPathFromUri(it)
-            if (path != null) {
-                hydrateModel(path)
+            importModelFromUri(it)
+        }
+    }
+
+    private fun importModelFromUri(uri: Uri) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        
+        lifecycleScope.launch {
+            chatViewModel.reasoningLogs.add(0, "Importing External Model...")
+            
+            val success = withContext(Dispatchers.IO) {
+                try {
+                    val contentResolver = applicationContext.contentResolver
+                    val fileName = getFileName(uri) ?: "imported_model.litertlm"
+                    val modelsDir = java.io.File(filesDir, "models")
+                    if (!modelsDir.exists()) modelsDir.mkdirs()
+                    
+                    val destFile = java.io.File(modelsDir, fileName)
+                    
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        java.io.FileOutputStream(destFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    Log.i("RoninBridge", "External model imported to: ${destFile.absolutePath}")
+                    destFile.absolutePath
+                } catch (e: Exception) {
+                    Log.e("RoninBridge", "Import failed: ${e.message}")
+                    null
+                }
+            }
+
+            if (success != null) {
+                // Phase 4.9.1: Trigger hydration with the new Internal Path
+                hydrateModel(success)
+                Toast.makeText(this@MainActivity, "Model imported successfully.", Toast.LENGTH_SHORT).show()
+                scanLocalModels() // Refresh UI list
+            } else {
+                Toast.makeText(this@MainActivity, "Failed to import model.", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private fun getFileName(uri: Uri): String? {
+        var name: String? = null
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst()) {
+                name = cursor.getString(nameIndex)
+            }
+        }
+        return name
     }
 
     override fun onResume() {
@@ -708,7 +755,10 @@ fun RoninChatUI(
     if (chatViewModel.showSettings) {
         SettingsDialog(
             onDismiss = { chatViewModel.showSettings = false },
-            onSelectModel = { modelPicker.launch(arrayOf("*/*")) },
+            onSelectModel = { 
+                // Phase 4.9.1: Filter for octet-stream and specific extensions
+                modelPicker.launch(arrayOf("application/octet-stream", "application/x-binary")) 
+            },
             currentModelPath = chatViewModel.localModelPath,
             providers = chatViewModel.cloudProviders,
             discoveredModels = chatViewModel.discoveredModels,
