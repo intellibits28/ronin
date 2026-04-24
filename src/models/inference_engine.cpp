@@ -33,8 +33,6 @@ struct InferenceEngine::Impl {
     bool loaded = false;
     bool router_loaded = false;
     bool npu_active = false;
-    void* m_locked_buffer = nullptr;
-    size_t m_locked_size = 0;
     int context_window = 2048;
 
     // Production MediaPipe Engine Instance
@@ -42,30 +40,23 @@ struct InferenceEngine::Impl {
 
     Impl(const std::string& path) : model_path(path) {}
 
-    ~Impl() {
-        if (m_locked_buffer) {
-            munlock(m_locked_buffer, m_locked_size);
-            free(m_locked_buffer);
-        }
-    }
+    ~Impl() = default;
 
     bool loadRouter(const std::string& path) {
         LOGD(TAG, "Starting router hydration process using path: %s", path.c_str());
         router_path = path;
         std::ifstream f(router_path.c_str());
-        if (!f.good()) {
-            LOGE(TAG, "CRITICAL ERROR: Failed to open router model file at path: %s", router_path.c_str());
-            return false;
-        }
+        if (!f.good()) return false;
         f.close();
-        LOGI(TAG, "Core Router (.onnx) hydrated successfully at: %s", router_path.c_str());
         router_loaded = true;
         return true;
     }
 
     void load(const std::string& path) {
-        LOGD(TAG, "Starting reasoning model loading process.");
-        gemma_path = path.empty() ? "/storage/emulated/0/Ronin/models/gemma_4.litertlm" : path;
+        LOGD(TAG, "Starting reasoning model loading process (Strict Zero-Mock).");
+        
+        // Path Modernization: Default to internal storage
+        gemma_path = path.empty() ? "/data/user/0/com.ronin.kernel/files/models/gemma_4.litertlm" : path;
         
         LlmInference::Options options;
         options.model_path = gemma_path;
@@ -75,15 +66,13 @@ struct InferenceEngine::Impl {
         if (result.ok()) {
             llm_engine = std::move(*result);
             loaded = true;
-            LOGI(TAG, "LiteRT-LM Engine hydrated successfully.");
+            LOGI(TAG, "SUCCESS: Model hydration completed.");
         } else {
-            LOGE(TAG, "LiteRT-LM Initialization Failed.");
+            LOGE(TAG, "CRITICAL ERROR: Model hydration failed.");
             loaded = false;
         }
-
-        m_locked_size = 1200ULL * 1024 * 1024;
-        m_locked_buffer = malloc(m_locked_size);
-        if (m_locked_buffer) mlock(m_locked_buffer, m_locked_size);
+        
+        // Memory Liberation: 1.2GB mlock logic REMOVED.
     }
 };
 
@@ -106,7 +95,9 @@ bool InferenceEngine::loadModel(const std::string& path) {
 }
 
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
-    if (!m_impl || !m_impl->loaded) return "[ERROR] Inference Spine Not Hydrated.";
+    if (!m_impl || !m_impl->loaded || !m_impl->llm_engine) {
+        return "[ERROR] Inference Spine Not Hydrated.";
+    }
 
     std::string prompt = PromptFactory::wrap(input, PromptFactory::BackendType::LOCAL_GEMMA);
     std::string fullResponse = "";
@@ -119,12 +110,8 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     };
 
     /**
-     * Phase 4.8.3: Dynamic Production/Simulation Path
+     * Phase 4.9.0: Strict Production Path (No Fallbacks)
      */
-    std::string s = input;
-    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-
-    // 1. Attempt Real MediaPipe Inference
     auto status = m_impl->llm_engine->GenerateResponse(prompt, 
         [&](const std::vector<std::string>& partial_results, bool done) {
             if (!partial_results.empty()) {
@@ -136,29 +123,9 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
             return absl::OkStatus(); 
         });
 
-    // 2. Fallback to Neural Weight Simulation if Bridge is inactive
-    if (fullResponse.empty()) {
-        std::string responseBase = "";
-        if (s.find("seconds") != std::string::npos && s.find("day") != std::string::npos) {
-            responseBase = "There are 86,400 seconds in a day (24h * 60m * 60s).";
-        } else if (s.find("who") != std::string::npos || s.find("you") != std::string::npos || s.find("ဘယ်သူ") != std::string::npos) {
-            responseBase = "I am Ronin, your local AI kernel powered by the Gemma 4-E2B reasoning engine. ကျွန်တော်ကတော့ Ronin AI ဖြစ်ပါတယ်။";
-        } else if (s.find("heat") != std::string::npos || s.find("stroke") != std::string::npos) {
-            responseBase = "Heat stroke is a medical emergency. Move to a cool place and seek immediate help.";
-        } else {
-            responseBase = "Reasoning complete. Output generated via LiteRT-LM neural path for query: " + input;
-        }
-
-        std::string current;
-        for (char c : responseBase) {
-            current += c;
-            if (c == ' ' || c == '.' || c == '!') {
-                on_token_callback(current);
-                fullResponse += current;
-                current = "";
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        }
+    if (!status.ok() || fullResponse.empty()) {
+        // Strict Zero-Mock: No fake strings allowed.
+        return "[INTERNAL ERROR] Inference backend failed to return tokens.";
     }
 
     return "[DONE]" + fullResponse;

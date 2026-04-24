@@ -177,8 +177,9 @@ class MainActivity : ComponentActivity() {
                 hydrateModel(savedModelPath)
             } else if (chatViewModel.discoveredModels.isNotEmpty()) {
                 // Phase 4.8.5: Auto-select first available model on first run
+                // Phase 4.9.0: Now using Internal Storage
                 val autoPath = chatViewModel.discoveredModels[0]
-                Log.i("RoninBoot", "First Run: Auto-selecting model $autoPath")
+                Log.i("RoninBoot", "First Run (Internal): Auto-selecting model $autoPath")
                 hydrateModel(autoPath)
             }
         }
@@ -275,7 +276,8 @@ class MainActivity : ComponentActivity() {
 
     private fun scanLocalModels() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        val modelsDir = java.io.File("/storage/emulated/0/Ronin/models")
+        // Phase 4.9.0: Path Modernization (Private Internal Storage)
+        val modelsDir = java.io.File(filesDir, "models")
         if (!modelsDir.exists()) modelsDir.mkdirs()
         
         val models = modelsDir.listFiles { _, name -> 
