@@ -237,9 +237,10 @@ class NativeEngine : ComponentCallbacks2 {
             Log.w(TAG, "Fallback to hardened builder for $provider")
         }
 
+        // Phase 4.9.6: Use v1beta for better compatibility and fix 404
         val endpoint = if (finalEndpoint.isEmpty() || provider.contains("Gemini")) {
             if (provider.contains("Gemini")) {
-                "https://generativelanguage.googleapis.com/v1/models/$modelId:generateContent?key=$apiKey"
+                "https://generativelanguage.googleapis.com/v1beta/models/$modelId:generateContent?key=$apiKey"
             } else {
                 when(provider) {
                     "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
@@ -268,8 +269,10 @@ class NativeEngine : ComponentCallbacks2 {
             }
 
             val jsonBody = if (provider == "Gemini") {
+                // Phase 4.9.6: Use explicit role: user to fix 400 Bad Request
                 val parts = JSONArray().put(JSONObject().put("text", input))
-                val contents = JSONArray().put(JSONObject().put("parts", parts))
+                val contentObj = JSONObject().put("role", "user").put("parts", parts)
+                val contents = JSONArray().put(contentObj)
                 JSONObject().put("contents", contents)
             } else {
                 JSONObject()

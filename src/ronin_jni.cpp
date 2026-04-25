@@ -154,6 +154,10 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_neural_embedding_node = std::make_shared<NeuralEmbeddingNode>(router_path);
     g_file_search_node = std::make_shared<FileSearchNode>(g_long_term_memory.get(), g_neural_embedding_node.get());
     g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory, g_neural_embedding_node.get());
+    if (g_file_scanner) {
+        g_file_scanner->startScan(base_path + "/models/");
+        g_file_scanner->startScan("/sdcard/Documents/");
+    }
 
     // 3. Structural Intent Alignment
     g_capability_graph = std::make_unique<CapabilityGraph>();
