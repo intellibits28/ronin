@@ -239,18 +239,26 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     }
 
     // Chat/Reasoning Path (ID 1)
+    std::string finalResult = "";
     if (inference->isLoaded()) {
-        return env->NewStringUTF(inference->runLiteRTReasoning(input_str).c_str());
-    } else {
-        // Check Cloud Fallback
+        finalResult = inference->runLiteRTReasoning(input_str);
+    }
+
+    // Phase 4.9.9: Tiered Fallback (Local -> Cloud -> Connection Error)
+    if (finalResult.empty()) {
         bool offline = g_intent_engine->isOfflineMode();
         if (!offline) {
             std::string provider = g_intent_engine->getPrimaryCloudProvider();
             std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey(provider);
-            return env->NewStringUTF(inference->escalateToCloud(input_str, apiKey, provider).c_str());
+            finalResult = inference->escalateToCloud(input_str, apiKey, provider);
         }
-        return env->NewStringUTF("> Status: Local Reasoning Brain Required for Chat.");
     }
+
+    if (finalResult.empty()) {
+        return env->NewStringUTF("> Status: Local and Cloud reasoning not connected.");
+    }
+
+    return env->NewStringUTF(finalResult.c_str());
 }
 
 JNIEXPORT void JNICALL
