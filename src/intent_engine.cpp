@@ -389,7 +389,7 @@ bool IntentEngine::updateMetadata(const std::string& json_metadata) {
     }
 }
 
-CognitiveIntent IntentEngine::process(const std::string& input, std::string& context_subject) {
+CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
 
     std::string_view sv_input = input;
 
