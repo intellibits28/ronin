@@ -12,6 +12,7 @@
 #include "capabilities/file_scanner.h"
 #include "capabilities/neural_embedding_node.h"
 #include "capabilities/hardware_bridge.h"
+#include "capabilities/hardware_nodes.h"
 #include "checkpoint_manager.h"
 #include "lora_engine.h"
 #include "ronin_log.h"
@@ -169,6 +170,21 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_intent_engine->setMemoryManager(g_memory_manager.get());
+    
+    // Phase 4.9.5: Unified Path for Capabilities
+    g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
+    
+    auto checkpoint_manager = std::make_shared<Ronin::Kernel::Checkpoint::CheckpointManager>(base_path + "/survival_core.bin");
+    g_intent_engine->setCheckpointManager(checkpoint_manager);
+    
+    if (g_file_search_node) g_intent_engine->registerSkill(2, g_file_search_node);
+    if (g_neural_embedding_node) g_intent_engine->registerSkill(3, g_neural_embedding_node);
+    
+    // Phase 4.9.6: Hardware Capability Restoration
+    g_intent_engine->registerSkill(4, std::make_shared<FlashlightNode>());
+    g_intent_engine->registerSkill(5, std::make_shared<LocationNode>());
+    g_intent_engine->registerSkill(6, std::make_shared<WifiNode>());
+    g_intent_engine->registerSkill(7, std::make_shared<BluetoothNode>());
     
     // 4. Intent Router Hydration (Vital)
     auto inference_engine = std::make_unique<Ronin::Kernel::Model::InferenceEngine>(router_path);
