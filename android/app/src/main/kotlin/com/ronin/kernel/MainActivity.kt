@@ -401,12 +401,13 @@ class MainActivity : ComponentActivity() {
         }
         
         val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
+        nativeEngine.setPrimaryCloudProvider(lastProvider)
 
-        // Phase 4.4.8.1: Settings Memory
+        // Phase 4.9.2: Secure Persistence Sync
         val savedModelPath = sharedPreferences.getString("local_model_path", "")
         if (!savedModelPath.isNullOrEmpty() && lastPermissionState) {
+            Log.i("RoninBoot", "Cold Start: Re-hydrating saved model $savedModelPath")
             hydrateModel(savedModelPath)
-            Log.i("RoninBoot", "Auto-hydrated model from: $savedModelPath")
         }
 
         checkAndRequestStoragePermission()

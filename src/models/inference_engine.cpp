@@ -58,18 +58,34 @@ struct InferenceEngine::Impl {
         // Path Modernization: Default to internal storage
         gemma_path = path.empty() ? "/data/user/0/com.ronin.kernel/files/models/gemma_4.litertlm" : path;
         
+        // Phase 4.9.2: Extension & Existence Guard
+        if (gemma_path.find(".bin") == std::string::npos && gemma_path.find(".litertlm") == std::string::npos) {
+            LOGE(TAG, "CRITICAL ERROR: Invalid model extension. Expected .bin or .litertlm");
+            loaded = false;
+            return;
+        }
+
+        std::ifstream f(gemma_path.c_str());
+        if (!f.good()) {
+            LOGE(TAG, "CRITICAL ERROR: Model file not found at: %s", gemma_path.c_str());
+            loaded = false;
+            return;
+        }
+        f.close();
+
+#ifdef __ANDROID__
         LlmInference::Options options;
         options.model_path = gemma_path;
         options.max_tokens = context_window;
 
-#ifdef __ANDROID__
         auto result = LlmInference::Create(options);
-        if (result.ok()) {
+        // Requirement 1 & 4: Verify the engine is actually instantiated
+        if (result.ok() && (*result) != nullptr) {
             llm_engine = std::move(*result);
-            loaded = true; // State visibility update
-            LOGI(TAG, "SUCCESS: Model hydration completed and spine activated.");
+            loaded = true; 
+            LOGI(TAG, "SUCCESS: LiteRT-LM Engine hydrated and verified.");
         } else {
-            LOGE(TAG, "CRITICAL ERROR: Model hydration failed.");
+            LOGE(TAG, "CRITICAL ERROR: LiteRT-LM failed to hydrate model into memory.");
             loaded = false;
         }
 #else
