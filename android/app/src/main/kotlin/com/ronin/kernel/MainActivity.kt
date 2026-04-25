@@ -335,9 +335,9 @@ class MainActivity : ComponentActivity() {
         models.forEach { chatViewModel.discoveredModels.add(it.absolutePath) }
 
         if (models.isEmpty()) {
-            nativeEngine.pushKernelMessage("Warning: No Reasoning Brain detected. Please add models to /storage/emulated/0/Ronin/models/")
+            nativeEngine.pushKernelMessage("> System: No Reasoning Brain found in internal models directory.")
         } else {
-            Log.i("RoninScan", "Discovered ${models.size} models.")
+            Log.i("RoninScan", "Discovered ${models.size} models in private storage.")
         }
     }
 

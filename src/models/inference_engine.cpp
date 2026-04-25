@@ -62,17 +62,20 @@ struct InferenceEngine::Impl {
         options.model_path = gemma_path;
         options.max_tokens = context_window;
 
+#ifdef __ANDROID__
         auto result = LlmInference::Create(options);
         if (result.ok()) {
             llm_engine = std::move(*result);
-            loaded = true;
-            LOGI(TAG, "SUCCESS: Model hydration completed.");
+            loaded = true; // State visibility update
+            LOGI(TAG, "SUCCESS: Model hydration completed and spine activated.");
         } else {
             LOGE(TAG, "CRITICAL ERROR: Model hydration failed.");
             loaded = false;
         }
-        
-        // Memory Liberation: 1.2GB mlock logic REMOVED.
+#else
+        LOGW(TAG, "Host Build: Bypassing native backend.");
+        loaded = true; 
+#endif
     }
 };
 
