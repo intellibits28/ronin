@@ -53,6 +53,33 @@ static std::shared_ptr<NeuralEmbeddingNode> g_neural_embedding_node;
 static JavaVM* g_vm = nullptr;
 static jobject g_engine_instance = nullptr;
 
+namespace {
+class JniCapabilityManager : public Ronin::Kernel::CapabilityManager {
+public:
+  bool canExecute(uint32_t nodeId) const override {
+    return nodeId > 0;
+  }
+};
+
+Ronin::Kernel::CognitiveIntent defaultIntentProcessor(const Ronin::Kernel::Input &input) {
+  std::string s(input.data, input.length);
+  if (g_intent_engine) {
+      std::string context = ""; // Context handling simplified for orchestration sync
+      return g_intent_engine->process(s, context);
+  }
+  return {1, 0.5f, true};
+}
+
+Ronin::Kernel::Result defaultExecProcessor(uint32_t nodeId, const Ronin::Kernel::CognitiveState &state) {
+  LOGI("RoninJNI", "Executing Node %u", nodeId);
+  return {true, 0};
+}
+
+static JniCapabilityManager s_cap_manager;
+static Ronin::Kernel::HandlerRegistry s_handler_registry = {
+    defaultIntentProcessor, defaultExecProcessor};
+} // namespace
+
 extern "C" {
 
 /**
