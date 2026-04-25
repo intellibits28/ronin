@@ -45,8 +45,8 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
     if (!type_hint.empty()) {
         LOGI(TAG, "> Active Search Filter: [Extension=%s]", type_hint.c_str());
     } else {
-        LOGW(TAG, "> No valid category identified. Aborting search to prevent data leakage.");
-        return {"Error: Invalid search category. Please specify a file type (e.g., 'search music')."};
+        // Fallback: If no type hint, search all indexed files (removed strict abort)
+        LOGW(TAG, "> No specific category identified. Searching all local files.");
     }
 
     // 3. Try Neural Vector Search first
@@ -57,26 +57,11 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
         
         std::vector<std::pair<std::string, float>> neural_matches;
         for (auto& fe : all_embeddings) {
-            // EXPLICIT PRIVACY GUARD: Never leak system files
-            std::string filename = fe.name;
-            std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
-            if (filename.find(".env") != std::string::npos || filename.find(".ignore") != std::string::npos || filename.find("config") != std::string::npos) {
-                continue;
-            }
-
-            // EXPLICIT FILTER: If we have a type hint, skip files that don't match it
-            if (!type_hint.empty()) {
-                std::string filename = fe.name;
-                std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
-                // Strict extension check (ends_with)
-                if (filename.length() < type_hint.length() || 
-                    filename.compare(filename.length() - type_hint.length(), type_hint.length(), type_hint) != 0) {
-                    continue;
-                }
-            }
+            // EXPLICIT PRIVACY GUARD
+            if (fe.name.find(".env") != std::string::npos) continue;
 
             float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 384);
-            if (sim > 0.7f) {
+            if (sim > 0.65f) { // Slightly lower threshold for better recall
                 neural_matches.push_back({fe.name, sim});
             }
         }

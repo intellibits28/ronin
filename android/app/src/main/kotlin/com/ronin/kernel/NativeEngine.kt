@@ -218,7 +218,7 @@ class NativeEngine : ComponentCallbacks2 {
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
 
         var finalEndpoint = ""
-        var modelId = "gemini-pro-latest"
+        var modelId = "gemini-1.5-flash"
 
         try {
             val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
@@ -237,7 +237,7 @@ class NativeEngine : ComponentCallbacks2 {
             Log.w(TAG, "Fallback to hardened builder for $provider")
         }
 
-        // Phase 4.9.8: Final Cloud Hardening
+        // Phase 4.9.11: Use stable v1 endpoint for guaranteed production linkage
         val endpoint = if (finalEndpoint.isEmpty() || provider.contains("Gemini")) {
             if (provider.contains("Gemini")) {
                 "https://generativelanguage.googleapis.com/v1/models/$modelId:generateContent?key=$apiKey"
@@ -269,10 +269,9 @@ class NativeEngine : ComponentCallbacks2 {
             }
 
             val jsonBody = if (provider == "Gemini") {
-                // Phase 4.9.6: Use explicit role: user to fix 400 Bad Request
+                // Phase 4.9.11: Minimalist content schema for stable v1 (no explicit role required)
                 val parts = JSONArray().put(JSONObject().put("text", input))
-                val contentObj = JSONObject().put("role", "user").put("parts", parts)
-                val contents = JSONArray().put(contentObj)
+                val contents = JSONArray().put(JSONObject().put("parts", parts))
                 JSONObject().put("contents", contents)
             } else {
                 JSONObject()
