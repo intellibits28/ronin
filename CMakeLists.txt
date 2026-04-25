@@ -95,7 +95,6 @@ set(RONIN_CORE_SOURCES
     src/capabilities/neural_embedding_node.cpp
     src/capabilities/hardware_nodes.cpp
     src/capabilities/hardware_bridge.cpp
-    src/models/mediapipe_bridge.cpp
 )
 
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
