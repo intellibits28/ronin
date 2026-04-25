@@ -367,6 +367,18 @@ Java_com_ronin_kernel_NativeEngine_loadModel(JNIEnv *env, jobject thiz, jstring 
 }
 
 JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) {
+    if (json == nullptr || !g_intent_engine) return JNI_FALSE;
+    const char *json_cstr = env->GetStringUTFChars(json, nullptr);
+    std::string json_str(json_cstr);
+    env->ReleaseStringUTFChars(json, json_cstr);
+    
+    // Pass metadata to intent engine for context injection
+    LOGI(TAG, "Syncing dynamic model registry (Phase 5.0).");
+    return g_intent_engine->updateMetadata(json_str) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) {
     return JNI_TRUE;
 }

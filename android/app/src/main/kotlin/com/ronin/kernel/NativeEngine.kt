@@ -105,6 +105,7 @@ class NativeEngine : ComponentCallbacks2 {
     external fun hydrate()
     external fun injectLocation(lat: Double, lon: Double)
     external fun loadModel(path: String): Boolean
+    external fun updateModelRegistry(json: String): Boolean
     external fun updateCloudProviders(json: String): Boolean
 
     // --- Hardware Control JNI Callbacks ---
@@ -348,6 +349,48 @@ class NativeEngine : ComponentCallbacks2 {
             result.add(raw[i * 2] to raw[i * 2 + 1])
         }
         result
+    }
+
+    // Phase 5.0: Dynamic Model Fetching Layer
+    suspend fun fetchAvailableModels(apiKey: String): List<JSONObject> = withContext(Dispatchers.IO) {
+        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey"
+        val models = mutableListOf<JSONObject>()
+        try {
+            val url = java.net.URL(endpoint)
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 10000
+            
+            if (conn.responseCode == 200) {
+                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                val root = JSONObject(response)
+                val modelArray = root.getJSONArray("models")
+                for (i in 0 until modelArray.length()) {
+                    val m = modelArray.getJSONObject(i)
+                    // Only include models that support content generation
+                    if (m.getJSONArray("supportedGenerationMethods").toString().contains("generateContent")) {
+                        models.add(m)
+                    }
+                }
+            } else {
+                Log.e(TAG, "Model fetch failed: ${conn.responseCode}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Network error during model fetch: ${e.message}")
+        }
+        models
+    }
+
+    suspend fun verifyApiKey(apiKey: String): Boolean = withContext(Dispatchers.IO) {
+        // Simple verification by attempting to list models
+        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey"
+        try {
+            val url = java.net.URL(endpoint)
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 5000
+            conn.responseCode == 200
+        } catch (e: Exception) { false }
     }
 
     suspend fun processIntentAsync(bufferA: ByteBuffer, bufferB: ByteBuffer): Float = 

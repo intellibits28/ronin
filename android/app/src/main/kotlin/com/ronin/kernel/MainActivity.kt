@@ -781,6 +781,7 @@ fun RoninChatUI(
 
     if (showAddProvider) {
         AddProviderDialog(
+            engine = engine,
             onDismiss = { showAddProvider = false },
             onSave = { provider, key ->
                 (context as? MainActivity)?.saveCloudProvider(provider, key)
@@ -1206,55 +1207,80 @@ fun SettingsDialog(
 }
 
 @Composable
-fun AddProviderDialog(onDismiss: () -> Unit, onSave: (CloudProvider, String) -> Unit) {
+fun AddProviderDialog(engine: NativeEngine, onDismiss: () -> Unit, onSave: (CloudProvider, String) -> Unit) {
     var name by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf("") }
     var modelId by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
+    var isFetching by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     
-    val templates = listOf(
-        CloudProvider("Gemini", "https://generativelanguage.googleapis.com/v1/models/gemini-pro-latest:generateContent", "gemini-pro-latest", "api_key"),
-        CloudProvider("Gemini-Flash", "https://generativelanguage.googleapis.com/v1/models/gemini-flash-latest:generateContent", "gemini-flash-latest", "api_key"),
-        CloudProvider("Gemini-3.1-Preview", "https://generativelanguage.googleapis.com/v1/models/gemini-3.1-pro-preview:generateContent", "gemini-3.1-pro-preview", "api_key"),
-        CloudProvider("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", "meta-llama/llama-3.1-70b", "api_key")
-    )
+    val fetchedModels = remember { mutableStateListOf<JSONObject>() }
 
     AlertDialog(
         onDismissRequest = onDismiss, 
         title = { 
-            Text("Add Cloud Provider", color = MaterialTheme.colors.onSurface) 
+            Text("Add Cloud Provider (Phase 5.0)", color = MaterialTheme.colors.onSurface) 
         }, 
         text = {
             Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextField(
+                        value = apiKey, 
+                        onValueChange = { apiKey = it }, 
+                        label = { Text("API Key (Required to Fetch)") },
+                        modifier = Modifier.weight(1f),
+                        colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (apiKey.isNotEmpty()) {
+                                isFetching = true
+                                scope.launch {
+                                    val models = engine.fetchAvailableModels(apiKey)
+                                    fetchedModels.clear()
+                                    fetchedModels.addAll(models)
+                                    isFetching = false
+                                    if (models.isNotEmpty()) expanded = true
+                                }
+                            }
+                        },
+                        enabled = !isFetching
+                    ) {
+                        Text(if (isFetching) "..." else "Fetch")
+                    }
+                }
+                
+                Spacer(Modifier.height(8.dp))
+                
                 Box {
-                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (name.isEmpty()) "Select Template" else "Template: $name")
+                    OutlinedButton(onClick = { if (fetchedModels.isNotEmpty()) expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (name.isEmpty()) "Select Live Model" else "Model: $name")
                     }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        templates.forEach { template ->
+                        fetchedModels.forEach { model ->
+                            val displayName = model.optString("displayName", "Unknown")
+                            val id = model.getString("name").substringAfter("models/")
                             DropdownMenuItem(onClick = {
-                                name = template.name
-                                endpoint = template.endpoint
-                                modelId = template.modelId
+                                name = displayName
+                                modelId = id
+                                endpoint = "https://generativelanguage.googleapis.com/v1/models/$id:generateContent"
                                 expanded = false
                             }) {
-                                Text(template.name)
+                                Text(displayName)
                             }
                         }
                     }
                 }
+                
                 Spacer(Modifier.height(8.dp))
-                TextField(
-                    value = name, 
-                    onValueChange = { name = it }, 
-                    label = { Text("Name") },
-                    colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
-                )
+                
                 TextField(
                     value = endpoint, 
                     onValueChange = { endpoint = it }, 
-                    label = { Text("Endpoint") },
+                    label = { Text("Endpoint URL") },
                     colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
                 )
                 TextField(
@@ -1263,20 +1289,22 @@ fun AddProviderDialog(onDismiss: () -> Unit, onSave: (CloudProvider, String) -> 
                     label = { Text("Model ID") },
                     colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
                 )
-                TextField(
-                    value = apiKey, 
-                    onValueChange = { apiKey = it }, 
-                    label = { Text("API Key") },
-                    colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
-                )
             }
         }, 
         confirmButton = { 
             Button(onClick = { 
-                onSave(CloudProvider(name, endpoint, modelId, "api_key"), apiKey)
-                onDismiss() 
+                if (apiKey.isNotEmpty() && name.isNotEmpty()) {
+                    // Sync Registry to Kernel (Requirement 2)
+                    val metadataJson = JSONArray().apply {
+                        fetchedModels.forEach { put(it) }
+                    }.toString()
+                    engine.updateModelRegistry(metadataJson)
+                    
+                    onSave(CloudProvider(name, endpoint, modelId, "api_key"), apiKey)
+                    onDismiss()
+                }
             }) { 
-                Text("Save") 
+                Text("Verify & Save") 
             } 
         }, 
         dismissButton = { 

@@ -143,6 +143,12 @@ public:
         return m_primary_cloud_provider;
     }
 
+    /**
+     * Phase 5.0: Metadata Awareness
+     * Updates internal registry with live model specs (thinking, token limits).
+     */
+    bool updateMetadata(const std::string& json_metadata);
+
     // Phase 4.1: Hardware Reality tracking
     double m_last_lat = 0.0;
     double m_last_lon = 0.0;
@@ -164,6 +170,15 @@ private:
 
     // Simple fuzzy match for typos (e.g., 'flashlite' vs 'flashlight')
     bool isFuzzyMatch(std::string_view word, std::string_view target);
+
+    // Phase 5.0: Model Registry Metadata
+    struct ModelMetadata {
+        std::string name;
+        std::string displayName;
+        bool thinking = false;
+        int inputTokenLimit = 2048;
+    };
+    std::unordered_map<std::string, ModelMetadata> m_model_metadata;
 };
 
 } // namespace Ronin::Kernel::Intent
