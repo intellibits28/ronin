@@ -56,8 +56,8 @@ static jobject g_engine_instance = nullptr;
 extern "C" {
 
 /**
- * JNI Bridge Repair: loadModelAndHydrate (Requirement 1 & 3)
- * Synchronizes the Kotlin state with the C++ Inference Spine.
+ * Phase 4.9.1 Bridge Repair: loadModelAndHydrate
+ * Synchronizes the Kotlin state with the C++ Inference Spine (Reasoning Brain).
  */
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_MainActivity_loadModelAndHydrate(JNIEnv *env, jobject thiz, jstring model_path) {
@@ -78,15 +78,18 @@ Java_com_ronin_kernel_MainActivity_loadModelAndHydrate(JNIEnv *env, jobject thiz
         return JNI_FALSE;
     }
 
-    // Trigger the real production loading logic
+    /**
+     * Engine Mismatch Fix:
+     * InferenceEngine (Brain) handles .litertlm or .bin reasoning models.
+     */
     bool success = inference->loadModel(path);
     
     if (success) {
-        LOGD(TAG, "SUCCESS: Model hydration completed.");
+        LOGD(TAG, "SUCCESS: Reasoning Brain hydration completed.");
         Ronin::Kernel::Capability::HardwareBridge::pushMessage("> Kernel Ready for Inference.");
         return JNI_TRUE;
     } else {
-        LOGE(TAG, "CRITICAL ERROR: Model hydration failed in InferenceEngine.");
+        LOGE(TAG, "CRITICAL ERROR: Reasoning Brain hydration failed.");
         return JNI_FALSE;
     }
 }
@@ -101,6 +104,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
 
     LOGI(TAG, "Initializing Ronin Kernel at: %s", base_path.c_str());
 
+    // Clean start for hydration sync
     g_long_term_memory.reset();
     g_memory_manager.reset();
     g_checkpoint_engine.reset();
@@ -114,21 +118,26 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_file_scanner.reset();
     g_neural_embedding_node.reset();
 
+    // 1. Initialize Persistent Memory
     g_long_term_memory = std::make_unique<LongTermMemory>(base_path + "/ronin_l3.db");
     g_memory_manager = std::make_unique<MemoryManager>(20);
     g_memory_manager->setLongTermMemory(g_long_term_memory.get());
 
+    // 2. Path Modernization: Use /models/ subfolder for core assets
+    std::string router_path = base_path + "/models/model.onnx";
     g_checkpoint_engine = std::make_unique<CheckpointEngine>(base_path + "/checkpoint.bin");
-    g_checkpoint_engine->initializeShadowBuffer(1024 * 1024);
-    g_neural_embedding_node = std::make_shared<NeuralEmbeddingNode>(base_path + "/assets/models/model.onnx");
-    g_file_search_node = std::make_shared<FileSearchNode>(g_long_term_memory.get(), g_neural_embedding_node.get());
     
+    // Engine Mismatch Fix: IntentEngine (Router) uses model.onnx
+    g_neural_embedding_node = std::make_shared<NeuralEmbeddingNode>(router_path);
+    g_file_search_node = std::make_shared<FileSearchNode>(g_long_term_memory.get(), g_neural_embedding_node.get());
     g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory, g_neural_embedding_node.get());
 
+    // 3. Initialize Reasoning Spine (Graph Structure)
     g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
     g_capability_graph = std::make_unique<CapabilityGraph>();
     g_graph_storage->loadGraph(*g_capability_graph);
     
+    // Static Skills Mapping
     g_capability_graph->addNode(1, "Reasoning_Engine");
     g_capability_graph->addNode(2, "FileSearchNode");
     g_capability_graph->addNode(3, "NeuralEmbeddingNode");
@@ -136,12 +145,6 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_capability_graph->addNode(5, "LocationNode");
     g_capability_graph->addNode(6, "WiFiNode");
     g_capability_graph->addNode(7, "BluetoothNode");
-    g_capability_graph->addEdge(1, 2, 0.5f);
-    g_capability_graph->addEdge(1, 3, 0.5f);
-    g_capability_graph->addEdge(1, 4, 0.5f);
-    g_capability_graph->addEdge(1, 5, 0.5f);
-    g_capability_graph->addEdge(1, 6, 0.5f);
-    g_capability_graph->addEdge(1, 7, 0.5f);
 
     g_graph_executor = std::make_unique<GraphExecutor>(*g_capability_graph, *g_graph_storage);
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
@@ -154,15 +157,15 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     if (g_file_search_node) g_intent_engine->registerSkill(2, g_file_search_node);
     if (g_neural_embedding_node) g_intent_engine->registerSkill(3, g_neural_embedding_node);
     
-    auto inference_engine = std::make_unique<Ronin::Kernel::Model::InferenceEngine>(base_path + "/assets/models/model.onnx");
-    // Phase 4.8.1: Explicitly hydrate the core router spine at startup
-    inference_engine->loadRouterModel(base_path + "/assets/models/model.onnx");
+    // Core Router Initialization
+    auto inference_engine = std::make_unique<Ronin::Kernel::Model::InferenceEngine>(router_path);
+    inference_engine->loadRouterModel(router_path);
 
-    std::string bootMsg = "> Kernel Hydration: Hybrid Engines active. Router (.onnx) and Reasoning (.litertlm) paths synced.";
+    std::string bootMsg = "> Kernel Hydration: Core Router active. Reasoning Brain pending selection.";
     Ronin::Kernel::Capability::HardwareBridge::pushMessage(bootMsg);
     g_intent_engine->setInferenceEngine(std::move(inference_engine));
 
-    LOGI(TAG, "Kernel components synchronized and linked.");
+    LOGI(TAG, "Kernel components synchronized and linked (Rule 6 compliant).");
 }
 
 JNIEXPORT jstring JNICALL
@@ -222,7 +225,6 @@ Java_com_ronin_kernel_NativeEngine_getActiveModelPath(JNIEnv *env, jobject thiz)
 
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_hydrate(JNIEnv *env, jobject thiz) {
-    LOGI(TAG, "NativeEngine_hydrate called.");
     if (g_intent_engine) {
         auto cm = g_intent_engine->getCheckpointManager();
         if (cm) cm->initialize();
@@ -236,7 +238,7 @@ Java_com_ronin_kernel_NativeEngine_loadCheckpoint(JNIEnv *env, jobject thiz, job
 
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_updateLifecycleState(JNIEnv *env, jobject thiz, jint state) {
-    LOGI(TAG, "NativeEngine_updateLifecycleState: %d", state);
+    LOGI(TAG, "Lifecycle Update: %d", state);
 }
 
 JNIEXPORT jfloat JNICALL
@@ -268,12 +270,12 @@ Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
 
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
-    LOGI(TAG, "NativeEngine_notifyTrimMemory: %d", level);
+    if (g_memory_manager) g_memory_manager->onMemoryPressure();
 }
 
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) {
-    LOGI(TAG, "NativeEngine_injectLocation: %f, %f", lat, lon);
+    LOGI(TAG, "GPS Injection: %f, %f", lat, lon);
 }
 
 JNIEXPORT jboolean JNICALL
