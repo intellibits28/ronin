@@ -144,8 +144,8 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_memory_manager = std::make_unique<MemoryManager>(20);
     g_memory_manager->setLongTermMemory(g_long_term_memory.get());
 
-    // 2. Unified Path Synchronization: All models in /files/models/
-    std::string models_dir = base_path + "/models/";
+    // 2. Unified Path Synchronization: All models in /files/assets/models/
+    std::string models_dir = base_path + "/assets/models/";
     std::string router_path = models_dir + "model.onnx";
     
     g_checkpoint_engine = std::make_unique<CheckpointEngine>(base_path + "/checkpoint.bin");
