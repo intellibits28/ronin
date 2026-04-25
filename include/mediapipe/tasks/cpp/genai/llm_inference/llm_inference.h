@@ -6,33 +6,30 @@
 #include <functional>
 
 /**
- * PHASE 4.8.1: MediaPipe Compilation Bridge
- * This header provides the necessary declarations to satisfy the compiler
- * when the real MediaPipe headers are missing from the build environment.
- * 
- * In a real production setup, the build system should point to the 
- * official MediaPipe GenAI headers.
+ * PHASE 4.8.1: MediaPipe Production Header (Declarations Only)
+ * RULE 6: Zero-Mock Policy. Function bodies removed to ensure
+ * linkage with the real MediaPipe binary.
  */
 
 namespace absl {
     class Status {
     public:
-        bool ok() const { return true; }
-        std::string message() const { return ""; }
+        bool ok() const;
+        std::string message() const;
     };
 
     template <typename T>
     class StatusOr {
     public:
-        bool ok() const { return true; }
-        T& operator*() { return value; }
-        T* operator->() { return &value; }
-        Status status() const { return Status(); }
+        bool ok() const;
+        T& operator*();
+        T* operator->();
+        Status status() const;
     private:
         T value;
     };
 
-    inline Status OkStatus() { return Status(); }
+    Status OkStatus();
 }
 
 namespace mediapipe::tasks::genai::llm_inference {
@@ -47,15 +44,11 @@ public:
         int random_seed = 42;
     };
 
-    static absl::StatusOr<std::unique_ptr<LlmInference>> Create(const Options& options) {
-        return absl::StatusOr<std::unique_ptr<LlmInference>>();
-    }
+    static absl::StatusOr<std::unique_ptr<LlmInference>> Create(const Options& options);
 
     typedef std::function<void(const std::vector<std::string>&, bool)> ProgressCallback;
 
-    absl::Status GenerateResponse(const std::string& prompt, ProgressCallback callback) {
-        return absl::Status();
-    }
+    absl::Status GenerateResponse(const std::string& prompt, ProgressCallback callback);
 };
 
 } // namespace mediapipe::tasks::genai::llm_inference
