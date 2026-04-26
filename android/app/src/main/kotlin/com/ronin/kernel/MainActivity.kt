@@ -711,12 +711,51 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-    fun saveOfflineMode(offline: Boolean) {
-        sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
-    }
-
     fun savePrimaryCloudProvider(name: String) {
         sharedPreferences.edit().putString("primary_cloud_provider", name).apply()
+    }
+
+    fun removeCloudProvider(name: String) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        chatViewModel.cloudProviders.removeIf { it.name == name }
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val configDir = java.io.File(filesDir, "config")
+                val providersFile = java.io.File(configDir, "providers.json")
+                val jsonArray = JSONArray()
+                chatViewModel.cloudProviders.forEach { p ->
+                    val obj = JSONObject()
+                    obj.put("name", p.name)
+                    obj.put("endpoint", p.endpoint)
+                    obj.put("model_id", p.modelId)
+                    obj.put("auth_type", p.authType)
+                    jsonArray.put(obj)
+                }
+                providersFile.writeText(jsonArray.toString())
+                
+                // Phase 5.1.5: Purge Metadata and Secure Credentials
+                val masterKey = MasterKey.Builder(this@MainActivity)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                val securePrefs = EncryptedSharedPreferences.create(
+                    this@MainActivity,
+                    "secure_creds",
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+                securePrefs.edit().remove("key_$name").apply()
+                
+                nativeEngine.updateCloudProviders(jsonArray.toString())
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Provider $name and credentials purged.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("RoninUI", "Failed to purge provider: ${e.message}")
+            }
+        }
     }
 
     private fun checkAndRequestStoragePermission() {
@@ -771,12 +810,14 @@ fun RoninChatUI(
             providers = chatViewModel.cloudProviders,
             discoveredModels = chatViewModel.discoveredModels,
             primaryProvider = chatViewModel.primaryCloudProvider,
-            onPrimaryProviderChange = { 
+            onPrimaryProviderChange = {
                 chatViewModel.primaryCloudProvider = it
                 engine.setPrimaryCloudProvider(it)
                 (context as? MainActivity)?.savePrimaryCloudProvider(it)
             },
+            onDeleteProvider = { (context as? MainActivity)?.removeCloudProvider(it) },
             onAddProvider = { showAddProvider = true },
+
             offlineMode = chatViewModel.offlineMode,
             onOfflineModeChange = { 
                 chatViewModel.offlineMode = it
@@ -1148,24 +1189,25 @@ fun ChatInput(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit
 
 @Composable
 fun SettingsDialog(
-    onDismiss: () -> Unit, 
-    onSelectModel: () -> Unit, 
-    currentModelPath: String, 
-    providers: List<CloudProvider>, 
+    onDismiss: () -> Unit,
+    onSelectModel: () -> Unit,
+    currentModelPath: String,
+    providers: List<CloudProvider>,
     discoveredModels: List<String>,
     primaryProvider: String,
     onPrimaryProviderChange: (String) -> Unit,
-    onAddProvider: () -> Unit, 
-    offlineMode: Boolean, 
+    onDeleteProvider: (String) -> Unit,
+    onAddProvider: () -> Unit,
+    offlineMode: Boolean,
     onOfflineModeChange: (Boolean) -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss, 
-        title = { 
-            Text("Ronin Kernel Settings", color = MaterialTheme.colors.onSurface) 
-        }, 
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Ronin Kernel Settings", color = MaterialTheme.colors.onSurface)
+        },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Offline-only Mode", modifier = Modifier.weight(1f), color = MaterialTheme.colors.onSurface)
                     Switch(checked = offlineMode, onCheckedChange = onOfflineModeChange)
@@ -1178,32 +1220,35 @@ fun SettingsDialog(
                     discoveredModels.forEach { path ->
                         val name = path.substringAfterLast("/")
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = path == currentModelPath, onClick = { /* Picked via OpenDocument for now */ })
+                            RadioButton(selected = path == currentModelPath, onClick = { /* Picked via OpenDocument */ })
                             Text(name, fontSize = 10.sp, color = MaterialTheme.colors.onSurface)
                         }
                     }
                 }
-                Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) { 
-                    Text("Load External Model") 
+                Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) {
+                    Text("Load External Model")
                 }
-                
+
                 Spacer(Modifier.height(16.dp))
                 Text("Cloud Registry", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
                 providers.forEach { provider ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().clickable { onPrimaryProviderChange(provider.name) }.padding(vertical = 4.dp)
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     ) {
                         RadioButton(selected = provider.name == primaryProvider, onClick = { onPrimaryProviderChange(provider.name) })
-                        Text("${provider.name} (${provider.modelId})", color = MaterialTheme.colors.onSurface)
+                        Text("${provider.name} (${provider.modelId})", modifier = Modifier.weight(1f).clickable { onPrimaryProviderChange(provider.name) }, color = MaterialTheme.colors.onSurface)
+                        IconButton(onClick = { onDeleteProvider(provider.name) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.7f))
+                        }
                     }
                 }
-                Button(onClick = onAddProvider, modifier = Modifier.padding(top = 4.dp)) { 
-                    Text("Add Cloud Provider") 
+                Button(onClick = onAddProvider, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Text("Add Live Provider")
                 }
             }
-        }, 
-        confirmButton = { 
+        },
+        confirmButton = {
             TextButton(onClick = onDismiss) { 
                 Text("Close") 
             } 

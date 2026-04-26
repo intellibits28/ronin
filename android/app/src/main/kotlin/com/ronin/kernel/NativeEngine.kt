@@ -294,17 +294,19 @@ class NativeEngine : ComponentCallbacks2 {
             }
 
             val jsonBody = if (provider.contains("Gemini")) {
-                // Phase 5.1.1: Robust Gemini Schema (Requires explicit role: user)
+                // Phase 5.1.5: Final Schema Alignment (contents array with role: user)
                 val textPart = JSONObject().put("text", input)
                 val parts = JSONArray().put(textPart)
                 val contentObj = JSONObject().put("role", "user").put("parts", parts)
-                val contents = JSONArray().put(contentObj)
-                JSONObject().put("contents", contents)
+                JSONObject().put("contents", JSONArray().put(contentObj))
             } else {
+                // Standard OpenAI fallback if needed, otherwise use contents
                 JSONObject()
                     .put("model", modelId)
-                    .put("messages", JSONArray().put(
-                        JSONObject().put("role", "user").put("content", input)
+                    .put("contents", JSONArray().put(
+                        JSONObject().put("role", "user").put("parts", JSONArray().put(
+                            JSONObject().put("text", input)
+                        ))
                     ))
             }
 
@@ -371,7 +373,11 @@ class NativeEngine : ComponentCallbacks2 {
                 val contentObj = JSONObject().put("role", "user").put("parts", parts)
                 JSONObject().put("contents", JSONArray().put(contentObj))
             } else {
-                JSONObject().put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", input)))
+                JSONObject().put("contents", JSONArray().put(
+                    JSONObject().put("role", "user").put("parts", JSONArray().put(
+                        JSONObject().put("text", input)
+                    ))
+                ))
             }
             
             conn.outputStream.use { it.write(jsonBody.toString().replace("\\/", "/").toByteArray()) }
