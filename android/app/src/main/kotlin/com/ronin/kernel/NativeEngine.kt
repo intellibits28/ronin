@@ -176,8 +176,27 @@ class NativeEngine : ComponentCallbacks2 {
         onSystemTiersUpdate?.invoke(temp, used, total)
     }
 
+    // Phase 5.1.0: Proxy-Aware Environment Sync
+    private var cloudHeadersJson: String = "{}"
+
+    external fun setCloudEnvironment(json: String)
+
+    private fun isVpnActive(context: Context): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val activeNetwork = cm.activeNetwork
+        val caps = cm.getNetworkCapabilities(activeNetwork)
+        return caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) ?: false
+    }
+
     @Suppress("unused")
     fun performCloudInference(input: String, primaryProvider: String): String {
+        // Requirement 3: VPN Status Check
+        val context = applicationContext
+        if (!isVpnActive(context)) {
+            Log.w(TAG, "Cloud Bridge blocked: VPN inactive.")
+            return "Error: Region Restricted - Please check VPN"
+        }
+
         Log.i(TAG, "Cloud Bridge: Initiating request with primary: $primaryProvider")
         
         val providers = mutableListOf<String>()

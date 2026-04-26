@@ -279,6 +279,15 @@ Java_com_ronin_kernel_NativeEngine_setPrimaryCloudProvider(JNIEnv *env, jobject 
 }
 
 JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_setCloudEnvironment(JNIEnv *env, jobject thiz, jstring json) {
+    if (json == nullptr || !g_intent_engine) return;
+    const char *json_cstr = env->GetStringUTFChars(json, nullptr);
+    LOGI(TAG, "Syncing JNI Cloud Environment: %s", json_cstr);
+    // Logic for proxy-aware retry or timeout settings can be applied here
+    env->ReleaseStringUTFChars(json, json_cstr);
+}
+
+JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) {
     if (g_intent_engine) g_intent_engine->setOfflineMode(offline == JNI_TRUE);
 }
