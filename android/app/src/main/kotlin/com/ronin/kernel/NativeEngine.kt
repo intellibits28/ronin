@@ -239,40 +239,40 @@ class NativeEngine : ComponentCallbacks2 {
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
 
         var finalEndpoint = ""
-        var modelId = "gemini-1.5-flash"
+        var modelId = ""
 
         try {
-            val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
+            // Phase 5.1.2: Path Synchronization (Use Internal FilesDir)
+            val configDir = java.io.File(appContext.filesDir, "config")
+            val file = java.io.File(configDir, "providers.json")
             if (file.exists()) {
                 val jsonArray = JSONArray(file.readText())
                 for (i in 0 until jsonArray.length()) {
                     val obj = jsonArray.getJSONObject(i)
                     if (obj.getString("name") == provider) {
-                        finalEndpoint = obj.getString("endpoint")
-                        modelId = obj.getString("model_id")
+                        finalEndpoint = obj.optString("endpoint", "")
+                        modelId = obj.optString("model_id", "")
                         break
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Fallback to hardened builder for $provider")
+            Log.w(TAG, "Config load failed, using dynamic builder.")
         }
 
-        // Phase 4.9.11: Use stable v1 endpoint for guaranteed production linkage
-        val endpoint = if (finalEndpoint.isEmpty() || provider.contains("Gemini")) {
-            if (provider.contains("Gemini")) {
-                "https://generativelanguage.googleapis.com/v1/models/$modelId:generateContent?key=$apiKey"
-            } else {
-                when(provider) {
-                    "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
-                    else -> finalEndpoint.ifEmpty { "Error" }
-                }
-            }
+        // Phase 5.1.2: Robust Endpoint Resolution
+        // If finalEndpoint exists, append key and use it. Otherwise construct from modelId.
+        val endpoint = if (finalEndpoint.isNotEmpty()) {
+            if (finalEndpoint.contains("?key=")) finalEndpoint 
+            else "$finalEndpoint?key=$apiKey"
+        } else if (modelId.isNotEmpty()) {
+            "https://generativelanguage.googleapis.com/v1beta/models/$modelId:generateContent?key=$apiKey"
         } else {
-            finalEndpoint
+            "Error"
         }
 
-        if (endpoint == "Error" || endpoint.isEmpty()) return "Error: Could not resolve endpoint for $provider"
+        if (endpoint == "Error") return "Error: Could not resolve endpoint for $provider"
+        Log.d(TAG, "Resolved Endpoint: ${endpoint.replace(apiKey, "REDACTED")}")
 
         return try {
             val url = java.net.URL(endpoint)
