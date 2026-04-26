@@ -13,132 +13,81 @@ FileSearchNode::FileSearchNode(Memory::LongTermMemory* ltm, NeuralEmbeddingNode*
     : m_ltm(ltm), m_neural(neural) {}
 
 std::vector<std::string> FileSearchNode::search(const std::string& query) {
-    LOGI(TAG, "Executing File Search query: %s", query.c_str());
+    LOGI(TAG, "Phase 5.2: Hybrid Search (Query=%s)", query.c_str());
     
-    if (!m_ltm) {
-        return {"Error: File Search logic not initialized (LTM missing)."};
-    }
+    if (!m_ltm) return {"Error: Search LTM missing."};
 
-    // 1. Check Model Health
-    if (m_neural && !m_neural->isLoaded()) {
-        LOGE(TAG, "> FATAL: ONNX Runtime failed to load model weights!");
-    }
-
-    // 2. Identify Type Hints (Extensions)
-    std::string type_hint = "";
     std::string lower_query = query;
     std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
 
-    if (lower_query.find("pdf") != std::string::npos || lower_query.find("document") != std::string::npos || lower_query.find("docx") != std::string::npos) {
-        if (lower_query.find("docx") != std::string::npos) type_hint = ".docx";
-        else type_hint = ".pdf";
-    }
-    else if (lower_query.find("jpg") != std::string::npos || lower_query.find("jpeg") != std::string::npos || lower_query.find("image") != std::string::npos || lower_query.find("photo") != std::string::npos) type_hint = ".jpg";
-    else if (lower_query.find("mp3") != std::string::npos || lower_query.find("music") != std::string::npos || lower_query.find("audio") != std::string::npos || lower_query.find("song") != std::string::npos) type_hint = ".mp3";
-    else if (lower_query.find("video") != std::string::npos || lower_query.find("movie") != std::string::npos || lower_query.find("mp4") != std::string::npos || lower_query.find("mkv") != std::string::npos) {
-        if (lower_query.find("mkv") != std::string::npos) type_hint = ".mkv";
-        else type_hint = ".mp4";
-    }
-    else if (lower_query.find("zip") != std::string::npos || lower_query.find("archive") != std::string::npos) type_hint = ".zip";
-    else if (lower_query.find("txt") != std::string::npos || lower_query.find("note") != std::string::npos || lower_query.find("text") != std::string::npos || lower_query.find("document") != std::string::npos) type_hint = ".txt";
+    // 1. Identify Extension Priority
+    std::string ext_filter = "";
+    if (lower_query.find("pdf") != std::string::npos) ext_filter = ".pdf";
+    else if (lower_query.find("mp3") != std::string::npos || lower_query.find("music") != std::string::npos) ext_filter = ".mp3";
+    else if (lower_query.find("jpg") != std::string::npos || lower_query.find("photo") != std::string::npos) ext_filter = ".jpg";
+    else if (lower_query.find("mp4") != std::string::npos || lower_query.find("video") != std::string::npos) ext_filter = ".mp4";
+    else if (lower_query.find("txt") != std::string::npos || lower_query.find("doc") != std::string::npos) ext_filter = ".txt";
 
-    if (!type_hint.empty()) {
-        LOGI(TAG, "> Active Search Filter: [Extension=%s]", type_hint.c_str());
-    } else {
-        // Fallback: If no type hint, search all indexed files (removed strict abort)
-        LOGW(TAG, "> No specific category identified. Searching all local files.");
-    }
+    std::vector<std::pair<std::string, float>> candidates;
 
-    // 3. Try Neural Vector Search first
-    if (m_neural && m_neural->isLoaded()) {
-        LOGI(TAG, "> Search Mode: Neural");
+    // 2. Step 1: Neural Match (if node is available)
+    if (m_neural) {
+        LOGD(TAG, "Generating BGE Query Vector...");
         auto query_vec = m_neural->generateEmbedding(query);
         auto all_embeddings = m_ltm->getAllFileEmbeddings();
-        
-        std::vector<std::pair<std::string, float>> neural_matches;
+
         for (auto& fe : all_embeddings) {
-            // EXPLICIT PRIVACY GUARD
-            if (fe.name.find(".env") != std::string::npos) continue;
-
-            float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 384);
-            if (sim > 0.65f) { // Slightly lower threshold for better recall
-                neural_matches.push_back({fe.name, sim});
-            }
-        }
-
-        if (!neural_matches.empty()) {
-            std::sort(neural_matches.begin(), neural_matches.end(), [](const auto& a, const auto& b) {
-                return a.second > b.second;
-            });
-
-            // Extract names and deduplicate
-            std::vector<std::string> names;
-            for (const auto& nm : neural_matches) names.push_back(nm.first);
-            auto unique_names = Memory::MemoryManager::filterDuplicateFilenames(names);
-
-            std::string output = "Found files (Neural): \n";
-            size_t display_count = std::min(unique_names.size(), size_t(5));
-            for (size_t i = 0; i < display_count; ++i) {
-                output += "- " + unique_names[i] + "\n";
-            }
-            if (unique_names.size() > 5) {
-                output += "... and " + std::to_string(unique_names.size() - 5) + " more files found.\n";
-            }
-            return {output};
-        }
-    }
-
-    // 4. Fallback to Keyword (FTS5) Search
-    LOGI(TAG, "> Search Mode: Keyword Fallback");
-    auto results = m_ltm->searchFiles(query);
-    
-    // EXPLICIT FILTER: Apply extension filter to keyword results
-    std::vector<std::string> filtered_results;
-    if (!type_hint.empty()) {
-        for (const auto& file : results) {
-            std::string filename = file;
-            std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
+            float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 768);
             
-            // EXPLICIT PRIVACY GUARD: Never leak system files
-            if (filename.find(".env") != std::string::npos || filename.find(".ignore") != std::string::npos || filename.find("config") != std::string::npos) {
-                continue;
+            // Precision Boosting for specific extensions
+            if (!ext_filter.empty() && fe.name.find(ext_filter) != std::string::npos) {
+                sim += 0.25f; 
             }
-
-            // Strict extension check (ends_with)
-            if (filename.length() >= type_hint.length() && 
-                filename.compare(filename.length() - type_hint.length(), type_hint.length(), type_hint) == 0) {
-                filtered_results.push_back(file);
+            
+            if (sim > 0.60f) {
+                candidates.push_back({fe.path, sim});
             }
         }
-    } else {
-        // This branch should ideally not be reached due to the guard at step 2.
-        return {"No matching files found in local storage."};
+        // Unload embedding model to save RAM as requested in Phase 5.2
+        m_neural->unload();
     }
 
-    auto unique_results = Memory::MemoryManager::filterDuplicateFilenames(filtered_results);
-    
-    std::vector<std::string> formatted_results;
-    if (unique_results.empty()) {
-        formatted_results.push_back("No matching files found in local storage.");
-    } else {
-        std::string output = "Found files (Keyword): \n";
-        size_t display_count = std::min(unique_results.size(), size_t(5));
-        for (size_t i = 0; i < display_count; ++i) {
-            output += "- " + unique_results[i] + "\n";
-        }
-        if (unique_results.size() > 5) {
-            output += "... and " + std::to_string(unique_results.size() - 5) + " more files found.\n";
-        }
-        formatted_results.push_back(output);
+    // 3. Step 2: Keyword/Metadata Fallback (The Reliable Way)
+    auto kw_results = m_ltm->searchFiles(query);
+    for (const auto& path : kw_results) {
+        // Boost keyword matches
+        candidates.push_back({path, 0.95f});
     }
+
+    // 4. Filter & Format
+    if (candidates.empty()) return {"No matching files found in local storage."};
+
+    std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+        return a.second > b.second;
+    });
+
+    std::unordered_set<std::string> unique_paths;
+    std::vector<std::string> output;
+    output.push_back("Search Results (" + std::to_string(candidates.size()) + " items):");
     
-    return formatted_results;
+    int count = 0;
+    for (const auto& c : candidates) {
+        if (unique_paths.insert(c.first).second) {
+            size_t last_slash = c.first.find_last_of("/");
+            std::string name = (last_slash == std::string::npos) ? c.first : c.first.substr(last_slash + 1);
+            output.push_back("- " + name); 
+            if (++count >= 10) break;
+        }
+    }
+
+    return output;
 }
 
 std::string FileSearchNode::execute(const std::string& param) {
     auto results = search(param);
-    if (results.empty()) return "No files found.";
-    return results[0]; // Returning first summary block as per current UI expectation
+    std::string out = "";
+    for (const auto& s : results) out += s + "\n";
+    return out;
 }
 
 } // namespace Ronin::Kernel::Capability

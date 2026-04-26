@@ -156,11 +156,12 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     
     g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory, g_neural_embedding_node.get());
     if (g_file_scanner) {
-        // Phase 4.9.11: Use /sdcard/ for reliable storage access in C++
-        Ronin::Kernel::Capability::HardwareBridge::pushMessage("> Kernel: Background File Scanner Initiated.");
-        g_file_scanner->startScan("/sdcard/Music/");
-        g_file_scanner->startScan("/sdcard/Download/");
-        g_file_scanner->startScan("/sdcard/Documents/");
+        // Phase 5.2: Precision Focus - Remove internal assets scan
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("> Kernel: Storage Indexer Ready.");
+        g_file_scanner->startScan("/storage/emulated/0/Music/");
+        g_file_scanner->startScan("/storage/emulated/0/Download/");
+        g_file_scanner->startScan("/storage/emulated/0/Documents/");
+        g_file_scanner->startScan("/storage/emulated/0/DCIM/");
     }
 
     // 3. Structural Intent Alignment

@@ -61,6 +61,16 @@ void FileScanner::scanWorker(const std::string& root_path) {
             if (entry.is_regular_file()) {
                 const auto& path = entry.path();
                 std::string filename = path.filename().string();
+                
+                // Phase 5.2: System File Blacklist (Ignore Noise)
+                if (filename.find(".nomedia") != std::string::npos || 
+                    filename.find(".db") != std::string::npos || 
+                    filename.find(".uuid") != std::string::npos ||
+                    filename.find(".ini") != std::string::npos ||
+                    filename.find(".DS_Store") != std::string::npos) {
+                    continue; 
+                }
+
                 std::string abs_path = fs::absolute(path).string();
                 std::string extension = path.extension().string();
                 

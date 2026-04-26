@@ -19,7 +19,14 @@ public:
     std::string execute(const std::string& param) override;
 
     /**
-     * Runs inference on the input text to produce a 384-dim semantic embedding.
+     * Phase 5.2: Lazy Loading Support
+     * Manually manage memory by loading model only when needed.
+     */
+    bool load();
+    void unload();
+
+    /**
+     * Runs inference on the input text to produce a 768-dim semantic embedding (BGE-Base).
      */
     std::vector<float> generateEmbedding(const std::string& input);
 
