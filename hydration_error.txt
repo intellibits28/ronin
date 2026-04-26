@@ -1,0 +1,4 @@
+--------- beginning of main
+04-26 21:59:55.728 D/RoninKernel_CPP( 7034): JNI Bridge: loadModelAndHydrate sequence initiated.
+04-26 21:59:55.729 E/RoninKernel_CPP( 7034): FAILURE: LiteRT-LM could not link to MediaPipe binary.
+04-26 21:59:55.729 E/RoninKernel_CPP( 7034): ERROR: Reasoning Brain hydration failed.

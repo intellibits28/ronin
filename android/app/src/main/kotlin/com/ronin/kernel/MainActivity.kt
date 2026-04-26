@@ -482,6 +482,25 @@ class MainActivity : ComponentActivity() {
             for (modelFile in models) {
                 copyFile(modelFile, "models", targetDir)
             }
+
+            // Phase 5.3: Explicit Provider Hydration
+            val configDir = java.io.File(filesDir, "config")
+            if (!configDir.exists()) configDir.mkdirs()
+            val providersFile = java.io.File(configDir, "providers.json")
+            
+            if (!providersFile.exists()) {
+                Log.i("RoninBoot", "Hydrating default providers.json...")
+                try {
+                    assets.open("providers.json").use { input ->
+                        providersFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    Log.i("RoninBoot", "Default providers.json deployed.")
+                } catch (e: Exception) {
+                    Log.e("RoninBoot", "Asset providers.json not found in root.")
+                }
+            }
             Log.i("RoninBoot", "Assets successfully synchronized to: ${targetDir.absolutePath}")
         } catch (e: Exception) {
             Log.e("RoninBoot", "Failed to sync assets: ${e.message}")

@@ -106,10 +106,19 @@ if(ANDROID)
     find_library(android-lib android)
 
     if(log-lib AND android-lib)
-        # Locate ORT shared library in AAR (which was extracted by FetchContent)
+        # Locate ORT shared library in AAR
         set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/jni/${ANDROID_ABI}/libonnxruntime.so)
         add_library(onnxruntime_lib SHARED IMPORTED)
         set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+
+        # Phase 5.3: MediaPipe Linkage for LiteRT-LM
+        # We expect libmediapipe_tasks_genai_jni.so to be provided via AAR/Native libs
+        find_library(MEDIAPIPE_GENAI_LIB NAMES mediapipe_tasks_genai_jni)
+        if(MEDIAPIPE_GENAI_LIB)
+            add_library(mediapipe_genai SHARED IMPORTED)
+            set_target_properties(mediapipe_genai PROPERTIES IMPORTED_LOCATION ${MEDIAPIPE_GENAI_LIB})
+            target_link_libraries(ronin_core PUBLIC mediapipe_genai)
+        endif()
 
         # Link system libraries to core so tests inherit them
         target_link_libraries(ronin_core PUBLIC ${log-lib} ${android-lib} onnxruntime_lib)
