@@ -117,6 +117,10 @@ class ChatViewModel : ViewModel() {
 
 class MainActivity : ComponentActivity() {
     private val nativeEngine = NativeEngine()
+    
+    // Phase 5.2.1: Router Integrity Verification
+    private val EXPECTED_ROUTER_HASH = "33fb437b73c72dc5f3f4e7d571d68bfbc0378f28c01072b9224259eed35bc4e6"
+
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var sharedPreferences: android.content.SharedPreferences
     private var lastPermissionState = false
@@ -237,6 +241,14 @@ class MainActivity : ComponentActivity() {
         }
 
         val currentFingerprint = calculateFingerprint(file)
+        
+        // Phase 5.2.1: Strict Router Integrity Check
+        if (path.contains("model.onnx") && currentFingerprint != EXPECTED_ROUTER_HASH) {
+            Log.e("RoninIntegrity", "FATAL: Router model hash mismatch! Expected: $EXPECTED_ROUTER_HASH, Got: $currentFingerprint")
+            Toast.makeText(this, "CRITICAL: Router model is corrupt or unverified.", Toast.LENGTH_LONG).show()
+            // We allow hydration to proceed but log the failure for the Core Router.
+        }
+
         val savedFingerprint = sharedPreferences.getString("fingerprint_$path", "")
 
         if (!savedFingerprint.isNullOrEmpty() && savedFingerprint != currentFingerprint) {
