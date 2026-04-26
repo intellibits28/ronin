@@ -31,8 +31,10 @@ class NativeEngine : ComponentCallbacks2 {
     private var cameraManager: CameraManager? = null
     private var isFlashlightOn = false
     private var lastUserInput = ""
+    private lateinit var appContext: Context
 
     fun setCameraManager(context: Context) {
+        this.appContext = context.applicationContext
         this.cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     }
 
@@ -191,8 +193,7 @@ class NativeEngine : ComponentCallbacks2 {
     @Suppress("unused")
     fun performCloudInference(input: String, primaryProvider: String): String {
         // Requirement 3: VPN Status Check
-        val context = applicationContext
-        if (!isVpnActive(context)) {
+        if (!isVpnActive(appContext)) {
             Log.w(TAG, "Cloud Bridge blocked: VPN inactive.")
             return "Error: Region Restricted - Please check VPN"
         }
