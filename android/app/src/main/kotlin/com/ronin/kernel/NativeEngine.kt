@@ -320,7 +320,7 @@ class NativeEngine : ComponentCallbacks2 {
                 val response = conn.inputStream.bufferedReader().use { it.readText() }
                 try {
                     val json = JSONObject(response)
-                    if (provider == "Gemini") {
+                    if (provider.contains("Gemini")) {
                         json.getJSONArray("candidates")
                             .getJSONObject(0)
                             .getJSONObject("content")
@@ -334,18 +334,53 @@ class NativeEngine : ComponentCallbacks2 {
                             .getString("content")
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Cloud JSON parsing failed: ${e.message}")
                     "Error: Response parsing failed."
                 }
             } else {
-                val errorMsg = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "No error details"
-                Log.e(TAG, "Cloud request failed ($responseCode): $errorMsg")
-                "Error: Cloud request failed with code $responseCode"
+                val errorBody = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+                val serverMessage = try {
+                    JSONObject(errorBody).getJSONObject("error").getString("message")
+                } catch (e: Exception) { "Unknown Server Error" }
+
+                // Phase 5.1.4: Adaptive Version Fallback
+                if (responseCode == 404 && endpoint.contains("/v1/")) {
+                    Log.w(TAG, "v1 path failed (404). Retrying with v1beta...")
+                    val fallbackEndpoint = endpoint.replace("/v1/", "/v1beta/")
+                    return executeSingleInferenceWithUrl(input, provider, fallbackEndpoint, apiKey)
+                }
+
+                Log.e(TAG, "Cloud Error ($responseCode): $serverMessage")
+                "Error: [$responseCode] $serverMessage"
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Cloud Bridge Fatal: ${e.message}")
             "Error: ${e.message}"
         }
+    }
+
+    private fun executeSingleInferenceWithUrl(input: String, provider: String, endpoint: String, apiKey: String): String {
+        // Helper for fallback retries
+        return try {
+            val url = java.net.URL(endpoint)
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            
+            val jsonBody = if (provider.contains("Gemini")) {
+                val parts = JSONArray().put(JSONObject().put("text", input))
+                val contentObj = JSONObject().put("role", "user").put("parts", parts)
+                JSONObject().put("contents", JSONArray().put(contentObj))
+            } else {
+                JSONObject().put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", input)))
+            }
+            
+            conn.outputStream.use { it.write(jsonBody.toString().replace("\\/", "/").toByteArray()) }
+            if (conn.responseCode == 200) {
+                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(response)
+                json.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+            } else "Error: Fallback also failed with ${conn.responseCode}"
+        } catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Suppress("unused")
