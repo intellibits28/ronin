@@ -119,7 +119,7 @@ class MainActivity : ComponentActivity() {
     private val nativeEngine = NativeEngine()
     
     // Phase 5.2.1: Router Integrity Verification
-    private val EXPECTED_ROUTER_HASH = "33fb437b73c72dc5f3f4e7d571d68bfbc0378f28c01072b9224259eed35bc4e6"
+    private val EXPECTED_ROUTER_HASH = "5725965a8ff8646946425ce07fd8fa5473818c4399ef589c1e937226589819ce"
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var sharedPreferences: android.content.SharedPreferences
