@@ -51,6 +51,7 @@ public:
     // File Indexing (FTS5 + Semantic)
     struct FileEmbedding {
         std::string name;
+        std::string path;
         std::vector<float> vector;
     };
 

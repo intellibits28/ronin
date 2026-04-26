@@ -223,18 +223,20 @@ std::vector<LongTermMemory::FileEmbedding> LongTermMemory::getAllFileEmbeddings(
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<FileEmbedding> results;
 
-    const char* sql = "SELECT name, embedding_vector FROM file_index WHERE embedding_vector IS NOT NULL;";
+    const char* sql = "SELECT name, path, embedding_vector FROM file_index WHERE embedding_vector IS NOT NULL;";
     sqlite3_stmt* stmt = nullptr;
 
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* name = sqlite3_column_text(stmt, 0);
-            const void* blob = sqlite3_column_blob(stmt, 1);
-            int bytes = sqlite3_column_bytes(stmt, 1);
+            const unsigned char* path = sqlite3_column_text(stmt, 1);
+            const void* blob = sqlite3_column_blob(stmt, 2);
+            int bytes = sqlite3_column_bytes(stmt, 2);
 
-            if (name && blob && bytes > 0) {
+            if (name && path && blob && bytes > 0) {
                 FileEmbedding fe;
                 fe.name = reinterpret_cast<const char*>(name);
+                fe.path = reinterpret_cast<const char*>(path);
                 fe.vector.assign(static_cast<const float*>(blob), static_cast<const float*>(blob) + (bytes / sizeof(float)));
                 results.push_back(fe);
             }
