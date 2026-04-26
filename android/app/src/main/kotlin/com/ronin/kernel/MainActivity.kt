@@ -25,13 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.MaterialTheme
@@ -435,6 +431,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun saveOfflineMode(offline: Boolean) {
+        sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
+    }
+
+    fun savePrimaryCloudProvider(name: String) {
+        sharedPreferences.edit().putString("primary_cloud_provider", name).apply()
+    }
+
     private fun getPathFromUri(uri: Uri): String? {
         return uri.path?.let { path ->
             if (path.contains("primary:")) {
@@ -710,9 +714,6 @@ class MainActivity : ComponentActivity() {
                 Log.e("RoninUI", "Failed to save cloud config: ${e.message}")
             }
         }
-    }
-    fun savePrimaryCloudProvider(name: String) {
-        sharedPreferences.edit().putString("primary_cloud_provider", name).apply()
     }
 
     fun removeCloudProvider(name: String) {
