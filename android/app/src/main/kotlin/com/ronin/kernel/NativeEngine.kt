@@ -260,13 +260,17 @@ class NativeEngine : ComponentCallbacks2 {
             Log.w(TAG, "Config load failed, using dynamic builder.")
         }
 
-        // Phase 5.1.2: Robust Endpoint Resolution
-        // If finalEndpoint exists, append key and use it. Otherwise construct from modelId.
+        // Phase 5.1.3: Robust Endpoint Resolution
+        var modelIdClean = modelId
+        if (modelIdClean.isNotEmpty() && !modelIdClean.startsWith("models/")) {
+            modelIdClean = "models/$modelIdClean"
+        }
+
         val endpoint = if (finalEndpoint.isNotEmpty()) {
-            if (finalEndpoint.contains("?key=")) finalEndpoint 
-            else "$finalEndpoint?key=$apiKey"
-        } else if (modelId.isNotEmpty()) {
-            "https://generativelanguage.googleapis.com/v1beta/models/$modelId:generateContent?key=$apiKey"
+            val base = if (finalEndpoint.contains("?key=")) finalEndpoint.substringBefore("?key=") else finalEndpoint
+            "$base?key=$apiKey"
+        } else if (modelIdClean.isNotEmpty()) {
+            "https://generativelanguage.googleapis.com/v1beta/$modelIdClean:generateContent?key=$apiKey"
         } else {
             "Error"
         }

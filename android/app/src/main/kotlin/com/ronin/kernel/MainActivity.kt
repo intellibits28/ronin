@@ -648,7 +648,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadCloudProvidersFromDisk() {
-        val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
+        val configDir = java.io.File(filesDir, "config")
+        val file = java.io.File(configDir, "providers.json")
         if (file.exists()) {
             try {
                 val json = file.readText()
@@ -661,10 +662,10 @@ class MainActivity : ComponentActivity() {
                         obj.getString("name"),
                         obj.getString("endpoint"),
                         obj.getString("model_id"),
-                        obj.getString("auth_type")
+                        obj.optString("auth_type", "api_key")
                     ))
                 }
-                Log.i("RoninUI", "Loaded ${jsonArray.length()} cloud providers.")
+                Log.i("RoninUI", "Loaded ${jsonArray.length()} cloud providers from internal storage.")
             } catch (e: Exception) {
                 Log.e("RoninUI", "Failed to load providers: ${e.message}")
             }
@@ -674,8 +675,7 @@ class MainActivity : ComponentActivity() {
     fun saveCloudProvider(provider: CloudProvider, apiKey: String) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         sharedPreferences.edit().putString(provider.name, apiKey).apply()
-        
-        // Phase 4.6.5: Configuration Deduplication
+
         val existingIndex = chatViewModel.cloudProviders.indexOfFirst { it.name == provider.name }
         if (existingIndex != -1) {
             chatViewModel.cloudProviders[existingIndex] = provider
@@ -683,27 +683,34 @@ class MainActivity : ComponentActivity() {
             chatViewModel.cloudProviders.add(provider)
         }
 
-        try {
-            val jsonArray = JSONArray()
-            chatViewModel.cloudProviders.forEach { p ->
-                val obj = JSONObject()
-                obj.put("name", p.name)
-                obj.put("endpoint", p.endpoint)
-                obj.put("model_id", p.modelId)
-                obj.put("auth_type", p.authType)
-                jsonArray.put(obj)
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val configDir = java.io.File(filesDir, "config")
+                if (!configDir.exists()) configDir.mkdirs()
+
+                val providersFile = java.io.File(configDir, "providers.json")
+                val jsonArray = JSONArray()
+                chatViewModel.cloudProviders.forEach { p ->
+                    val obj = JSONObject()
+                    obj.put("name", p.name)
+                    obj.put("endpoint", p.endpoint)
+                    obj.put("model_id", p.modelId)
+                    obj.put("auth_type", p.authType)
+                    jsonArray.put(obj)
+                }
+                val providersJson = jsonArray.toString().replace("\\/", "/")
+                providersFile.writeText(providersJson)
+
+                nativeEngine.updateCloudProviders(providersJson)
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Provider ${provider.name} saved securely.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("RoninUI", "Failed to save cloud config: ${e.message}")
             }
-            val providersJson = jsonArray.toString(2).replace("\\/", "/")
-            // Phase 4.4.8.1: Persistent Settings Memory
-            java.io.File("/storage/emulated/0/Ronin/config/providers.json").writeText(providersJson)
-            
-            nativeEngine.updateCloudProviders(providersJson)
-            Toast.makeText(this, "Provider ${provider.name} saved securely.", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            Log.e("RoninUI", "Failed to save providers: ${e.message}")
         }
     }
-
     fun saveOfflineMode(offline: Boolean) {
         sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
     }
