@@ -289,10 +289,12 @@ class NativeEngine : ComponentCallbacks2 {
                 conn.setRequestProperty("X-Title", "Ronin Kernel")
             }
 
-            val jsonBody = if (provider == "Gemini") {
-                // Phase 4.9.11: Minimalist content schema for stable v1 (no explicit role required)
-                val parts = JSONArray().put(JSONObject().put("text", input))
-                val contents = JSONArray().put(JSONObject().put("parts", parts))
+            val jsonBody = if (provider.contains("Gemini")) {
+                // Phase 5.1.1: Robust Gemini Schema (Requires explicit role: user)
+                val textPart = JSONObject().put("text", input)
+                val parts = JSONArray().put(textPart)
+                val contentObj = JSONObject().put("role", "user").put("parts", parts)
+                val contents = JSONArray().put(contentObj)
                 JSONObject().put("contents", contents)
             } else {
                 JSONObject()
