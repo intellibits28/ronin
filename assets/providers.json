@@ -1,0 +1,8 @@
+{
+  "templates": [
+    {"name": "Gemini", "endpoint": "https://generativelanguage.googleapis.com/v1/models/gemini-pro-latest:generateContent", "model_id": "gemini-pro-latest"},
+    {"name": "Gemini-Flash", "endpoint": "https://generativelanguage.googleapis.com/v1/models/gemini-flash-latest:generateContent", "model_id": "gemini-flash-latest"},
+    {"name": "Gemini-3.1-Exp", "endpoint": "https://generativelanguage.googleapis.com/v1/models/gemini-3.1-pro-preview:generateContent", "model_id": "gemini-3.1-pro-preview"},
+    {"name": "OpenRouter", "endpoint": "https://openrouter.ai/api/v1/chat/completions", "model_id": "meta-llama/llama-3.1-70b"}
+  ]
+}
