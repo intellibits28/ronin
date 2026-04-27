@@ -78,7 +78,7 @@ struct InferenceEngine::Impl {
             LOGI(TAG, "SUCCESS: LiteRT-LM Engine hydrated.");
         } else {
             std::string error_msg = result.status().message();
-            LOGE(TAG, "FAILURE: LiteRT-LM hydration error: %s (Code: %d)", error_msg.c_str(), (int)result.status().code());
+            LOGE(TAG, "FAILURE: LiteRT-LM hydration error: %s", error_msg.c_str());
             Ronin::Kernel::Capability::HardwareBridge::pushMessage("> Kernel: Hydration Error - " + error_msg);
             loaded = false;
         }
