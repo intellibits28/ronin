@@ -37,18 +37,19 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
         auto all_embeddings = m_ltm->getAllFileEmbeddings();
 
         for (auto& fe : all_embeddings) {
-            // Phase 5.3: Strict UI Filter (Double-check blacklist at runtime)
+            // Phase 5.4: Strict UI Filter (Exclude system metadata)
             if (fe.name.find(".database_uuid") != std::string::npos || 
-                fe.name.find(".nomedia") != std::string::npos) continue;
+                fe.name.find(".nomedia") != std::string::npos ||
+                fe.name.find(".db") != std::string::npos) continue;
 
             float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 768);
             
-            // Tightened Precision Boosting (+0.15 instead of +0.25)
+            // Tightened Precision Boosting
             if (!ext_filter.empty() && fe.name.find(ext_filter) != std::string::npos) {
                 sim += 0.15f; 
             }
             
-            if (sim > 0.65f) { // Increased base threshold for better precision
+            if (sim > 0.75f) { // Final Architect Requirement: 0.75 Threshold
                 candidates.push_back({fe.path, sim});
             }
         }

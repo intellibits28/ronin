@@ -562,9 +562,17 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             return intent;
         }
 
-        // Phase 5.0: Agentic Dynamic Routing for Chat (ID 1)
+        // Phase 5.4: Agentic Dynamic Routing for Chat (ID 1)
         if (intent.id == 1) {
-            std::string selectedModelId = "gemini-2.0-flash"; // Default
+            // Requirement 4: Strict Offline Enforcement
+            if (m_offline_mode) {
+                LOGW(TAG, "OFFLINE_ONLY: Aborting Cloud Fallback for Reasoning.");
+                Ronin::Kernel::Capability::HardwareBridge::pushMessage("> Kernel: Offline Guard Active. Aborting fallback.");
+                intent.confidence = 0.0f; // Neutralize intent to stop execution
+                return intent;
+            }
+
+            std::string selectedModelId = "gemini-1.5-flash"; 
             bool needsThinking = (input.length() > 100 || sv_input.find("research") != std::string::npos);
 
             for (auto const& [key, val] : m_model_metadata) {

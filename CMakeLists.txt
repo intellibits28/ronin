@@ -125,7 +125,17 @@ if(ANDROID)
 
         # JNI Bridge Library (Requirement 4)
         add_library(ronin_kernel SHARED src/ronin_jni.cpp)
-        target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib onnxruntime_lib ${log-lib})
+        
+        # Phase 5.4: Production Linkage Refactor
+        # Explicitly link MediaPipe GenAI and ORT to the JNI bridge
+        target_link_libraries(ronin_kernel PUBLIC 
+            ronin_core 
+            sqlite3_lib 
+            onnxruntime_lib 
+            mediapipe_genai 
+            ${log-lib} 
+            ${android-lib}
+        )
 
         # Enable ARMv8.2-A Dot Product extension only for arm64-v8a
         if(ANDROID_ABI STREQUAL "arm64-v8a")

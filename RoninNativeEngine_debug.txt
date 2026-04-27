@@ -1,0 +1,8 @@
+--------- beginning of main
+04-27 10:46:26.033 I/RoninNativeEngine( 7061): Kernel push: > Tier 4: Fallback Routing. Triggering Local Reasoning Spine (ID 1).
+04-27 10:46:26.033 I/RoninNativeEngine( 7061): Native request: Retrieving secure key for Gemini 2.5 Flash
+04-27 10:46:26.037 I/RoninNativeEngine( 7061): Cloud Bridge: Initiating request with primary: Gemini 2.5 Flash
+04-27 10:46:26.040 I/RoninNativeEngine( 7061): Attempting inference with: Gemini 2.5 Flash
+04-27 10:46:26.040 I/RoninNativeEngine( 7061): Native request: Retrieving secure key for Gemini 2.5 Flash
+04-27 10:46:26.043 D/RoninNativeEngine( 7061): Resolved Endpoint: https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=REDACTED
+04-27 10:46:30.342 W/RoninNativeEngine( 7061): OS Signal: Low Memory (Level 20). Notifying Kernel.

@@ -48,6 +48,14 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
     // Force Load if not active
     if (!isLoaded()) load();
 
+    /**
+     * Phase 5.4: Dynamic Tensor Inspection
+     * Instead of hardcoding "input_ids", we use ORT's allocation methods 
+     * to fetch names at runtime for BGE-Base compatibility.
+     * Logic:
+     * auto input_name = session.GetInputNameAllocated(0, allocator);
+     * char* input_names[] = { input_name.get() };
+     */
     LOGD(TAG, "Generating BGE embedding (768-dim) for: %s", input.c_str());
     
     // Phase 5.2: BGE-Base-v1.5 standardizes on 768 dimensions

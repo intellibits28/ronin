@@ -1,319 +1,286 @@
 --------- beginning of main
-04-26 21:38:49.117 I/RoninNativeEngine( 2831): Ronin Kernel Native Library loaded successfully.
-04-26 21:38:49.348 I/RoninBoot( 2831): Asset Verification: assets/models/model.onnx found = true
-04-26 21:38:49.357 I/RoninBoot( 2831): Copying asset: attributes_config.xml -> /data/user/0/com.ronin.kernel/files/assets/attributes_config.xml
-04-26 21:38:49.358 I/RoninBoot( 2831): Copying asset: capabilities.json -> /data/user/0/com.ronin.kernel/files/assets/capabilities.json
-04-26 21:38:49.358 I/RoninBoot( 2831): Copying asset: freeform_resolutions.json -> /data/user/0/com.ronin.kernel/files/assets/freeform_resolutions.json
-04-26 21:38:49.359 I/RoninBoot( 2831): Copying asset: power_consumption_cloud_config.xml -> /data/user/0/com.ronin.kernel/files/assets/power_consumption_cloud_config.xml
-04-26 21:38:49.359 I/RoninBoot( 2831): Copying asset: ui_service_cloud_config.xml -> /data/user/0/com.ronin.kernel/files/assets/ui_service_cloud_config.xml
-04-26 21:38:49.365 I/RoninBoot( 2831): Copying asset: models/model.onnx -> /data/user/0/com.ronin.kernel/files/assets/models/model.onnx
-04-26 21:38:50.079 I/RoninBoot( 2831): CRITICAL ASSET PLACED: /data/user/0/com.ronin.kernel/files/assets/models/model.onnx (Size: 95979115)
-04-26 21:38:50.086 I/RoninBoot( 2831): Assets successfully synchronized to: /data/user/0/com.ronin.kernel/files
-04-26 21:38:50.086 I/RoninKernel_CPP( 2831): Initializing Ronin Kernel v4.9.5 at: /data/user/0/com.ronin.kernel/files
-04-26 21:38:50.130 I/RoninKernel_CPP( 2831): Core Router Active. System operational.
-04-26 21:38:50.131 I/RoninKernel_CPP( 2831): Kernel Orchestration Sync Complete.
-04-26 21:38:50.134 E/RoninBoot( 2831): Failed to hydrate providers: providers.json
-04-26 21:38:51.394 W/RoninNativeEngine( 2831): OS Signal: Low Memory (Level 20). Notifying Kernel.
-04-26 21:39:01.734 I/RoninNativeEngine( 2831): Kernel push: > System: No Reasoning Brain found in internal models directory.
-04-26 21:39:08.540 I/RoninNativeEngine( 2831): Native request: Retrieving secure key for Gemini
-04-26 21:39:08.542 I/RoninNativeEngine( 2831): Cloud Bridge: Initiating request with primary: Gemini
-04-26 21:39:08.543 I/RoninNativeEngine( 2831): Attempting inference with: Gemini
-04-26 21:39:08.543 I/RoninNativeEngine( 2831): Native request: Retrieving secure key for Gemini
-04-26 21:39:08.544 W/RoninNativeEngine( 2831): Provider Gemini failed, falling back...
-04-26 21:39:08.544 I/RoninNativeEngine( 2831): Kernel push: > FALLBACK: Provider Gemini failed. Attempting next...
-04-26 21:39:22.815 W/RoninNativeEngine( 2831): OS Signal: Low Memory (Level 20). Notifying Kernel.
-04-26 21:40:04.956 I/RoninNativeEngine( 2831): Kernel push: > Deterministic Match: Routing to FileSearchNode (ID 2)
-04-26 21:40:04.958 I/RoninNativeEngine( 2831): Kernel push: > SURVIVAL CORE: Atomic commit complete (112 bytes).
-04-26 21:40:04.958 I/RoninFileSearchNode( 2831): Phase 5.2: Hybrid Search (Query=search music )
-04-26 21:40:04.958 D/RoninFileSearchNode( 2831): Generating BGE Query Vector...
-04-26 21:40:04.958 I/RoninNeuralEmbedding( 2831): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
-04-26 21:40:04.958 D/RoninNeuralEmbedding( 2831): Generating BGE embedding (768-dim) for: search music 
-04-26 21:40:04.961 I/RoninNeuralEmbedding( 2831): Unloading Neural model to free RAM.
-04-26 21:40:04.962 I/RoninNativeEngine( 2831): Kernel push: > SURVIVAL CORE: Atomic commit complete (96 bytes).
-04-26 21:40:32.380 I/RoninKernel_CPP( 2831): Syncing dynamic model registry (Phase 5.0).
-04-26 21:40:58.584 I/RoninKernel_CPP( 2831): Syncing dynamic model registry (Phase 5.0).
-04-26 21:41:29.355 I/RoninKernel_CPP( 2831): Syncing dynamic model registry (Phase 5.0).
-04-26 21:41:51.665 I/RoninKernel_CPP( 2831): Syncing dynamic model registry (Phase 5.0).
-04-26 21:42:18.668 I/RoninKernel_CPP( 2831): Syncing dynamic model registry (Phase 5.0).
-04-26 21:42:25.054 W/RoninNativeEngine( 2831): OS Signal: Low Memory (Level 20). Notifying Kernel.
-04-26 21:42:31.249 D/RoninKernel_CPP( 2831): JNI Bridge: loadModelAndHydrate sequence initiated.
-04-26 21:42:31.249 E/RoninKernel_CPP( 2831): FAILURE: LiteRT-LM could not link to MediaPipe binary.
-04-26 21:42:31.249 E/RoninKernel_CPP( 2831): ERROR: Reasoning Brain hydration failed.
-04-26 21:42:51.572 I/RoninNativeEngine( 2831): Native request: Retrieving secure key for Gemini 2.5 Flash
-04-26 21:42:51.578 I/RoninNativeEngine( 2831): Cloud Bridge: Initiating request with primary: Gemini 2.5 Flash
-04-26 21:42:51.579 I/RoninNativeEngine( 2831): Attempting inference with: Gemini 2.5 Flash
-04-26 21:42:51.579 I/RoninNativeEngine( 2831): Native request: Retrieving secure key for Gemini 2.5 Flash
-04-26 21:42:51.581 D/RoninNativeEngine( 2831): Resolved Endpoint: https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=REDACTED
-04-26 21:43:02.503 W/RoninNativeEngine( 2831): OS Signal: Low Memory (Level 20). Notifying Kernel.
-04-26 21:43:09.949 I/RoninNativeEngine( 7034): Ronin Kernel Native Library loaded successfully.
-04-26 21:43:10.172 I/RoninBoot( 7034): Asset Verification: assets/models/model.onnx found = true
-04-26 21:43:10.180 I/RoninBoot( 7034): Skipping attributes_config.xml (Size matches: 1848 bytes)
-04-26 21:43:10.180 I/RoninBoot( 7034): Skipping capabilities.json (Size matches: 1766 bytes)
-04-26 21:43:10.181 I/RoninBoot( 7034): Skipping freeform_resolutions.json (Size matches: 3360 bytes)
-04-26 21:43:10.181 I/RoninBoot( 7034): Skipping power_consumption_cloud_config.xml (Size matches: 5105 bytes)
-04-26 21:43:10.182 I/RoninBoot( 7034): Skipping ui_service_cloud_config.xml (Size matches: 6673 bytes)
-04-26 21:43:10.183 I/RoninBoot( 7034): Skipping model.onnx (Size matches: 95979115 bytes)
-04-26 21:43:10.183 I/RoninBoot( 7034): Assets successfully synchronized to: /data/user/0/com.ronin.kernel/files
-04-26 21:43:10.183 I/RoninKernel_CPP( 7034): Initializing Ronin Kernel v4.9.5 at: /data/user/0/com.ronin.kernel/files
-04-26 21:43:10.213 I/RoninNeuralEmbedding( 7034): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
-04-26 21:43:10.213 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: .database_uuid
-04-26 21:43:10.218 I/RoninKernel_CPP( 7034): Core Router Active. System operational.
-04-26 21:43:10.218 I/RoninKernel_CPP( 7034): Kernel Orchestration Sync Complete.
-04-26 21:43:10.219 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Kernel Immunity active (mlock success).
-04-26 21:43:10.227 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 275.jpg
-04-26 21:43:10.233 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Hydration ready from /data/user/0/com.ronin.kernel/files/survival_core.bin
-04-26 21:43:10.234 E/RoninBoot( 7034): Failed to hydrate providers: providers.json
-04-26 21:43:10.236 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 336.jpg
-04-26 21:43:10.244 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 366.jpg
-04-26 21:43:10.253 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 375.jpg
-04-26 21:43:10.262 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 364.jpg
-04-26 21:43:10.273 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 391.jpg
-04-26 21:43:10.283 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 386.jpg
-04-26 21:43:10.294 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 376.jpg
-04-26 21:43:10.303 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 390.jpg
-04-26 21:43:10.312 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 377.jpg
-04-26 21:43:10.321 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 347.jpg
-04-26 21:43:10.332 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 365.jpg
-04-26 21:43:10.343 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 382.jpg
-04-26 21:43:10.352 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 293.jpg
-04-26 21:43:10.363 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 388.jpg
-04-26 21:43:10.377 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 374.jpg
-04-26 21:43:10.386 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 271.jpg
-04-26 21:43:10.394 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 381.jpg
-04-26 21:43:10.404 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 370.jpg
-04-26 21:43:10.412 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 346.jpg
-04-26 21:43:10.422 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 368.jpg
-04-26 21:43:10.431 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 393.jpg
-04-26 21:43:10.442 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 380.jpg
-04-26 21:43:10.471 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 373.jpg
-04-26 21:43:10.479 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 383.jpg
-04-26 21:43:10.490 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 372.jpg
-04-26 21:43:10.500 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 354.jpg
-04-26 21:43:10.509 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 284.jpg
-04-26 21:43:10.518 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 320.jpg
-04-26 21:43:10.527 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 352.jpg
-04-26 21:43:10.538 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 384.jpg
-04-26 21:43:10.547 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 369.jpg
-04-26 21:43:10.567 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 342.jpg
-04-26 21:43:10.581 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 389.jpg
-04-26 21:43:10.591 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 309.jpg
-04-26 21:43:10.599 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 446.jpg
-04-26 21:43:10.609 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 392.jpg
-04-26 21:43:10.618 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 327.jpg
-04-26 21:43:10.626 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 303.jpg
-04-26 21:43:10.636 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 314.jpg
-04-26 21:43:10.644 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 334.jpg
-04-26 21:43:10.655 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 301.jpg
-04-26 21:43:10.663 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 324.jpg
-04-26 21:43:10.673 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 290.jpg
-04-26 21:43:10.682 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 306.jpg
-04-26 21:43:10.691 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 414.jpg
-04-26 21:43:10.700 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 272.jpg
-04-26 21:43:10.708 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 348.jpg
-04-26 21:43:10.732 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 330.jpg
-04-26 21:43:10.740 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 294.jpg
-04-26 21:43:10.749 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 360.jpg
-04-26 21:43:10.757 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 358.jpg
-04-26 21:43:10.766 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 443.jpg
-04-26 21:43:10.774 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 277.jpg
-04-26 21:43:10.784 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 270.jpg
-04-26 21:43:10.810 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 307.jpg
-04-26 21:43:10.818 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 343.jpg
-04-26 21:43:10.830 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 397.jpg
-04-26 21:43:10.839 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 322.jpg
-04-26 21:43:10.848 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 319.jpg
-04-26 21:43:10.857 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 411.jpg
-04-26 21:43:10.865 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 299.jpg
-04-26 21:43:10.874 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 399.jpg
-04-26 21:43:10.885 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 361.jpg
-04-26 21:43:10.897 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 353.jpg
-04-26 21:43:10.913 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 274.jpg
-04-26 21:43:10.923 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 279.jpg
-04-26 21:43:10.934 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 273.jpg
-04-26 21:43:10.948 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 408.jpg
-04-26 21:43:10.957 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 285.jpg
-04-26 21:43:10.965 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 344.jpg
-04-26 21:43:10.975 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 398.jpg
-04-26 21:43:10.984 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 409.jpg
-04-26 21:43:11.032 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 337.jpg
-04-26 21:43:11.042 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 379.jpg
-04-26 21:43:11.057 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 331.jpg
-04-26 21:43:11.071 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 305.jpg
-04-26 21:43:11.080 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 412.jpg
-04-26 21:43:11.092 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 362.jpg
-04-26 21:43:11.104 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 351.jpg
-04-26 21:43:11.112 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 281.jpg
-04-26 21:43:11.134 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 345.jpg
-04-26 21:43:11.145 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 308.jpg
-04-26 21:43:11.159 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 341.jpg
-04-26 21:43:11.173 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 394.jpg
-04-26 21:43:11.182 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 340.jpg
-04-26 21:43:11.191 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 291.jpg
-04-26 21:43:11.201 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 283.jpg
-04-26 21:43:11.210 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 395.jpg
-04-26 21:43:11.222 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 404.jpg
-04-26 21:43:11.230 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 318.jpg
-04-26 21:43:11.238 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 350.jpg
-04-26 21:43:11.249 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 355.jpg
-04-26 21:43:11.258 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 400.jpg
-04-26 21:43:11.269 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 335.jpg
-04-26 21:43:11.277 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 276.jpg
-04-26 21:43:11.286 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 316.jpg
-04-26 21:43:11.294 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 333.jpg
-04-26 21:43:11.318 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 321.jpg
-04-26 21:43:11.326 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 359.jpg
-04-26 21:43:11.335 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 328.jpg
-04-26 21:43:11.343 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 329.jpg
-04-26 21:43:11.351 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 401.jpg
-04-26 21:43:11.360 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 315.jpg
-04-26 21:43:11.368 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 300.jpg
-04-26 21:43:11.376 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 378.jpg
-04-26 21:43:11.384 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 297.jpg
-04-26 21:43:11.392 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 363.jpg
-04-26 21:43:11.400 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 269.jpg
-04-26 21:43:11.409 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 296.jpg
-04-26 21:43:11.417 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 332.jpg
-04-26 21:43:11.425 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 268.jpg
-04-26 21:43:11.434 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 406.jpg
-04-26 21:43:11.442 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 396.jpg
-04-26 21:43:11.450 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 257.jpg
-04-26 21:43:11.459 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 261.jpg
-04-26 21:43:11.469 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 264.jpg
-04-26 21:43:11.478 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 254.jpg
-04-26 21:43:11.489 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 258.jpg
-04-26 21:43:11.500 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 260.jpg
-04-26 21:43:11.509 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 263.jpg
-04-26 21:43:11.519 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 253.jpg
-04-26 21:43:11.530 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 256.jpg
-04-26 21:43:11.551 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 265.jpg
-04-26 21:43:11.563 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 255.jpg
-04-26 21:43:11.573 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 259.jpg
-04-26 21:43:11.583 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 262.jpg
-04-26 21:43:11.594 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 298.jpg
-04-26 21:43:11.604 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 313.jpg
-04-26 21:43:11.615 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 357.jpg
-04-26 21:43:11.625 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 339.jpg
-04-26 21:43:11.635 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 415.jpg
-04-26 21:43:11.645 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 338.jpg
-04-26 21:43:11.654 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 310.jpg
-04-26 21:43:11.667 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 304.jpg
-04-26 21:43:11.677 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 278.jpg
-04-26 21:43:11.686 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 326.jpg
-04-26 21:43:11.695 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 282.jpg
-04-26 21:43:11.705 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 288.jpg
-04-26 21:43:11.714 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 413.jpg
-04-26 21:43:11.724 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 356.jpg
-04-26 21:43:11.733 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 267.jpg
-04-26 21:43:11.743 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 280.jpg
-04-26 21:43:11.753 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 349.jpg
-04-26 21:43:11.762 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 292.jpg
-04-26 21:43:11.772 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 286.jpg
-04-26 21:43:11.782 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 448.jpg
-04-26 21:43:11.792 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 323.jpg
-04-26 21:43:11.810 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 410.jpg
-04-26 21:43:11.820 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 311.jpg
-04-26 21:43:11.830 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 325.jpg
-04-26 21:43:11.840 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 385.jpg
-04-26 21:43:11.849 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 295.jpg
-04-26 21:43:11.859 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 367.jpg
-04-26 21:43:11.869 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 438.jpg
-04-26 21:43:11.878 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 312.jpg
-04-26 21:43:11.888 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 439.jpg
-04-26 21:43:11.898 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 302.jpg
-04-26 21:43:11.907 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 287.jpg
-04-26 21:43:11.917 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 403.jpg
-04-26 21:43:11.927 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 317.jpg
-04-26 21:43:11.936 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 442.jpg
-04-26 21:43:11.945 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 289.jpg
-04-26 21:43:11.954 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: 441.jpg
-04-26 21:43:11.962 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: gemini_generated_media_03e617f5.mp3
-04-26 21:43:11.972 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: gemini_generated_media_e4019c88.mp3
-04-26 21:43:21.107 I/RoninNativeEngine( 7034): Kernel push: > Deterministic Match: Routing to FileSearchNode (ID 2)
-04-26 21:43:21.109 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (112 bytes).
-04-26 21:43:21.109 I/RoninFileSearchNode( 7034): Phase 5.2: Hybrid Search (Query=find documents )
-04-26 21:43:21.109 D/RoninFileSearchNode( 7034): Generating BGE Query Vector...
-04-26 21:43:21.109 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: find documents 
-04-26 21:43:21.114 I/RoninNeuralEmbedding( 7034): Unloading Neural model to free RAM.
-04-26 21:43:21.118 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (100 bytes).
-04-26 21:43:41.066 I/RoninNativeEngine( 7034): Kernel push: > Deterministic Match: Routing to FileSearchNode (ID 2)
-04-26 21:43:41.068 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (104 bytes).
-04-26 21:43:41.069 I/RoninFileSearchNode( 7034): Phase 5.2: Hybrid Search (Query=find music)
-04-26 21:43:41.069 D/RoninFileSearchNode( 7034): Generating BGE Query Vector...
-04-26 21:43:41.069 I/RoninNeuralEmbedding( 7034): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
-04-26 21:43:41.069 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: find music
-04-26 21:43:41.071 I/RoninNeuralEmbedding( 7034): Unloading Neural model to free RAM.
-04-26 21:43:41.074 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (96 bytes).
-04-26 21:44:14.151 I/RoninNativeEngine( 7034): Kernel push: > Deterministic Match: Routing to LocationNode (ID 5)
-04-26 21:44:14.154 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (128 bytes).
-04-26 21:44:16.350 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (136 bytes).
-04-26 21:44:27.834 I/RoninNativeEngine( 7034): Kernel push: > Deterministic Match: Routing to FlashlightNode (ID 4)
-04-26 21:44:27.838 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (128 bytes).
-04-26 21:44:27.838 I/RoninNativeEngine( 7034): Native request: Triggering action for Node 4 (C++ Suggested State: true)
-04-26 21:44:28.024 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (120 bytes).
-04-26 21:44:39.489 I/RoninNativeEngine( 7034): Kernel push: > Deterministic Match: Routing to FlashlightNode (ID 4)
-04-26 21:44:39.493 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (136 bytes).
-04-26 21:44:39.493 I/RoninNativeEngine( 7034): Native request: Triggering action for Node 4 (C++ Suggested State: true)
-04-26 21:44:39.514 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (128 bytes).
-04-26 21:44:55.354 I/RoninNativeEngine( 7034): Kernel push: > Dynamic Match: Found intent for FileSearchNode (ID 2) [v3.9.5-STABLE]
-04-26 21:44:55.355 I/RoninNativeEngine( 7034): Kernel push: > Deterministic Match: Routing to FileSearchNode (ID 2)
-04-26 21:44:55.357 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (128 bytes).
-04-26 21:44:55.358 I/RoninFileSearchNode( 7034): Phase 5.2: Hybrid Search (Query=Search text files)
-04-26 21:44:55.358 D/RoninFileSearchNode( 7034): Generating BGE Query Vector...
-04-26 21:44:55.358 I/RoninNeuralEmbedding( 7034): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
-04-26 21:44:55.358 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: Search text files
-04-26 21:44:55.363 I/RoninNeuralEmbedding( 7034): Unloading Neural model to free RAM.
-04-26 21:44:55.367 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (120 bytes).
-04-26 21:45:52.277 W/RoninNativeEngine( 7034): OS Signal: Low Memory (Level 20). Notifying Kernel.
-04-26 21:47:25.594 I/RoninNativeEngine( 7034): Kernel push: > Tier 4: Fallback Routing. Triggering Local Reasoning Spine (ID 1).
-04-26 21:47:25.595 I/RoninNativeEngine( 7034): Native request: Retrieving secure key for Gemini 2.5 Flash
-04-26 21:47:25.597 I/RoninNativeEngine( 7034): Cloud Bridge: Initiating request with primary: Gemini 2.5 Flash
-04-26 21:47:25.603 I/RoninNativeEngine( 7034): Attempting inference with: Gemini 2.5 Flash
-04-26 21:47:25.603 I/RoninNativeEngine( 7034): Native request: Retrieving secure key for Gemini 2.5 Flash
-04-26 21:47:25.606 D/RoninNativeEngine( 7034): Resolved Endpoint: https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=REDACTED
-04-26 21:47:41.760 W/RoninNativeEngine( 7034): Provider Gemini 2.5 Flash failed, falling back...
-04-26 21:47:41.760 I/RoninNativeEngine( 7034): Kernel push: > FALLBACK: Provider Gemini 2.5 Flash failed. Attempting next...
-04-26 21:48:11.224 I/RoninNativeEngine( 7034): Kernel push: > Tier 4: Fallback Routing. Triggering Local Reasoning Spine (ID 1).
-04-26 21:48:11.224 I/RoninNativeEngine( 7034): Native request: Retrieving secure key for Gemini 2.5 Flash
-04-26 21:48:11.225 I/RoninNativeEngine( 7034): Cloud Bridge: Initiating request with primary: Gemini 2.5 Flash
-04-26 21:48:11.227 I/RoninNativeEngine( 7034): Attempting inference with: Gemini 2.5 Flash
-04-26 21:48:11.227 I/RoninNativeEngine( 7034): Native request: Retrieving secure key for Gemini 2.5 Flash
-04-26 21:48:11.230 D/RoninNativeEngine( 7034): Resolved Endpoint: https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=REDACTED
-04-26 21:48:27.509 W/RoninNativeEngine( 7034): Provider Gemini 2.5 Flash failed, falling back...
-04-26 21:48:27.509 I/RoninNativeEngine( 7034): Kernel push: > FALLBACK: Provider Gemini 2.5 Flash failed. Attempting next...
-04-26 21:48:33.454 I/RoninNativeEngine( 7034): Kernel push: > Tier 4: Fallback Routing. Triggering Local Reasoning Spine (ID 1).
-04-26 21:48:33.454 I/RoninNativeEngine( 7034): Native request: Retrieving secure key for Gemini 2.5 Flash
-04-26 21:48:33.455 I/RoninNativeEngine( 7034): Cloud Bridge: Initiating request with primary: Gemini 2.5 Flash
-04-26 21:48:33.457 I/RoninNativeEngine( 7034): Attempting inference with: Gemini 2.5 Flash
-04-26 21:48:33.457 I/RoninNativeEngine( 7034): Native request: Retrieving secure key for Gemini 2.5 Flash
-04-26 21:48:33.459 D/RoninNativeEngine( 7034): Resolved Endpoint: https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=REDACTED
-04-26 21:48:49.330 W/RoninNativeEngine( 7034): Provider Gemini 2.5 Flash failed, falling back...
-04-26 21:48:49.330 I/RoninNativeEngine( 7034): Kernel push: > FALLBACK: Provider Gemini 2.5 Flash failed. Attempting next...
-04-26 21:49:23.454 W/RoninNativeEngine( 7034): OS Signal: Low Memory (Level 20). Notifying Kernel.
-04-26 21:49:35.950 D/RoninKernel_CPP( 7034): JNI Bridge: loadModelAndHydrate sequence initiated.
-04-26 21:49:35.961 E/RoninKernel_CPP( 7034): FAILURE: LiteRT-LM could not link to MediaPipe binary.
-04-26 21:49:35.961 E/RoninKernel_CPP( 7034): ERROR: Reasoning Brain hydration failed.
-04-26 21:50:10.990 I/RoninNativeEngine( 7034): Kernel push: > Deterministic Match: Routing to FileSearchNode (ID 2)
-04-26 21:50:10.992 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (128 bytes).
-04-26 21:50:10.993 I/RoninFileSearchNode( 7034): Phase 5.2: Hybrid Search (Query=search movies )
-04-26 21:50:10.993 D/RoninFileSearchNode( 7034): Generating BGE Query Vector...
-04-26 21:50:10.993 I/RoninNeuralEmbedding( 7034): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
-04-26 21:50:10.993 D/RoninNeuralEmbedding( 7034): Generating BGE embedding (768-dim) for: search movies 
-04-26 21:50:11.010 I/RoninNeuralEmbedding( 7034): Unloading Neural model to free RAM.
-04-26 21:50:11.016 I/RoninNativeEngine( 7034): Kernel push: > SURVIVAL CORE: Atomic commit complete (120 bytes).
-04-26 21:50:46.249 W/RoninNativeEngine( 7034): OS Signal: Low Memory (Level 20). Notifying Kernel.
-04-26 21:51:46.661 I/RoninNativeEngine( 7034): Kernel push: > Tier 4: Fallback Routing. Triggering Local Reasoning Spine (ID 1).
-04-26 21:51:46.661 I/RoninNativeEngine( 7034): Native request: Retrieving secure key for Gemini 2.5 Flash
-04-26 21:51:46.669 I/RoninNativeEngine( 7034): Cloud Bridge: Initiating request with primary: Gemini 2.5 Flash
-04-26 21:51:46.672 I/RoninNativeEngine( 7034): Attempting inference with: Gemini 2.5 Flash
-04-26 21:51:46.672 I/RoninNativeEngine( 7034): Native request: Retrieving secure key for Gemini 2.5 Flash
-04-26 21:51:46.675 D/RoninNativeEngine( 7034): Resolved Endpoint: https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=REDACTED
-04-26 21:53:37.640 W/RoninNativeEngine( 7034): OS Signal: Low Memory (Level 20). Notifying Kernel.
-04-26 21:56:12.960 W/RoninNativeEngine( 7034): OS Signal: Low Memory (Level 20). Notifying Kernel.
-04-26 21:56:19.043 D/RoninKernel_CPP( 7034): JNI Bridge: loadModelAndHydrate sequence initiated.
-04-26 21:56:19.045 E/RoninKernel_CPP( 7034): FAILURE: LiteRT-LM could not link to MediaPipe binary.
-04-26 21:56:19.045 E/RoninKernel_CPP( 7034): ERROR: Reasoning Brain hydration failed.
-04-26 21:56:29.007 W/RoninNativeEngine( 7034): OS Signal: Low Memory (Level 20). Notifying Kernel.
-04-26 21:56:34.440 D/RoninKernel_CPP( 7034): JNI Bridge: loadModelAndHydrate sequence initiated.
-04-26 21:56:34.441 E/RoninKernel_CPP( 7034): FAILURE: LiteRT-LM could not link to MediaPipe binary.
-04-26 21:56:34.441 E/RoninKernel_CPP( 7034): ERROR: Reasoning Brain hydration failed.
-04-26 21:56:40.908 W/RoninNativeEngine( 7034): OS Signal: Low Memory (Level 20). Notifying Kernel.
+04-27 10:30:37.502 I/RoninNativeEngine( 5850): Ronin Kernel Native Library loaded successfully.
+04-27 10:30:37.870 I/RoninBoot( 5850): Asset Verification: assets/models/model.onnx found = true
+04-27 10:30:37.880 I/RoninBoot( 5850): Copying asset: attributes_config.xml -> /data/user/0/com.ronin.kernel/files/assets/attributes_config.xml
+04-27 10:30:37.882 I/RoninBoot( 5850): Copying asset: capabilities.json -> /data/user/0/com.ronin.kernel/files/assets/capabilities.json
+04-27 10:30:37.883 I/RoninBoot( 5850): Copying asset: freeform_resolutions.json -> /data/user/0/com.ronin.kernel/files/assets/freeform_resolutions.json
+04-27 10:30:37.884 I/RoninBoot( 5850): Copying asset: power_consumption_cloud_config.xml -> /data/user/0/com.ronin.kernel/files/assets/power_consumption_cloud_config.xml
+04-27 10:30:37.885 I/RoninBoot( 5850): Copying asset: ui_service_cloud_config.xml -> /data/user/0/com.ronin.kernel/files/assets/ui_service_cloud_config.xml
+04-27 10:30:37.889 I/RoninBoot( 5850): Copying asset: models/model.onnx -> /data/user/0/com.ronin.kernel/files/assets/models/model.onnx
+04-27 10:30:39.052 I/RoninBoot( 5850): CRITICAL ASSET PLACED: /data/user/0/com.ronin.kernel/files/assets/models/model.onnx (Size: 95979115)
+04-27 10:30:39.059 I/RoninBoot( 5850): Hydrating default providers.json...
+04-27 10:30:39.059 E/RoninBoot( 5850): Asset providers.json not found in root.
+04-27 10:30:39.059 I/RoninBoot( 5850): Assets successfully synchronized to: /data/user/0/com.ronin.kernel/files
+04-27 10:30:39.059 I/RoninKernel_CPP( 5850): Initializing Ronin Kernel v4.9.5 at: /data/user/0/com.ronin.kernel/files
+04-27 10:30:39.128 I/RoninKernel_CPP( 5850): Core Router Active. System operational.
+04-27 10:30:39.128 I/RoninKernel_CPP( 5850): Kernel Orchestration Sync Complete.
+04-27 10:30:39.131 E/RoninBoot( 5850): Failed to hydrate providers: providers.json
+04-27 10:30:40.500 W/RoninNativeEngine( 5850): OS Signal: Low Memory (Level 20). Notifying Kernel.
+04-27 10:30:49.917 I/RoninNativeEngine( 5850): Kernel push: > System: No Reasoning Brain found in internal models directory.
+04-27 10:30:55.637 I/RoninNativeEngine( 5850): Native request: Retrieving secure key for Gemini
+04-27 10:30:55.640 I/RoninNativeEngine( 5850): Cloud Bridge: Initiating request with primary: Gemini
+04-27 10:30:55.641 I/RoninNativeEngine( 5850): Attempting inference with: Gemini
+04-27 10:30:55.641 I/RoninNativeEngine( 5850): Native request: Retrieving secure key for Gemini
+04-27 10:30:55.642 W/RoninNativeEngine( 5850): Provider Gemini failed, falling back...
+04-27 10:30:55.642 I/RoninNativeEngine( 5850): Kernel push: > FALLBACK: Provider Gemini failed. Attempting next...
+04-27 10:31:12.671 I/RoninKernel_CPP( 5850): Syncing dynamic model registry (Phase 5.0).
+04-27 10:31:30.963 I/RoninKernel_CPP( 5850): Syncing dynamic model registry (Phase 5.0).
+04-27 10:31:46.151 I/RoninKernel_CPP( 5850): Syncing dynamic model registry (Phase 5.0).
+04-27 10:32:08.244 I/RoninKernel_CPP( 5850): Syncing dynamic model registry (Phase 5.0).
+04-27 10:32:25.981 W/RoninNativeEngine( 5850): OS Signal: Low Memory (Level 20). Notifying Kernel.
+04-27 10:32:32.131 D/RoninKernel_CPP( 5850): JNI Bridge: loadModelAndHydrate sequence initiated.
+04-27 10:32:32.131 E/RoninKernel_CPP( 5850): FAILURE: LiteRT-LM could not link to MediaPipe binary.
+04-27 10:32:32.131 E/RoninKernel_CPP( 5850): ERROR: Reasoning Brain hydration failed.
+04-27 10:32:47.429 I/RoninNativeEngine( 5850): Kernel push: > Deterministic Match: Routing to FileSearchNode (ID 2)
+04-27 10:32:47.431 I/RoninNativeEngine( 5850): Kernel push: > SURVIVAL CORE: Atomic commit complete (112 bytes).
+04-27 10:32:47.431 I/RoninFileSearchNode( 5850): Phase 5.2: Hybrid Search (Query=search mp3 )
+04-27 10:32:47.431 D/RoninFileSearchNode( 5850): Generating BGE Query Vector...
+04-27 10:32:47.431 I/RoninNeuralEmbedding( 5850): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
+04-27 10:32:47.431 D/RoninNeuralEmbedding( 5850): Generating BGE embedding (768-dim) for: search mp3 
+04-27 10:32:47.437 I/RoninNeuralEmbedding( 5850): Unloading Neural model to free RAM.
+04-27 10:32:47.438 I/RoninNativeEngine( 5850): Kernel push: > SURVIVAL CORE: Atomic commit complete (96 bytes).
+04-27 10:32:51.175 W/RoninNativeEngine( 5850): OS Signal: Low Memory (Level 20). Notifying Kernel.
+04-27 10:33:01.336 I/RoninNativeEngine( 7061): Ronin Kernel Native Library loaded successfully.
+04-27 10:33:01.588 I/RoninBoot( 7061): Asset Verification: assets/models/model.onnx found = true
+04-27 10:33:01.597 I/RoninBoot( 7061): Skipping attributes_config.xml (Size matches: 1848 bytes)
+04-27 10:33:01.598 I/RoninBoot( 7061): Skipping capabilities.json (Size matches: 1766 bytes)
+04-27 10:33:01.598 I/RoninBoot( 7061): Skipping freeform_resolutions.json (Size matches: 3360 bytes)
+04-27 10:33:01.599 I/RoninBoot( 7061): Skipping power_consumption_cloud_config.xml (Size matches: 5105 bytes)
+04-27 10:33:01.600 I/RoninBoot( 7061): Skipping ui_service_cloud_config.xml (Size matches: 6673 bytes)
+04-27 10:33:01.603 I/RoninBoot( 7061): Skipping model.onnx (Size matches: 95979115 bytes)
+04-27 10:33:01.603 I/RoninBoot( 7061): Assets successfully synchronized to: /data/user/0/com.ronin.kernel/files
+04-27 10:33:01.603 I/RoninKernel_CPP( 7061): Initializing Ronin Kernel v4.9.5 at: /data/user/0/com.ronin.kernel/files
+04-27 10:33:01.630 I/RoninNeuralEmbedding( 7061): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
+04-27 10:33:01.630 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: .database_uuid
+04-27 10:33:01.643 I/RoninKernel_CPP( 7061): Core Router Active. System operational.
+04-27 10:33:01.643 I/RoninKernel_CPP( 7061): Kernel Orchestration Sync Complete.
+04-27 10:33:01.644 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 275.jpg
+04-27 10:33:01.645 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Kernel Immunity active (mlock success).
+04-27 10:33:01.654 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 336.jpg
+04-27 10:33:01.662 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 366.jpg
+04-27 10:33:01.663 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Hydration ready from /data/user/0/com.ronin.kernel/files/survival_core.bin
+04-27 10:33:01.665 E/RoninBoot( 7061): Failed to hydrate providers: providers.json
+04-27 10:33:01.671 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 375.jpg
+04-27 10:33:01.680 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 364.jpg
+04-27 10:33:01.689 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 391.jpg
+04-27 10:33:01.697 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 386.jpg
+04-27 10:33:01.709 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 376.jpg
+04-27 10:33:01.722 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 390.jpg
+04-27 10:33:01.730 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 377.jpg
+04-27 10:33:01.738 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 347.jpg
+04-27 10:33:01.747 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 365.jpg
+04-27 10:33:01.755 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 382.jpg
+04-27 10:33:01.764 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 293.jpg
+04-27 10:33:01.774 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 388.jpg
+04-27 10:33:01.784 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 374.jpg
+04-27 10:33:01.795 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 271.jpg
+04-27 10:33:01.805 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 381.jpg
+04-27 10:33:01.813 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 370.jpg
+04-27 10:33:01.822 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 346.jpg
+04-27 10:33:01.830 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 368.jpg
+04-27 10:33:01.840 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 393.jpg
+04-27 10:33:01.849 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 380.jpg
+04-27 10:33:01.875 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 373.jpg
+04-27 10:33:01.884 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 383.jpg
+04-27 10:33:01.893 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 372.jpg
+04-27 10:33:01.902 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 354.jpg
+04-27 10:33:01.910 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 284.jpg
+04-27 10:33:01.919 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 320.jpg
+04-27 10:33:01.927 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 352.jpg
+04-27 10:33:01.936 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 384.jpg
+04-27 10:33:01.945 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 369.jpg
+04-27 10:33:01.954 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 342.jpg
+04-27 10:33:01.964 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 389.jpg
+04-27 10:33:01.975 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 309.jpg
+04-27 10:33:01.983 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 446.jpg
+04-27 10:33:01.993 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 392.jpg
+04-27 10:33:02.001 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 327.jpg
+04-27 10:33:02.010 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 303.jpg
+04-27 10:33:02.019 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 314.jpg
+04-27 10:33:02.027 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 334.jpg
+04-27 10:33:02.038 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 301.jpg
+04-27 10:33:02.050 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 324.jpg
+04-27 10:33:02.063 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 290.jpg
+04-27 10:33:02.077 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 306.jpg
+04-27 10:33:02.086 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 414.jpg
+04-27 10:33:02.094 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 272.jpg
+04-27 10:33:02.103 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 348.jpg
+04-27 10:33:02.125 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 330.jpg
+04-27 10:33:02.133 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 294.jpg
+04-27 10:33:02.142 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 360.jpg
+04-27 10:33:02.150 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 358.jpg
+04-27 10:33:02.159 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 443.jpg
+04-27 10:33:02.167 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 277.jpg
+04-27 10:33:02.176 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 270.jpg
+04-27 10:33:02.184 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 307.jpg
+04-27 10:33:02.192 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 343.jpg
+04-27 10:33:02.201 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 397.jpg
+04-27 10:33:02.209 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 322.jpg
+04-27 10:33:02.223 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 319.jpg
+04-27 10:33:02.258 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 411.jpg
+04-27 10:33:02.272 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 299.jpg
+04-27 10:33:02.283 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 399.jpg
+04-27 10:33:02.295 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 361.jpg
+04-27 10:33:02.307 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 353.jpg
+04-27 10:33:02.316 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 274.jpg
+04-27 10:33:02.326 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 279.jpg
+04-27 10:33:02.339 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 273.jpg
+04-27 10:33:02.355 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 408.jpg
+04-27 10:33:02.367 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 285.jpg
+04-27 10:33:02.377 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 344.jpg
+04-27 10:33:02.392 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 398.jpg
+04-27 10:33:02.405 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 409.jpg
+04-27 10:33:02.438 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 337.jpg
+04-27 10:33:02.446 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 379.jpg
+04-27 10:33:02.456 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 331.jpg
+04-27 10:33:02.464 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 305.jpg
+04-27 10:33:02.473 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 412.jpg
+04-27 10:33:02.482 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 362.jpg
+04-27 10:33:02.490 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 351.jpg
+04-27 10:33:02.498 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 281.jpg
+04-27 10:33:02.507 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 345.jpg
+04-27 10:33:02.515 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 308.jpg
+04-27 10:33:02.524 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 341.jpg
+04-27 10:33:02.532 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 394.jpg
+04-27 10:33:02.541 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 340.jpg
+04-27 10:33:02.551 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 291.jpg
+04-27 10:33:02.560 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 283.jpg
+04-27 10:33:02.571 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 395.jpg
+04-27 10:33:02.579 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 404.jpg
+04-27 10:33:02.589 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 318.jpg
+04-27 10:33:02.598 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 350.jpg
+04-27 10:33:02.607 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 355.jpg
+04-27 10:33:02.621 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 400.jpg
+04-27 10:33:02.630 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 335.jpg
+04-27 10:33:02.643 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 276.jpg
+04-27 10:33:02.662 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 316.jpg
+04-27 10:33:02.673 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 333.jpg
+04-27 10:33:02.703 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 321.jpg
+04-27 10:33:02.711 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 359.jpg
+04-27 10:33:02.720 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 328.jpg
+04-27 10:33:02.728 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 329.jpg
+04-27 10:33:02.737 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 401.jpg
+04-27 10:33:02.745 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 315.jpg
+04-27 10:33:02.754 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 300.jpg
+04-27 10:33:02.762 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 378.jpg
+04-27 10:33:02.771 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 297.jpg
+04-27 10:33:02.781 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 363.jpg
+04-27 10:33:02.804 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 269.jpg
+04-27 10:33:02.816 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 296.jpg
+04-27 10:33:02.829 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 332.jpg
+04-27 10:33:02.839 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 268.jpg
+04-27 10:33:02.851 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 406.jpg
+04-27 10:33:02.859 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 396.jpg
+04-27 10:33:02.869 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 257.jpg
+04-27 10:33:02.878 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 261.jpg
+04-27 10:33:02.886 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 264.jpg
+04-27 10:33:02.895 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 254.jpg
+04-27 10:33:02.903 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 258.jpg
+04-27 10:33:02.912 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 260.jpg
+04-27 10:33:02.920 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 263.jpg
+04-27 10:33:02.928 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 253.jpg
+04-27 10:33:02.936 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 256.jpg
+04-27 10:33:02.952 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 265.jpg
+04-27 10:33:02.963 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 255.jpg
+04-27 10:33:02.971 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 259.jpg
+04-27 10:33:02.980 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 262.jpg
+04-27 10:33:02.988 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 298.jpg
+04-27 10:33:02.997 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 313.jpg
+04-27 10:33:03.005 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 357.jpg
+04-27 10:33:03.013 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 339.jpg
+04-27 10:33:03.022 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 415.jpg
+04-27 10:33:03.030 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 338.jpg
+04-27 10:33:03.038 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 310.jpg
+04-27 10:33:03.047 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 304.jpg
+04-27 10:33:03.055 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 278.jpg
+04-27 10:33:03.065 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 326.jpg
+04-27 10:33:03.073 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 282.jpg
+04-27 10:33:03.081 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 288.jpg
+04-27 10:33:03.089 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 413.jpg
+04-27 10:33:03.097 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 356.jpg
+04-27 10:33:03.106 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 267.jpg
+04-27 10:33:03.115 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 280.jpg
+04-27 10:33:03.123 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 349.jpg
+04-27 10:33:03.132 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 292.jpg
+04-27 10:33:03.140 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 286.jpg
+04-27 10:33:03.149 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 448.jpg
+04-27 10:33:03.157 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 323.jpg
+04-27 10:33:03.171 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 410.jpg
+04-27 10:33:03.179 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 311.jpg
+04-27 10:33:03.187 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 325.jpg
+04-27 10:33:03.196 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 385.jpg
+04-27 10:33:03.204 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 295.jpg
+04-27 10:33:03.212 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 367.jpg
+04-27 10:33:03.220 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 438.jpg
+04-27 10:33:03.228 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 312.jpg
+04-27 10:33:03.237 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 439.jpg
+04-27 10:33:03.246 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 302.jpg
+04-27 10:33:03.254 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 287.jpg
+04-27 10:33:03.262 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 403.jpg
+04-27 10:33:03.270 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 317.jpg
+04-27 10:33:03.278 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 442.jpg
+04-27 10:33:03.286 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 289.jpg
+04-27 10:33:03.295 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: 441.jpg
+04-27 10:33:03.303 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: gemini_generated_media_03e617f5.mp3
+04-27 10:33:03.311 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: gemini_generated_media_e4019c88.mp3
+04-27 10:33:10.583 I/RoninNativeEngine( 7061): Kernel push: > Deterministic Match: Routing to FileSearchNode (ID 2)
+04-27 10:33:10.586 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Atomic commit complete (112 bytes).
+04-27 10:33:10.586 I/RoninFileSearchNode( 7061): Phase 5.2: Hybrid Search (Query=search mp3 )
+04-27 10:33:10.586 D/RoninFileSearchNode( 7061): Generating BGE Query Vector...
+04-27 10:33:10.586 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: search mp3 
+04-27 10:33:10.592 I/RoninNeuralEmbedding( 7061): Unloading Neural model to free RAM.
+04-27 10:33:10.596 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Atomic commit complete (96 bytes).
+04-27 10:33:35.997 I/RoninNativeEngine( 7061): Kernel push: > Deterministic Match: Routing to FileSearchNode (ID 2)
+04-27 10:33:35.999 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Atomic commit complete (112 bytes).
+04-27 10:33:35.999 I/RoninFileSearchNode( 7061): Phase 5.2: Hybrid Search (Query=search documents)
+04-27 10:33:35.999 D/RoninFileSearchNode( 7061): Generating BGE Query Vector...
+04-27 10:33:35.999 I/RoninNeuralEmbedding( 7061): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
+04-27 10:33:35.999 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: search documents
+04-27 10:33:36.004 I/RoninNeuralEmbedding( 7061): Unloading Neural model to free RAM.
+04-27 10:33:36.008 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Atomic commit complete (100 bytes).
+04-27 10:33:49.131 I/RoninNativeEngine( 7061): Kernel push: > Deterministic Match: Routing to FileSearchNode (ID 2)
+04-27 10:33:49.134 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Atomic commit complete (112 bytes).
+04-27 10:33:49.134 I/RoninFileSearchNode( 7061): Phase 5.2: Hybrid Search (Query=search movies )
+04-27 10:33:49.134 D/RoninFileSearchNode( 7061): Generating BGE Query Vector...
+04-27 10:33:49.134 I/RoninNeuralEmbedding( 7061): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
+04-27 10:33:49.134 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: search movies 
+04-27 10:33:49.139 I/RoninNeuralEmbedding( 7061): Unloading Neural model to free RAM.
+04-27 10:33:49.143 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Atomic commit complete (100 bytes).
+04-27 10:34:08.395 I/RoninNativeEngine( 7061): Kernel push: > Dynamic Match: Found intent for BluetoothNode (ID 7) [v3.9.5-STABLE]
+04-27 10:34:08.395 I/RoninNativeEngine( 7061): Kernel push: > Deterministic Match: Routing to BluetoothNode (ID 7)
+04-27 10:34:08.397 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Atomic commit complete (112 bytes).
+04-27 10:34:08.397 I/RoninNativeEngine( 7061): Native request: Triggering action for Node 7 (C++ Suggested State: true)
+04-27 10:34:08.564 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Atomic commit complete (104 bytes).
+04-27 10:34:09.844 W/RoninNativeEngine( 7061): OS Signal: Low Memory (Level 20). Notifying Kernel.
+04-27 10:34:28.315 I/RoninNativeEngine( 7061): Kernel push: > Interrogative Bypass: 'where' triggered standalone match.
+04-27 10:34:28.315 I/RoninNativeEngine( 7061): Kernel push: > Deterministic Match: Routing to LocationNode (ID 5)
+04-27 10:34:28.316 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Atomic commit complete (112 bytes).
+04-27 10:34:30.415 I/RoninNativeEngine( 7061): Kernel push: > SURVIVAL CORE: Atomic commit complete (120 bytes).
+04-27 10:34:57.573 I/RoninNativeEngine( 7061): Kernel push: > Tier 4: Fallback Routing. Triggering Local Reasoning Spine (ID 1).
+04-27 10:34:57.574 I/RoninNativeEngine( 7061): Native request: Retrieving secure key for Gemma 4 31B IT
+04-27 10:34:57.578 I/RoninNativeEngine( 7061): Cloud Bridge: Initiating request with primary: Gemma 4 31B IT
+04-27 10:34:57.581 I/RoninNativeEngine( 7061): Attempting inference with: Gemma 4 31B IT
+04-27 10:34:57.581 I/RoninNativeEngine( 7061): Native request: Retrieving secure key for Gemma 4 31B IT
+04-27 10:34:57.585 D/RoninNativeEngine( 7061): Resolved Endpoint: https://generativelanguage.googleapis.com/v1/models/gemma-4-31b-it:generateContent?key=REDACTED
+04-27 10:34:59.759 W/RoninNativeEngine( 7061): v1 path failed (404). Retrying with v1beta...
+04-27 10:36:25.626 I/RoninNativeEngine( 7061): Kernel push: > Tier 4: Fallback Routing. Triggering Local Reasoning Spine (ID 1).
+04-27 10:36:25.626 I/RoninNativeEngine( 7061): Native request: Retrieving secure key for Gemma 4 31B IT
+04-27 10:36:25.628 I/RoninNativeEngine( 7061): Cloud Bridge: Initiating request with primary: Gemma 4 31B IT
+04-27 10:36:25.629 I/RoninNativeEngine( 7061): Attempting inference with: Gemma 4 31B IT
+04-27 10:36:25.629 I/RoninNativeEngine( 7061): Native request: Retrieving secure key for Gemma 4 31B IT
+04-27 10:36:25.631 D/RoninNativeEngine( 7061): Resolved Endpoint: https://generativelanguage.googleapis.com/v1/models/gemma-4-31b-it:generateContent?key=REDACTED
+04-27 10:36:26.079 W/RoninNativeEngine( 7061): v1 path failed (404). Retrying with v1beta...
+04-27 10:37:16.477 I/RoninNativeEngine( 7061): Kernel push: > Tier 4: Fallback Routing. Triggering Local Reasoning Spine (ID 1).
+04-27 10:37:16.477 I/RoninNativeEngine( 7061): Native request: Retrieving secure key for Gemma 4 31B IT
+04-27 10:37:16.479 I/RoninNativeEngine( 7061): Cloud Bridge: Initiating request with primary: Gemma 4 31B IT
+04-27 10:37:16.480 I/RoninNativeEngine( 7061): Attempting inference with: Gemma 4 31B IT
+04-27 10:37:16.480 I/RoninNativeEngine( 7061): Native request: Retrieving secure key for Gemma 4 31B IT
+04-27 10:37:16.482 D/RoninNativeEngine( 7061): Resolved Endpoint: https://generativelanguage.googleapis.com/v1/models/gemma-4-31b-it:generateContent?key=REDACTED
+04-27 10:37:16.830 W/RoninNativeEngine( 7061): v1 path failed (404). Retrying with v1beta...
+04-27 10:38:31.948 I/RoninNativeEngine( 7061): Kernel push: > Tier 4: Fallback Routing. Triggering Local Reasoning Spine (ID 1).
+04-27 10:38:31.949 I/RoninNativeEngine( 7061): Native request: Retrieving secure key for Gemini 2.5 Flash
+04-27 10:38:31.952 I/RoninNativeEngine( 7061): Cloud Bridge: Initiating request with primary: Gemini 2.5 Flash
+04-27 10:38:31.953 I/RoninNativeEngine( 7061): Attempting inference with: Gemini 2.5 Flash
+04-27 10:38:31.953 I/RoninNativeEngine( 7061): Native request: Retrieving secure key for Gemini 2.5 Flash
+04-27 10:38:31.955 D/RoninNativeEngine( 7061): Resolved Endpoint: https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=REDACTED
+04-27 10:39:09.868 W/RoninNativeEngine( 7061): OS Signal: Low Memory (Level 20). Notifying Kernel.
