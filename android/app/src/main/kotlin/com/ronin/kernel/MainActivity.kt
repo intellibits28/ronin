@@ -747,6 +747,39 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun removeLocalModel(path: String) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        val file = java.io.File(path)
+        
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                if (file.exists() && file.delete()) {
+                    // Purge Metadata
+                    sharedPreferences.edit().remove("fingerprint_$path").apply()
+                    
+                    withContext(Dispatchers.Main) {
+                        chatViewModel.discoveredModels.remove(path)
+                        
+                        // If the deleted model was the active one, unhydrate
+                        if (chatViewModel.localModelPath == path) {
+                            chatViewModel.isKernelHydrated = false
+                            chatViewModel.localModelPath = ""
+                            sharedPreferences.edit().remove("local_model_path").apply()
+                        }
+                        
+                        Toast.makeText(this@MainActivity, "Model purged from storage.", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Failed to delete model file.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("RoninUI", "Error deleting model: ${e.message}")
+            }
+        }
+    }
+
     fun removeCloudProvider(name: String) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         chatViewModel.cloudProviders.removeIf { it.name == name }
@@ -848,6 +881,7 @@ fun RoninChatUI(
                 (context as? MainActivity)?.savePrimaryCloudProvider(it)
             },
             onDeleteProvider = { (context as? MainActivity)?.removeCloudProvider(it) },
+            onDeleteModel = { (context as? MainActivity)?.removeLocalModel(it) },
             onAddProvider = { showAddProvider = true },
 
             offlineMode = chatViewModel.offlineMode,
@@ -1229,6 +1263,7 @@ fun SettingsDialog(
     primaryProvider: String,
     onPrimaryProviderChange: (String) -> Unit,
     onDeleteProvider: (String) -> Unit,
+    onDeleteModel: (String) -> Unit,
     onAddProvider: () -> Unit,
     offlineMode: Boolean,
     onOfflineModeChange: (Boolean) -> Unit
@@ -1247,13 +1282,16 @@ fun SettingsDialog(
                 Spacer(Modifier.height(8.dp))
                 Text("Reasoning Brains", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
                 if (discoveredModels.isEmpty()) {
-                    Text("No models detected in /Ronin/models/", color = Color.Red, fontSize = 10.sp)
+                    Text("No models detected in internal storage.", color = Color.Red, fontSize = 10.sp)
                 } else {
                     discoveredModels.forEach { path ->
                         val name = path.substringAfterLast("/")
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                             RadioButton(selected = path == currentModelPath, onClick = { /* Picked via OpenDocument */ })
-                            Text(name, fontSize = 10.sp, color = MaterialTheme.colors.onSurface)
+                            Text(name, fontSize = 10.sp, color = MaterialTheme.colors.onSurface, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { onDeleteModel(path) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
                 }
