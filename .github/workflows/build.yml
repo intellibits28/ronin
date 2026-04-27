@@ -59,21 +59,29 @@ jobs:
       - name: Fetch and Extract MediaPipe GenAI Binary
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          # Download official AAR from Google Maven
+          # Download official AAR
           curl -L https://dl.google.com/android/maven2/com/google/mediapipe/tasks-genai/0.10.14/tasks-genai-0.10.14.aar -o tasks-genai.aar
           
-          # Extract the specific arm64-v8a library
-          unzip -j tasks-genai.aar jni/arm64-v8a/libmediapipe_tasks_genai_jni.so -d android/app/src/main/jniLibs/arm64-v8a/
+          # Unzip entirely to a temp directory to see structure
+          mkdir -p temp_aar
+          unzip -o tasks-genai.aar -d temp_aar
           
-          # Verification Step (Fail fast if corrupted)
-          FILE_SIZE=$(stat -c%s "android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so")
-          echo "Downloaded Binary Size: $FILE_SIZE bytes"
-          if [ "$FILE_SIZE" -lt 1000000 ]; then
-            echo "ERROR: Downloaded file is too small ($FILE_SIZE bytes). Likely an HTML error page."
+          # Find any .so files and move the arm64-v8a one
+          echo "Listing discovered JNI libraries in AAR:"
+          find temp_aar -name "*.so"
+          
+          # Move the library (trying to find it regardless of exact jni/ vs lib/ path)
+          find temp_aar -path "*arm64-v8a*" -name "libmediapipe_tasks_genai_jni.so" -exec cp {} android/app/src/main/jniLibs/arm64-v8a/ \;
+          
+          # Verification Step
+          if [ ! -f "android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so" ]; then
+            echo "ERROR: libmediapipe_tasks_genai_jni.so not found in AAR."
+            ls -R temp_aar
             exit 1
           fi
           
-          # Ensure it is a valid ELF file
+          FILE_SIZE=$(stat -c%s "android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so")
+          echo "Found Binary Size: $FILE_SIZE bytes"
           file android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so
 
       - name: "Debug: List JNI Libraries and Model Assets"
