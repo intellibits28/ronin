@@ -1,82 +1,53 @@
-cmake_minimum_required(VERSION 3.22.1)
+cmake_minimum_required(VERSION 3.10)
+project(ronin_kernel)
 
-if(POLICY CMP0135)
-    cmake_policy(SET CMP0135 NEW)
-endif()
-
-project(RoninKernel VERSION 1.0 LANGUAGES CXX C)
-
+# Phase 4.0: Unified Skill Registry Architecture
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Includes
-include_directories(${CMAKE_CURRENT_BINARY_DIR}/generated)
-include_directories(${CMAKE_SOURCE_DIR}/generated)
-include_directories(include)
+# Optimization: Link-Time Optimization (LTO) for Reasoning spine
+include(CheckIPOSupported)
+check_ipo_supported(RESULT lto_supported OUTPUT error)
+if(lto_supported)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
 
-# External Dependencies Integration
+# Requirement 1: Static SQLite linkage for zero-dependency portability
 include(FetchContent)
-
-# 1. Fetch GoogleTest
-FetchContent_Declare(
-  googletest
-  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-)
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-
-# 2. Fetch SQLite Amalgamation
 FetchContent_Declare(
   sqlite3_src
-  URL https://www.sqlite.org/2024/sqlite-amalgamation-3450300.zip
+  URL https://www.sqlite.org/2023/sqlite-amalgamation-3410200.zip
 )
+FetchContent_MakeAvailable(sqlite3_src)
 
-# 3. Fetch FlatBuffers (For C++ headers)
-FetchContent_Declare(
-  flatbuffers
-  URL https://github.com/google/flatbuffers/archive/refs/tags/v2.0.8.zip
-)
-
-# 4. Fetch ONNX Runtime (C++ Library)
-if(ANDROID)
-    FetchContent_Declare(
-      onnxruntime
-      URL https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.17.1/onnxruntime-android-1.17.1.aar
-    )
-else()
-    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "aarch64")
-        FetchContent_Declare(
-          onnxruntime
-          URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-linux-aarch64-1.17.1.tgz
-        )
-    else()
-        FetchContent_Declare(
-          onnxruntime
-          URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-linux-x64-1.17.1.tgz
-        )
-    endif()
-endif()
-
-# Disable FlatBuffers internal builds/tests to prevent Exec format errors during Android cross-compiling
-set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "" FORCE)
-set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(googletest sqlite3_src flatbuffers onnxruntime)
-
-# Define SQLite library
 add_library(sqlite3_lib STATIC ${sqlite3_src_SOURCE_DIR}/sqlite3.c)
 target_include_directories(sqlite3_lib PUBLIC ${sqlite3_src_SOURCE_DIR})
-target_compile_definitions(sqlite3_lib PRIVATE SQLITE_THREADSAFE=1 SQLITE_ENABLE_FTS5=1)
 
-# Ensure FlatBuffers and ORT headers are accessible
-include_directories(${flatbuffers_SOURCE_DIR}/include)
-if(ANDROID)
-    include_directories(${onnxruntime_SOURCE_DIR}/headers)
-else()
-    include_directories(${onnxruntime_SOURCE_DIR}/include)
-endif()
+# Requirement 2: FlatBuffers Schema Generation
+FetchContent_Declare(
+  flatbuffers
+  GIT_REPOSITORY https://github.com/google/flatbuffers.git
+  GIT_TAG v2.0.8
+)
+FetchContent_MakeAvailable(flatbuffers)
 
-# Core Logic Source (Portable)
+# Requirement 3: ONNX Runtime for Intent Routing (NPU)
+FetchContent_Declare(
+  onnxruntime
+  URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-android-1.17.1.aar
+)
+FetchContent_MakeAvailable(onnxruntime)
+
+# Include Directories
+include_directories(
+    include
+    ${sqlite3_src_SOURCE_DIR}
+    ${flatbuffers_SOURCE_DIR}/include
+    ${onnxruntime_SOURCE_DIR}/include
+    generated
+)
+
+# Core Sources
 set(RONIN_CORE_SOURCES
     src/intent_engine.cpp
     src/models/inference_engine.cpp
@@ -106,45 +77,40 @@ if(ANDROID)
     find_library(android-lib android)
 
     if(log-lib AND android-lib)
-        # Locate ORT shared library in AAR
+        # 1. Locate ORT shared library
         set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/jni/${ANDROID_ABI}/libonnxruntime.so)
         add_library(onnxruntime_lib SHARED IMPORTED)
         set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
 
-        # Phase 5.3.1: Explicit MediaPipe Discovery Path (Updated for real library name)
-        find_library(MEDIAPIPE_GENAI_LIB NAMES llm_inference_engine_jni
-                     PATHS ${CMAKE_CURRENT_SOURCE_DIR}/android/app/src/main/jniLibs/${ANDROID_ABI})
-        if(MEDIAPIPE_GENAI_LIB)
+        # 2. Phase 5.4.1: Explicit MediaPipe Linkage (Production Discovery)
+        set(MP_LIB_PATH ${CMAKE_CURRENT_SOURCE_DIR}/android/app/src/main/jniLibs/${ANDROID_ABI}/libllm_inference_engine_jni.so)
+        set(HAS_MEDIAPIPE FALSE)
+
+        if(EXISTS ${MP_LIB_PATH})
+            message(STATUS ">>> MediaPipe GenAI library detected: ${MP_LIB_PATH}")
             add_library(mediapipe_genai SHARED IMPORTED)
-            set_target_properties(mediapipe_genai PROPERTIES IMPORTED_LOCATION ${MEDIAPIPE_GENAI_LIB})
-            target_link_libraries(ronin_core PUBLIC mediapipe_genai)
+            set_target_properties(mediapipe_genai PROPERTIES IMPORTED_LOCATION ${MP_LIB_PATH})
+            set(HAS_MEDIAPIPE TRUE)
+        else()
+            message(WARNING ">>> MediaPipe GenAI library NOT found. Using header-only stubs.")
         endif()
 
-        # Link system libraries to core so tests inherit them
-        target_link_libraries(ronin_core PUBLIC ${log-lib} ${android-lib} onnxruntime_lib)
-
-        # JNI Bridge Library (Requirement 4)
+        # 3. Define JNI Bridge
         add_library(ronin_kernel SHARED src/ronin_jni.cpp)
-        
-        # Phase 5.4: Production Linkage Refactor
-        # Explicitly link MediaPipe GenAI and ORT to the JNI bridge ONLY if found.
-        # Otherwise, the inline stubs in the header provide the symbols.
-        set(RONIN_KERNEL_LIBS 
+
+        # 4. Linkage Chain
+        set(RONIN_LIBS 
             ronin_core 
             sqlite3_lib 
             onnxruntime_lib 
             ${log-lib} 
             ${android-lib}
         )
-
-        if(MEDIAPIPE_GENAI_LIB)
-            message(STATUS ">>> MediaPipe GenAI library found at: ${MEDIAPIPE_GENAI_LIB}")
-            list(APPEND RONIN_KERNEL_LIBS mediapipe_genai)
-        else()
-            message(WARNING ">>> MediaPipe GenAI library NOT found. Using header-only stubs.")
+        if(HAS_MEDIAPIPE)
+            list(APPEND RONIN_LIBS mediapipe_genai)
         endif()
 
-        target_link_libraries(ronin_kernel PUBLIC ${RONIN_KERNEL_LIBS})
+        target_link_libraries(ronin_kernel PUBLIC ${RONIN_LIBS})
 
         # Enable ARMv8.2-A Dot Product extension only for arm64-v8a
         if(ANDROID_ABI STREQUAL "arm64-v8a")
@@ -168,47 +134,23 @@ if(ANDROID)
         endif()
     endif()
 else()
-    # Host build needs rt and ORT
-    set(ORT_LIB_PATH "ORT_LIB_PATH-NOTFOUND")
-    find_library(ORT_LIB_PATH_INTERNAL NAMES onnxruntime
-                 PATHS ${onnxruntime_SOURCE_DIR}/lib 
-                       ${onnxruntime_SOURCE_DIR}/jni/arm64-v8a 
-                       ${onnxruntime_SOURCE_DIR}/jni/x86_64
-                 NO_DEFAULT_PATH)
-    set(ORT_LIB_PATH ${ORT_LIB_PATH_INTERNAL})
-    message(STATUS ">>> Phase 4.0: ORT_LIB_PATH is ${ORT_LIB_PATH}")
-
-    add_library(onnxruntime_lib SHARED IMPORTED)
-    set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
-    target_link_libraries(ronin_core PUBLIC rt onnxruntime_lib)
-
-    # Enable ARMv8.2-A Dot Product extension for host ARM64
-    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-        target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
-    endif()
+    # Host build (Stub implementation)
+    add_library(ronin_kernel SHARED src/ronin_jni.cpp)
+    target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib)
 endif()
 
-enable_testing()
-
-# Memory Stress Test
-add_executable(ronin_memory_test tests/memory_stress_test.cpp)
-target_link_libraries(ronin_memory_test gtest_main ronin_core onnxruntime_lib)
-
-# Precision Test
-add_executable(ronin_precision_test tests/precision_test.cpp)
-target_link_libraries(ronin_precision_test gtest_main ronin_core onnxruntime_lib)
-
-# Atomic Integrity Test
-add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp)
-target_link_libraries(ronin_atomic_test gtest_main ronin_core onnxruntime_lib)
-
-# Search Capability Test
-add_executable(ronin_search_test tests/search_capability_test.cpp)
-target_link_libraries(ronin_search_test gtest_main ronin_core onnxruntime_lib)
-
+# Optional: Host-side Unit Tests
 if(NOT ANDROID)
-    target_link_libraries(ronin_memory_test rt)
-    target_link_libraries(ronin_precision_test rt)
-    target_link_libraries(ronin_atomic_test rt)
-    target_link_libraries(ronin_search_test rt)
+    enable_testing()
+    add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp)
+    target_link_libraries(ronin_atomic_test ronin_core GTest::gtest_main)
+
+    add_executable(ronin_precision_test tests/precision_test.cpp)
+    target_link_libraries(ronin_precision_test ronin_core GTest::gtest_main)
+
+    add_executable(ronin_memory_test tests/memory_stress_test.cpp)
+    target_link_libraries(ronin_memory_test ronin_core GTest::gtest_main)
+
+    add_executable(ronin_search_test tests/search_capability_test.cpp)
+    target_link_libraries(ronin_search_test ronin_core GTest::gtest_main)
 endif()
