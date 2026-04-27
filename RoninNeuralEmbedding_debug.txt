@@ -1,7 +1,0 @@
---------- beginning of main
-04-27 10:43:06.767 I/RoninNeuralEmbedding( 7061): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
-04-27 10:43:06.767 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: find music files 
-04-27 10:43:06.775 I/RoninNeuralEmbedding( 7061): Unloading Neural model to free RAM.
-04-27 10:43:20.843 I/RoninNeuralEmbedding( 7061): Phase 5.2: Lazy Loading BGE-Base model (768-dim)...
-04-27 10:43:20.843 D/RoninNeuralEmbedding( 7061): Generating BGE embedding (768-dim) for: find docx files
-04-27 10:43:20.847 I/RoninNeuralEmbedding( 7061): Unloading Neural model to free RAM.
