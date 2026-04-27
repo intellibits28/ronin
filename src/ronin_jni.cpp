@@ -103,6 +103,17 @@ Java_com_ronin_kernel_MainActivity_loadModelAndHydrate(JNIEnv *env, jobject thiz
     auto inference = g_intent_engine->getInferenceEngine();
     if (!inference) return JNI_FALSE;
 
+    // Phase 5.7: Runtime Library Linkage Verification
+    // Check for libllm_inference_engine_jni.so presence
+    const char* lib_path = "/data/data/com.ronin.kernel/lib/libllm_inference_engine_jni.so";
+    std::ifstream lib_check(lib_path);
+    if (!lib_check.good()) {
+        LOGE(TAG, "CRITICAL: MediaPipe runtime library not found at: %s", lib_path);
+        // We log it but proceed to let the engine try (in case path differs on some OS versions)
+    } else {
+        LOGI(TAG, "Runtime Linkage Verified: MediaPipe binary detected.");
+    }
+
     // Load Reasoning Brain (.litertlm / .bin)
     bool brain_success = inference->loadModel(path);
     
@@ -246,12 +257,12 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         finalResult = inference->runLiteRTReasoning(input_str);
     }
 
-    // Phase 5.4: Tiered Fallback (Local -> Cloud -> Connection Error)
+    // Phase 5.7: Strict Offline Guard
     if (finalResult.empty()) {
         bool offline = g_intent_engine->isOfflineMode();
         if (offline) {
             LOGW(TAG, "OFFLINE_MODE: Aborting Cloud Fallback.");
-            return env->NewStringUTF("> Status: Offline Guard Active. Request Aborted.");
+            return env->NewStringUTF("Kernel: Local Reasoning Spine offline or failed to hydrate.");
         }
         
         std::string provider = g_intent_engine->getPrimaryCloudProvider();
