@@ -58,21 +58,27 @@ jobs:
 
       - name: Fetch and Extract MediaPipe GenAI Binary
         run: |
-          mkdir -p jni_libs/arm64-v8a
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
           # Download official AAR
           curl -L https://dl.google.com/android/maven2/com/google/mediapipe/tasks-genai/0.10.14/tasks-genai-0.10.14.aar -o tasks-genai.aar
           
           # Extract and locate binary dynamically
           unzip -q tasks-genai.aar -d temp_aar
-          find temp_aar -name "libllm_inference_engine_jni.so" | grep "arm64-v8a" | xargs -I {} cp {} jni_libs/arm64-v8a/
+          find temp_aar -name "libllm_inference_engine_jni.so" | grep "arm64-v8a" | xargs -I {} cp {} android/app/src/main/jniLibs/arm64-v8a/
           
           # Verification
-          if [ ! -f "jni_libs/arm64-v8a/libllm_inference_engine_jni.so" ]; then
-            echo "ERROR: Extraction failed."
+          if [ ! -f "android/app/src/main/jniLibs/arm64-v8a/libllm_inference_engine_jni.so" ]; then
+            echo "ERROR: JNI Extraction failed."
             ls -R temp_aar
             exit 1
           fi
-          echo "Binary verified: $(ls -lh jni_libs/arm64-v8a/libllm_inference_engine_jni.so)"
+          echo "Binary verified in jniLibs: $(ls -lh android/app/src/main/jniLibs/arm64-v8a/libllm_inference_engine_jni.so)"
+
+      - name: Deploy Providers Asset
+        run: |
+          mkdir -p android/app/src/main/assets
+          cp assets/providers.json android/app/src/main/assets/providers.json
+          echo "Providers asset deployed to APK folder."
 
       - name: "Debug: List JNI Libraries and Model Assets"
         run: |
