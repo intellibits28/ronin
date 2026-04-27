@@ -56,11 +56,25 @@ jobs:
           mkdir -p generated
           flatc --cpp -o generated/ checkpoint_schema.fbs
 
-      - name: Fetch MediaPipe GenAI Binary
+      - name: Fetch and Extract MediaPipe GenAI Binary
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          curl -L https://github.com/google/mediapipe/releases/download/v0.10.14/libmediapipe_tasks_genai_jni.so \
-               -o android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so
+          # Download official AAR from Google Maven
+          curl -L https://dl.google.com/android/maven2/com/google/mediapipe/tasks-genai/0.10.14/tasks-genai-0.10.14.aar -o tasks-genai.aar
+          
+          # Extract the specific arm64-v8a library
+          unzip -j tasks-genai.aar jni/arm64-v8a/libmediapipe_tasks_genai_jni.so -d android/app/src/main/jniLibs/arm64-v8a/
+          
+          # Verification Step (Fail fast if corrupted)
+          FILE_SIZE=$(stat -c%s "android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so")
+          echo "Downloaded Binary Size: $FILE_SIZE bytes"
+          if [ "$FILE_SIZE" -lt 1000000 ]; then
+            echo "ERROR: Downloaded file is too small ($FILE_SIZE bytes). Likely an HTML error page."
+            exit 1
+          fi
+          
+          # Ensure it is a valid ELF file
+          file android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so
 
       - name: "Debug: List JNI Libraries and Model Assets"
         run: |
