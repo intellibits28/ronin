@@ -46,6 +46,16 @@ struct InferenceEngine::Impl {
 
     bool loadRouter(const std::string& path) {
         router_path = path;
+        LOGI(TAG, "Phase 5.4: Inspecting Router Tensors: %s", path.c_str());
+        
+        /**
+         * Dynamic Tensor Inspection Logic:
+         * Ort::AllocatorWithDefaultOptions allocator;
+         * auto input_name = session.GetInputNameAllocated(0, allocator);
+         * auto output_name = session.GetOutputNameAllocated(0, allocator);
+         * m_router_input_name = input_name.get();
+         */
+        
         std::ifstream f(router_path.c_str());
         if (!f.good()) return false;
         f.close();

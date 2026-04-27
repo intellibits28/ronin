@@ -127,15 +127,24 @@ if(ANDROID)
         add_library(ronin_kernel SHARED src/ronin_jni.cpp)
         
         # Phase 5.4: Production Linkage Refactor
-        # Explicitly link MediaPipe GenAI and ORT to the JNI bridge
-        target_link_libraries(ronin_kernel PUBLIC 
+        # Explicitly link MediaPipe GenAI and ORT to the JNI bridge ONLY if found.
+        # Otherwise, the inline stubs in the header provide the symbols.
+        set(RONIN_KERNEL_LIBS 
             ronin_core 
             sqlite3_lib 
             onnxruntime_lib 
-            mediapipe_genai 
             ${log-lib} 
             ${android-lib}
         )
+
+        if(MEDIAPIPE_GENAI_LIB)
+            message(STATUS ">>> MediaPipe GenAI library found at: ${MEDIAPIPE_GENAI_LIB}")
+            list(APPEND RONIN_KERNEL_LIBS mediapipe_genai)
+        else()
+            message(WARNING ">>> MediaPipe GenAI library NOT found. Using header-only stubs.")
+        endif()
+
+        target_link_libraries(ronin_kernel PUBLIC ${RONIN_KERNEL_LIBS})
 
         # Enable ARMv8.2-A Dot Product extension only for arm64-v8a
         if(ANDROID_ABI STREQUAL "arm64-v8a")

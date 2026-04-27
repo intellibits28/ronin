@@ -246,14 +246,17 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         finalResult = inference->runLiteRTReasoning(input_str);
     }
 
-    // Phase 4.9.9: Tiered Fallback (Local -> Cloud -> Connection Error)
+    // Phase 5.4: Tiered Fallback (Local -> Cloud -> Connection Error)
     if (finalResult.empty()) {
         bool offline = g_intent_engine->isOfflineMode();
-        if (!offline) {
-            std::string provider = g_intent_engine->getPrimaryCloudProvider();
-            std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey(provider);
-            finalResult = inference->escalateToCloud(input_str, apiKey, provider);
+        if (offline) {
+            LOGW(TAG, "OFFLINE_MODE: Aborting Cloud Fallback.");
+            return env->NewStringUTF("> Status: Offline Guard Active. Request Aborted.");
         }
+        
+        std::string provider = g_intent_engine->getPrimaryCloudProvider();
+        std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey(provider);
+        finalResult = inference->escalateToCloud(input_str, apiKey, provider);
     }
 
     if (finalResult.empty()) {
@@ -391,6 +394,12 @@ Java_com_ronin_kernel_NativeEngine_updateModelRegistry(JNIEnv *env, jobject thiz
 
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) {
+    if (json == nullptr || env->GetStringLength(json) == 0) {
+        LOGW(TAG, "Cloud Provider hydration failed. Initializing Safe-Fail template.");
+        // Initialize internal default (Safe-Fail state)
+        if (g_intent_engine) g_intent_engine->setPrimaryCloudProvider("Gemini-Default-Template");
+        return JNI_TRUE;
+    }
     return JNI_TRUE;
 }
 

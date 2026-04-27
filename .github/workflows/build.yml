@@ -56,6 +56,12 @@ jobs:
           mkdir -p generated
           flatc --cpp -o generated/ checkpoint_schema.fbs
 
+      - name: Fetch MediaPipe GenAI Binary
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          curl -L https://github.com/google/mediapipe/releases/download/v0.10.14/libmediapipe_tasks_genai_jni.so \
+               -o android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so
+
       - name: "Debug: List JNI Libraries and Model Assets"
         run: |
           echo "--- Assets models ---"
