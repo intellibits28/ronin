@@ -9,9 +9,10 @@ namespace fs = std::filesystem;
 
 class SearchCapabilityTest : public ::testing::Test {
 protected:
-    std::string db_path = "test_search.db";
+    std::string db_path;
     
     void SetUp() override {
+        db_path = (fs::temp_directory_path() / "test_search.db").string();
         std::remove(db_path.c_str());
     }
 

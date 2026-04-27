@@ -25,6 +25,8 @@ FetchContent_MakeAvailable(sqlite3_src)
 
 add_library(sqlite3_lib STATIC ${sqlite3_src_SOURCE_DIR}/sqlite3.c)
 target_include_directories(sqlite3_lib PUBLIC ${sqlite3_src_SOURCE_DIR})
+# Phase 5.6: Enable FTS5 for Keyword-based search logic
+target_compile_definitions(sqlite3_lib PRIVATE SQLITE_ENABLE_FTS5=1)
 
 # Requirement 2: FlatBuffers Schema Generation
 FetchContent_Declare(
