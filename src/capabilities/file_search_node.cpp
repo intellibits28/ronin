@@ -42,12 +42,13 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
                 fe.name.find(".nomedia") != std::string::npos ||
                 fe.name.find(".db") != std::string::npos) continue;
 
-            float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 768);
-            
-            // Tightened Precision Boosting
-            if (!ext_filter.empty() && fe.name.find(ext_filter) != std::string::npos) {
-                sim += 0.15f; 
+            // Phase 5.8: Strict Extension Guard
+            // If user explicitly mentioned a file type, only return that type.
+            if (!ext_filter.empty() && fe.name.find(ext_filter) == std::string::npos) {
+                continue; 
             }
+
+            float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 768);
             
             if (sim > 0.75f) { // Final Architect Requirement: 0.75 Threshold
                 candidates.push_back({fe.path, sim});

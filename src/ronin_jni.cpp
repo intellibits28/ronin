@@ -103,15 +103,25 @@ Java_com_ronin_kernel_MainActivity_loadModelAndHydrate(JNIEnv *env, jobject thiz
     auto inference = g_intent_engine->getInferenceEngine();
     if (!inference) return JNI_FALSE;
 
-    // Phase 5.7: Runtime Library Linkage Verification
-    // Check for libllm_inference_engine_jni.so presence
-    const char* lib_path = "/data/data/com.ronin.kernel/lib/libllm_inference_engine_jni.so";
-    std::ifstream lib_check(lib_path);
-    if (!lib_check.good()) {
-        LOGE(TAG, "CRITICAL: MediaPipe runtime library not found at: %s", lib_path);
-        // We log it but proceed to let the engine try (in case path differs on some OS versions)
-    } else {
-        LOGI(TAG, "Runtime Linkage Verified: MediaPipe binary detected.");
+    // Phase 5.8: Reliable Runtime Library Discovery
+    const char* lib_paths[] = {
+        "/data/data/com.ronin.kernel/lib/libllm_inference_engine_jni.so",
+        "/data/user/0/com.ronin.kernel/lib/libllm_inference_engine_jni.so",
+        "libllm_inference_engine_jni.so" // Fallback to linker path
+    };
+    
+    bool found_lib = false;
+    for (const char* lp : lib_paths) {
+        std::ifstream check(lp);
+        if (check.good()) {
+            LOGI(TAG, "Runtime Linkage Verified: MediaPipe binary detected at %s", lp);
+            found_lib = true;
+            break;
+        }
+    }
+    
+    if (!found_lib) {
+        LOGE(TAG, "CRITICAL: MediaPipe runtime library not found in standard paths.");
     }
 
     // Load Reasoning Brain (.litertlm / .bin)
@@ -249,6 +259,12 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     // If ID is a hardware skill, execute regardless of brain hydration
     if (intent.id > 1) {
         return env->NewStringUTF(g_intent_engine->executeSkill(intent.id, input_str).c_str());
+    }
+
+    // Phase 5.8: Strict Command Interception
+    if (!input_str.empty() && input_str[0] == '/') {
+        LOGI(TAG, "Command intercepted: %s. Blocking cloud escalation.", input_str.c_str());
+        return env->NewStringUTF("> Status: Local command recognized. Cloud fallback blocked.");
     }
 
     // Chat/Reasoning Path (ID 1)
