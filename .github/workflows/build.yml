@@ -58,31 +58,21 @@ jobs:
 
       - name: Fetch and Extract MediaPipe GenAI Binary
         run: |
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p jni_libs/arm64-v8a
           # Download official AAR
           curl -L https://dl.google.com/android/maven2/com/google/mediapipe/tasks-genai/0.10.14/tasks-genai-0.10.14.aar -o tasks-genai.aar
           
-          # Unzip entirely to a temp directory to see structure
-          mkdir -p temp_aar
-          unzip -o tasks-genai.aar -d temp_aar
+          # Extract and locate binary dynamically
+          unzip -q tasks-genai.aar -d temp_aar
+          find temp_aar -name "libllm_inference_engine_jni.so" | grep "arm64-v8a" | xargs -I {} cp {} jni_libs/arm64-v8a/
           
-          # Find any .so files and move the arm64-v8a one
-          echo "Listing discovered JNI libraries in AAR:"
-          find temp_aar -name "*.so"
-          
-          # Move the library (trying to find it regardless of exact jni/ vs lib/ path)
-          find temp_aar -path "*arm64-v8a*" -name "libllm_inference_engine_jni.so" -exec cp {} android/app/src/main/jniLibs/arm64-v8a/ \;
-          
-          # Verification Step
-          if [ ! -f "android/app/src/main/jniLibs/arm64-v8a/libllm_inference_engine_jni.so" ]; then
-            echo "ERROR: libllm_inference_engine_jni.so not found in AAR."
+          # Verification
+          if [ ! -f "jni_libs/arm64-v8a/libllm_inference_engine_jni.so" ]; then
+            echo "ERROR: Extraction failed."
             ls -R temp_aar
             exit 1
           fi
-          
-          FILE_SIZE=$(stat -c%s "android/app/src/main/jniLibs/arm64-v8a/libllm_inference_engine_jni.so")
-          echo "Found Binary Size: $FILE_SIZE bytes"
-          file android/app/src/main/jniLibs/arm64-v8a/libllm_inference_engine_jni.so
+          echo "Binary verified: $(ls -lh jni_libs/arm64-v8a/libllm_inference_engine_jni.so)"
 
       - name: "Debug: List JNI Libraries and Model Assets"
         run: |

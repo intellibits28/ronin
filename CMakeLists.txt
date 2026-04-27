@@ -108,7 +108,7 @@ if(ANDROID)
         add_library(onnxruntime_lib SHARED IMPORTED)
         set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
 
-        set(MP_LIB_PATH ${CMAKE_CURRENT_SOURCE_DIR}/android/app/src/main/jniLibs/${ANDROID_ABI}/libllm_inference_engine_jni.so)
+        set(MP_LIB_PATH ${CMAKE_CURRENT_SOURCE_DIR}/jni_libs/${ANDROID_ABI}/libllm_inference_engine_jni.so)
         set(HAS_MEDIAPIPE FALSE)
 
         if(EXISTS ${MP_LIB_PATH})

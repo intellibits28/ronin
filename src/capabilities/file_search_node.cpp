@@ -70,17 +70,15 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
             for (const auto& ext : ext_filters) {
                 if (fe.name.length() >= ext.length() && 
                     fe.name.compare(fe.name.length() - ext.length(), ext.length(), ext) == 0) {
-                    sim += 0.20f; 
+                    sim += 0.10f; // Lowered from 0.20 to prevent over-shadowing neural relevance
                     ext_match = true;
                     break;
                 }
             }
             
-            // Phase 5.9: Soft Fallback. 
-            // If user specified an extension, we prefer it, but we don't strictly hide others 
-            // if their neural similarity is very high (> 0.85).
-            if (ext_match || sim > 0.85f || ext_filters.empty()) {
-                if (sim > 0.70f) {
+            // Phase 5.11: Soft Fallback & High Recall
+            if (ext_match || sim > 0.80f || ext_filters.empty()) {
+                if (sim > 0.65f) { // Final recall threshold
                     candidates.push_back({fe.path, sim});
                 }
             }
