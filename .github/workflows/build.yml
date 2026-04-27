@@ -71,18 +71,18 @@ jobs:
           find temp_aar -name "*.so"
           
           # Move the library (trying to find it regardless of exact jni/ vs lib/ path)
-          find temp_aar -path "*arm64-v8a*" -name "libmediapipe_tasks_genai_jni.so" -exec cp {} android/app/src/main/jniLibs/arm64-v8a/ \;
+          find temp_aar -path "*arm64-v8a*" -name "libllm_inference_engine_jni.so" -exec cp {} android/app/src/main/jniLibs/arm64-v8a/ \;
           
           # Verification Step
-          if [ ! -f "android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so" ]; then
-            echo "ERROR: libmediapipe_tasks_genai_jni.so not found in AAR."
+          if [ ! -f "android/app/src/main/jniLibs/arm64-v8a/libllm_inference_engine_jni.so" ]; then
+            echo "ERROR: libllm_inference_engine_jni.so not found in AAR."
             ls -R temp_aar
             exit 1
           fi
           
-          FILE_SIZE=$(stat -c%s "android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so")
+          FILE_SIZE=$(stat -c%s "android/app/src/main/jniLibs/arm64-v8a/libllm_inference_engine_jni.so")
           echo "Found Binary Size: $FILE_SIZE bytes"
-          file android/app/src/main/jniLibs/arm64-v8a/libmediapipe_tasks_genai_jni.so
+          file android/app/src/main/jniLibs/arm64-v8a/libllm_inference_engine_jni.so
 
       - name: "Debug: List JNI Libraries and Model Assets"
         run: |

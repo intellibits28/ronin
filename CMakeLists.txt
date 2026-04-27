@@ -111,8 +111,8 @@ if(ANDROID)
         add_library(onnxruntime_lib SHARED IMPORTED)
         set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
 
-        # Phase 5.3.1: Explicit MediaPipe Discovery Path
-        find_library(MEDIAPIPE_GENAI_LIB NAMES mediapipe_tasks_genai_jni
+        # Phase 5.3.1: Explicit MediaPipe Discovery Path (Updated for real library name)
+        find_library(MEDIAPIPE_GENAI_LIB NAMES llm_inference_engine_jni
                      PATHS ${CMAKE_CURRENT_SOURCE_DIR}/android/app/src/main/jniLibs/${ANDROID_ABI})
         if(MEDIAPIPE_GENAI_LIB)
             add_library(mediapipe_genai SHARED IMPORTED)
