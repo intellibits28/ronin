@@ -13,59 +13,88 @@ FileSearchNode::FileSearchNode(Memory::LongTermMemory* ltm, NeuralEmbeddingNode*
     : m_ltm(ltm), m_neural(neural) {}
 
 std::vector<std::string> FileSearchNode::search(const std::string& query) {
-    LOGI(TAG, "Phase 5.2: Hybrid Search (Query=%s)", query.c_str());
+    LOGI(TAG, "Phase 5.9: Broadened Search (Query=%s)", query.c_str());
     
     if (!m_ltm) return {"Error: Search LTM missing."};
 
     std::string lower_query = query;
     std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
 
-    // 1. Identify Extension Priority
-    std::string ext_filter = "";
-    if (lower_query.find("pdf") != std::string::npos) ext_filter = ".pdf";
-    else if (lower_query.find("mp3") != std::string::npos || lower_query.find("music") != std::string::npos) ext_filter = ".mp3";
-    else if (lower_query.find("jpg") != std::string::npos || lower_query.find("photo") != std::string::npos) ext_filter = ".jpg";
-    else if (lower_query.find("mp4") != std::string::npos || lower_query.find("video") != std::string::npos) ext_filter = ".mp4";
-    else if (lower_query.find("txt") != std::string::npos || lower_query.find("doc") != std::string::npos) ext_filter = ".txt";
+    // 1. Identify Extension Priority (Broadened for Phase 5.9)
+    std::vector<std::string> ext_filters;
+    if (lower_query.find("pdf") != std::string::npos) ext_filters.push_back(".pdf");
+    
+    if (lower_query.find("mp3") != std::string::npos || 
+        lower_query.find("music") != std::string::npos ||
+        lower_query.find("audio") != std::string::npos ||
+        lower_query.find("song") != std::string::npos) {
+        ext_filters.insert(ext_filters.end(), {".mp3", ".m4a", ".wav", ".ogg"});
+    }
+    
+    if (lower_query.find("jpg") != std::string::npos || 
+        lower_query.find("photo") != std::string::npos ||
+        lower_query.find("image") != std::string::npos) {
+        ext_filters.insert(ext_filters.end(), {".jpg", ".jpeg", ".png", ".webp"});
+    }
+
+    if (lower_query.find("mp4") != std::string::npos || 
+        lower_query.find("video") != std::string::npos ||
+        lower_query.find("movie") != std::string::npos) {
+        ext_filters.insert(ext_filters.end(), {".mp4", ".mkv", ".avi", ".mov"});
+    }
+
+    if (lower_query.find("txt") != std::string::npos || 
+        lower_query.find("doc") != std::string::npos ||
+        lower_query.find("text") != std::string::npos) {
+        ext_filters.insert(ext_filters.end(), {".txt", ".pdf", ".docx", ".fbs"});
+    }
 
     std::vector<std::pair<std::string, float>> candidates;
 
-    // 2. Step 1: Neural Match (if node is available)
+    // 2. Step 1: Neural Match
     if (m_neural) {
         LOGD(TAG, "Generating BGE Query Vector...");
         auto query_vec = m_neural->generateEmbedding(query);
         auto all_embeddings = m_ltm->getAllFileEmbeddings();
 
         for (auto& fe : all_embeddings) {
-            // Phase 5.4: Strict UI Filter (Exclude system metadata)
+            // Exclude common noise
             if (fe.name.find(".database_uuid") != std::string::npos || 
                 fe.name.find(".nomedia") != std::string::npos ||
                 fe.name.find(".db") != std::string::npos) continue;
 
-            // Phase 5.8: Strict Extension Guard
-            // If user explicitly mentioned a file type, only return that type.
-            if (!ext_filter.empty() && fe.name.find(ext_filter) == std::string::npos) {
-                continue; 
-            }
-
             float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 768);
             
-            if (sim > 0.75f) { // Final Architect Requirement: 0.75 Threshold
-                candidates.push_back({fe.path, sim});
+            // Priority Boosting for matched extensions
+            bool ext_match = false;
+            for (const auto& ext : ext_filters) {
+                if (fe.name.length() >= ext.length() && 
+                    fe.name.compare(fe.name.length() - ext.length(), ext.length(), ext) == 0) {
+                    sim += 0.20f; 
+                    ext_match = true;
+                    break;
+                }
+            }
+            
+            // Phase 5.9: Soft Fallback. 
+            // If user specified an extension, we prefer it, but we don't strictly hide others 
+            // if their neural similarity is very high (> 0.85).
+            if (ext_match || sim > 0.85f || ext_filters.empty()) {
+                if (sim > 0.70f) {
+                    candidates.push_back({fe.path, sim});
+                }
             }
         }
-        // Unload embedding model to save RAM as requested in Phase 5.2
         m_neural->unload();
     }
 
-    // 3. Step 2: Keyword/Metadata Fallback (The Reliable Way)
+    // 3. Step 2: Keyword Fallback
     auto kw_results = m_ltm->searchFiles(query);
     for (const auto& path : kw_results) {
-        // Boost keyword matches
         candidates.push_back({path, 0.95f});
     }
 
-    // 4. Filter & Format
+    // 4. Format Output
     if (candidates.empty()) return {"No matching files found in local storage."};
 
     std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
@@ -74,7 +103,7 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
 
     std::unordered_set<std::string> unique_paths;
     std::vector<std::string> output;
-    output.push_back("Search Results (" + std::to_string(candidates.size()) + " items):");
+    output.push_back("Search Results (" + std::to_string(std::min(candidates.size(), (size_t)10)) + " items):");
     
     int count = 0;
     for (const auto& c : candidates) {

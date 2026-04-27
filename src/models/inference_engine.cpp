@@ -77,7 +77,9 @@ struct InferenceEngine::Impl {
             loaded = true; 
             LOGI(TAG, "SUCCESS: LiteRT-LM Engine hydrated.");
         } else {
-            LOGE(TAG, "FAILURE: LiteRT-LM could not link to MediaPipe binary.");
+            std::string error_msg = result.status().message();
+            LOGE(TAG, "FAILURE: LiteRT-LM hydration error: %s (Code: %d)", error_msg.c_str(), (int)result.status().code());
+            Ronin::Kernel::Capability::HardwareBridge::pushMessage("> Kernel: Hydration Error - " + error_msg);
             loaded = false;
         }
 #else
