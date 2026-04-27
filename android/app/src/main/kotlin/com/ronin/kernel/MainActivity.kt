@@ -118,7 +118,13 @@ class ChatViewModel : ViewModel() {
 class MainActivity : ComponentActivity() {
     private val nativeEngine = NativeEngine()
     
-    // Phase 5.2.1: Router Integrity Verification
+    // Phase 5.10: Full Integrity Registry
+    private val MODEL_REGISTRY = mapOf(
+        "gemma-4-E2B-it.litertlm" to "ab7838cdfc8f77e54d8ca45eadceb20452d9f01e4bfade03e5dce27911b27e42",
+        "gemma-2b-it-cpu-int4.bin" to "176452e0eef32e7cd477e5609160278f3f5cbfeeb46d2cb2d37bd631af1b0bea",
+        "gemma-2b-it-gpu-int4.bin" to "ef44d548e44a2a6f313c3f3e94a48e1de786871ad95f4cd81bfb35372032cdbd"
+    )
+
     private val EXPECTED_ROUTER_HASH = "5725965a8ff8646946425ce07fd8fa5473818c4399ef589c1e937226589819ce"
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -233,48 +239,54 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun hydrateModel(path: String) {
-        // Phase 4.6.1: Model Fingerprinting & Integrity Check
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         val file = java.io.File(path)
         if (!file.exists()) {
             Toast.makeText(this, "Model file not found at: $path", Toast.LENGTH_LONG).show()
             return
         }
 
-        val currentFingerprint = calculateFingerprint(file)
-        
-        // Phase 5.2.1: Strict Router Integrity Check
-        if (path.contains("model.onnx") && currentFingerprint != EXPECTED_ROUTER_HASH) {
-            Log.e("RoninIntegrity", "FATAL: Router model hash mismatch! Expected: $EXPECTED_ROUTER_HASH, Got: $currentFingerprint")
-            Toast.makeText(this, "CRITICAL: Router model is corrupt or unverified.", Toast.LENGTH_LONG).show()
-            // We allow hydration to proceed but log the failure for the Core Router.
-        }
+        // Phase 5.10: Full Background Integrity Verification
+        lifecycleScope.launch(Dispatchers.Default) {
+            val filename = file.name
+            val currentFingerprint = calculateFingerprint(file)
 
-        val savedFingerprint = sharedPreferences.getString("fingerprint_$path", "")
+            // 1. Strict Registry Guard
+            val expectedHash = MODEL_REGISTRY[filename] ?: if (filename == "model.onnx") EXPECTED_ROUTER_HASH else ""
 
-        if (!savedFingerprint.isNullOrEmpty() && savedFingerprint != currentFingerprint) {
-             runOnUiThread {
-                 val builder = android.app.AlertDialog.Builder(this@MainActivity)
-                 builder.setTitle("Anti-Swap Protection")
-                 builder.setMessage("Warning: Model data changed or corrupted for '$path'. Re-verify model?")
-                 builder.setPositiveButton("Load Anyway") { dialog: android.content.DialogInterface, which: Int -> 
-                     performHydration(path, currentFingerprint) 
-                 }
-                 builder.setNegativeButton("Cancel") { dialog: android.content.DialogInterface, which: Int -> 
-                     dialog.dismiss() 
-                 }
-                 builder.show()
-             }
-        } else {
-            performHydration(path, currentFingerprint)
+            if (expectedHash.isNotEmpty() && currentFingerprint != expectedHash) {
+                withContext(Dispatchers.Main) {
+                    Log.e("RoninIntegrity", "FATAL: Integrity Breach detected for $filename. Expected: $expectedHash, Got: $currentFingerprint")
+                    Toast.makeText(this@MainActivity, "CRITICAL: Integrity Breach - model hydration aborted.", Toast.LENGTH_LONG).show()
+                    chatViewModel.isKernelHydrated = false
+                }
+                return@launch
+            }
+
+            // 2. Anti-Swap Check for unregistered models
+            val savedFingerprint = sharedPreferences.getString("fingerprint_$path", "")
+            if (expectedHash.isEmpty() && !savedFingerprint.isNullOrEmpty() && savedFingerprint != currentFingerprint) {
+                withContext(Dispatchers.Main) {
+                     val builder = android.app.AlertDialog.Builder(this@MainActivity)
+                     builder.setTitle("Anti-Swap Protection")
+                     builder.setMessage("Warning: Unregistered model data changed for '$filename'. Re-verify model?")
+                     builder.setPositiveButton("Load Anyway") { _: android.content.DialogInterface, _: Int -> 
+                         performHydration(path, currentFingerprint) 
+                     }
+                     builder.setNegativeButton("Cancel", null)
+                     builder.show()
+                }
+            } else {
+                performHydration(path, currentFingerprint)
+            }
         }
     }
 
     private fun performHydration(path: String, fingerprint: String) {
-        val chatViewModel = androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
-        chatViewModel.reasoningLogs.add(0, "Hydration Triggered: $path")
-        
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
-            // JNI Bridge Sync: Use the dedicated production hydration call
+            chatViewModel.reasoningLogs.add(0, "Hydration Triggered: ${path.substringAfterLast("/")}")
+
             val jniSuccess = withContext(Dispatchers.IO) {
                 loadModelAndHydrate(path)
             }
@@ -285,49 +297,30 @@ class MainActivity : ComponentActivity() {
                 sharedPreferences.edit().putString("fingerprint_$path", fingerprint).apply()
                 chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
                 Toast.makeText(this@MainActivity, "Kernel Hydrated Successfully.", Toast.LENGTH_SHORT).show()
-                Log.i("RoninKernel_Kotlin", "SUCCESS: Inference Spine is now active.")
             } else {
                 chatViewModel.isKernelHydrated = false
                 Toast.makeText(this@MainActivity, "CRITICAL: Kernel Hydration Failed.", Toast.LENGTH_LONG).show()
-                Log.e("RoninKernel_Kotlin", "FAILURE: JNI Bridge rejected hydration.")
             }
         }
     }
 
     private fun calculateFingerprint(file: java.io.File): String {
         return try {
-            val size = file.length()
-            val lastModified = file.lastModified()
             val md = java.security.MessageDigest.getInstance("SHA-256")
-            
             java.io.FileInputStream(file).use { fis ->
-                val buffer = ByteArray(8192)
-                // Partial Hash: First 10MB
-                var totalRead = 0L
-                val maxPartial = 10 * 1024 * 1024L
-                while (totalRead < maxPartial) {
-                    val read = fis.read(buffer)
-                    if (read == -1) break
+                val buffer = ByteArray(1024 * 1024) // 1MB streaming chunk
+                var read = fis.read(buffer)
+                while (read != -1) {
                     md.update(buffer, 0, read)
-                    totalRead += read
-                }
-                
-                // Jump to Last 10MB
-                if (size > maxPartial * 2) {
-                    fis.channel.position(size - maxPartial)
-                    while (true) {
-                        val read = fis.read(buffer)
-                        if (read == -1) break
-                        md.update(buffer, 0, read)
-                    }
+                    read = fis.read(buffer)
                 }
             }
-            val hash = md.digest().joinToString("") { "%02x".format(it) }
-            "sz:${size}_ts:${lastModified}_h:${hash.take(16)}"
+            md.digest().joinToString("") { "%02x".format(it) }
         } catch (e: Exception) {
             "error_${e.message}"
         }
     }
+
 
     private fun scanLocalModels() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
