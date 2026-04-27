@@ -261,10 +261,16 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         return env->NewStringUTF(g_intent_engine->executeSkill(intent.id, input_str).c_str());
     }
 
-    // Phase 5.8: Strict Command Interception
+    // Phase 5.8.1: Full System Command Restoration
     if (!input_str.empty() && input_str[0] == '/') {
-        LOGI(TAG, "Command intercepted: %s. Blocking cloud escalation.", input_str.c_str());
-        return env->NewStringUTF("> Status: Local command recognized. Cloud fallback blocked.");
+        std::string commandOutput = "";
+        if (g_intent_engine->handleCommand(input_str, commandOutput)) {
+            LOGI(TAG, "System command executed: %s", input_str.c_str());
+            return env->NewStringUTF(("[COMMAND] " + commandOutput).c_str());
+        } else {
+            // Fallback for unrecognized commands starting with /
+            return env->NewStringUTF("> Error: Unrecognized system command.");
+        }
     }
 
     // Chat/Reasoning Path (ID 1)
