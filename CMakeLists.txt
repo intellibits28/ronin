@@ -32,10 +32,18 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(flatbuffers)
 
 # Requirement 3: ONNX Runtime for Intent Routing (NPU)
-FetchContent_Declare(
-  onnxruntime
-  URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-android-1.17.1.aar
-)
+if(ANDROID)
+    FetchContent_Declare(
+      onnxruntime
+      URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-android-1.17.1.aar
+    )
+else()
+    # Host Build (Linux x64) needs the standard shared library
+    FetchContent_Declare(
+      onnxruntime
+      URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-linux-x64-1.17.1.tgz
+    )
+endif()
 FetchContent_MakeAvailable(onnxruntime)
 
 # Include Directories
@@ -134,9 +142,18 @@ if(ANDROID)
         endif()
     endif()
 else()
-    # Host build (Stub implementation)
+    # Host build (Linux x64)
+    find_library(ORT_LIB_PATH_INTERNAL NAMES onnxruntime
+                 PATHS ${onnxruntime_SOURCE_DIR}/lib 
+                 NO_DEFAULT_PATH)
+    set(ORT_LIB_PATH ${ORT_LIB_PATH_INTERNAL})
+
+    add_library(onnxruntime_lib SHARED IMPORTED)
+    set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+    target_link_libraries(ronin_core PUBLIC onnxruntime_lib)
+
     add_library(ronin_kernel SHARED src/ronin_jni.cpp)
-    target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib)
+    target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib onnxruntime_lib)
 endif()
 
 # Optional: Host-side Unit Tests
