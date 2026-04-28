@@ -20,10 +20,12 @@ class NativeEngine : ComponentCallbacks2 {
 
         init {
             try {
+                // Phase 5.3: Hardcore Native Path Forcing
+                System.loadLibrary("llm_inference_engine_jni")
                 System.loadLibrary("ronin_kernel")
-                Log.i(TAG, "Ronin Kernel Native Library loaded successfully.")
+                Log.i(TAG, "Native libraries (MediaPipe + Kernel) loaded successfully.")
             } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "Failed to load ronin_kernel library: ${e.message}")
+                Log.e(TAG, "Failed to load native libraries: ${e.message}")
             }
         }
     }

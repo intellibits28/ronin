@@ -35,6 +35,15 @@ void FileScanner::stopScan() {
 }
 
 void FileScanner::scanWorker(const std::string& root_path) {
+    LOGI(TAG, "Background scan queued. Waiting for database readiness...");
+    
+    // Phase 5.3: Block until LTM is hydrated
+    while (!m_db_ready.load() && !m_stop_requested.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+
+    if (m_stop_requested.load()) return;
+
     LOGI(TAG, "Background scan started: %s", root_path.c_str());
     int indexed_count = 0;
 
@@ -62,10 +71,15 @@ void FileScanner::scanWorker(const std::string& root_path) {
                 const auto& path = entry.path();
                 std::string filename = path.filename().string();
                 
-                // Phase 5.2: System File Blacklist (Ignore Noise)
+                // Phase 5.3: Strict Extension Hard-Filter (No Images, No Noise)
                 if (filename.find(".nomedia") != std::string::npos || 
                     filename.find(".db") != std::string::npos || 
                     filename.find(".uuid") != std::string::npos ||
+                    filename.find(".database_uuid") != std::string::npos ||
+                    filename.find(".jpg") != std::string::npos ||
+                    filename.find(".jpeg") != std::string::npos ||
+                    filename.find(".png") != std::string::npos ||
+                    filename.find(".gif") != std::string::npos ||
                     filename.find(".ini") != std::string::npos ||
                     filename.find(".DS_Store") != std::string::npos) {
                     continue; 

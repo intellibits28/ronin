@@ -176,7 +176,10 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_file_search_node = std::make_shared<FileSearchNode>(g_long_term_memory.get(), g_neural_embedding_node.get());
     
     g_file_scanner = std::make_unique<FileScanner>(*g_long_term_memory, g_neural_embedding_node.get());
+    
+    // Phase 5.3: Signal readiness before starting scans
     if (g_file_scanner) {
+        g_file_scanner->setDatabaseReady(true);
         // Phase 5.2: Precision Focus - Remove internal assets scan
         Ronin::Kernel::Capability::HardwareBridge::pushMessage("> Kernel: Storage Indexer Ready.");
         g_file_scanner->startScan("/storage/emulated/0/Music/");

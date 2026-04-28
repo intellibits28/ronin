@@ -23,12 +23,19 @@ public:
     // Check if a scan is currently active
     bool isScanning() const { return m_is_running.load(); }
 
+    /**
+     * Phase 5.3: Sync Logic
+     * Signals that LTM (SQLite) is ready for indexing.
+     */
+    void setDatabaseReady(bool ready) { m_db_ready.store(ready); }
+
 private:
     Memory::LongTermMemory& m_ltm;
     NeuralEmbeddingNode* m_neural;
     std::thread m_scan_thread;
     std::atomic<bool> m_is_running{false};
     std::atomic<bool> m_stop_requested{false};
+    std::atomic<bool> m_db_ready{false};
 
     void scanWorker(const std::string& root_path);
 };
