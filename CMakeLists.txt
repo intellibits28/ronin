@@ -16,6 +16,26 @@ add_library(sqlite3_lib STATIC ${sqlite3_src_SOURCE_DIR}/sqlite3.c)
 target_include_directories(sqlite3_lib PUBLIC ${sqlite3_src_SOURCE_DIR})
 target_compile_definitions(sqlite3_lib PRIVATE SQLITE_ENABLE_FTS5=1)
 
+# --- Requirement: FlatBuffers ---
+FetchContent_Declare(
+  flatbuffers
+  GIT_REPOSITORY https://github.com/google/flatbuffers.git
+  GIT_TAG v2.0.8
+)
+FetchContent_MakeAvailable(flatbuffers)
+
+# FlatBuffers Schema Generation
+set(FBS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/checkpoint_schema.fbs)
+set(FBS_OUT ${CMAKE_CURRENT_BINARY_DIR}/checkpoint_schema_generated.h)
+
+add_custom_command(
+  OUTPUT ${FBS_OUT}
+  COMMAND flatbuffers::flatc --cpp --gen-object-api -o ${CMAKE_CURRENT_BINARY_DIR} ${FBS_SRC}
+  DEPENDS ${FBS_SRC}
+  COMMENT "Generating FlatBuffers header from ${FBS_SRC}"
+)
+add_custom_target(generate_fbs DEPENDS ${FBS_OUT})
+
 # --- Requirement: ONNX Runtime ---
 if(ANDROID)
     FetchContent_Declare(
@@ -50,7 +70,14 @@ set(RONIN_CORE_SOURCES
 )
 
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
-target_include_directories(ronin_core PUBLIC include ${sqlite3_src_SOURCE_DIR} ${onnxruntime_SOURCE_DIR}/include)
+add_dependencies(ronin_core generate_fbs)
+target_include_directories(ronin_core PUBLIC 
+    include 
+    ${sqlite3_src_SOURCE_DIR} 
+    ${onnxruntime_SOURCE_DIR}/include
+    ${flatbuffers_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
 target_link_libraries(ronin_core PUBLIC sqlite3_lib)
 
 # --- JNI Implementation ---
