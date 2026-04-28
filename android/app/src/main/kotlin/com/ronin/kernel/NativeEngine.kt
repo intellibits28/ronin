@@ -61,9 +61,21 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     external fun updateCloudProviders(json: String): Boolean
     private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
 
+    // --- Callbacks for MainActivity ---
+    var onKernelMessage: ((String) -> Unit)? = null
+    var getSecureApiKey: ((String) -> String)? = null
+    var onRequestHardwareData: ((Int) -> String)? = null
+    var executeHardwareAction: ((Int, Boolean) -> Boolean)? = null
+    var onSystemTiersUpdate: ((Float, Float, Float) -> Unit)? = null
+
     init {
         if (isLibLoaded) {
             setEngineInstance()
+        }
+    }
+
+    fun initialize() {
+        if (isLibLoaded) {
             initializeKernel(context.filesDir.absolutePath)
         }
     }
@@ -106,19 +118,20 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     // --- JNI Callbacks (Invoked from C++ Layer) ---
 
     @Suppress("unused")
-    fun onKernelMessage(message: String) {
+    fun pushKernelMessage(message: String) {
         Log.d(TAG, "Kernel Message: $message")
+        onKernelMessage?.invoke(message)
     }
 
     @Suppress("unused")
     fun getApiKey(provider: String): String {
-        return "" 
+        return getSecureApiKey?.invoke(provider) ?: "" 
     }
 
     @Suppress("unused")
     fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
         Log.i(TAG, "Hardware Trigger: Node $nodeId -> $state")
-        return true
+        return executeHardwareAction?.invoke(nodeId, state) ?: true
     }
 
     // --- ComponentCallbacks2 Implementation ---

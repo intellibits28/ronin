@@ -154,6 +154,11 @@ Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdo
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
     LOGD(TAG, "System Health: Temp=%.1f, RAM=%.1f/%.1f", temp, used, total);
+    
+    jclass clazz = env->GetObjectClass(thiz);
+    jfieldID fieldId = env->GetFieldID(clazz, "onSystemTiersUpdate", "(Lkotlin/jvm/functions/Function3;)V");
+    // Implementation for invoking the Kotlin lambda if needed, but for now we just log.
+    
     return JNI_TRUE;
 }
 
