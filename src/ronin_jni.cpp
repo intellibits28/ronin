@@ -157,4 +157,37 @@ Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz,
     return JNI_TRUE;
 }
 
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) {
+    if (g_intent_engine) g_intent_engine->setOfflineMode(offline == JNI_TRUE);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) {
+    if (g_intent_engine) {
+        g_intent_engine->setPrimaryCloudProvider(JStringToStdString(env, provider));
+    }
+}
+
+JNIEXPORT jint JNICALL
+Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
+    return 0;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) {
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) {
+    return JNI_TRUE;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
+    jclass stringClass = env->FindClass("java/lang/String");
+    return env->NewObjectArray(0, stringClass, nullptr);
+}
+
 } // extern "C"

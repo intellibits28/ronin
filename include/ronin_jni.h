@@ -67,4 +67,46 @@ JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateSystemHealth(
     JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total);
 
+/**
+ * Toggles whether cloud escalation is allowed.
+ */
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_setOfflineMode(
+    JNIEnv *env, jobject thiz, jboolean offline);
+
+/**
+ * Sets the primary cloud provider.
+ */
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_setPrimaryCloudProvider(
+    JNIEnv *env, jobject thiz, jstring provider);
+
+/**
+ * Returns the current internal pressure score (0-100).
+ */
+JNIEXPORT jint JNICALL
+Java_com_ronin_kernel_NativeEngine_getLMKPressure(
+    JNIEnv *env, jobject thiz);
+
+/**
+ * Updates the local model registry.
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateModelRegistry(
+    JNIEnv *env, jobject thiz, jstring json);
+
+/**
+ * Updates the Cloud Provider manifest.
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateCloudProviders(
+    JNIEnv *env, jobject thiz, jstring json);
+
+/**
+ * Retrieves chat history from SQLite with pagination.
+ */
+JNIEXPORT jobjectArray JNICALL
+Java_com_ronin_kernel_NativeEngine_getChatHistory(
+    JNIEnv *env, jobject thiz, jint limit, jint offset);
+
 } // extern "C"

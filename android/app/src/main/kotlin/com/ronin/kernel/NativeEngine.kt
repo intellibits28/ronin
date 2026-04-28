@@ -6,6 +6,8 @@ import android.content.ComponentCallbacks2
 import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Rebuilt Ronin Native Engine.
@@ -50,6 +52,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     // Hardware & State Sync
     external fun injectLocation(lat: Double, lon: Double)
     external fun updateSystemHealth(temp: Float, used: Float, total: Float): Boolean
+    
+    // Additional JNI methods required by MainActivity
+    external fun setOfflineMode(offline: Boolean)
+    external fun setPrimaryCloudProvider(provider: String)
+    external fun getLMKPressure(): Int
+    external fun updateModelRegistry(json: String): Boolean
+    external fun updateCloudProviders(json: String): Boolean
+    private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
 
     init {
         if (isLibLoaded) {
@@ -76,17 +86,33 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         loadModel(path)
     }
 
+    suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        if (!isLibLoaded) return@withContext emptyList<Pair<String, String>>()
+        val raw = getChatHistory(limit, offset) ?: return@withContext emptyList<Pair<String, String>>()
+        val result = mutableListOf<Pair<String, String>>()
+        for (i in 0 until raw.size / 2) {
+            result.add(raw[i * 2] to raw[i * 2 + 1])
+        }
+        result
+    }
+
+    /**
+     * Fetch available models from Google AI Edge / MediaPipe registry.
+     * Stub implementation for now as requested in re-architecture.
+     */
+    suspend fun fetchAvailableModels(apiKey: String): List<JSONObject> = withContext(Dispatchers.IO) {
+        emptyList()
+    }
+
     // --- JNI Callbacks (Invoked from C++ Layer) ---
 
     @Suppress("unused")
     fun onKernelMessage(message: String) {
         Log.d(TAG, "Kernel Message: $message")
-        // Implementation for UI updates or logging
     }
 
     @Suppress("unused")
-    fun getSecureApiKey(provider: String): String {
-        // Securely retrieve keys (e.g., from EncryptedSharedPreferences)
+    fun getApiKey(provider: String): String {
         return "" 
     }
 
