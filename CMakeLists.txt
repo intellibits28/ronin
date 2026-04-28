@@ -119,7 +119,14 @@ if(ANDROID)
     find_library(android-lib android)
     
     # MediaPipe LLM Inference JNI (Expected from AAR or jniLibs)
-    find_library(MP_JNI_LIB llm_inference_engine_jni)
+    # Phase 5.0: Ensure search path includes jniLibs for the specific ABI
+    set(MP_SEARCH_PATH ${CMAKE_CURRENT_SOURCE_DIR}/android/app/src/main/jniLibs/${ANDROID_ABI})
+    find_library(MP_JNI_LIB llm_inference_engine_jni PATHS ${MP_SEARCH_PATH} NO_DEFAULT_PATH)
+    
+    # Fallback to standard search if specific path fails
+    if(NOT MP_JNI_LIB)
+        find_library(MP_JNI_LIB llm_inference_engine_jni)
+    endif()
 
     add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
     target_include_directories(ronin_kernel PRIVATE include)
