@@ -104,21 +104,8 @@ Java_com_ronin_kernel_MainActivity_loadModelAndHydrate(JNIEnv *env, jobject thiz
     auto inference = g_intent_engine->getInferenceEngine();
     if (!inference) return JNI_FALSE;
 
-    // Phase 5.11.1: Runtime Linker Verification
-    // Instead of hardcoded paths, we check if the library is accessible in the current process space.
-    void* handle = dlopen("libllm_inference_engine_jni.so", RTLD_NOW);
-    if (handle) {
-        LOGI(TAG, "Runtime Linkage Verified: MediaPipe symbols accessible via dlopen.");
-        dlclose(handle);
-    } else {
-        const char* error = dlerror();
-        LOGE(TAG, "CRITICAL: MediaPipe linkage failed: %s", error ? error : "Unknown linker error");
-        // Fallback check for absolute path if dynamic loading failed
-        std::ifstream check("/data/user/0/com.ronin.kernel/lib/libllm_inference_engine_jni.so");
-        if (!check.good()) {
-             LOGE(TAG, "FATAL: MediaPipe binary missing from internal library path.");
-        }
-    }
+    // Phase 5.13: Standardized MediaPipe Initialization Pattern
+    LOGI(TAG, "Initiating Brain Hydration (Target: %s)", path.c_str());
 
     // Load Reasoning Brain (.litertlm / .bin)
     bool brain_success = inference->loadModel(path);
@@ -128,7 +115,7 @@ Java_com_ronin_kernel_MainActivity_loadModelAndHydrate(JNIEnv *env, jobject thiz
         Ronin::Kernel::Capability::HardwareBridge::pushMessage("> Kernel: Reasoning Brain Active.");
         return JNI_TRUE;
     } else {
-        LOGE(TAG, "ERROR: Reasoning Brain hydration failed.");
+        LOGE(TAG, "FATAL: LiteRT-LM hydration failed for path: %s", path.c_str());
         return JNI_FALSE;
     }
 }

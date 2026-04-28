@@ -20,12 +20,17 @@ class NativeEngine : ComponentCallbacks2 {
 
         init {
             try {
-                // Phase 5.3: Hardcore Native Path Forcing
+                // Phase 5.13: Official LiteRT-LM Loading Sequence
+                // We rely on the packaging rules to place the library in the linker path
                 System.loadLibrary("llm_inference_engine_jni")
+                // Small delay to ensure symbols are registered in the process space
+                Thread.sleep(100)
                 System.loadLibrary("ronin_kernel")
-                Log.i(TAG, "Native libraries (MediaPipe + Kernel) loaded successfully.")
+                Log.i(TAG, "PRODUCTION: All native reasoning spines synchronized.")
             } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "Failed to load native libraries: ${e.message}")
+                Log.e(TAG, "FATAL: Native linkage failed. Stub status imminent: ${e.message}")
+            } catch (e: InterruptedException) {
+                e.printStackTrace()
             }
         }
     }
