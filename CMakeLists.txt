@@ -28,10 +28,23 @@ FetchContent_MakeAvailable(flatbuffers)
 set(FBS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/checkpoint_schema.fbs)
 set(FBS_OUT ${CMAKE_CURRENT_BINARY_DIR}/checkpoint_schema_generated.h)
 
-# Ensure flatc is available
-if(TARGET flatc)
-    set(FLATC_EXE flatc)
+# Logic to find the correct flatc (Host vs Target)
+if(ANDROID)
+    # On Android cross-build, we MUST use a host flatc
+    find_program(FLATC_EXE flatc)
+    if(NOT FLATC_EXE)
+        message(FATAL_ERROR "flatc not found in PATH. Required for Android cross-build.")
+    endif()
 else()
+    # On host build, we can use the target build by FetchContent if available
+    if(TARGET flatc)
+        set(FLATC_EXE flatc)
+    else()
+        find_program(FLATC_EXE flatc)
+    endif()
+endif()
+
+if(NOT FLATC_EXE)
     set(FLATC_EXE flatbuffers::flatc)
 endif()
 
