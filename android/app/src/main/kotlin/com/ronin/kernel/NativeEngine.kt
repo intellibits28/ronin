@@ -98,10 +98,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Fetch available models from Google AI Edge / MediaPipe registry.
-     * Stub implementation for now as requested in re-architecture.
      */
     suspend fun fetchAvailableModels(apiKey: String): List<JSONObject> = withContext(Dispatchers.IO) {
-        emptyList()
+        emptyList<JSONObject>()
     }
 
     // --- JNI Callbacks (Invoked from C++ Layer) ---
