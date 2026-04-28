@@ -72,8 +72,9 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     // Setup Intent Engine & Memory
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     
-    // Register Default Capabilities
-    // Note: Skill registration logic remains consistent with Phase 4.0
+    // Phase 5.0: Load Dynamic Manifest from synchronized assets
+    std::string manifest_path = base_path + "/assets/capabilities.json";
+    g_intent_engine->loadCapabilities(manifest_path);
     
     // Initialize Kernel Spine
     static HandlerRegistry registry = {
