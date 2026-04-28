@@ -24,6 +24,9 @@
 
 using namespace ronin::jni;
 using namespace Ronin::Kernel;
+using namespace Ronin::Kernel::Memory;
+using namespace Ronin::Kernel::Capability;
+using namespace Ronin::Kernel::Model;
 
 static JavaVM* g_vm = nullptr;
 static std::unique_ptr<RoninKernel> g_kernel;
@@ -167,6 +170,41 @@ Java_com_ronin_kernel_NativeEngine_setPrimaryCloudProvider(JNIEnv *env, jobject 
     if (g_intent_engine) {
         g_intent_engine->setPrimaryCloudProvider(JStringToStdString(env, provider));
     }
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_ronin_kernel_NativeEngine_getActiveModelPath(JNIEnv *env, jobject thiz) {
+    if (g_intent_engine) {
+        auto inference = g_intent_engine->getInferenceEngine();
+        if (inference) return StdStringToJString(env, inference->getModelPath());
+    }
+    return StdStringToJString(env, "None");
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
+    return JNI_TRUE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
+    return 0;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) {
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) {
+    return JNI_TRUE;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
+    jclass stringClass = env->FindClass("java/lang/String");
+    return env->NewObjectArray(0, stringClass, nullptr);
 }
 
 JNIEXPORT void JNICALL
