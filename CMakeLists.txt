@@ -28,9 +28,16 @@ FetchContent_MakeAvailable(flatbuffers)
 set(FBS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/checkpoint_schema.fbs)
 set(FBS_OUT ${CMAKE_CURRENT_BINARY_DIR}/checkpoint_schema_generated.h)
 
+# Ensure flatc is available
+if(TARGET flatc)
+    set(FLATC_EXE flatc)
+else()
+    set(FLATC_EXE flatbuffers::flatc)
+endif()
+
 add_custom_command(
   OUTPUT ${FBS_OUT}
-  COMMAND flatbuffers::flatc --cpp --gen-object-api -o ${CMAKE_CURRENT_BINARY_DIR} ${FBS_SRC}
+  COMMAND ${FLATC_EXE} --cpp --gen-object-api -o ${CMAKE_CURRENT_BINARY_DIR} ${FBS_SRC}
   DEPENDS ${FBS_SRC}
   COMMENT "Generating FlatBuffers header from ${FBS_SRC}"
 )
