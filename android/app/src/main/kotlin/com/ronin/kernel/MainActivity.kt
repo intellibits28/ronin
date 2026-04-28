@@ -359,10 +359,7 @@ class MainActivity : ComponentActivity() {
         copyAssetsToFilesDir(filesDir)
 
         // Engine Initialization & Lifecycle Guards
-        nativeEngine.initializeKernel(filesDir.absolutePath)
-        nativeEngine.setCameraManager(this)
-        nativeEngine.setEngineInstance()
-        nativeEngine.hydrate()
+        nativeEngine.initialize()
         registerComponentCallbacks(nativeEngine)
         
         // Phase 4.4.3: Initial Hydration of Provider Templates
