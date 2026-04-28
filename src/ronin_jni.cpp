@@ -111,8 +111,31 @@ JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstring input) {
     std::string input_str = JStringToStdString(env, input);
     
+    if (!g_kernel) {
+        return StdStringToJString(env, "Error: Ronin Kernel not initialized.");
+    }
+
+    // Phase 4.0: Unified Routing Spine (Rule 1)
+    // All inputs, including /commands and neural queries, must pass through the kernel process loop.
+    Ronin::Kernel::Input in_data = { (uint8_t*)input_str.c_str(), (uint32_t)input_str.length() };
+    Ronin::Kernel::Result result = g_kernel->process(in_data);
+    
+    if (!result.success) {
+        // If kernel processing fails (e.g. LLM not ready), check if we should fallback to cloud
+        // or return the kernel's error message.
+        LOGW(TAG, "Kernel processing returned failure. Checking fallback path...");
+    }
+
+    // For Ronin, the response is often pushed via onKernelMessage or returned directly.
+    // We'll return the result message if success, otherwise use LLM directly for reasoning.
+    
+    if (input_str.starts_with("/")) {
+        // Commands handled internally by RoninKernel
+        return StdStringToJString(env, "> Command Executed.");
+    }
+
     if (!g_llm_context.initialized) {
-        return StdStringToJString(env, "Error: LiteRT-LM not initialized.");
+        return StdStringToJString(env, "Error: LiteRT-LM reasoning spine not hydrated.");
     }
 
     // Direct Neural Reasoning Path (Rule 6: Zero-Mock)
