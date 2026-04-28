@@ -53,6 +53,15 @@ if(ANDROID)
     set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/jni/${ANDROID_ABI}/libonnxruntime.so)
     add_library(onnxruntime_lib SHARED IMPORTED)
     set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+else()
+    FetchContent_Declare(
+      onnxruntime
+      URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-linux-x64-1.17.1.tgz
+    )
+    FetchContent_MakeAvailable(onnxruntime)
+    set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.so)
+    add_library(onnxruntime_lib SHARED IMPORTED)
+    set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
 endif()
 
 # --- Core Ronin Logic ---
@@ -118,13 +127,6 @@ if(ANDROID)
     endif()
 else()
     # Host build (Linux x64)
-    find_library(ORT_LIB_PATH_INTERNAL NAMES onnxruntime
-                 PATHS ${onnxruntime_SOURCE_DIR}/lib 
-                 NO_DEFAULT_PATH)
-    set(ORT_LIB_PATH ${ORT_LIB_PATH_INTERNAL})
-
-    add_library(onnxruntime_lib SHARED IMPORTED)
-    set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
     target_link_libraries(ronin_core PUBLIC onnxruntime_lib)
 
     add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
