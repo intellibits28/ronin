@@ -117,17 +117,11 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
 
     // Phase 4.0: Unified Routing Spine (Rule 1)
     // All inputs, including /commands and neural queries, must pass through the kernel process loop.
-    Ronin::Kernel::Input in_data = { (uint8_t*)input_str.c_str(), (uint32_t)input_str.length() };
-    Ronin::Kernel::Result result = g_kernel->process(in_data);
+    Ronin::Kernel::Input in_data = {};
+    std::strncpy(in_data.data, input_str.c_str(), sizeof(in_data.data) - 1);
+    in_data.length = std::min(input_str.length(), sizeof(in_data.data) - 1);
     
-    if (!result.success) {
-        // If kernel processing fails (e.g. LLM not ready), check if we should fallback to cloud
-        // or return the kernel's error message.
-        LOGW(TAG, "Kernel processing returned failure. Checking fallback path...");
-    }
-
-    // For Ronin, the response is often pushed via onKernelMessage or returned directly.
-    // We'll return the result message if success, otherwise use LLM directly for reasoning.
+    g_kernel->tick(in_data);
     
     if (input_str.starts_with("/")) {
         // Commands handled internally by RoninKernel
