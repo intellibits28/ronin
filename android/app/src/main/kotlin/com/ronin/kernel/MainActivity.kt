@@ -1434,6 +1434,3 @@ fun StabilityMeter(stability: Float) {
         LinearProgressIndicator(progress = stability, color = color, backgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.1f), modifier = Modifier.width(100.dp))
     }
 }
-lpha = 0.1f), modifier = Modifier.width(100.dp))
-    }
-}
