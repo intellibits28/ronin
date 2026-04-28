@@ -28,6 +28,7 @@
 #include <future>
 #include <chrono>
 #include <fstream>
+#include <dlfcn.h>
 #include <cstdlib>
 
 #define TAG "RoninKernel_CPP"
@@ -103,25 +104,20 @@ Java_com_ronin_kernel_MainActivity_loadModelAndHydrate(JNIEnv *env, jobject thiz
     auto inference = g_intent_engine->getInferenceEngine();
     if (!inference) return JNI_FALSE;
 
-    // Phase 5.8: Reliable Runtime Library Discovery
-    const char* lib_paths[] = {
-        "/data/data/com.ronin.kernel/lib/libllm_inference_engine_jni.so",
-        "/data/user/0/com.ronin.kernel/lib/libllm_inference_engine_jni.so",
-        "libllm_inference_engine_jni.so" // Fallback to linker path
-    };
-    
-    bool found_lib = false;
-    for (const char* lp : lib_paths) {
-        std::ifstream check(lp);
-        if (check.good()) {
-            LOGI(TAG, "Runtime Linkage Verified: MediaPipe binary detected at %s", lp);
-            found_lib = true;
-            break;
+    // Phase 5.11.1: Runtime Linker Verification
+    // Instead of hardcoded paths, we check if the library is accessible in the current process space.
+    void* handle = dlopen("libllm_inference_engine_jni.so", RTLD_NOW);
+    if (handle) {
+        LOGI(TAG, "Runtime Linkage Verified: MediaPipe symbols accessible via dlopen.");
+        dlclose(handle);
+    } else {
+        const char* error = dlerror();
+        LOGE(TAG, "CRITICAL: MediaPipe linkage failed: %s", error ? error : "Unknown linker error");
+        // Fallback check for absolute path if dynamic loading failed
+        std::ifstream check("/data/user/0/com.ronin.kernel/lib/libllm_inference_engine_jni.so");
+        if (!check.good()) {
+             LOGE(TAG, "FATAL: MediaPipe binary missing from internal library path.");
         }
-    }
-    
-    if (!found_lib) {
-        LOGE(TAG, "CRITICAL: MediaPipe runtime library not found in standard paths.");
     }
 
     // Load Reasoning Brain (.litertlm / .bin)
@@ -352,7 +348,7 @@ Java_com_ronin_kernel_NativeEngine_getActiveModelPath(JNIEnv *env, jobject thiz)
 }
 
 JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_hydrate(JNIEnv *env, jobject thiz) {
+Java_com_ronin_kernel_NativeEngine_hydrateNative(JNIEnv *env, jobject thiz) {
     if (g_intent_engine) {
         auto cm = g_intent_engine->getCheckpointManager();
         if (cm) cm->initialize();

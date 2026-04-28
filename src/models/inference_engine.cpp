@@ -66,16 +66,23 @@ struct InferenceEngine::Impl {
     void load(const std::string& path) {
         gemma_path = path.empty() ? "/data/user/0/com.ronin.kernel/files/assets/models/gemma_4.litertlm" : path;
         
+        LOGI(TAG, "Phase 5.12: Hardened Hydration Sequence...");
+        LOGD(TAG, "Runtime Parameter - Model Path: %s", gemma_path.c_str());
+        LOGD(TAG, "Runtime Parameter - Context Window: %d tokens", context_window);
+
 #ifdef __ANDROID__
         LlmInference::Options options;
         options.model_path = gemma_path;
         options.max_tokens = context_window;
+        options.top_k = 40;
+        options.temperature = 0.7f;
+        options.random_seed = 42;
 
         auto result = LlmInference::Create(options);
         if (result.ok() && (*result) != nullptr) {
             llm_engine = std::move(*result);
             loaded = true; 
-            LOGI(TAG, "SUCCESS: LiteRT-LM Engine hydrated.");
+            LOGI(TAG, "SUCCESS: LiteRT-LM Engine hydrated and weights mapped.");
         } else {
             std::string error_msg = result.status().message();
             LOGE(TAG, "FAILURE: LiteRT-LM hydration error: %s", error_msg.c_str());

@@ -40,6 +40,34 @@ class NativeEngine : ComponentCallbacks2 {
         this.cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     }
 
+    private fun clearInternalCaches() {
+        Log.i(TAG, "LMK Mitigation: Purging internal caches...")
+        try {
+            appContext.cacheDir.deleteRecursively()
+            appContext.externalCacheDir?.deleteRecursively()
+            System.gc()
+            Runtime.getRuntime().gc()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clear caches: ${e.message}")
+        }
+    }
+
+    private fun checkRamAvailability(): Boolean {
+        val activityManager = appContext.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val memoryInfo = android.app.ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        
+        val availableGB = memoryInfo.availMem / (1024.0 * 1024.0 * 1024.0)
+        Log.i(TAG, "System Health: Available RAM = ${"%.2f".format(availableGB)} GB")
+        
+        // Gemma 4 / E2B IT requires at least 0.8GB free for stable hydration
+        if (memoryInfo.lowMemory || availableGB < 0.8) {
+            clearInternalCaches()
+            return availableGB > 0.4 // Last ditch effort
+        }
+        return true
+    }
+
     /**
      * Initializes and links kernel components.
      */
@@ -106,7 +134,15 @@ class NativeEngine : ComponentCallbacks2 {
     external fun notifyTrimMemory(level: Int)
     external fun setEngineInstance()
     external fun setPrimaryCloudProvider(provider: String)
-    external fun hydrate()
+    fun hydrate() {
+        if (checkRamAvailability()) {
+            hydrateNative()
+        } else {
+            onKernelMessage?.invoke("> Kernel: Hydration deferred - Low Memory.")
+        }
+    }
+
+    private external fun hydrateNative()
     external fun injectLocation(lat: Double, lon: Double)
     external fun loadModel(path: String): Boolean
     external fun updateModelRegistry(json: String): Boolean
@@ -206,7 +242,8 @@ class NativeEngine : ComponentCallbacks2 {
         try {
             val file = java.io.File("/storage/emulated/0/Ronin/config/providers.json")
             if (file.exists()) {
-                val jsonArray = JSONArray(file.readText())
+                val jsonRoot = JSONObject(file.readText())
+                val jsonArray = jsonRoot.getJSONArray("templates")
                 for (i in 0 until jsonArray.length()) {
                     providers.add(jsonArray.getJSONObject(i).getString("name"))
                 }
@@ -248,7 +285,8 @@ class NativeEngine : ComponentCallbacks2 {
             val configDir = java.io.File(appContext.filesDir, "config")
             val file = java.io.File(configDir, "providers.json")
             if (file.exists()) {
-                val jsonArray = JSONArray(file.readText())
+                val jsonRoot = JSONObject(file.readText())
+                val jsonArray = jsonRoot.getJSONArray("templates")
                 for (i in 0 until jsonArray.length()) {
                     val obj = jsonArray.getJSONObject(i)
                     if (obj.getString("name") == provider) {
