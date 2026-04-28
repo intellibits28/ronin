@@ -155,10 +155,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
         Log.i(TAG, "Cloud Bridge: Initiating request with primary: $primaryProvider")
         
-        val providers = mutableListOf<String>()
-        // In this re-architected version, we might get providers from somewhere else, 
-        // but for now let's use the primary and attempt inference.
-        
         val result = executeSingleInference(input, primaryProvider)
         if (result.startsWith("Error:")) {
             pushKernelMessage("> CLOUD_FAILURE: $result")

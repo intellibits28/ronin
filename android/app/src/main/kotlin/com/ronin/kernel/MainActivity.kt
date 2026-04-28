@@ -418,12 +418,12 @@ class MainActivity : ComponentActivity() {
                 chatViewModel.isKernelHydrated = nativeEngine.isLoaded()
             }
             RoninChatUI(
-                engine = nativeEngine, 
-                chatViewModel = chatViewModel, 
+                engine = nativeEngine,
+                chatViewModel = chatViewModel,
                 modelPicker = modelPickerLauncher,
-                onSaveOfflineMode = { saveOfflineMode(it) },
-                onSavePrimaryCloudProvider = { savePrimaryCloudProvider(it) }
+                onSaveOfflineMode = { saveOfflineMode(it) }
             )
+
         }
     }
 
@@ -649,10 +649,11 @@ class MainActivity : ComponentActivity() {
                                     success = true
                                 } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                     if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                        @Suppress("DEPRECATION")
                                         success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
                                     }
                                 } else {
-                                    @Suppress("MissingPermission")
+                                    @Suppress("MissingPermission", "DEPRECATION")
                                     success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
                                 }
                             }
@@ -828,8 +829,7 @@ fun RoninChatUI(
     engine: NativeEngine, 
     chatViewModel: ChatViewModel = viewModel(), 
     modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>,
-    onSaveOfflineMode: (Boolean) -> Unit,
-    onSavePrimaryCloudProvider: (String) -> Unit
+    onSaveOfflineMode: (Boolean) -> Unit
 ) {
     var inputText by remember { mutableStateOf("") }
     val messages = chatViewModel.messages
