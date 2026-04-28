@@ -1,12 +1,20 @@
 #include <jni.h>
 #include <memory>
 #include <string>
+#include <cstring>
+#include <algorithm>
 #include "ronin_jni.h"
 #include "jni_utils.h"
 #include "ronin_kernel.hpp"
 #include "intent_engine.h"
 #include "models/inference_engine.h"
 #include "capabilities/hardware_bridge.h"
+#include "capabilities/chat_skill.h"
+#include "capabilities/file_search_node.h"
+#include "capabilities/neural_embedding_node.h"
+#include "capabilities/hardware_nodes.h"
+#include "memory_manager.h"
+#include "long_term_memory.h"
 #include "ronin_log.h"
 
 #define TAG "RoninKernel_JNI"
@@ -18,6 +26,8 @@ using namespace Ronin::Kernel::Model;
 static JavaVM* g_vm = nullptr;
 static std::unique_ptr<RoninKernel> g_kernel;
 static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
+static std::unique_ptr<Ronin::Kernel::Memory::MemoryManager> g_memory_manager;
+static std::unique_ptr<Ronin::Kernel::Memory::LongTermMemory> g_ltm;
 
 // --- Production LLM Initialization Logic (LiteRT-LM Pattern) ---
 namespace {
@@ -69,21 +79,46 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     std::string base_path = JStringToStdString(env, files_dir);
     LOGI(TAG, "Initializing Ronin Kernel Core...");
 
-    // Setup Intent Engine & Memory
+    // 1. Setup Memory Spines (L1/L2/L3)
+    g_ltm = std::make_unique<Ronin::Kernel::Memory::LongTermMemory>(base_path + "/ronin_memory.db");
+    g_memory_manager = std::make_unique<Ronin::Kernel::Memory::MemoryManager>(2048);
+    g_memory_manager->setLongTermMemory(g_ltm.get());
+
+    // 2. Setup Intent Engine
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
+    g_intent_engine->setMemoryManager(g_memory_manager.get());
     
     // Phase 5.0: Load Dynamic Manifest from synchronized assets
     std::string manifest_path = base_path + "/assets/capabilities.json";
     g_intent_engine->loadCapabilities(manifest_path);
+
+    // 3. Register Modular Skills with full dependency injection
+    using namespace Ronin::Kernel::Capability;
     
-    // Initialize Kernel Spine
+    auto neural_node = std::make_shared<NeuralEmbeddingNode>(base_path + "/assets/models/bge_base.onnx");
+    auto search_node = std::make_shared<FileSearchNode>(g_ltm.get(), neural_node.get());
+    
+    g_intent_engine->registerSkill(1, std::make_shared<ChatSkill>());
+    g_intent_engine->registerSkill(2, search_node);
+    g_intent_engine->registerSkill(3, neural_node);
+    g_intent_engine->registerSkill(4, std::make_shared<FlashlightNode>());
+    g_intent_engine->registerSkill(5, std::make_shared<LocationNode>());
+    g_intent_engine->registerSkill(6, std::make_shared<WifiNode>());
+    g_intent_engine->registerSkill(7, std::make_shared<BluetoothNode>());
+    
+    // 4. Initialize Kernel Spine
     static HandlerRegistry registry = {
         [](const Input& in) -> CognitiveIntent {
             if (g_intent_engine) return g_intent_engine->process(std::string(in.data, in.length), "");
             return {1, 0.5f, true};
         },
         [](uint32_t id, const CognitiveState& state) -> Result {
-            return {true, 0};
+            if (g_intent_engine) {
+                // In Phase 4.0, result is pushed via hardware bridge or returned here.
+                std::string res = g_intent_engine->executeSkill(id, ""); 
+                return {true, 0};
+            }
+            return {false, -1};
         }
     };
     
@@ -102,7 +137,6 @@ Java_com_ronin_kernel_NativeEngine_loadModel(JNIEnv *env, jobject thiz, jstring 
     
     if (g_intent_engine && g_llm_context.initialized) {
         // Transfer ownership or reference to IntentEngine if needed
-        // For Ronin, we keep the LLM as the primary reasoning spine
         return JNI_TRUE;
     }
     return JNI_FALSE;
@@ -117,7 +151,6 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     }
 
     // Phase 4.0: Unified Routing Spine (Rule 1)
-    // All inputs, including /commands and neural queries, must pass through the kernel process loop.
     Ronin::Kernel::Input in_data = {};
     std::strncpy(in_data.data, input_str.c_str(), sizeof(in_data.data) - 1);
     in_data.length = std::min(input_str.length(), sizeof(in_data.data) - 1);
@@ -125,7 +158,6 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     g_kernel->tick(in_data);
     
     if (input_str.starts_with("/")) {
-        // Commands handled internally by RoninKernel
         return StdStringToJString(env, "> Command Executed.");
     }
 
@@ -133,12 +165,11 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         return StdStringToJString(env, "Error: LiteRT-LM reasoning spine not hydrated.");
     }
 
-    // Direct Neural Reasoning Path (Rule 6: Zero-Mock)
+    // Direct Neural Reasoning Path
     std::string response = g_llm_context.engine->runLiteRTReasoning(input_str);
     
     if (response.empty()) {
-        // Fallback to Cloud if local fails or confidence is low
-        std::string provider = "google"; // Default
+        std::string provider = "google"; 
         std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey(provider);
         return StdStringToJString(env, g_llm_context.engine->escalateToCloud(input_str, apiKey, provider));
     }
@@ -154,8 +185,8 @@ Java_com_ronin_kernel_NativeEngine_isLoaded(JNIEnv *env, jobject thiz) {
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
     LOGI(TAG, "Memory Trim Requested: Level %d", level);
-    if (g_llm_context.engine) {
-        // Trigger LiteRT cache pruning
+    if (g_memory_manager) {
+        g_memory_manager->onMemoryPressure();
     }
 }
 
@@ -172,7 +203,6 @@ Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdo
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
     LOGD(TAG, "System Health: Temp=%.1f, RAM=%.1f/%.1f", temp, used, total);
-    // Kernel uses these metrics for Phase 4.0 Thermal Guard & LMK Guards.
     return JNI_TRUE;
 }
 
@@ -190,12 +220,14 @@ Java_com_ronin_kernel_NativeEngine_setPrimaryCloudProvider(JNIEnv *env, jobject 
 
 JNIEXPORT jint JNICALL
 Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
+    if (g_memory_manager) return g_memory_manager->getPressureScore();
     return 0;
 }
 
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) {
-    return JNI_TRUE;
+    if (g_intent_engine) return g_intent_engine->updateMetadata(JStringToStdString(env, json));
+    return JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -206,6 +238,15 @@ Java_com_ronin_kernel_NativeEngine_updateCloudProviders(JNIEnv *env, jobject thi
 JNIEXPORT jobjectArray JNICALL
 Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
     jclass stringClass = env->FindClass("java/lang/String");
+    if (g_ltm) {
+        auto history = g_ltm->getHistory(limit, offset);
+        jobjectArray array = env->NewObjectArray(history.size() * 2, stringClass, nullptr);
+        for (size_t i = 0; i < history.size(); ++i) {
+            env->SetObjectArrayElement(array, i * 2, StdStringToJString(env, history[i].first));
+            env->SetObjectArrayElement(array, i * 2 + 1, StdStringToJString(env, history[i].second));
+        }
+        return array;
+    }
     return env->NewObjectArray(0, stringClass, nullptr);
 }
 
