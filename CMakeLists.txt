@@ -120,11 +120,14 @@ if(ANDROID)
             message(WARNING ">>> MediaPipe GenAI library NOT found. Using header-only stubs.")
         endif()
 
-        add_library(ronin_kernel SHARED src/ronin_jni.cpp)
+        add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
 
         set(RONIN_LIBS ronin_core sqlite3_lib onnxruntime_lib ${log-lib} ${android-lib})
-        if(HAS_MEDIAPIPE)
-            list(APPEND RONIN_LIBS mediapipe_genai)
+        
+        # Link against MediaPipe LLM Inference JNI if found in src/main/jniLibs or from AAR
+        find_library(MP_JNI_LIB llm_inference_engine_jni)
+        if(MP_JNI_LIB)
+             list(APPEND RONIN_LIBS ${MP_JNI_LIB})
         endif()
 
         target_link_libraries(ronin_kernel PUBLIC ${RONIN_LIBS})

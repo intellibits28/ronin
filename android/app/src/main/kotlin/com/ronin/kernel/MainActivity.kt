@@ -116,7 +116,7 @@ class ChatViewModel : ViewModel() {
 }
 
 class MainActivity : ComponentActivity() {
-    private val nativeEngine = NativeEngine()
+    private lateinit var nativeEngine: NativeEngine
     
     // Phase 5.10: Full Integrity Registry
     private val MODEL_REGISTRY = mapOf(
@@ -131,18 +131,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var sharedPreferences: android.content.SharedPreferences
     private var lastPermissionState = false
 
-    // JNI Bridge Repair (Requirement 2)
-    private external fun loadModelAndHydrate(modelPath: String): Boolean
-
     companion object {
         // JNI Bridge Repair (Requirement 1)
         init {
-            try {
-                System.loadLibrary("ronin_kernel")
-                Log.i("RoninKernel_Kotlin", "ronin_kernel library loaded successfully.")
-            } catch (e: UnsatisfiedLinkError) {
-                Log.e("RoninKernel_Kotlin", "CRITICAL: Failed to load ronin_kernel: ${e.message}")
-            }
+            // Libraries are loaded by NativeEngine
         }
     }
 
@@ -288,7 +280,7 @@ class MainActivity : ComponentActivity() {
             chatViewModel.reasoningLogs.add(0, "Hydration Triggered: ${path.substringAfterLast("/")}")
 
             val jniSuccess = withContext(Dispatchers.IO) {
-                loadModelAndHydrate(path)
+                nativeEngine.loadModel(path)
             }
 
             if (jniSuccess) {
@@ -345,6 +337,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        nativeEngine = NativeEngine(this)
+
         // Initialize EncryptedSharedPreferences (Phase 4.4)
         val masterKey = MasterKey.Builder(this)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -1438,5 +1432,8 @@ fun StabilityMeter(stability: Float) {
     Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(end = 16.dp)) {
         Text("Stability", style = MaterialTheme.typography.caption, color = MaterialTheme.colors.onSurface)
         LinearProgressIndicator(progress = stability, color = color, backgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.1f), modifier = Modifier.width(100.dp))
+    }
+}
+lpha = 0.1f), modifier = Modifier.width(100.dp))
     }
 }
