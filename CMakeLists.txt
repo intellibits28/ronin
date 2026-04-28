@@ -82,4 +82,41 @@ if(ANDROID)
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
     endif()
+else()
+    # Host build (Linux x64)
+    find_library(ORT_LIB_PATH_INTERNAL NAMES onnxruntime
+                 PATHS ${onnxruntime_SOURCE_DIR}/lib 
+                 NO_DEFAULT_PATH)
+    set(ORT_LIB_PATH ${ORT_LIB_PATH_INTERNAL})
+
+    add_library(onnxruntime_lib SHARED IMPORTED)
+    set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+    target_link_libraries(ronin_core PUBLIC onnxruntime_lib)
+
+    add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
+    target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib onnxruntime_lib)
+endif()
+
+# Optional: Host-side Unit Tests
+if(NOT ANDROID)
+    FetchContent_Declare(
+      googletest
+      URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    )
+    FetchContent_MakeAvailable(googletest)
+    
+    enable_testing()
+    
+    # Requirement: Link to gtest_main directly
+    add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp)
+    target_link_libraries(ronin_atomic_test ronin_core gtest_main)
+
+    add_executable(ronin_precision_test tests/precision_test.cpp)
+    target_link_libraries(ronin_precision_test ronin_core gtest_main)
+
+    add_executable(ronin_memory_test tests/memory_stress_test.cpp)
+    target_link_libraries(ronin_memory_test ronin_core gtest_main)
+
+    add_executable(ronin_search_test tests/search_capability_test.cpp)
+    target_link_libraries(ronin_search_test ronin_core gtest_main)
 endif()
