@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.google.android.gms.tasks.Tasks
 
 /**
  * Rebuilt Ronin Native Engine.
@@ -39,7 +40,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    // --- Core JNI API (Aligned with LiteRT-LM & Ronin Spine) ---
+    // --- Core JNI API ---
     private external fun initializeKernel(filesDir: String)
     private external fun setEngineInstance()
     
