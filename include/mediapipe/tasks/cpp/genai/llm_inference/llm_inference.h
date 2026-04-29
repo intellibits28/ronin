@@ -8,8 +8,8 @@
 /**
  * PHASE 4.8.1: MediaPipe Production Header (Compilation Bridge)
  * RULE 6: Zero-Mock Policy. 
- * Methods are inlined to provide definitions for the linker while
- * allowing real .so binaries to override them in production.
+ * This header contains declarations for core methods to ensure
+ * they are resolved by the production .so library at runtime.
  */
 
 namespace absl {
@@ -17,7 +17,8 @@ namespace absl {
     public:
         Status() : is_ok(true) {}
         bool ok() const { return is_ok; }
-        std::string message() const { return "Stub Status"; }
+        // Declaration only - implementation must come from the .so
+        std::string message() const; 
     private:
         bool is_ok;
     };
@@ -30,10 +31,12 @@ namespace absl {
         bool ok() const { return is_ok; }
         T& operator*() { return value; }
         T* operator->() { return &value; }
-        Status status() const { return Status(); }
+        // Returns a Status object (must be provided by .so)
+        Status status() const { return status_; }
     private:
         T value;
         bool is_ok;
+        Status status_;
     };
 
     inline Status OkStatus() { return Status(); }
@@ -51,16 +54,15 @@ public:
         int random_seed = 42;
     };
 
-    static absl::StatusOr<std::unique_ptr<LlmInference>> Create(const Options& options) {
-        // Returns empty StatusOr (ok=false) to trigger fallback/error logic
-        return absl::StatusOr<std::unique_ptr<LlmInference>>();
-    }
+    // DECLARATION ONLY: Must be implemented by production library
+    static absl::StatusOr<std::unique_ptr<LlmInference>> Create(const Options& options);
 
     typedef std::function<void(const std::vector<std::string>&, bool)> ProgressCallback;
 
-    absl::Status GenerateResponse(const std::string& prompt, ProgressCallback callback) {
-        return absl::OkStatus();
-    }
+    // DECLARATION ONLY: Must be implemented by production library
+    absl::Status GenerateResponse(const std::string& prompt, ProgressCallback callback);
+    
+    virtual ~LlmInference() = default;
 };
 
 } // namespace mediapipe::tasks::genai::llm_inference

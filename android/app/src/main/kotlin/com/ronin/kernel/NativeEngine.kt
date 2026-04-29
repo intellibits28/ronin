@@ -82,7 +82,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Async Input Processing.
-     * Offloads neural inference to Dispatchers.Default (High CPU/NPU load).
      */
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext "Error: Native libraries not loaded."
@@ -91,7 +90,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Async Model Loading.
-     * Prevents UI freeze during heavy weight mapping.
      */
     suspend fun loadModelAsync(path: String): Boolean = withContext(Dispatchers.IO) {
         if (!isLibLoaded) return@withContext false
@@ -146,6 +144,31 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) ?: false
     }
 
+    // --- JNI Callbacks (Invoked from C++ Layer via HardwareBridge) ---
+
+    @Suppress("unused")
+    fun pushKernelMessage(message: String) {
+        Log.d(TAG, "Kernel Message: $message")
+        onKernelMessage?.invoke(message)
+    }
+
+    @Suppress("unused")
+    fun getSecureApiKey(provider: String): String {
+        return getSecureApiKey?.invoke(provider) ?: "" 
+    }
+
+    @Suppress("unused")
+    fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
+        Log.i(TAG, "Hardware Trigger: Node $nodeId -> $state")
+        return executeHardwareAction?.invoke(nodeId, state) ?: true
+    }
+
+    @Suppress("unused")
+    fun requestHardwareData(nodeId: Int): String {
+        Log.i(TAG, "Hardware Data Request: Node $nodeId")
+        return onRequestHardwareData?.invoke(nodeId) ?: "Error: Request Data Callback Null"
+    }
+
     @Suppress("unused")
     fun performCloudInference(input: String, primaryProvider: String): String {
         if (!isVpnActive(context)) {
@@ -154,12 +177,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
 
         Log.i(TAG, "Cloud Bridge: Initiating request with primary: $primaryProvider")
-        
-        val result = executeSingleInference(input, primaryProvider)
-        if (result.startsWith("Error:")) {
-            pushKernelMessage("> CLOUD_FAILURE: $result")
-        }
-        return result
+        return executeSingleInference(input, primaryProvider)
+    }
+
+    @Suppress("unused")
+    fun updateSystemTiers(temp: Float, used: Float, total: Float) {
+        onSystemTiersUpdate?.invoke(temp, used, total)
     }
 
     private fun executeSingleInference(input: String, provider: String): String {
@@ -202,25 +225,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } catch (e: Exception) {
             "Error: ${e.message}"
         }
-    }
-
-    // --- JNI Callbacks (Invoked from C++ Layer) ---
-
-    @Suppress("unused")
-    fun pushKernelMessage(message: String) {
-        Log.d(TAG, "Kernel Message: $message")
-        onKernelMessage?.invoke(message)
-    }
-
-    @Suppress("unused")
-    fun getApiKey(provider: String): String {
-        return getSecureApiKey?.invoke(provider) ?: "" 
-    }
-
-    @Suppress("unused")
-    fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
-        Log.i(TAG, "Hardware Trigger: Node $nodeId -> $state")
-        return executeHardwareAction?.invoke(nodeId, state) ?: true
     }
 
     // --- ComponentCallbacks2 Implementation ---

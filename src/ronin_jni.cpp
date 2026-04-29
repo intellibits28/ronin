@@ -55,7 +55,7 @@ void InitializeLlmEngine(JNIEnv* env, const std::string& model_path) {
         LOGI(TAG, "SUCCESS: LiteRT-LM Engine initialized.");
     } else {
         LOGE(TAG, "FAILURE: LiteRT-LM Engine initialization failed.");
-        ThrowJavaException(env, "Failed to load LiteRT-LM model.");
+        // Rule 4: Do NOT throw fatal exception. Let Kotlin handle the false return.
     }
 }
 
@@ -156,25 +156,31 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     in_data.length = std::min(input_str.length(), sizeof(in_data.data) - 1);
     
     g_kernel->tick(in_data);
-    
     if (input_str.starts_with("/")) {
         return StdStringToJString(env, "> Command Executed.");
     }
 
-    if (!g_llm_context.initialized) {
-        return StdStringToJString(env, "Error: LiteRT-LM reasoning spine not hydrated.");
+    // Direct Neural Reasoning Path
+    std::string response = "";
+    if (g_llm_context.initialized) {
+        response = g_llm_context.engine->runLiteRTReasoning(input_str);
     }
 
-    // Direct Neural Reasoning Path
-    std::string response = g_llm_context.engine->runLiteRTReasoning(input_str);
-    
     if (response.empty()) {
+        // Fallback to Cloud if local fails, confidence is low, or spine not hydrated
         std::string provider = "google"; 
         std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey(provider);
-        return StdStringToJString(env, g_llm_context.engine->escalateToCloud(input_str, apiKey, provider));
+
+        if (!apiKey.empty()) {
+            LOGI(TAG, "Attempting Cloud Fallback for Reasoning...");
+            return StdStringToJString(env, g_llm_context.engine->escalateToCloud(input_str, apiKey, provider));
+        } else {
+            return StdStringToJString(env, "Error: Reasoning spine not hydrated and Cloud API Key missing.");
+        }
     }
 
     return StdStringToJString(env, response);
+
 }
 
 JNIEXPORT jboolean JNICALL
