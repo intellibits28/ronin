@@ -153,8 +153,11 @@ int InferenceEngine::classifyCoarse(const std::string& input) { return 1; }
 CognitiveIntent InferenceEngine::predictFine(const std::string& input, int coarse_category) {
     std::string s = input;
     std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    
+    bool isOff = (s.find("off") != std::string::npos || s.find("stop") != std::string::npos || s.find("disable") != std::string::npos);
+    
     CognitiveIntent intent = {1, 1.0f, true};
-    if (s.find("light") != std::string::npos || s.find("torch") != std::string::npos) intent = {4, 1.0f, true};
+    if (s.find("light") != std::string::npos || s.find("torch") != std::string::npos) intent = {4, 1.0f, !isOff};
     else if (s.find("gps") != std::string::npos || s.find("location") != std::string::npos || s.find("ရောက်") != std::string::npos) intent = {5, 1.0f, true};
     else if (s.find("search") != std::string::npos || s.find("find") != std::string::npos || s.find("ရှာ") != std::string::npos) intent = {2, 1.0f, true};
     return intent;

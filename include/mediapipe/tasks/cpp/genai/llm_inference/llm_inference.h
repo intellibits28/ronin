@@ -6,19 +6,18 @@
 #include <functional>
 
 /**
- * PHASE 4.8.1: MediaPipe Production Header (Compilation Bridge)
+ * PHASE 5.0: MediaPipe Production Header (Linker Bridge)
  * RULE 6: Zero-Mock Policy. 
- * This header provides the minimal structure needed to link with
- * libllm_inference_engine_jni.so.
+ * This header contains DECLARATIONS ONLY. 
+ * Implementation is provided by libllm_inference_engine_jni.so at runtime.
  */
 
 namespace absl {
     class Status {
     public:
-        Status() : is_ok(true) {}
-        bool ok() const { return is_ok; }
-        // Providing a basic implementation to avoid link errors
-        std::string message() const { return "OK"; }
+        Status();
+        bool ok() const;
+        std::string message() const;
     private:
         bool is_ok;
     };
@@ -26,15 +25,16 @@ namespace absl {
     template <typename T>
     class StatusOr {
     public:
-        StatusOr() : is_ok(false) {}
-        StatusOr(T&& val) : value(std::move(val)), is_ok(true) {}
-        bool ok() const { return is_ok; }
-        T& operator*() { return value; }
-        T* operator->() { return &value; }
-        Status status() const { return Status(); }
+        StatusOr();
+        StatusOr(T&& val);
+        bool ok() const;
+        T& operator*();
+        T* operator->();
+        Status status() const;
     private:
         T value;
         bool is_ok;
+        Status status_;
     };
 
     inline Status OkStatus() { return Status(); }
@@ -52,17 +52,11 @@ public:
         int random_seed = 42;
     };
 
-    // Note: Marking as 'inline' allows the compiler to use this definition
-    // but the linker can still override it if a stronger symbol exists in the .so.
-    static inline absl::StatusOr<std::unique_ptr<LlmInference>> Create(const Options& options) {
-        return absl::StatusOr<std::unique_ptr<LlmInference>>();
-    }
+    static absl::StatusOr<std::unique_ptr<LlmInference>> Create(const Options& options);
 
     typedef std::function<void(const std::vector<std::string>&, bool)> ProgressCallback;
 
-    inline absl::Status GenerateResponse(const std::string& prompt, ProgressCallback callback) {
-        return absl::OkStatus();
-    }
+    absl::Status GenerateResponse(const std::string& prompt, ProgressCallback callback);
     
     virtual ~LlmInference() = default;
 };

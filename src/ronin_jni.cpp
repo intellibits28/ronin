@@ -28,6 +28,7 @@ static std::unique_ptr<RoninKernel> g_kernel;
 static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
 static std::unique_ptr<Ronin::Kernel::Memory::MemoryManager> g_memory_manager;
 static std::unique_ptr<Ronin::Kernel::Memory::LongTermMemory> g_ltm;
+static std::string g_last_input_str;
 
 // --- Production LLM Initialization Logic (LiteRT-LM Pattern) ---
 namespace {
@@ -114,8 +115,8 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
         },
         [](uint32_t id, const CognitiveState& state) -> Result {
             if (g_intent_engine) {
-                // In Phase 4.0, result is pushed via hardware bridge or returned here.
-                std::string res = g_intent_engine->executeSkill(id, ""); 
+                // Phase 5.1: Pass global input string to extract parameters (e.g. "on"/"off")
+                g_intent_engine->executeSkill(id, g_last_input_str); 
                 return {true, 0};
             }
             return {false, -1};
@@ -136,7 +137,6 @@ Java_com_ronin_kernel_NativeEngine_loadModel(JNIEnv *env, jobject thiz, jstring 
     InitializeLlmEngine(env, model_path);
     
     if (g_intent_engine && g_llm_context.initialized) {
-        // Transfer ownership or reference to IntentEngine if needed
         return JNI_TRUE;
     }
     return JNI_FALSE;
@@ -145,6 +145,7 @@ Java_com_ronin_kernel_NativeEngine_loadModel(JNIEnv *env, jobject thiz, jstring 
 JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstring input) {
     std::string input_str = JStringToStdString(env, input);
+    g_last_input_str = input_str; // Captured for execProcessor
     
     if (!g_kernel) {
         return StdStringToJString(env, "Error: Ronin Kernel not initialized.");
@@ -156,6 +157,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     in_data.length = std::min(input_str.length(), sizeof(in_data.data) - 1);
     
     g_kernel->tick(in_data);
+    
     if (input_str.starts_with("/")) {
         return StdStringToJString(env, "> Command Executed.");
     }
@@ -168,19 +170,22 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
 
     if (response.empty()) {
         // Fallback to Cloud if local fails, confidence is low, or spine not hydrated
-        std::string provider = "google"; 
+        std::string provider = "Gemini"; // Default
+        if (g_intent_engine) {
+            provider = g_intent_engine->getPrimaryCloudProvider();
+        }
+        
         std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey(provider);
 
         if (!apiKey.empty()) {
-            LOGI(TAG, "Attempting Cloud Fallback for Reasoning...");
+            LOGI(TAG, "Attempting Cloud Fallback for Reasoning (Provider: %s)...", provider.c_str());
             return StdStringToJString(env, g_llm_context.engine->escalateToCloud(input_str, apiKey, provider));
         } else {
-            return StdStringToJString(env, "Error: Reasoning spine not hydrated and Cloud API Key missing.");
+            return StdStringToJString(env, "Error: Reasoning spine not hydrated and Cloud API Key missing for " + provider);
         }
     }
 
     return StdStringToJString(env, response);
-
 }
 
 JNIEXPORT jboolean JNICALL

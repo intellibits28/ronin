@@ -158,6 +158,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return getSecureApiKey?.invoke(provider) ?: "" 
     }
 
+
     @Suppress("unused")
     fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
         Log.i(TAG, "Hardware Trigger: Node $nodeId -> $state")
