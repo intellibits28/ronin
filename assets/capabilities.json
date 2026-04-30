@@ -9,9 +9,9 @@
   {
     "id": 2,
     "name": "FileSearchNode",
-    "subjects": ["file", "document", "pdf"],
-    "actions": ["search", "find", "locate"],
-    "confidence_threshold": 0.8
+    "subjects": ["file", "document", "pdf", "photo", "image", "music", "audio", "video", "movie", "code", "script", "python", "markdown", "ဖိုင်", "စာရွက်စာတမ်း", "သီချင်း", "ဗီဒီယို", "ပုံ", "ရှာ"],
+    "actions": ["search", "find", "list", "locate", "more", "next", "ရှာ", "ထပ်ပြ"],
+    "confidence_threshold": 0.6
   },
   {
     "id": 3,
