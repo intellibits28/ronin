@@ -70,6 +70,9 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
     std::string cmd = trim(input);
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
 
+    // Phase 6.2: Ignore /more and /next commands here so they can be routed to FileSearchNode
+    if (cmd == "/more" || cmd == "/next") return false;
+
     using namespace Ronin::Kernel::Capability;
 
     if (cmd == "/status") {
@@ -396,8 +399,19 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // Layer 0: Command Interface Interception (O(1) fast-path)
     std::string cmdOutput;
     if (handleCommand(input, cmdOutput)) {
+        if (cmdOutput.find("Unknown command") != std::string::npos) {
+            // Requirement 3: Cleanup fallback for unknown commands
+            Ronin::Kernel::Capability::HardwareBridge::pushMessage("[SYSTEM] " + cmdOutput);
+            return {0, 1.0f, true}; 
+        }
         Ronin::Kernel::Capability::HardwareBridge::pushMessage("[COMMAND] " + cmdOutput);
         return {0, 1.0f, true}; // ID 0 signal for Command Handled
+    }
+
+    // Phase 6.2: Explicit /more routing to ID 2
+    if (sv_input == "/more" || sv_input == "/next" || sv_input == ">") {
+        LOGI(TAG, ">>> Routing: Pagination Trigger (ID 2).");
+        return {2, 1.0f, true};
     }
 
     // Phase 4.4.9: Hard-Wired Greeting Routing (Logic)

@@ -85,8 +85,22 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
             
             if (strict_extension && !ext_match) continue;
 
-            if (ext_match || sim > 0.75f) {
-                candidates.push_back({fe.path, sim});
+            // Phase 6.3: Strict Similarity Threshold (Requirement 1)
+            // Increased from 0.70 to 0.75 to prevent semantic drift (.py appearing for 'movie')
+            if (ext_match || sim >= 0.75f) {
+                // If it's a media query and it's not a media file, penalize it heavily
+                bool is_media_query = (lower_query.find("movie") != std::string::npos || 
+                                     lower_query.find("video") != std::string::npos ||
+                                     lower_query.find("music") != std::string::npos ||
+                                     lower_query.find("audio") != std::string::npos);
+                
+                if (is_media_query && !ext_match) {
+                    sim -= 0.3f; // Heavy penalty for non-extension matches on explicit media queries
+                }
+
+                if (sim >= 0.75f || ext_match) {
+                    candidates.push_back({fe.path, sim});
+                }
             }
         }
     }
@@ -94,9 +108,19 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
     // 3. Step 2: Keyword Fallback (Direct SQLite LIKE)
     auto kw_results = m_ltm->searchFiles(query);
     for (const auto& path : kw_results) {
+        // Boost keyword matches if they match extension filters
+        float sim = 0.90f;
+        for (const auto& ext : ext_filters) {
+            if (path.length() >= ext.length() && 
+                path.compare(path.length() - ext.length(), ext.length(), ext) == 0) {
+                sim = 1.0f; // Perfect match for keyword + extension
+                break;
+            }
+        }
+
         bool already_present = false;
-        for(auto& c : candidates) { if(c.first == path) { c.second += 0.2f; already_present = true; break; } }
-        if(!already_present) candidates.push_back({path, 0.90f});
+        for(auto& c : candidates) { if(c.first == path) { c.second = std::max(c.second, sim); already_present = true; break; } }
+        if(!already_present) candidates.push_back({path, sim});
     }
 
     // 4. Format Output List

@@ -84,13 +84,16 @@ void FileScanner::scanWorker(const std::string& root_path) {
                 std::string extension = path.extension().string();
                 std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
                 
-                // Requirement 3: Extension Whitelist (Dev-Tools)
-                // Only index files that are relevant for a Developer Assistant
+                // Requirement 3: Extension Whitelist (Dev-Tools + Common Media)
+                // Only index files that are relevant for a Developer Assistant or user media
                 bool is_whitelisted = (extension == ".md" || extension == ".json" || 
                                      extension == ".yml" || extension == ".yaml" || 
                                      extension == ".zig" || extension == ".py" ||
                                      extension == ".cpp" || extension == ".h" ||
-                                     extension == ".txt");
+                                     extension == ".txt" || extension == ".pdf" ||
+                                     extension == ".mp3" || extension == ".m4a" ||
+                                     extension == ".mp4" || extension == ".mkv" ||
+                                     extension == ".wav");
 
                 if (!is_whitelisted) {
                     continue;
