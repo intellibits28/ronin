@@ -3,7 +3,7 @@
 ## 1. Project Overview
 **Name:** Ronin Kernel (v4.5-STABLE Evolution)
 **Current Version:** v4.5-alpha-2026.04.30 (CalVer)
-**Active Branch:** dev-recovery-4.8.1
+**Active Branch:** feature/hydration-fix
 **Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G, utilizing a Hybrid Intent System and specialized LiteRT-LM reasoning spine.
 
 ---
