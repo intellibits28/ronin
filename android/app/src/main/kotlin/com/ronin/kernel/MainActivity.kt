@@ -116,7 +116,7 @@ class ChatViewModel : ViewModel() {
 }
 
 class MainActivity : ComponentActivity() {
-    private val nativeEngine = NativeEngine()
+    private lateinit var nativeEngine: NativeEngine
     
     // Phase 5.10: Full Integrity Registry
     private val MODEL_REGISTRY = mapOf(
@@ -131,18 +131,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var sharedPreferences: android.content.SharedPreferences
     private var lastPermissionState = false
 
-    // JNI Bridge Repair (Requirement 2)
-    private external fun loadModelAndHydrate(modelPath: String): Boolean
-
     companion object {
         // JNI Bridge Repair (Requirement 1)
         init {
-            try {
-                System.loadLibrary("ronin_kernel")
-                Log.i("RoninKernel_Kotlin", "ronin_kernel library loaded successfully.")
-            } catch (e: UnsatisfiedLinkError) {
-                Log.e("RoninKernel_Kotlin", "CRITICAL: Failed to load ronin_kernel: ${e.message}")
-            }
+            // Libraries are loaded by NativeEngine
         }
     }
 
@@ -288,7 +280,7 @@ class MainActivity : ComponentActivity() {
             chatViewModel.reasoningLogs.add(0, "Hydration Triggered: ${path.substringAfterLast("/")}")
 
             val jniSuccess = withContext(Dispatchers.IO) {
-                loadModelAndHydrate(path)
+                nativeEngine.loadModel(path)
             }
 
             if (jniSuccess) {
@@ -345,6 +337,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        nativeEngine = NativeEngine(this)
+
         // Initialize EncryptedSharedPreferences (Phase 4.4)
         val masterKey = MasterKey.Builder(this)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -365,10 +359,7 @@ class MainActivity : ComponentActivity() {
         copyAssetsToFilesDir(filesDir)
 
         // Engine Initialization & Lifecycle Guards
-        nativeEngine.initializeKernel(filesDir.absolutePath)
-        nativeEngine.setCameraManager(this)
-        nativeEngine.setEngineInstance()
-        nativeEngine.hydrate()
+        nativeEngine.initialize()
         registerComponentCallbacks(nativeEngine)
         
         // Phase 4.4.3: Initial Hydration of Provider Templates
@@ -427,12 +418,12 @@ class MainActivity : ComponentActivity() {
                 chatViewModel.isKernelHydrated = nativeEngine.isLoaded()
             }
             RoninChatUI(
-                engine = nativeEngine, 
-                chatViewModel = chatViewModel, 
+                engine = nativeEngine,
+                chatViewModel = chatViewModel,
                 modelPicker = modelPickerLauncher,
-                onSaveOfflineMode = { saveOfflineMode(it) },
-                onSavePrimaryCloudProvider = { savePrimaryCloudProvider(it) }
+                onSaveOfflineMode = { saveOfflineMode(it) }
             )
+
         }
     }
 
@@ -658,10 +649,11 @@ class MainActivity : ComponentActivity() {
                                     success = true
                                 } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                     if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                        @Suppress("DEPRECATION")
                                         success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
                                     }
                                 } else {
-                                    @Suppress("MissingPermission")
+                                    @Suppress("MissingPermission", "DEPRECATION")
                                     success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
                                 }
                             }
@@ -837,8 +829,7 @@ fun RoninChatUI(
     engine: NativeEngine, 
     chatViewModel: ChatViewModel = viewModel(), 
     modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>,
-    onSaveOfflineMode: (Boolean) -> Unit,
-    onSavePrimaryCloudProvider: (String) -> Unit
+    onSaveOfflineMode: (Boolean) -> Unit
 ) {
     var inputText by remember { mutableStateOf("") }
     val messages = chatViewModel.messages

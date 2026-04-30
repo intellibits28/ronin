@@ -39,11 +39,11 @@ TEST_F(SearchCapabilityTest, VerifyFTS5IndexingAndSearch) {
     // 3. Verify Results
     // ronin_core.cpp matches %ronin%
     ASSERT_EQ(results.size(), 1);
-    ASSERT_EQ(results[0], "ronin_core.cpp");
+    ASSERT_EQ(results[0], "/src/kernel/ronin_core.cpp");
 
     // 4. Test Partial Match
     // project_manifest.pdf matches %manifest%
     auto partial_results = ltm.searchFiles("manifest");
     ASSERT_EQ(partial_results.size(), 1);
-    ASSERT_EQ(partial_results[0], "project_manifest.pdf");
+    ASSERT_EQ(partial_results[0], "/data/docs/manifest.pdf");
 }

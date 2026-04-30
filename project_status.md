@@ -2,37 +2,45 @@
 
 ## 1. Project Overview
 **Name:** Ronin Kernel (v4.5-STABLE Evolution)
+**Current Version:** v4.5-alpha-2026.04.30 (CalVer)
+**Active Branch:** dev-recovery-4.8.1
 **Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G, utilizing a Hybrid Intent System and specialized LiteRT-LM reasoning spine.
 
 ---
 
-## 2. Current Status (Phase 4.8.1)
-- **Core State:** Transitioning from Placeholder-logic (Phase 4.0) to **Production-Ready Inference (Phase 4.8.1)**.
+## 2. Stable Features
+*   **File Search (v5.15):** High-precision semantic search with background indexing, developer extension whitelists, and interactive pagination (/more).
+*   **Cloud Bridge:** Dynamic multi-provider support (Gemini) with automatic local-to-cloud escalation.
+*   **Thermal Guard:** Active NPU workload throttling based on device temperature.
+
+---
+
+## 3. Current Status (Phase 4.8.1 -> Phase 5.0 Transition)
+- **Core State:** Transitioning from Placeholder-logic to **Production-Ready JNI Spine**.
 - **Inference Status:**
-    - [x] **Core Router:** Critical startup bug resolved. `model.onnx` is now correctly synchronized from assets and hydrated before kernel link.
-    - [x] **Local:** Async Model Hydration implemented. Every word flows directly from LiteRT-LM neural weights (Zero-Mock Policy).
-    - [x] **Cloud:** Stable v1 endpoint with 2026 Model IDs (Pro/Flash Latest) active.
+    - [x] **JNI Bridge:** Thread-safe RAII implementation using ScopedJniEnv.
+    - [x] **File Search:** Semantic indexing of external storage (/storage/emulated/0/).
+    - [x] **Cloud:** Dynamic endpoint resolution from providers.json.
 - **System Health:** Thermal Guard and LMK Residency Guard active.
 
 ---
 
-## 3. Active Phase: Phase 4.5.0 (Visibility & Logic Patch) - COMPLETED
-- [x] **Async Loading:** Background model hydration with JNI status pushing.
-- [x] **Hard-Wired Intent:** Greeting routing (hi, hello, မင်္ဂလာပါ) force-routed to ChatSkill (ID 1) to bypass confidence loops.
-- [x] **Real Token Generation:** Simulated LlmInferenceAPI logic with realistic tokenization and streaming.
-- [x] **Cloud Schema Fix:** Mandatory Gemini schema alignment and 404 resolution.
-- [x] **State Persistence:** Settings memory for model paths and providers.
+## 4. Completed: Phase 5.0 (Rearchitecture & File Search)
+- [x] **LiteRT-LM Alignment:** Mirrored official MediaPipe JNI initialization sequence.
+- [x] **Modular Skills:** Verified all nodes (GPS, WiFi, BT, Flashlight) in the unified registry.
+- [x] **Pagination:** Implemented stateful /more command for search results.
+- [x] **Fix 404s:** Resolved hardcoded Gemini model ID mismatches.
 
 ---
 
-## 4. Future Roadmap (v4.5.x - v4.6)
+## 5. Future Roadmap (v4.5.x - v4.6)
+- **feature/hydration-fix (Current Focus):** Resolving Local Gemma 4 hydration failures on Snapdragon 778G.
 - **v4.5.x (SENSORY-HUB):** Native JNI Sensors (IMU/Vibration) and SHM Node.
 - **v4.6 (SOCIAL-BRIDGE):** Contacts/SMS integration for multi-step tasks.
-- **v4.7 (DSP-SKILL):** Digital Signal Processing for real-time audio filtering.
 
 ---
 
-## 5. Compliance & Design Credits
+## 6. Compliance & Design Credits
 - Core logic utilizes clean-room design patterns for minimalist runtime efficiency (Static Dispatch, Unmanaged Structures, Circular Buffers).
 
-*Last Updated: April 21, 2026*
+*Last Updated: April 30, 2026*

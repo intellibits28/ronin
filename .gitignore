@@ -36,7 +36,7 @@ capture/
 .gemini/
 gha-creds-*.json
 GEMINI.md
-*_debug.txt
-*_debug.txt
+ronin_*.log
 providers.json
-ronin_debug.txt
+inspect_onnx
+inspect_onnx.cpp

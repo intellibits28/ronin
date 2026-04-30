@@ -1,43 +1,146 @@
-# Ronin Kernel
+# Ronin Kernel: Mobile AI Runtime Spine
 
-**Ronin Kernel** is a modular, high-efficiency AI agent runtime optimized for Android (Snapdragon 778G+). It utilizes a Hybrid Intent System and clean-room minimalist design patterns to provide a low-latency, privacy-first reasoning engine.
+![Build Status](https://img.shields.io/github/actions/workflow/status/intellibits28/ronin/build.yml?branch=dev-recovery-4.8.1&style=flat-square)
+![Version](https://img.shields.io/badge/version-4.0.0--PRO--FINAL-blue?style=flat-square)
+![Platform](https://img.shields.io/badge/platform-Android%20(SD778G%2B)-green?style=flat-square)
+![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
 
-## 🚀 Tech Stack
+**Ronin Kernel** is a modular, high-efficiency AI agent runtime optimized for Android (Snapdragon 778G+). It bridges pure C++20 reasoning spines with Kotlin hardware bridges to enable deterministic, low-latency AI agency on the edge.
 
-- **Engine Core:** Pure C++20 (Android NDK) for deterministic execution and peak performance.
-- **Hardware Interaction:** Kotlin-JNI Wrappers & Bridges for secure, asynchronous access to Android hardware APIs.
-- **Inference:** ONNX Runtime (LiteRT) for local semantic routing and intent classification.
-- **Build System:** CMake + Gradle for cross-platform portability and CI/CD automation.
+---
+
+## 📖 Description
+
+Ronin Kernel exists to solve the "Latency vs. Privacy" trade-off in mobile AI. By implementing a tiered **Hybrid Intent System**, it ensures that common hardware tasks execute with near-zero latency, while complex semantic queries are handled by a local LiteRT-LM (Gemma 4) reasoning spine.
+
+### Key Features
+*   **Tiered Intent Routing:** Combines strict keyword bypass with NPU-accelerated ONNX semantic classification.
+*   **Unified Skill Registry:** Vtable-based interface (`BaseSkill`) for both cognitive tools (Embedding) and hardware tools (GPS, WiFi, BT).
+*   **LiteRT-LM Integration:** Production-ready MediaPipe GenAI implementation with weight mapping and KV-cache management.
+*   **System Guards:** Active Thermal Throttling and LMK-aware memory pruning using `ComponentCallbacks2`.
+*   **Thread-Safe JNI:** RAII-based `ScopedJniEnv` for robust, asynchronous callbacks between C++ and Kotlin.
+
+---
+
+## 🗂️ Table of Contents
+1. [Installation](#installation)
+2. [Quick Start](#quick-start)
+3. [Architecture](#architecture)
+4. [API Documentation](#api-documentation)
+5. [Configuration](#configuration)
+6. [Development](#development)
+7. [Testing](#testing)
+8. [License](#license)
+
+---
+
+## ⚙️ Installation
+
+### Prerequisites
+*   **Android Studio Jellyfish+** or later.
+*   **Android NDK r26b+**.
+*   **Snapdragon 778G+** (Recommended for NPU acceleration).
+*   **CMake 3.22.1+**.
+
+### Step-by-Step
+1.  **Clone the Repository:**
+    ```bash
+    git clone https://github.com/intellibits28/ronin.git
+    cd ronin
+    ```
+2.  **Hydrate Model Assets:**
+    Place your `.task` or `.bin` models in `android/app/src/main/assets/models/`.
+3.  **Build with Gradle:**
+    ```bash
+    ./gradlew :app:assembleDebug
+    ```
+4.  **Verify:**
+    Run the app and check Logcat for `SUCCESS: Native reasoning spines hydrated`.
+
+---
+
+## 🚀 Quick Start
+
+### Minimal Native Usage
+In your Kotlin activity or service:
+```kotlin
+val engine = NativeEngine(context)
+engine.initialize()
+
+// Async model loading
+engine.loadModelAsync("/path/to/gemma_4.task")
+
+// Process input through local reasoning spine
+scope.launch {
+    val response = engine.processInputAsync("Turn on the flashlight and find my location")
+    println(response)
+}
+```
+
+---
 
 ## 🏗️ Architecture
 
-### Hybrid Intent System
-Ronin employs a tiered approach to intent resolution:
-1. **Strict Bypass:** Immediate routing for unambiguous hardware commands (e.g., "Flashlight", "WiFi", "BT") to ensure near-zero latency.
-2. **Semantic ONNX Router:** Vector-based reasoning for complex queries, mapping user intent to discrete capability nodes.
-3. **Reasoning Fallback:** Graceful degradation to general chat or clarification when confidence thresholds are not met.
+Ronin Kernel utilizes a **Zero-Mock Policy**:
+*   **Reasoning Spine:** autoregressive Gemma decoding via MediaPipe C++ API.
+*   **Intent Layer:** 1.0 confidence bypass for hardware IDs.
+*   **Memory Layer:** Tri-anchor pruning (L1-RAM, L2-Cache, L3-SQLite).
 
-### Phase 4.0: Modular Evolution
-We are currently transitioning to a **Vtable-based Registry**. This evolution decouples the `IntentEngine` from specific hardware implementations using `BaseSkill` interfaces, inspired by the NullClaw Component-Interface pattern.
+---
 
-## 🧠 Memory & System Integrity
+## 📄 API Documentation
 
-- **LMK-Awareness:** OS-driven Memory Guard via ComponentCallbacks2.onTrimMemory(). The kernel automatically prunes KV caches and triggers L3 persistence when memory pressure exceeds 85%.
-- **Zero-Copy Access:** Utilizes DirectByteBuffers for efficient data transfer between Kotlin and the C++ reasoning spine.
-- **Global Reference Management:** Rigorous JNI lifecycle management to prevent memory leaks and ensure thread safety across detached hardware threads.
-- **Thermal Guard:** Dynamic Thermal Throttling (Step-down generation speed at 40°C, unload at critical limits).
+### JNI Bridge (`NativeEngine.kt`)
+| Method | Description | Return |
+| :--- | :--- | :--- |
+| `initialize()` | Hydrates the C++ Kernel and links hardware callbacks. | `Unit` |
+| `processInput(input)` | Executes tiered reasoning (Hardware -> Local LM -> Cloud). | `String` |
+| `loadModel(path)` | Maps neural weights into memory for NPU usage. | `Boolean` |
+| `notifyTrimMemory(level)` | Manages LMK pressure by pruning non-essential buffers. | `Unit` |
+| `injectLocation(lat, lon)` | Synchronizes real-world coordinates with the kernel. | `Unit` |
 
-## 🛠️ Status (v3.9.7-RECOVERY)
+---
 
-- [x] **Verified JNI Thread Safety:** Detached threads with proper `AttachCurrentThread()` pointer casting.
-- [x] **Real Hardware Integration:** Physical toggling for Bluetooth and WiFi (Android 10+ panel fallback).
-- [x] **Asynchronous GPS Bridge:** Real-time location injection from `FusedLocationProviderClient` into the C++ Reasoning Spine.
-- [x] **Search Privacy Guard:** Strict extension isolation and exclusion of system files (.env, .ignore).
+## 🛠️ Configuration
+
+### Environment Variables (Build Time)
+*   `ANDROID_ABI`: Set to `arm64-v8a` for Snapdragon performance.
+*   `ANDROID_STL`: Defaults to `c++_shared`.
+
+### Runtime Registry
+Providers and models are managed via a JSON manifest synced to the kernel through `updateModelRegistry(json)`.
+
+---
 
 ## 🧪 Testing
 
-- **Robolectric:** Unit testing for UI auto-scroll logic and SQLite persistence.
-- **GoogleTest:** C++ core logic verification for memory integrity and search precision.
+### Host-side (Linux x64)
+Run C++ unit tests to verify memory and logic integrity:
+```bash
+mkdir build_host && cd build_host
+cmake ..
+make ronin_atomic_test && ./ronin_atomic_test
+```
+
+### Android-side
+Instrumented tests verify JNI linkages:
+```bash
+./gradlew connectedDebugAndroidTest
+```
 
 ---
-*Clean-Room Implementation | Minimalist Runtime Efficiency*
+
+## 📜 License
+Ronin Kernel is released under the **MIT License**. See [LICENSE](LICENSE) for details.
+
+---
+
+## 👥 Authors & Acknowledgments
+*   **Main Contributor:** Gemini CLI / IntelliBits
+*   **Inspiration:** MediaPipe LLM Inference API, Qualcomm AI Stack.
+
+---
+
+## 🆘 Support & Contact
+*   **Issues:** [GitHub Issue Tracker](https://github.com/intellibits28/ronin/issues)
+*   **Community:** Phase 4.8 Stable Discussion.

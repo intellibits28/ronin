@@ -6,18 +6,18 @@
 #include <functional>
 
 /**
- * PHASE 4.8.1: MediaPipe Production Header (Compilation Bridge)
+ * PHASE 5.0: MediaPipe Production Header (Linker Bridge)
  * RULE 6: Zero-Mock Policy. 
- * Methods are inlined to provide definitions for the linker while
- * allowing real .so binaries to override them in production.
+ * This header contains DECLARATIONS for symbols that MUST be
+ * resolved by libllm_inference_engine_jni.so.
  */
 
 namespace absl {
     class Status {
     public:
-        Status() : is_ok(true) {}
-        bool ok() const { return is_ok; }
-        std::string message() const { return "Stub Status"; }
+        Status(); // Implementation in .so
+        bool ok() const; // Implementation in .so
+        std::string message() const; // Implementation in .so
     private:
         bool is_ok;
     };
@@ -30,10 +30,11 @@ namespace absl {
         bool ok() const { return is_ok; }
         T& operator*() { return value; }
         T* operator->() { return &value; }
-        Status status() const { return Status(); }
+        Status status() const { return status_; }
     private:
         T value;
         bool is_ok;
+        Status status_;
     };
 
     inline Status OkStatus() { return Status(); }
@@ -51,16 +52,15 @@ public:
         int random_seed = 42;
     };
 
-    static absl::StatusOr<std::unique_ptr<LlmInference>> Create(const Options& options) {
-        // Returns empty StatusOr (ok=false) to trigger fallback/error logic
-        return absl::StatusOr<std::unique_ptr<LlmInference>>();
-    }
+    // Symbol MUST be provided by libllm_inference_engine_jni.so
+    static absl::StatusOr<std::unique_ptr<LlmInference>> Create(const Options& options);
 
     typedef std::function<void(const std::vector<std::string>&, bool)> ProgressCallback;
 
-    absl::Status GenerateResponse(const std::string& prompt, ProgressCallback callback) {
-        return absl::OkStatus();
-    }
+    // Symbol MUST be provided by libllm_inference_engine_jni.so
+    absl::Status GenerateResponse(const std::string& prompt, ProgressCallback callback);
+    
+    virtual ~LlmInference() = default;
 };
 
 } // namespace mediapipe::tasks::genai::llm_inference
