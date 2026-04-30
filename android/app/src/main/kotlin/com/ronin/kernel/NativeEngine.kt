@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import com.google.android.gms.tasks.Tasks
+import java.io.File
 
 /**
  * Rebuilt Ronin Native Engine.
@@ -179,7 +180,35 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
 
         Log.i(TAG, "Cloud Bridge: Initiating request with primary: $primaryProvider")
-        return executeSingleInference(input, primaryProvider)
+        
+        // Phase 5.1: Dynamic Configuration Lookup
+        var finalEndpoint = ""
+        var finalModelId = ""
+        
+        try {
+            val providersFile = File(File(context.filesDir, "config"), "providers.json")
+            if (providersFile.exists()) {
+                val providersJson = JSONArray(providersFile.readText())
+                for (i in 0 until providersJson.length()) {
+                    val p = providersJson.getJSONObject(i)
+                    if (p.getString("name") == primaryProvider) {
+                        finalEndpoint = p.getString("endpoint")
+                        finalModelId = p.getString("model_id")
+                        break
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load dynamic provider config: ${e.message}")
+        }
+
+        // Fallback to defaults if lookup failed
+        if (finalEndpoint.isEmpty()) {
+            finalModelId = "gemini-1.5-flash"
+            finalEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/$finalModelId:generateContent"
+        }
+
+        return executeSingleInference(input, primaryProvider, finalEndpoint)
     }
 
     @Suppress("unused")
@@ -187,15 +216,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         onSystemTiersUpdate?.invoke(temp, used, total)
     }
 
-    private fun executeSingleInference(input: String, provider: String): String {
+    private fun executeSingleInference(input: String, provider: String, endpoint: String): String {
         val apiKey = getSecureApiKey?.invoke(provider)?.trim() ?: ""
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
 
-        val modelIdClean = if (provider.contains("Gemini")) "models/gemini-1.5-flash" else provider
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/$modelIdClean:generateContent?key=$apiKey"
+        // Ensure API Key is attached to endpoint correctly
+        val finalUrl = if (endpoint.contains("?key=")) endpoint else "$endpoint?key=$apiKey"
 
         return try {
-            val url = java.net.URL(endpoint)
+            val url = java.net.URL(finalUrl)
             val conn = url.openConnection() as java.net.HttpURLConnection
             conn.connectTimeout = 15000
             conn.readTimeout = 15000

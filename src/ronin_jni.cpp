@@ -29,6 +29,7 @@ static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
 static std::unique_ptr<Ronin::Kernel::Memory::MemoryManager> g_memory_manager;
 static std::unique_ptr<Ronin::Kernel::Memory::LongTermMemory> g_ltm;
 static std::string g_last_input_str;
+static std::string g_last_skill_output;
 
 // --- Production LLM Initialization Logic (LiteRT-LM Pattern) ---
 namespace {
@@ -116,7 +117,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
         [](uint32_t id, const CognitiveState& state) -> Result {
             if (g_intent_engine) {
                 // Phase 5.1: Pass global input string to extract parameters (e.g. "on"/"off")
-                g_intent_engine->executeSkill(id, g_last_input_str); 
+                g_last_skill_output = g_intent_engine->executeSkill(id, g_last_input_str); 
                 return {true, 0};
             }
             return {false, -1};
@@ -146,6 +147,7 @@ JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstring input) {
     std::string input_str = JStringToStdString(env, input);
     g_last_input_str = input_str; // Captured for execProcessor
+    g_last_skill_output.clear();
     
     if (!g_kernel) {
         return StdStringToJString(env, "Error: Ronin Kernel not initialized.");
@@ -158,11 +160,20 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     
     g_kernel->tick(in_data);
     
-    if (input_str.starts_with("/")) {
-        return StdStringToJString(env, "> Command Executed.");
+    // If a skill was executed, g_kernel will have a non-zero last intent ID
+    auto lastIntent = g_kernel->getLastIntent();
+    
+    // Command fast-path (ID 0)
+    if (input_str.starts_with("/") || lastIntent.id == 0) {
+        return StdStringToJString(env, g_last_skill_output.empty() ? "> Command Processed." : g_last_skill_output);
     }
 
-    // Direct Neural Reasoning Path
+    // Skill execution fast-path (ID > 1)
+    if (lastIntent.id > 1) {
+        return StdStringToJString(env, g_last_skill_output);
+    }
+
+    // Direct Neural Reasoning Path (ID 1 or fallback)
     std::string response = "";
     if (g_llm_context.initialized) {
         response = g_llm_context.engine->runLiteRTReasoning(input_str);
