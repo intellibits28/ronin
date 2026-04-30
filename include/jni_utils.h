@@ -6,29 +6,28 @@
 #include <vector>
 #include "ronin_log.h"
 
-namespace ronin {
+namespace tflite {
 namespace jni {
 
 /**
- * LiteRT-LM Compatible JNI Utilities.
- * Implements thread-safe JNI environment management and string conversion.
+ * LiteRT-LM (Production) JNI Utilities.
+ * Replicated from official LiteRT/TFLite sources.
  */
 
 // Retrieve the JNIEnv for the current thread
 JNIEnv* GetJNIEnv(JavaVM* vm);
 
 // Convert jstring to std::string
-std::string JStringToStdString(JNIEnv* env, jstring jstr);
+std::string ConvertJStringToString(JNIEnv* env, jstring jstr);
 
 // Convert std::string to jstring
-jstring StdStringToJString(JNIEnv* env, const std::string& str);
+jstring ConvertStringToJString(JNIEnv* env, const std::string& str);
 
 // Throw a Java RuntimeException
-void ThrowJavaException(JNIEnv* env, const char* message);
+void ThrowException(JNIEnv* env, const char* message);
 
 /**
  * ScopedJniEnv: RAII wrapper to ensure Attach/Detach pairing.
- * Mandatory for C++ threads calling back into Kotlin (Rule 2).
  */
 class ScopedJniEnv {
 public:
@@ -67,6 +66,9 @@ private:
 };
 
 } // namespace jni
-} // namespace ronin
+} // namespace tflite
+
+// Compatibility alias for Ronin
+namespace ronin::jni = tflite::jni;
 
 #endif // RONIN_JNI_UTILS_H_

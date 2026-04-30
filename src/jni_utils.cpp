@@ -1,7 +1,7 @@
 #include "jni_utils.h"
 #include <pthread.h>
 
-namespace ronin {
+namespace tflite {
 namespace jni {
 
 JNIEnv* GetJNIEnv(JavaVM* vm) {
@@ -9,14 +9,13 @@ JNIEnv* GetJNIEnv(JavaVM* vm) {
     jint res = vm->GetEnv((void**)&env, JNI_VERSION_1_6);
     if (res == JNI_EDETACHED) {
         if (vm->AttachCurrentThread(&env, nullptr) != 0) {
-            LOGE("JNI_UTILS", "Failed to attach current thread");
             return nullptr;
         }
     }
     return env;
 }
 
-std::string JStringToStdString(JNIEnv* env, jstring jstr) {
+std::string ConvertJStringToString(JNIEnv* env, jstring jstr) {
     if (!jstr) return "";
     const char* chars = env->GetStringUTFChars(jstr, nullptr);
     std::string str(chars);
@@ -24,11 +23,11 @@ std::string JStringToStdString(JNIEnv* env, jstring jstr) {
     return str;
 }
 
-jstring StdStringToJString(JNIEnv* env, const std::string& str) {
+jstring ConvertStringToJString(JNIEnv* env, const std::string& str) {
     return env->NewStringUTF(str.c_str());
 }
 
-void ThrowJavaException(JNIEnv* env, const char* message) {
+void ThrowException(JNIEnv* env, const char* message) {
     jclass exClass = env->FindClass("java/lang/RuntimeException");
     if (exClass) {
         env->ThrowNew(exClass, message);
@@ -41,7 +40,6 @@ ScopedJniEnv::ScopedJniEnv(JavaVM* vm) : vm_(vm), env_(nullptr), attached_(false
         if (vm_->AttachCurrentThread(&env_, nullptr) == 0) {
             attached_ = true;
         } else {
-            LOGE("JNI_UTILS", "ScopedJniEnv: Failed to attach thread");
             env_ = nullptr;
         }
     }
@@ -84,4 +82,4 @@ GlobalRef& GlobalRef::operator=(GlobalRef&& other) noexcept {
 }
 
 } // namespace jni
-} // namespace ronin
+} // namespace tflite
