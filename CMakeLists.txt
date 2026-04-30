@@ -119,13 +119,16 @@ if(ANDROID)
     find_library(android-lib android)
     
     # MediaPipe LLM Inference JNI (Expected from AAR or jniLibs)
-    # Phase 5.0: Ensure search path includes jniLibs for the specific ABI
-    set(MP_SEARCH_PATH ${CMAKE_CURRENT_SOURCE_DIR}/android/app/src/main/jniLibs/${ANDROID_ABI})
-    find_library(MP_JNI_LIB llm_inference_engine_jni PATHS ${MP_SEARCH_PATH} NO_DEFAULT_PATH)
+    # Phase 5.0: Direct Linkage via IMPORTED target
+    set(MP_JNI_PATH ${CMAKE_CURRENT_SOURCE_DIR}/android/app/src/main/jniLibs/${ANDROID_ABI}/libllm_inference_engine_jni.so)
     
-    # Fallback to standard search if specific path fails
-    if(NOT MP_JNI_LIB)
-        find_library(MP_JNI_LIB llm_inference_engine_jni)
+    if(EXISTS ${MP_JNI_PATH})
+        add_library(llm_jni SHARED IMPORTED)
+        set_target_properties(llm_jni PROPERTIES IMPORTED_LOCATION ${MP_JNI_PATH})
+        set(MP_JNI_LIB llm_jni)
+        message(STATUS ">>> MediaPipe JNI found at: ${MP_JNI_PATH}")
+    else()
+        message(WARNING ">>> MediaPipe JNI NOT found at: ${MP_JNI_PATH}. Build may fail if symbols are unresolved.")
     endif()
 
     add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
@@ -141,9 +144,6 @@ if(ANDROID)
     
     if(MP_JNI_LIB)
         target_link_libraries(ronin_kernel PUBLIC ${MP_JNI_LIB})
-        message(STATUS ">>> Found MediaPipe JNI: ${MP_JNI_LIB}")
-    else()
-        message(WARNING ">>> MediaPipe JNI NOT found in linker path. Runtime dlopen fallback may be needed.")
     endif()
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")

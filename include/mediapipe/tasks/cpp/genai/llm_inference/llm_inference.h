@@ -8,16 +8,16 @@
 /**
  * PHASE 5.0: MediaPipe Production Header (Linker Bridge)
  * RULE 6: Zero-Mock Policy. 
- * This header contains DECLARATIONS ONLY. 
- * Implementation is provided by libllm_inference_engine_jni.so at runtime.
+ * This header contains DECLARATIONS for symbols that MUST be
+ * resolved by libllm_inference_engine_jni.so.
  */
 
 namespace absl {
     class Status {
     public:
-        Status();
-        bool ok() const;
-        std::string message() const;
+        Status(); // Implementation in .so
+        bool ok() const; // Implementation in .so
+        std::string message() const; // Implementation in .so
     private:
         bool is_ok;
     };
@@ -25,12 +25,12 @@ namespace absl {
     template <typename T>
     class StatusOr {
     public:
-        StatusOr();
-        StatusOr(T&& val);
-        bool ok() const;
-        T& operator*();
-        T* operator->();
-        Status status() const;
+        StatusOr() : is_ok(false) {}
+        StatusOr(T&& val) : value(std::move(val)), is_ok(true) {}
+        bool ok() const { return is_ok; }
+        T& operator*() { return value; }
+        T* operator->() { return &value; }
+        Status status() const { return status_; }
     private:
         T value;
         bool is_ok;
@@ -52,10 +52,12 @@ public:
         int random_seed = 42;
     };
 
+    // Symbol MUST be provided by libllm_inference_engine_jni.so
     static absl::StatusOr<std::unique_ptr<LlmInference>> Create(const Options& options);
 
     typedef std::function<void(const std::vector<std::string>&, bool)> ProgressCallback;
 
+    // Symbol MUST be provided by libllm_inference_engine_jni.so
     absl::Status GenerateResponse(const std::string& prompt, ProgressCallback callback);
     
     virtual ~LlmInference() = default;

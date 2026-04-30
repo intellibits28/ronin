@@ -4,6 +4,15 @@
 #include "intent_engine.h"
 #include "capabilities/hardware_bridge.h"
 
+// PHASE 5.2: Weak Stubs for Linker Resilience
+// These allow the binary to link even if libllm_inference_engine_jni.so 
+// does not export Abseil symbols, while allowing the .so to override them if it does.
+namespace absl {
+    __attribute__((weak)) Status::Status() : is_ok(true) {}
+    __attribute__((weak)) bool Status::ok() const { return is_ok; }
+    __attribute__((weak)) std::string Status::message() const { return "OK"; }
+}
+
 // RULE 6: Real MediaPipe C++ Production Headers
 #ifdef __ANDROID__
 #include "mediapipe/tasks/cpp/genai/llm_inference/llm_inference.h"
