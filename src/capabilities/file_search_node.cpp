@@ -45,8 +45,10 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
 
     if (lower_query.find("txt") != std::string::npos || 
         lower_query.find("doc") != std::string::npos ||
-        lower_query.find("text") != std::string::npos) {
-        ext_filters.insert(ext_filters.end(), {".txt", ".pdf", ".docx", ".fbs"});
+        lower_query.find("text") != std::string::npos ||
+        lower_query.find("code") != std::string::npos ||
+        lower_query.find("script") != std::string::npos) {
+        ext_filters.insert(ext_filters.end(), {".txt", ".pdf", ".docx", ".fbs", ".md", ".json", ".yml", ".yaml", ".zig", ".py", ".cpp", ".h"});
     }
 
     std::vector<std::pair<std::string, float>> candidates;
@@ -108,7 +110,8 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
         if (unique_paths.insert(c.first).second) {
             size_t last_slash = c.first.find_last_of("/");
             std::string name = (last_slash == std::string::npos) ? c.first : c.first.substr(last_slash + 1);
-            output.push_back("- " + name); 
+            // Phase 6.0: Developer-Level Transparency (Include Path)
+            output.push_back("- " + name + " [" + c.first + "]"); 
             if (++count >= 10) break;
         }
     }
