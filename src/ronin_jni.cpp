@@ -15,6 +15,7 @@
 #include "capabilities/hardware_nodes.h"
 #include "memory_manager.h"
 #include "long_term_memory.h"
+#include "capabilities/file_scanner.h"
 #include "ronin_log.h"
 
 #define TAG "RoninKernel_JNI"
@@ -28,6 +29,7 @@ static std::unique_ptr<RoninKernel> g_kernel;
 static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
 static std::unique_ptr<Ronin::Kernel::Memory::MemoryManager> g_memory_manager;
 static std::unique_ptr<Ronin::Kernel::Memory::LongTermMemory> g_ltm;
+static std::unique_ptr<Ronin::Kernel::Capability::FileScanner> g_file_scanner;
 static std::string g_last_input_str;
 static std::string g_last_skill_output;
 
@@ -108,7 +110,12 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_intent_engine->registerSkill(6, std::make_shared<WifiNode>());
     g_intent_engine->registerSkill(7, std::make_shared<BluetoothNode>());
     
-    // 4. Initialize Kernel Spine
+    // 4. Setup Background File Scanner (Requirement 1 & 2)
+    g_file_scanner = std::make_unique<Ronin::Kernel::Capability::FileScanner>(*g_ltm, neural_node.get());
+    g_file_scanner->setDatabaseReady(true);
+    g_file_scanner->startScan("/storage/emulated/0/"); // Root redirection to External Storage
+
+    // 5. Initialize Kernel Spine
     static HandlerRegistry registry = {
         [](const Input& in) -> CognitiveIntent {
             if (g_intent_engine) return g_intent_engine->process(std::string(in.data, in.length), "");
