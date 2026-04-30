@@ -11,11 +11,20 @@
 
 // PHASE 5.2: Weak Stubs for Linker Resilience
 // These allow the binary to link even if libllm_inference_engine_jni.so 
-// does not export Abseil symbols, while allowing the .so to override them if it does.
+// does not export these symbols. At runtime, the .so will override them if they exist.
 namespace absl {
     __attribute__((weak)) Status::Status() : is_ok(true) {}
     __attribute__((weak)) bool Status::ok() const { return is_ok; }
     __attribute__((weak)) std::string Status::message() const { return "OK"; }
+}
+
+namespace mediapipe::tasks::genai::llm_inference {
+    __attribute__((weak)) absl::StatusOr<std::unique_ptr<LlmInference>> LlmInference::Create(const Options& options) {
+        return absl::StatusOr<std::unique_ptr<LlmInference>>();
+    }
+    __attribute__((weak)) absl::Status LlmInference::GenerateResponse(const std::string& prompt, ProgressCallback callback) {
+        return absl::OkStatus();
+    }
 }
 
 using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
@@ -62,6 +71,14 @@ InferenceEngine::~InferenceEngine() = default;
 
 bool InferenceEngine::loadModel(const std::string& path) {
     return m_impl->load(path);
+}
+
+bool InferenceEngine::isLoaded() const {
+#ifdef __ANDROID__
+    return m_impl->engine != nullptr;
+#else
+    return true;
+#endif
 }
 
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
