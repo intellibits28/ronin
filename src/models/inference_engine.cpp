@@ -11,11 +11,16 @@
 using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
 
 /**
- * PHASE 5.5: Production Linkage Resilience
- * These weak stubs allow the kernel to build even if symbols are not exported 
- * by the JNI library. At runtime, the production library's implementation
- * will take precedence if it exists.
+ * PHASE 5.5: Linker Resilience (Weak Stubs)
+ * These allow the binary to link even if the symbols are missing in the .so,
+ * but the .so implementation will take precedence at runtime if it exists.
  */
+namespace absl {
+    __attribute__((weak)) Status::Status() : is_ok(true) {}
+    __attribute__((weak)) bool Status::ok() const { return is_ok; }
+    __attribute__((weak)) std::string Status::message() const { return "Shadowed by Stub: Check Library Linkage"; }
+}
+
 namespace mediapipe::tasks::genai::llm_inference {
     __attribute__((weak)) absl::StatusOr<std::unique_ptr<LlmInference>> LlmInference::Create(const Options& options) {
         return absl::StatusOr<std::unique_ptr<LlmInference>>();
@@ -23,12 +28,6 @@ namespace mediapipe::tasks::genai::llm_inference {
     __attribute__((weak)) absl::Status LlmInference::GenerateResponse(const std::string& prompt, ProgressCallback callback) {
         return absl::OkStatus();
     }
-}
-
-namespace absl {
-    __attribute__((weak)) Status::Status() : is_ok(false) {}
-    __attribute__((weak)) bool Status::ok() const { return is_ok; }
-    __attribute__((weak)) std::string Status::message() const { return "Status: Not Implemented (Shadowed by Stub)"; }
 }
 
 namespace Ronin::Kernel::Model {
@@ -49,11 +48,10 @@ struct InferenceEngine::Impl {
 
         auto engine_or = LlmInference::Create(options);
         if (engine_or.ok()) {
-            engine = std::move(*engine_or);
+            engine = engine_or.release();
             LOGI(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Production Library.");
             return true;
         } else {
-            // Note: If message contains "Not Implemented", we are hitting our stubs.
             LOGE(TAG, "FAILURE: Hydration failed: %s", engine_or.status().message().c_str());
             return false;
         }
