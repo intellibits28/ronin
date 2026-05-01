@@ -213,6 +213,11 @@ Java_com_ronin_kernel_NativeEngine_isLoaded(JNIEnv *env, jobject thiz) {
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
     LOGI(TAG, "Memory Trim Requested: Level %d", level);
+    if (level >= 20) { // TRIM_MEMORY_UI_HIDDEN or higher
+        if (g_llm_context.engine) {
+            g_llm_context.engine->purgeKVCache();
+        }
+    }
     if (g_memory_manager) {
         g_memory_manager->onMemoryPressure();
     }

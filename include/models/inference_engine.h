@@ -79,6 +79,12 @@ public:
      */
     void setContextWindow(int tokens);
 
+    /**
+     * Phase 5.9.2: KV-Cache Pruning
+     * Clears internal buffers to reclaim RAM during Memory Pressure.
+     */
+    void purgeKVCache();
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

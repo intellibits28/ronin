@@ -118,18 +118,9 @@ if(ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
     
-    # MediaPipe LLM Inference JNI (Expected from AAR or jniLibs)
-    # Phase 5.0: Direct Linkage via IMPORTED target
-    set(MP_JNI_PATH ${CMAKE_CURRENT_SOURCE_DIR}/android/app/src/main/jniLibs/${ANDROID_ABI}/libllm_inference_engine_jni.so)
-    
-    if(EXISTS ${MP_JNI_PATH})
-        add_library(llm_jni SHARED IMPORTED)
-        set_target_properties(llm_jni PROPERTIES IMPORTED_LOCATION ${MP_JNI_PATH})
-        set(MP_JNI_LIB llm_jni)
-        message(STATUS ">>> MediaPipe JNI found at: ${MP_JNI_PATH}")
-    else()
-        message(WARNING ">>> MediaPipe JNI NOT found at: ${MP_JNI_PATH}. Build may fail if symbols are unresolved.")
-    endif()
+    # MediaPipe LLM Inference JNI (Dynamic Resolution Phase 5.9)
+    # We no longer link this at build-time to avoid stub/JNI symbol conflicts.
+    # Implementation is resolved via dlopen/dlsym in inference_engine.cpp.
 
     add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
     target_include_directories(ronin_kernel PRIVATE include)
@@ -141,10 +132,6 @@ if(ANDROID)
         ${log-lib} 
         ${android-lib}
     )
-    
-    if(MP_JNI_LIB)
-        target_link_libraries(ronin_kernel PUBLIC ${MP_JNI_LIB})
-    endif()
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
