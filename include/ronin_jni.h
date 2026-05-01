@@ -26,10 +26,10 @@ Java_com_ronin_kernel_NativeEngine_processInput(
     JNIEnv *env, jobject thiz, jstring input);
 
 /**
- * Dynamically reloads the reasoning model.
+ * Notifies the C++ kernel that a model has been hydrated in Kotlin.
  */
-JNIEXPORT jboolean JNICALL
-Java_com_ronin_kernel_NativeEngine_loadModel(
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_notifyModelLoaded(
     JNIEnv *env, jobject thiz, jstring path);
 
 /**

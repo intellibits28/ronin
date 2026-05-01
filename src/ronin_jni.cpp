@@ -33,7 +33,7 @@ static std::unique_ptr<Ronin::Kernel::Capability::FileScanner> g_file_scanner;
 static std::string g_last_input_str;
 static std::string g_last_skill_output;
 
-// --- Production LLM Initialization Logic (LiteRT-LM Pattern) ---
+// --- Hybrid Reasoning State ---
 namespace {
 
 struct LlmEngineContext {
@@ -43,24 +43,6 @@ struct LlmEngineContext {
 };
 
 static LlmEngineContext g_llm_context;
-
-void InitializeLlmEngine(JNIEnv* env, const std::string& model_path) {
-    LOGI(TAG, "Initializing LiteRT-LM Engine at: %s", model_path.c_str());
-    
-    if (g_llm_context.initialized && g_llm_context.model_path == model_path) {
-        LOGI(TAG, "Engine already initialized with same model.");
-        return;
-    }
-
-    g_llm_context.engine = std::make_unique<InferenceEngine>(model_path);
-    if (g_llm_context.engine->loadModel(model_path)) {
-        g_llm_context.initialized = true;
-        g_llm_context.model_path = model_path;
-        LOGI(TAG, "SUCCESS: LiteRT-LM Engine initialized.");
-    } else {
-        LOGE(TAG, "FAILURE: LiteRT-LM Engine initialization failed.");
-    }
-}
 
 } // namespace
 
@@ -79,7 +61,7 @@ Java_com_ronin_kernel_NativeEngine_setEngineInstance(JNIEnv *env, jobject thiz) 
 
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir) {
-    std::string base_path = JStringToStdString(env, files_dir);
+    std::string base_path = ConvertJStringToString(env, files_dir);
     LOGI(TAG, "Initializing Ronin Kernel Core...");
 
     // 1. Setup Memory Spines (L1/L2/L3)
@@ -122,7 +104,6 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
         },
         [](uint32_t id, const CognitiveState& state) -> Result {
             if (g_intent_engine) {
-                // Phase 5.1: Pass global input string to extract parameters (e.g. "on"/"off")
                 g_last_skill_output = g_intent_engine->executeSkill(id, g_last_input_str); 
                 return {true, 0};
             }
@@ -135,28 +116,29 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     } cap_manager;
 
     g_kernel = std::make_unique<RoninKernel>(registry, cap_manager);
+    
+    // Ensure inference engine wrapper is ready for hybrid calls
+    g_llm_context.engine = std::make_unique<InferenceEngine>("hybrid_mode");
+    
     LOGI(TAG, "Ronin Kernel Core Active.");
 }
 
-JNIEXPORT jboolean JNICALL
-Java_com_ronin_kernel_NativeEngine_loadModel(JNIEnv *env, jobject thiz, jstring path) {
-    std::string model_path = JStringToStdString(env, path);
-    InitializeLlmEngine(env, model_path);
-    
-    if (g_intent_engine && g_llm_context.initialized) {
-        return JNI_TRUE;
-    }
-    return JNI_FALSE;
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
+    std::string model_path = ConvertJStringToString(env, path);
+    LOGI(TAG, "C++ Kernel Notified: Hybrid Model Ready at %s", model_path.c_str());
+    g_llm_context.initialized = true;
+    g_llm_context.model_path = model_path;
 }
 
 JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstring input) {
-    std::string input_str = JStringToStdString(env, input);
-    g_last_input_str = input_str; // Captured for execProcessor
+    std::string input_str = ConvertJStringToString(env, input);
+    g_last_input_str = input_str; 
     g_last_skill_output.clear();
     
     if (!g_kernel) {
-        return StdStringToJString(env, "Error: Ronin Kernel not initialized.");
+        return ConvertStringToJString(env, "Error: Ronin Kernel not initialized.");
     }
 
     // Phase 4.0: Unified Routing Spine (Rule 1)
@@ -166,27 +148,25 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
     
     g_kernel->tick(in_data);
     
-    // If a skill was executed, g_kernel will have a non-zero last intent ID
     auto lastIntent = g_kernel->getLastIntent();
     
     // Command fast-path (ID 0)
     if (input_str.starts_with("/") || lastIntent.id == 0) {
-        return StdStringToJString(env, g_last_skill_output.empty() ? "> Command Processed." : g_last_skill_output);
+        return ConvertStringToJString(env, g_last_skill_output.empty() ? "> Command Processed." : g_last_skill_output);
     }
 
     // Skill execution fast-path (ID > 1)
     if (lastIntent.id > 1) {
-        return StdStringToJString(env, g_last_skill_output);
+        return ConvertStringToJString(env, g_last_skill_output);
     }
 
     // Direct Neural Reasoning Path (ID 1 or fallback)
     std::string response = "";
-    if (g_llm_context.initialized) {
+    if (g_llm_context.initialized && g_llm_context.engine) {
         response = g_llm_context.engine->runLiteRTReasoning(input_str);
     }
 
     if (response.empty()) {
-        // Fallback to Cloud if local fails, confidence is low, or spine not hydrated
         std::string provider = "Gemini"; 
         if (g_intent_engine) {
             provider = g_intent_engine->getPrimaryCloudProvider();
@@ -196,13 +176,13 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
 
         if (!apiKey.empty()) {
             LOGI(TAG, "Attempting Cloud Fallback for Reasoning (Provider: %s)...", provider.c_str());
-            return StdStringToJString(env, g_llm_context.engine->escalateToCloud(input_str, apiKey, provider));
+            return ConvertStringToJString(env, g_llm_context.engine->escalateToCloud(input_str, apiKey, provider));
         } else {
-            return StdStringToJString(env, "Error: Reasoning spine not hydrated and Cloud API Key missing for " + provider);
+            return ConvertStringToJString(env, "Error: Reasoning spine not hydrated and Cloud API Key missing for " + provider);
         }
     }
 
-    return StdStringToJString(env, response);
+    return ConvertStringToJString(env, response);
 }
 
 JNIEXPORT jboolean JNICALL
@@ -213,7 +193,7 @@ Java_com_ronin_kernel_NativeEngine_isLoaded(JNIEnv *env, jobject thiz) {
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
     LOGI(TAG, "Memory Trim Requested: Level %d", level);
-    if (level >= 20) { // TRIM_MEMORY_UI_HIDDEN or higher
+    if (level >= 20) { 
         if (g_llm_context.engine) {
             g_llm_context.engine->purgeKVCache();
         }
@@ -225,7 +205,7 @@ Java_com_ronin_kernel_NativeEngine_notifyTrimMemory(JNIEnv *env, jobject thiz, j
 
 JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_getActiveModelPath(JNIEnv *env, jobject thiz) {
-    return StdStringToJString(env, g_llm_context.model_path);
+    return ConvertStringToJString(env, g_llm_context.model_path);
 }
 
 JNIEXPORT void JNICALL
@@ -247,7 +227,7 @@ Java_com_ronin_kernel_NativeEngine_setOfflineMode(JNIEnv *env, jobject thiz, jbo
 JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) {
     if (g_intent_engine) {
-        g_intent_engine->setPrimaryCloudProvider(JStringToStdString(env, provider));
+        g_intent_engine->setPrimaryCloudProvider(ConvertJStringToString(env, provider));
     }
 }
 
@@ -259,7 +239,7 @@ Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
 
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) {
-    if (g_intent_engine) return g_intent_engine->updateMetadata(JStringToStdString(env, json));
+    if (g_intent_engine) return g_intent_engine->updateMetadata(ConvertJStringToString(env, json));
     return JNI_FALSE;
 }
 
@@ -275,8 +255,8 @@ Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz, jin
         auto history = g_ltm->getHistory(limit, offset);
         jobjectArray array = env->NewObjectArray(history.size() * 2, stringClass, nullptr);
         for (size_t i = 0; i < history.size(); ++i) {
-            env->SetObjectArrayElement(array, i * 2, StdStringToJString(env, history[i].first));
-            env->SetObjectArrayElement(array, i * 2 + 1, StdStringToJString(env, history[i].second));
+            env->SetObjectArrayElement(array, i * 2, ConvertStringToJString(env, history[i].first));
+            env->SetObjectArrayElement(array, i * 2 + 1, ConvertStringToJString(env, history[i].second));
         }
         return array;
     }

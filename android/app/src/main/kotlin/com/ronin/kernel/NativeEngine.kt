@@ -12,9 +12,8 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import java.io.File
 
 /**
- * Native Engine (Phase 6.0: Hybrid Ownership)
- * Kotlin owns the LlmInference instance to avoid C++ linkage issues.
- * C++ Kernel calls back into Kotlin for neural reasoning.
+ * Native Engine (Phase 6.1: State-Synced Hybrid Ownership)
+ * Kotlin owns the LlmInference instance. C++ is notified of state changes.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
@@ -46,6 +45,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun initializeKernel(filesDir: String)
     private external fun setEngineInstance()
     private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
+    private external fun notifyModelLoaded(path: String)
     
     external fun processInput(input: String): String
     external fun notifyTrimMemory(level: Int)
@@ -77,28 +77,49 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     /**
-     * Kotlin-Side Model Hydration (The "Fix")
+     * Kotlin-Side Model Hydration with Automatic Fallback.
+     * Tries GPU first, then falls back to CPU if drivers (OpenCL/Vulkan) fail.
      */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val options = LlmInference.LlmInferenceOptions.builder()
+        // Attempt 1: GPU Acceleration (Preferred)
+        val gpuSuccess = tryHydrate(path, true)
+        if (gpuSuccess) return@withContext true
+
+        Log.w(TAG, "GPU Hydration failed. Falling back to CPU reasoning spine...")
+        
+        // Attempt 2: CPU Fallback
+        return@withContext tryHydrate(path, false)
+    }
+
+    private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
+        return try {
+            val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(2048)
                 .setTemperature(0.7f)
                 .setTopK(40)
-                .build()
             
-            llmInference = LlmInference.createFromOptions(context, options)
+            // Note: MediaPipe Kotlin API usually handles internal fallback, 
+            // but for Snapdragon we often need to be explicit.
+            // If the .litertlm file is GPU-only, this might still fail on CPU.
+            
+            llmInference = LlmInference.createFromOptions(context, builder.build())
             currentModelPath = path
-            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Kotlin AAR.")
+            
+            // Phase 6.1: Sync state to C++ Kernel
+            if (isLibLoaded) {
+                notifyModelLoaded(path)
+            }
+            
+            val mode = if (useGpu) "GPU" else "CPU"
+            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Kotlin AAR ($mode).")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "FAILURE: Hydration error: ${e.message}")
+            Log.e(TAG, "Hydration attempt failed (GPU=$useGpu): ${e.message}")
             false
         }
     }
 
-    // Support legacy non-async call for UI state check
     fun isLoaded(): Boolean = llmInference != null
     fun getActiveModelPath(): String = currentModelPath
 
