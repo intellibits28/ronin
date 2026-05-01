@@ -137,16 +137,25 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
-        val inference = llmInference ?: return ""
+        Log.d(TAG, ">>> Neural Reasoning Requested: '$input'")
+        val inference = llmInference ?: run {
+            Log.e(TAG, "Inference Engine null - hydration failed?")
+            return "Error: Local reasoning spine not hydrated."
+        }
         
-        // Requirement: Correct Prompt Format for Gemma IT models to prevent gibberish
+        // Phase 6.2: Experimental - Wrapping with IT tokens
         val formattedPrompt = "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
+        Log.v(TAG, "Formatted Prompt: $formattedPrompt")
         
         return try {
-            inference.generateResponse(formattedPrompt)
+            val startTime = System.currentTimeMillis()
+            val response = inference.generateResponse(formattedPrompt)
+            val duration = System.currentTimeMillis() - startTime
+            Log.i(TAG, "<<< Neural Response Generated in ${duration}ms")
+            response
         } catch (e: Exception) {
-            Log.e(TAG, "Inference error: ${e.message}")
-            "Error: Neural spine execution failed."
+            Log.e(TAG, "Inference error during execution: ${e.message}")
+            "Error: Neural spine execution failed - ${e.message}"
         }
     }
 
