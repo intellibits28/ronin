@@ -9,7 +9,6 @@
 #define TAG "RoninInferenceEngine"
 
 using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
-using LlmInferenceOptions = ::mediapipe::tasks::genai::llm_inference::LlmInferenceOptions;
 
 /**
  * PHASE 5.5: Production Linkage Resilience
@@ -18,7 +17,7 @@ using LlmInferenceOptions = ::mediapipe::tasks::genai::llm_inference::LlmInferen
  * will take precedence if it exists.
  */
 namespace mediapipe::tasks::genai::llm_inference {
-    __attribute__((weak)) absl::StatusOr<std::unique_ptr<LlmInference>> LlmInference::Create(const LlmInferenceOptions& options) {
+    __attribute__((weak)) absl::StatusOr<std::unique_ptr<LlmInference>> LlmInference::Create(const Options& options) {
         return absl::StatusOr<std::unique_ptr<LlmInference>>();
     }
     __attribute__((weak)) absl::Status LlmInference::GenerateResponse(const std::string& prompt, ProgressCallback callback) {
@@ -42,7 +41,7 @@ struct InferenceEngine::Impl {
     bool load(const std::string& path) {
         LOGI(TAG, "Hydration Protocol: MediaPipe Production (Bundle Path: %s)", path.c_str());
         
-        LlmInferenceOptions options;
+        LlmInference::Options options;
         options.model_path = path;
         options.max_tokens = context_window;
         options.temperature = 0.7f;
