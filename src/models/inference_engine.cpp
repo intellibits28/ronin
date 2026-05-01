@@ -9,12 +9,11 @@
 #define TAG "RoninInferenceEngine"
 
 using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
-using LlmInferenceOptions = ::mediapipe::tasks::genai::llm_inference::LlmInferenceOptions;
 
 /**
- * PHASE 5.4: Strict Production Linkage (Experimental)
- * Removing stubs to verify if the official libllm_inference_engine_jni.so 
- * contains the C++ API symbols with the corrected signature.
+ * PHASE 5.5: Production Linkage Alignment
+ * Forcing linkage to mediapipe::tasks::genai::llm_inference::LlmInference::Create(Options const&)
+ * No stubs provided to ensure we are hitting the real .so library.
  */
 
 namespace Ronin::Kernel::Model {
@@ -27,21 +26,19 @@ struct InferenceEngine::Impl {
     bool load(const std::string& path) {
         LOGI(TAG, "Hydration Protocol: MediaPipe Production (Bundle Path: %s)", path.c_str());
         
-        LlmInferenceOptions options;
+        LlmInference::Options options;
         options.model_path = path;
         options.max_tokens = context_window;
         options.temperature = 0.7f;
         options.top_k = 40;
 
-        // Force direct call to production library
+        // Direct call to production library symbols
         auto engine_or = LlmInference::Create(options);
         if (engine_or.ok()) {
             engine = std::move(*engine_or);
             LOGI(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Production Library.");
             return true;
         } else {
-            // Note: If this still returns failure with "OK" message, 
-            // it means we are still hitting a hidden stub somewhere.
             LOGE(TAG, "FAILURE: Hydration failed: %s", engine_or.status().message().c_str());
             return false;
         }
