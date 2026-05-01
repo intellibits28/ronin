@@ -99,7 +99,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(2048)
-                .setTemperature(0.7f)
                 .setTopK(40)
             
             // In MediaPipe 0.10.33+, GPU is often the default. 
