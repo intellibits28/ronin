@@ -118,10 +118,6 @@ if(ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
     
-    # MediaPipe LLM Inference JNI (Dynamic Resolution Phase 5.9)
-    # We no longer link this at build-time to avoid stub/JNI symbol conflicts.
-    # Implementation is resolved via dlopen/dlsym in inference_engine.cpp.
-
     add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
     target_include_directories(ronin_kernel PRIVATE include)
     

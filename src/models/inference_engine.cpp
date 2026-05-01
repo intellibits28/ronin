@@ -22,8 +22,7 @@ struct InferenceEngine::Impl {
 
     bool load(const std::string& path) {
         LOGI(TAG, "Hydration Protocol: Hybrid Delegation (Model: %s)", path.c_str());
-        // Since Kotlin handles the actual loading, we just track the state here.
-        // The real hydration happens in NativeEngine.loadModelAsync().
+        // State tracking only. Real hydration happens in NativeEngine.loadModelAsync().
         is_hydrated = true; 
         return true;
     }
@@ -44,7 +43,7 @@ bool InferenceEngine::isLoaded() const {
 }
 
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
-    // Phase 6.0: Cross-bridge delegation
+    // Phase 6.0: Cross-bridge delegation to Kotlin-owned LlmInference
     return Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(input);
 }
 
@@ -70,7 +69,7 @@ std::string InferenceEngine::getRuntimeInfo() const { return "Runtime: Hybrid (K
 long InferenceEngine::verifyModel() { return 100; }
 void InferenceEngine::setContextWindow(int tokens) { if (m_impl) m_impl->context_window = tokens; }
 void InferenceEngine::purgeKVCache() {
-    // In Hybrid mode, cache management should be handled by Kotlin onTrimMemory
+    // In Hybrid mode, cache management is handled by Kotlin onTrimMemory hooks.
 }
 
 } // namespace Ronin::Kernel::Model
