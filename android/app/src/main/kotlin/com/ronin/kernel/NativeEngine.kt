@@ -14,6 +14,7 @@ import java.io.File
 /**
  * Native Engine (Phase 6.1: State-Synced Hybrid Ownership)
  * Kotlin owns the LlmInference instance. C++ is notified of state changes.
+ * Upgraded for Gemma 4 (.litertlm) support and robust hardware fallback.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
@@ -67,6 +68,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     init {
         if (isLibLoaded) {
             setEngineInstance()
+            initializeKernel(context.filesDir.absolutePath)
         }
     }
 
@@ -79,16 +81,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     /**
      * Kotlin-Side Model Hydration with Automatic Fallback.
      * Tries GPU first, then falls back to CPU if drivers (OpenCL/Vulkan) fail.
+     * Required for Snapdragon 778G+ driver stability.
      */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
-        // Attempt 1: GPU Acceleration (Preferred)
-        val gpuSuccess = tryHydrate(path, true)
+        // Attempt 1: Default/GPU Acceleration
+        val gpuSuccess = tryHydrate(path, useGpu = true)
         if (gpuSuccess) return@withContext true
 
         Log.w(TAG, "GPU Hydration failed. Falling back to CPU reasoning spine...")
         
-        // Attempt 2: CPU Fallback
-        return@withContext tryHydrate(path, false)
+        // Attempt 2: CPU Fallback (Stable for INT4 bugs and driver mismatches)
+        return@withContext tryHydrate(path, useGpu = false)
     }
 
     private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
@@ -99,19 +102,19 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 .setTemperature(0.7f)
                 .setTopK(40)
             
-            // Note: MediaPipe Kotlin API usually handles internal fallback, 
-            // but for Snapdragon we often need to be explicit.
-            // If the .litertlm file is GPU-only, this might still fail on CPU.
+            // In MediaPipe 0.10.33+, GPU is often the default. 
+            // We use the builder to instantiate, and internal delegates handle the rest.
+            // If the .litertlm format is detected, the newer runtime is invoked.
             
             llmInference = LlmInference.createFromOptions(context, builder.build())
             currentModelPath = path
             
-            // Phase 6.1: Sync state to C++ Kernel
+            // Sync state to C++ Kernel
             if (isLibLoaded) {
                 notifyModelLoaded(path)
             }
             
-            val mode = if (useGpu) "GPU" else "CPU"
+            val mode = if (useGpu) "GPU/Auto" else "CPU-Fallback"
             Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Kotlin AAR ($mode).")
             true
         } catch (e: Exception) {
@@ -126,6 +129,25 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext "Error: Native libraries not loaded."
         processInput(input)
+    }
+
+    /**
+     * Callback invoked by C++ Kernel for neural reasoning.
+     * Implements strict Instruction-Tuning (IT) prompt formatting.
+     */
+    @Suppress("unused")
+    fun runNeuralReasoning(input: String): String {
+        val inference = llmInference ?: return ""
+        
+        // Requirement: Correct Prompt Format for Gemma IT models to prevent gibberish
+        val formattedPrompt = "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
+        
+        return try {
+            inference.generateResponse(formattedPrompt)
+        } catch (e: Exception) {
+            Log.e(TAG, "Inference error: ${e.message}")
+            "Error: Neural spine execution failed."
+        }
     }
 
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
@@ -170,11 +192,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     // --- JNI Callbacks (Invoked from C++ Layer via HardwareBridge) ---
-
-    @Suppress("unused")
-    fun runNeuralReasoning(input: String): String {
-        return llmInference?.generateResponse(input) ?: ""
-    }
 
     @Suppress("unused")
     fun pushKernelMessage(message: String) {
