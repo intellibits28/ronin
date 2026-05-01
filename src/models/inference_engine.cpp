@@ -13,28 +13,32 @@ using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
 using LlmInferenceOptions = ::mediapipe::tasks::genai::llm_inference::LlmInferenceOptions;
 
 /**
- * PHASE 5.7: Multi-Level Symbol Probing (Final Linkage Resolve)
- * This layer uses dynamic discovery to find the exact mangled names in 
- * libllm_inference_engine_jni.so, bypassing static linkage limitations.
+ * PHASE 5.8: Full Dynamic Linkage (Zero-Link Policy)
+ * This implementation resolves ALL MediaPipe symbols at runtime to avoid 
+ * undefined symbol errors from hidden C++ exports in JNI libraries.
  */
 
 namespace Ronin::Kernel::Model {
 
 typedef absl::StatusOr<std::unique_ptr<LlmInference>> (*LlmCreateFunc)(const LlmInferenceOptions&);
+typedef absl::Status (*LlmGenerateFunc)(LlmInference*, const std::string&, LlmInference::ProgressCallback);
 
 struct InferenceEngine::Impl {
     std::string model_path;
     int context_window = 2048;
     std::unique_ptr<LlmInference> engine;
     void* lib_handle = nullptr;
+    
+    // Resolved function pointers
     LlmCreateFunc create_ptr = nullptr;
+    LlmGenerateFunc generate_ptr = nullptr;
 
     ~Impl() {
         if (lib_handle) dlclose(lib_handle);
     }
 
     bool load(const std::string& path) {
-        LOGI(TAG, "Hydration Protocol: Probing Production Symbols...");
+        LOGI(TAG, "Hydration Protocol: Dynamic Linkage 5.8...");
         
 #ifdef __ANDROID__
         if (!lib_handle) {
@@ -46,31 +50,34 @@ struct InferenceEngine::Impl {
             return false;
         }
 
-        // Probing mangled names for LlmInference::Create
-        const char* probes[] = {
+        // 1. Resolve 'Create' symbol
+        const char* create_probes[] = {
             "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS2_19LlmInferenceOptionsE",
-            "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS3_7OptionsE",
-            "LlmInferenceCreate" // Possible C wrapper
+            "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS3_7OptionsE"
         };
-
-        for (const char* p : probes) {
+        for (const char* p : create_probes) {
             create_ptr = (LlmCreateFunc)dlsym(lib_handle, p);
-            if (create_ptr) {
-                LOGI(TAG, "Linkage SUCCESS: Found symbol: %s", p);
-                break;
-            }
+            if (create_ptr) break;
+        }
+
+        // 2. Resolve 'GenerateResponse' symbol
+        const char* generate_probes[] = {
+            "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference16GenerateResponseERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEENS4_8functionIFvRKNS4_6vectorIS6_NS8_IS6_EEEEbEEE",
+            "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference16GenerateResponseERKNS2_10StringViewE" // Alternative string view
+        };
+        for (const char* p : generate_probes) {
+            generate_ptr = (LlmGenerateFunc)dlsym(lib_handle, p);
+            if (generate_ptr) break;
         }
 
         if (!create_ptr) {
-            LOGE(TAG, "Linkage FAILURE: No valid 'Create' symbol found. Reverting to Cloud-Only Reasoning.");
+            LOGE(TAG, "Linkage FAILURE: 'Create' symbol not found.");
             return false;
         }
 
         LlmInferenceOptions options;
         options.model_path = path;
         options.max_tokens = context_window;
-        options.temperature = 0.7f;
-        options.top_k = 40;
 
         auto engine_or = create_ptr(options);
         if (engine_or.ok()) {
@@ -78,7 +85,7 @@ struct InferenceEngine::Impl {
             LOGI(TAG, "SUCCESS: Gemma 4 Brain Hydrated.");
             return true;
         } else {
-            LOGE(TAG, "FAILURE: Production library refused hydration (Internal Error).");
+            LOGE(TAG, "FAILURE: Production library refused hydration.");
             return false;
         }
 #else
@@ -103,19 +110,17 @@ bool InferenceEngine::isLoaded() const {
 
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
 #ifdef __ANDROID__
-    if (!m_impl->engine) return "";
+    if (!m_impl->engine || !m_impl->generate_ptr) return "";
 
     std::string final_response;
-    // We attempt GenerateResponse - if linkage fails for this method, 
-    // it will be caught by our weak stub logic in Phase 5.5.
-    auto status = m_impl->engine->GenerateResponse(input, 
+    auto status = m_impl->generate_ptr(m_impl->engine.get(), input, 
         [&final_response](const std::vector<std::string>& partial, bool done) {
             if (!partial.empty()) {
                 for (const auto& s : partial) final_response += s;
             }
         });
 
-    return status.ok() ? final_response : "";
+    return status.ok() ? final_response : "Error: Dynamic inference failed.";
 #else
     return "Host Build: Reasoning mocked for input: " + input;
 #endif
@@ -130,9 +135,7 @@ int InferenceEngine::classifyCoarse(const std::string& input) { return 1; }
 CognitiveIntent InferenceEngine::predictFine(const std::string& input, int coarse_category) {
     std::string s = input;
     std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-    
     bool isOff = (s.find("off") != std::string::npos || s.find("stop") != std::string::npos || s.find("disable") != std::string::npos);
-    
     CognitiveIntent intent = {1, 1.0f, true};
     if (s.find("light") != std::string::npos || s.find("torch") != std::string::npos) intent = {4, 1.0f, !isOff};
     else if (s.find("gps") != std::string::npos || s.find("location") != std::string::npos || s.find("ရောက်") != std::string::npos) intent = {5, 1.0f, true};
@@ -141,7 +144,7 @@ CognitiveIntent InferenceEngine::predictFine(const std::string& input, int coars
 }
 
 std::string InferenceEngine::getModelPath() const { return m_impl->model_path; }
-std::string InferenceEngine::getRuntimeInfo() const { return "Runtime: LiteRT-LM (Multi-Probe)"; }
+std::string InferenceEngine::getRuntimeInfo() const { return "Runtime: LiteRT-LM (Full-Dynamic)"; }
 long InferenceEngine::verifyModel() { return 100; }
 void InferenceEngine::setContextWindow(int tokens) { if (m_impl) m_impl->context_window = tokens; }
 
