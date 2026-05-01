@@ -9,27 +9,12 @@
 #define TAG "RoninInferenceEngine"
 
 /**
- * PHASE 5.2: Production Linkage Alignment
- * Reverting to MediaPipe Tasks GenAI Namespace as used in libllm_inference_engine_jni.so
+ * PHASE 5.3: Strict Production Linkage
+ * Removing weak stubs to force the linker to resolve symbols from 
+ * libllm_inference_engine_jni.so. This will reveal if the symbols 
+ * are missing or misaligned at build time.
  */
 using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
-
-// Weak stubs to ensure compilation even if linker paths are transient in CI
-// These will be overridden by libllm_inference_engine_jni.so at runtime
-namespace mediapipe::tasks::genai::llm_inference {
-    __attribute__((weak)) absl::StatusOr<std::unique_ptr<LlmInference>> LlmInference::Create(const Options& options) {
-        return absl::StatusOr<std::unique_ptr<LlmInference>>();
-    }
-    __attribute__((weak)) absl::Status LlmInference::GenerateResponse(const std::string& prompt, ProgressCallback callback) {
-        return absl::OkStatus();
-    }
-}
-
-namespace absl {
-    __attribute__((weak)) Status::Status() : is_ok(true) {}
-    __attribute__((weak)) bool Status::ok() const { return is_ok; }
-    __attribute__((weak)) std::string Status::message() const { return "OK"; }
-}
 
 namespace Ronin::Kernel::Model {
 
@@ -47,6 +32,7 @@ struct InferenceEngine::Impl {
         options.temperature = 0.7f;
         options.top_k = 40;
 
+        // Force direct call to production library
         auto engine_or = LlmInference::Create(options);
         if (engine_or.ok()) {
             engine = std::move(*engine_or);
