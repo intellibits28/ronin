@@ -5,32 +5,21 @@
 #include "capabilities/hardware_bridge.h"
 #include "mediapipe/tasks/cpp/genai/llm_inference/llm_inference.h"
 #include <algorithm>
+#include <dlfcn.h>
 
 #define TAG "RoninInferenceEngine"
 
 using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
+using LlmInferenceOptions = ::mediapipe::tasks::genai::llm_inference::LlmInferenceOptions;
 
 /**
- * PHASE 5.5: Linker Resilience (Weak Stubs)
- * These allow the binary to link even if the symbols are missing in the .so,
- * but the .so implementation will take precedence at runtime if it exists.
+ * PHASE 5.6: Dynamic Symbol Resolution (Resilience Layer)
+ * Explicitly probing for MediaPipe symbols to bypass stub shadowing.
  */
-namespace absl {
-    __attribute__((weak)) Status::Status() : state_(0) {}
-    __attribute__((weak)) bool Status::ok() const { return state_ == 0; }
-    __attribute__((weak)) std::string Status::message() const { return "Shadowed by Stub: Check Library Linkage"; }
-}
-
-namespace mediapipe::tasks::genai::llm_inference {
-    __attribute__((weak)) absl::StatusOr<std::unique_ptr<LlmInference>> LlmInference::Create(const Options& options) {
-        return absl::StatusOr<std::unique_ptr<LlmInference>>();
-    }
-    __attribute__((weak)) absl::Status LlmInference::GenerateResponse(const std::string& prompt, ProgressCallback callback) {
-        return absl::OkStatus();
-    }
-}
 
 namespace Ronin::Kernel::Model {
+
+typedef absl::StatusOr<std::unique_ptr<LlmInference>> (*LlmCreateFunc)(const LlmInferenceOptions&);
 
 struct InferenceEngine::Impl {
     std::string model_path;
@@ -38,22 +27,46 @@ struct InferenceEngine::Impl {
     std::unique_ptr<LlmInference> engine;
 
     bool load(const std::string& path) {
-        LOGI(TAG, "Hydration Protocol: MediaPipe Production (Bundle Path: %s)", path.c_str());
+        LOGI(TAG, "Hydration Protocol: Dynamic Linkage (Path: %s)", path.c_str());
         
-        LlmInference::Options options;
+        // 1. Resolve LlmInference::Create symbol dynamically
+        void* handle = dlopen("libllm_inference_engine_jni.so", RTLD_LAZY | RTLD_GLOBAL);
+        if (!handle) {
+            LOGE(TAG, "Dynamic Linker: Cannot open production library: %s", dlerror());
+            return false;
+        }
+
+        // Probing mangled names for LlmInference::Create(Options const&)
+        // Standard mangling for the official MediaPipe signature
+        const char* symbol_name = "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS2_7OptionsE";
+        auto create_func = (LlmCreateFunc)dlsym(handle, symbol_name);
+
+        if (!create_func) {
+            LOGW(TAG, "Probing alternative symbol: LlmInference::Create...");
+            symbol_name = "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS2_19LlmInferenceOptionsE";
+            create_func = (LlmCreateFunc)dlsym(handle, symbol_name);
+        }
+
+        if (!create_func) {
+            LOGE(TAG, "FAILURE: Production 'Create' symbol not found in .so. Symbols may be hidden.");
+            return false;
+        }
+
+        LlmInferenceOptions options;
         options.model_path = path;
         options.max_tokens = context_window;
         options.temperature = 0.7f;
         options.top_k = 40;
 
-        auto engine_or = LlmInference::Create(options);
+        LOGI(TAG, "Invoking Production Engine Hydration...");
+        auto engine_or = create_func(options);
+        
         if (engine_or.ok()) {
             engine = engine_or.release();
-            LOGI(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Production Library.");
+            LOGI(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Dynamic Symbol Resolution.");
             return true;
         } else {
-            // Note: If message contains "Not Implemented", we are hitting our stubs.
-            LOGE(TAG, "FAILURE: Hydration failed: %s", engine_or.status().message().c_str());
+            LOGE(TAG, "FAILURE: Hydration failed with error status.");
             return false;
         }
     }
@@ -77,6 +90,8 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     if (!m_impl->engine) return "";
 
     std::string final_response;
+    // We use the direct method call here - if we reached this point, 
+    // the virtual table should be correctly populated by the real object.
     auto status = m_impl->engine->GenerateResponse(input, 
         [&final_response](const std::vector<std::string>& partial, bool done) {
             if (!partial.empty()) {
@@ -84,7 +99,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
             }
         });
 
-    return status.ok() ? final_response : "Error: MediaPipe inference failed.";
+    return status.ok() ? final_response : "Error: MediaPipe inference execution failed.";
 }
 
 std::string InferenceEngine::escalateToCloud(const std::string& input, const std::string& apiKey, const std::string& provider) {
@@ -107,7 +122,7 @@ CognitiveIntent InferenceEngine::predictFine(const std::string& input, int coars
 }
 
 std::string InferenceEngine::getModelPath() const { return m_impl->model_path; }
-std::string InferenceEngine::getRuntimeInfo() const { return "Runtime: LiteRT-LM (Production)"; }
+std::string InferenceEngine::getRuntimeInfo() const { return "Runtime: LiteRT-LM (Dynamic)"; }
 long InferenceEngine::verifyModel() { return 100; }
 void InferenceEngine::setContextWindow(int tokens) { if (m_impl) m_impl->context_window = tokens; }
 
