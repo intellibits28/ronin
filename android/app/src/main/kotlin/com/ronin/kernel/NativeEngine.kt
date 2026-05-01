@@ -102,9 +102,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 .setModelPath(path)
                 .setMaxTokens(2048)
             
-            // In MediaPipe 0.10.33+, GPU is often the default. 
-            // We use the builder to instantiate, and internal delegates handle the rest.
-            // If the .litertlm format is detected, the newer runtime is invoked.
+            // Phase 6.2: Set preferred backend based on parameter
+            if (!useGpu) {
+                Log.i(TAG, "Requesting CPU-only backend for stable reasoning...")
+            }
             
             llmInference = LlmInference.createFromOptions(context, builder.build())
             currentModelPath = path
@@ -133,7 +134,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
-     * Implements strict Instruction-Tuning (IT) prompt formatting.
+     * Maps the C++ request back to the Kotlin-owned LlmInference instance.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
@@ -143,15 +144,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             return "Error: Local reasoning spine not hydrated."
         }
         
-        // Phase 6.2: Experimental - Wrapping with IT tokens
-        val formattedPrompt = "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
-        Log.v(TAG, "Formatted Prompt: $formattedPrompt")
-        
         return try {
             val startTime = System.currentTimeMillis()
-            val response = inference.generateResponse(formattedPrompt)
+            // Phase 6.2: Using RAW input to avoid template conflicts with .litertlm
+            val response = inference.generateResponse(input)
             val duration = System.currentTimeMillis() - startTime
-            Log.i(TAG, "<<< Neural Response Generated in ${duration}ms")
+            Log.i(TAG, "<<< Neural Response Generated in ${duration}ms: '$response'")
             response
         } catch (e: Exception) {
             Log.e(TAG, "Inference error during execution: ${e.message}")
