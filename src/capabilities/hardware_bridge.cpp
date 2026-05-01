@@ -229,6 +229,42 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
 #endif
 }
 
+std::string HardwareBridge::runNeuralReasoning(const std::string& input) {
+#ifdef __ANDROID__
+    if (!s_vm || !s_instance || !s_clazz) return "Error: HardwareBridge not initialized.";
+
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
+        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return "Error: Thread attachment failed.";
+        attached = true;
+    }
+
+    std::string result = "";
+    if (env) {
+        jmethodID mid = env->GetMethodID(s_clazz, "runNeuralReasoning", "(Ljava/lang/String;)Ljava/lang/String;");
+        if (mid) {
+            jstring jinput = env->NewStringUTF(input.c_str());
+            jstring jstr = (jstring)env->CallObjectMethod(s_instance, mid, jinput);
+            if (jstr) {
+                const char* cstr = env->GetStringUTFChars(jstr, nullptr);
+                if (cstr) {
+                    result = std::string(cstr);
+                    env->ReleaseStringUTFChars(jstr, cstr);
+                }
+                env->DeleteLocalRef(jstr);
+            }
+            env->DeleteLocalRef(jinput);
+        }
+    }
+
+    if (attached) s_vm->DetachCurrentThread();
+    return result;
+#else
+    return "Host Build: Neural reasoning mocked.";
+#endif
+}
+
 bool HardwareBridge::triggerSync(uint32_t nodeId, bool state) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return state;

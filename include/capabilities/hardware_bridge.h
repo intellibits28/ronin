@@ -56,6 +56,12 @@ public:
      */
     static std::string fetchCloudResponse(const std::string& input, const std::string& provider);
 
+    /**
+     * Phase 6.0: Hybrid Neural Bridge
+     * Calls back into Kotlin for local LiteRT-LM reasoning.
+     */
+    static std::string runNeuralReasoning(const std::string& input);
+
 private:
     static JavaVM* s_vm;
     static jobject s_instance;

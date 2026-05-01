@@ -85,7 +85,7 @@ dependencies {
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.foundation:foundation'
     implementation 'androidx.compose.material:material'
-    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.compose.material-icons-extended:1.5.4'
     
     // Hardware & Security
     implementation 'com.google.android.gms:play-services-location:21.1.0'
