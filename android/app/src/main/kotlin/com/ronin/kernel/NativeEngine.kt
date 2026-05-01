@@ -79,7 +79,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     /**
      * Kotlin-Side Model Hydration (The "Fix")
      */
-    suspend fun loadModelAsync(path: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val options = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
@@ -98,7 +98,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    // Support legacy non-async call for UI state check if needed
+    // Support legacy non-async call for UI state check
     fun isLoaded(): Boolean = llmInference != null
     fun getActiveModelPath(): String = currentModelPath
 
@@ -111,7 +111,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (!isLibLoaded) return@withContext emptyList<Pair<String, String>>()
         val raw = getChatHistory(limit, offset) ?: return@withContext emptyList<Pair<String, String>>()
         val result = mutableListOf<Pair<String, String>>()
-        for (i in 0 until raw.size / 2) {
+        for (i in 0 until (raw.size / 2)) {
             result.add(raw[i * 2] to raw[i * 2 + 1])
         }
         result
