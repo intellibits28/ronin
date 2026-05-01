@@ -16,8 +16,8 @@ using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
  * but the .so implementation will take precedence at runtime if it exists.
  */
 namespace absl {
-    __attribute__((weak)) Status::Status() : is_ok(true) {}
-    __attribute__((weak)) bool Status::ok() const { return is_ok; }
+    __attribute__((weak)) Status::Status() : state_(0) {}
+    __attribute__((weak)) bool Status::ok() const { return state_ == 0; }
     __attribute__((weak)) std::string Status::message() const { return "Shadowed by Stub: Check Library Linkage"; }
 }
 
@@ -52,6 +52,7 @@ struct InferenceEngine::Impl {
             LOGI(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Production Library.");
             return true;
         } else {
+            // Note: If message contains "Not Implemented", we are hitting our stubs.
             LOGE(TAG, "FAILURE: Hydration failed: %s", engine_or.status().message().c_str());
             return false;
         }

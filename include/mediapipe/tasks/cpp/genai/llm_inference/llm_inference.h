@@ -7,34 +7,38 @@
 
 /**
  * PHASE 5.5: Production Header Alignment
- * This header contains DECLARATIONS ONLY to ensure strict linkage
- * with libllm_inference_engine_jni.so at runtime.
+ * This header contains DECLARATIONS for symbols that MUST be
+ * resolved by libllm_inference_engine_jni.so.
  */
 
 namespace absl {
     class Status {
     public:
-        Status();
-        bool ok() const;
+        Status(); 
+        bool ok() const; 
         std::string message() const;
+    private:
+        // Internal state is hidden in .so, but we need a placeholder
+        // to avoid field access errors in stubs if used.
+        uintptr_t state_;
     };
 
     template <typename T>
     class StatusOr {
     public:
-        StatusOr() : is_ok(false) {}
-        StatusOr(T&& val) : value(std::move(val)), is_ok(true) {}
+        StatusOr() : is_ok_(false) {}
+        StatusOr(T&& val) : value_(std::move(val)), is_ok_(true) {}
         
-        bool ok() const { return is_ok; }
+        bool ok() const { return is_ok_; }
         const Status& status() const { return status_; }
         
-        T& operator*() { return value; }
-        T* operator->() { return &value; }
-        T release() { return std::move(value); }
+        T& operator*() { return value_; }
+        T* operator->() { return &value_; }
+        T release() { return std::move(value_); }
 
     private:
-        T value;
-        bool is_ok;
+        T value_;
+        bool is_ok_;
         Status status_;
     };
 
