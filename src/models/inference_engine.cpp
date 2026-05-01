@@ -13,7 +13,9 @@ using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
 using LlmInferenceOptions = ::mediapipe::tasks::genai::llm_inference::LlmInferenceOptions;
 
 /**
- * PHASE 5.6: Dynamic Symbol Resolution (Resilience Layer)
+ * PHASE 5.7: Multi-Level Symbol Probing (Final Linkage Resolve)
+ * This layer uses dynamic discovery to find the exact mangled names in 
+ * libllm_inference_engine_jni.so, bypassing static linkage limitations.
  */
 
 namespace Ronin::Kernel::Model {
@@ -24,30 +26,43 @@ struct InferenceEngine::Impl {
     std::string model_path;
     int context_window = 2048;
     std::unique_ptr<LlmInference> engine;
+    void* lib_handle = nullptr;
+    LlmCreateFunc create_ptr = nullptr;
+
+    ~Impl() {
+        if (lib_handle) dlclose(lib_handle);
+    }
 
     bool load(const std::string& path) {
-        LOGI(TAG, "Hydration Protocol: Dynamic Linkage (Path: %s)", path.c_str());
+        LOGI(TAG, "Hydration Protocol: Probing Production Symbols...");
         
 #ifdef __ANDROID__
-        // 1. Resolve LlmInference::Create symbol dynamically
-        void* handle = dlopen("libllm_inference_engine_jni.so", RTLD_LAZY | RTLD_GLOBAL);
-        if (!handle) {
-            LOGE(TAG, "Dynamic Linker: Cannot open production library: %s", dlerror());
+        if (!lib_handle) {
+            lib_handle = dlopen("libllm_inference_engine_jni.so", RTLD_LAZY | RTLD_GLOBAL);
+        }
+
+        if (!lib_handle) {
+            LOGE(TAG, "Linkage FAILURE: Production .so not accessible: %s", dlerror());
             return false;
         }
 
-        // Probing mangled names for LlmInference::Create(Options const&)
-        const char* symbol_name = "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS2_19LlmInferenceOptionsE";
-        auto create_func = (LlmCreateFunc)dlsym(handle, symbol_name);
+        // Probing mangled names for LlmInference::Create
+        const char* probes[] = {
+            "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS2_19LlmInferenceOptionsE",
+            "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS3_7OptionsE",
+            "LlmInferenceCreate" // Possible C wrapper
+        };
 
-        if (!create_func) {
-            LOGW(TAG, "Probing alternative symbol: LlmInference::Create with Options alias...");
-            symbol_name = "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS3_7OptionsE";
-            create_func = (LlmCreateFunc)dlsym(handle, symbol_name);
+        for (const char* p : probes) {
+            create_ptr = (LlmCreateFunc)dlsym(lib_handle, p);
+            if (create_ptr) {
+                LOGI(TAG, "Linkage SUCCESS: Found symbol: %s", p);
+                break;
+            }
         }
 
-        if (!create_func) {
-            LOGE(TAG, "FAILURE: Production 'Create' symbol not found in .so. Symbols may be hidden.");
+        if (!create_ptr) {
+            LOGE(TAG, "Linkage FAILURE: No valid 'Create' symbol found. Reverting to Cloud-Only Reasoning.");
             return false;
         }
 
@@ -57,15 +72,13 @@ struct InferenceEngine::Impl {
         options.temperature = 0.7f;
         options.top_k = 40;
 
-        LOGI(TAG, "Invoking Production Engine Hydration...");
-        auto engine_or = create_func(options);
-        
+        auto engine_or = create_ptr(options);
         if (engine_or.ok()) {
             engine = engine_or.release();
-            LOGI(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Dynamic Symbol Resolution.");
+            LOGI(TAG, "SUCCESS: Gemma 4 Brain Hydrated.");
             return true;
         } else {
-            LOGE(TAG, "FAILURE: Hydration failed with error status.");
+            LOGE(TAG, "FAILURE: Production library refused hydration (Internal Error).");
             return false;
         }
 #else
@@ -93,6 +106,8 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     if (!m_impl->engine) return "";
 
     std::string final_response;
+    // We attempt GenerateResponse - if linkage fails for this method, 
+    // it will be caught by our weak stub logic in Phase 5.5.
     auto status = m_impl->engine->GenerateResponse(input, 
         [&final_response](const std::vector<std::string>& partial, bool done) {
             if (!partial.empty()) {
@@ -100,7 +115,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
             }
         });
 
-    return status.ok() ? final_response : "Error: MediaPipe inference execution failed.";
+    return status.ok() ? final_response : "";
 #else
     return "Host Build: Reasoning mocked for input: " + input;
 #endif
@@ -126,7 +141,7 @@ CognitiveIntent InferenceEngine::predictFine(const std::string& input, int coars
 }
 
 std::string InferenceEngine::getModelPath() const { return m_impl->model_path; }
-std::string InferenceEngine::getRuntimeInfo() const { return "Runtime: LiteRT-LM (Dynamic)"; }
+std::string InferenceEngine::getRuntimeInfo() const { return "Runtime: LiteRT-LM (Multi-Probe)"; }
 long InferenceEngine::verifyModel() { return 100; }
 void InferenceEngine::setContextWindow(int tokens) { if (m_impl) m_impl->context_window = tokens; }
 
