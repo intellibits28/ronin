@@ -1,0 +1,95 @@
+Send feedback
+
+java.lang.UnsatisfiedLinkError: No implementation found for long com.goog le.mediapipe.tasks.genai.Ilminference.L TaskRunner.nativeCreateEngine(byte[]) (tried Java_com_google_mediapip e_tasks_genai_llminference_LimTa
+
+skRunner_nativeCreate Engine and Java_com_google_mediapipe_tasks_gen ai_llminference_LimTaskRunner_nativeC reateEngine_3B) - is the library loaded, e.g. System.loadLibrary?
+
+at
+
+com.google.mediapipe.tasks.genai.llminf erence.LlmTaskRunner.nativeCreateEngi ne(Native Method)
+
+at
+
+com.google.mediapipe.tasks.genai.llminf erence.Llm TaskRunner.<init>(LlmTaskRu nner.java:164)
+
+at
+
+com.google.mediapipe.tasks.genai.llminf erence.LimInference.<init>(LImInference. java:100)
+
+at
+
+com.google.mediapipe.tasks.genai.llminf erence.LlmInference.createFromOptions( LlmInference.java:95)
+
+at
+
+com.ronin.kernel. Native Engine.try Hydrat e(Native Engine.kt:107)
+
+at
+
+com.ronin.kernel. Native Engine.access$tr
+
+yHydrate(NativeEngine.kt:19)
+
+at
+
+com.ronin.kernel.Native Engine$loadMod el$2.invokeSuspend (Native Engine.kt:88)
+
+at
+
+com.ronin.kernel.Native Engine$loadMod el$2.invoke(Unknown Source:8)
+
+at
+
+com.ronin.kernel. Native Engine$loadMod el$2.invoke(Unknown Source:4)
+
+at
+
+kotlinx.coroutines.intrinsics.Undispatche dKt.startUndispatched OrReturn (Undispat ched.kt:89)
+
+at kotlinx.coroutines. BuildersKt_Builders_c ommonKt.withContext(Builders.common
+
+.kt:169)
+
+at
+
+kotlinx.coroutines.BuildersKt.withContext (Unknown Source:1)
+
+at
+
+com.ronin.kernel. Native Engine.loadMode I(NativeEngine.kt:86)
+
+at
+
+com.ronin.kernel.MainActivity SperformH ydration$1 $jniSuccess$1.invokeSuspend (MainActivity.kt:283)
+
+at
+
+kotlin.coroutines.jvm.internal.BaseContin uationImpl.resumeWith (ContinuationImp 1.kt:33)
+
+at
+
+kotlinx.coroutines. DispatchedTask.run(Di spatched Task.kt:106) at
+
+kotlinx.coroutines.internal.LimitedDispat cher.run(Limited Dispatcher.kt:42) at
+
+kotlinx.coroutines.scheduling.TaskImpl.r un(Tasks.kt:95)
+
+at
+
+kotlinx.coroutines.scheduling.CoroutineS cheduler.runSafely (CoroutineScheduler.k t:570)
+
+at
+
+kotlinx.coroutines.scheduling.CoroutineS cheduler$Worker.executeTask(Coroutine Scheduler.kt:750)
+
+at
+
+kotlinx.coroutines.scheduling.CoroutineS cheduler$Worker.runWorker(CoroutineSc heduler.kt:677)
+
+at
+
+kotlinx.coroutines.scheduling.CoroutineS cheduler$Worker.run(CoroutineScheduler .kt:664)
+
+Suppressed: kotlinx.coroutines. Diagnostic CoroutineC ontextException:
+
+[StandaloneCoroutine{Cancelling)@1772 129, Dispatchers.Main.immediate]

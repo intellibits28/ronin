@@ -33,6 +33,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         private fun loadNativeLibraries() {
             if (isLibLoaded) return
             try {
+                // Explicitly load MediaPipe JNI first to ensure symbols are available
+                System.loadLibrary("llm_inference_engine_jni")
                 System.loadLibrary("ronin_kernel")
                 isLibLoaded = true
                 Log.i(TAG, "SUCCESS: Ronin Kernel Bridge Hydrated.")
