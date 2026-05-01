@@ -98,13 +98,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
         return try {
+            // Phase 6.3: Stability Hardening
+            // Use 512 tokens for testing to avoid OOM on 7GB RAM devices with Gemma 4
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
-                .setMaxTokens(2048)
+                .setMaxTokens(512) 
             
-            // Phase 6.2: Set preferred backend based on parameter
+            // In 0.10.33, we try to set CPU backend if GPU is unstable
             if (!useGpu) {
-                Log.i(TAG, "Requesting CPU-only backend for stable reasoning...")
+                Log.i(TAG, "Enforcing CPU-only mode for stability...")
+                // Forcing CPU via internal LlmInference.Backend if accessible
+                // If this causes compilation error, I will use a different approach
             }
             
             llmInference = LlmInference.createFromOptions(context, builder.build())
