@@ -11,7 +11,6 @@ namespace jni {
 
 /**
  * LiteRT-LM (Production) JNI Utilities.
- * Replicated from official LiteRT/TFLite sources.
  */
 
 // Retrieve the JNIEnv for the current thread
@@ -68,7 +67,11 @@ private:
 } // namespace jni
 } // namespace tflite
 
-// Compatibility alias for Ronin
-namespace ronin::jni = tflite::jni;
+// Compatibility Aliases for Ronin (Transition layer)
+namespace ronin::jni {
+    using namespace tflite::jni;
+    inline std::string JStringToStdString(JNIEnv* env, jstring jstr) { return tflite::jni::ConvertJStringToString(env, jstr); }
+    inline jstring StdStringToJString(JNIEnv* env, const std::string& str) { return tflite::jni::ConvertStringToJString(env, str); }
+}
 
 #endif // RONIN_JNI_UTILS_H_
