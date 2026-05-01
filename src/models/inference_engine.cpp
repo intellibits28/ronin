@@ -14,7 +14,6 @@ using LlmInferenceOptions = ::mediapipe::tasks::genai::llm_inference::LlmInferen
 
 /**
  * PHASE 5.6: Dynamic Symbol Resolution (Resilience Layer)
- * Explicitly probing for MediaPipe symbols to bypass stub shadowing.
  */
 
 namespace Ronin::Kernel::Model {
@@ -29,6 +28,7 @@ struct InferenceEngine::Impl {
     bool load(const std::string& path) {
         LOGI(TAG, "Hydration Protocol: Dynamic Linkage (Path: %s)", path.c_str());
         
+#ifdef __ANDROID__
         // 1. Resolve LlmInference::Create symbol dynamically
         void* handle = dlopen("libllm_inference_engine_jni.so", RTLD_LAZY | RTLD_GLOBAL);
         if (!handle) {
@@ -37,13 +37,12 @@ struct InferenceEngine::Impl {
         }
 
         // Probing mangled names for LlmInference::Create(Options const&)
-        // Standard mangling for the official MediaPipe signature
-        const char* symbol_name = "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS2_7OptionsE";
+        const char* symbol_name = "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS2_19LlmInferenceOptionsE";
         auto create_func = (LlmCreateFunc)dlsym(handle, symbol_name);
 
         if (!create_func) {
-            LOGW(TAG, "Probing alternative symbol: LlmInference::Create...");
-            symbol_name = "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS2_19LlmInferenceOptionsE";
+            LOGW(TAG, "Probing alternative symbol: LlmInference::Create with Options alias...");
+            symbol_name = "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS3_7OptionsE";
             create_func = (LlmCreateFunc)dlsym(handle, symbol_name);
         }
 
@@ -69,6 +68,9 @@ struct InferenceEngine::Impl {
             LOGE(TAG, "FAILURE: Hydration failed with error status.");
             return false;
         }
+#else
+        return true;
+#endif
     }
 };
 
@@ -87,11 +89,10 @@ bool InferenceEngine::isLoaded() const {
 }
 
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
+#ifdef __ANDROID__
     if (!m_impl->engine) return "";
 
     std::string final_response;
-    // We use the direct method call here - if we reached this point, 
-    // the virtual table should be correctly populated by the real object.
     auto status = m_impl->engine->GenerateResponse(input, 
         [&final_response](const std::vector<std::string>& partial, bool done) {
             if (!partial.empty()) {
@@ -100,6 +101,9 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
         });
 
     return status.ok() ? final_response : "Error: MediaPipe inference execution failed.";
+#else
+    return "Host Build: Reasoning mocked for input: " + input;
+#endif
 }
 
 std::string InferenceEngine::escalateToCloud(const std::string& input, const std::string& apiKey, const std::string& provider) {

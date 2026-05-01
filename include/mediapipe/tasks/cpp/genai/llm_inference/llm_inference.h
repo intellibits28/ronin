@@ -6,9 +6,8 @@
 #include <functional>
 
 /**
- * PHASE 5.5: Production Header Alignment
- * This header contains DECLARATIONS for symbols that MUST be
- * resolved by libllm_inference_engine_jni.so.
+ * PHASE 5.6: Production Header Alignment
+ * Aligned with official MediaPipe GenAI C++ API signatures.
  */
 
 namespace absl {
@@ -18,8 +17,6 @@ namespace absl {
         bool ok() const; 
         std::string message() const;
     private:
-        // Internal state is hidden in .so, but we need a placeholder
-        // to avoid field access errors in stubs if used.
         uintptr_t state_;
     };
 
@@ -47,17 +44,19 @@ namespace absl {
 
 namespace mediapipe::tasks::genai::llm_inference {
 
+struct LlmInferenceOptions {
+    std::string model_path;
+    int max_tokens = 2048;
+    int top_k = 40;
+    float temperature = 0.7f;
+    int random_seed = 42;
+    float top_p = 1.0f;
+    int lora_max_rank = 0;
+};
+
 class LlmInference {
 public:
-    struct Options {
-        std::string model_path;
-        int max_tokens = 2048;
-        int top_k = 40;
-        float temperature = 0.7f;
-        int random_seed = 42;
-        float top_p = 1.0f;
-        int lora_max_rank = 0;
-    };
+    using Options = LlmInferenceOptions;
 
     // Symbol MUST be provided by libllm_inference_engine_jni.so
     static absl::StatusOr<std::unique_ptr<LlmInference>> Create(const Options& options);
