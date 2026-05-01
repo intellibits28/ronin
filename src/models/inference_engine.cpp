@@ -8,13 +8,14 @@
 
 #define TAG "RoninInferenceEngine"
 
-/**
- * PHASE 5.3: Strict Production Linkage
- * Removing weak stubs to force the linker to resolve symbols from 
- * libllm_inference_engine_jni.so. This will reveal if the symbols 
- * are missing or misaligned at build time.
- */
 using LlmInference = ::mediapipe::tasks::genai::llm_inference::LlmInference;
+using LlmInferenceOptions = ::mediapipe::tasks::genai::llm_inference::LlmInferenceOptions;
+
+/**
+ * PHASE 5.4: Strict Production Linkage (Experimental)
+ * Removing stubs to verify if the official libllm_inference_engine_jni.so 
+ * contains the C++ API symbols with the corrected signature.
+ */
 
 namespace Ronin::Kernel::Model {
 
@@ -26,7 +27,7 @@ struct InferenceEngine::Impl {
     bool load(const std::string& path) {
         LOGI(TAG, "Hydration Protocol: MediaPipe Production (Bundle Path: %s)", path.c_str());
         
-        LlmInference::Options options;
+        LlmInferenceOptions options;
         options.model_path = path;
         options.max_tokens = context_window;
         options.temperature = 0.7f;
@@ -39,6 +40,8 @@ struct InferenceEngine::Impl {
             LOGI(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Production Library.");
             return true;
         } else {
+            // Note: If this still returns failure with "OK" message, 
+            // it means we are still hitting a hidden stub somewhere.
             LOGE(TAG, "FAILURE: Hydration failed: %s", engine_or.status().message().c_str());
             return false;
         }
@@ -70,7 +73,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
             }
         });
 
-    return status.ok() ? final_response : "Error: LiteRT-LM inference failed.";
+    return status.ok() ? final_response : "Error: MediaPipe inference execution failed.";
 }
 
 std::string InferenceEngine::escalateToCloud(const std::string& input, const std::string& apiKey, const std::string& provider) {
