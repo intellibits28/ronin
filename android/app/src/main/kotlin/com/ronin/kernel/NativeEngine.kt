@@ -96,34 +96,42 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return@withContext tryHydrate(path, useGpu = false)
     }
 
+    private var asyncLatch: java.util.concurrent.CountDownLatch? = null
+    private var lastFullResponse: String = ""
+
     private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
         return try {
-            // Phase 6.3: Stability Hardening
-            // Use 512 tokens for testing to avoid OOM on 7GB RAM devices with Gemma 4
+            // Phase 6.5: Async Response Hardening
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
-                .setMaxTokens(512) 
+                .setMaxTokens(512)
+                .setResultListener { result, done ->
+                    if (done) {
+                        lastFullResponse = result
+                        asyncLatch?.countDown()
+                    }
+                }
+                .setErrorListener { error ->
+                    Log.e(TAG, "Inference Engine Error: $error")
+                    lastFullResponse = "Error: $error"
+                    asyncLatch?.countDown()
+                }
             
-            // In 0.10.33, we try to set CPU backend if GPU is unstable
             if (!useGpu) {
                 Log.i(TAG, "Enforcing CPU-only mode for stability...")
-                // Forcing CPU via internal LlmInference.Backend if accessible
-                // If this causes compilation error, I will use a different approach
             }
             
             llmInference = LlmInference.createFromOptions(context, builder.build())
             currentModelPath = path
             
-            // Sync state to C++ Kernel
             if (isLibLoaded) {
                 notifyModelLoaded(path)
             }
             
-            val mode = if (useGpu) "GPU/Auto" else "CPU-Fallback"
-            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Kotlin AAR ($mode).")
+            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Kotlin AAR.")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Hydration attempt failed (GPU=$useGpu): ${e.message}")
+            Log.e(TAG, "Hydration attempt failed: ${e.message}")
             false
         }
     }
@@ -138,34 +146,39 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
-     * Maps the C++ request back to the Kotlin-owned LlmInference instance.
-     * Implements model-specific templates to prevent language drift and hangs.
+     * Uses Async-to-Sync bridge with a 30s timeout safety net.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
         Log.d(TAG, ">>> Neural Reasoning START: '$input'")
-        val inference = llmInference ?: run {
-            Log.e(TAG, "Inference Engine null - hydration failed?")
-            return "Error: Local reasoning spine not hydrated."
-        }
+        val inference = llmInference ?: return "Error: Local reasoning spine not hydrated."
         
-        // Phase 6.4: Dynamic Template Selection
         val formattedPrompt = if (currentModelPath.endsWith(".litertlm")) {
-            // Gemma 4 Format: <|turn>user\nCONTENT<turn|>\n<|turn>model\n
             "<|turn>user\n$input<turn|>\n<|turn>model\n"
         } else {
-            // Gemma 2B (Legacy .bin) Format: <start_of_turn>user\nCONTENT<end_of_turn>\n<start_of_turn>model\n
             "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
         }
         
-        Log.v(TAG, "Formatted Prompt (${if (currentModelPath.endsWith(".litertlm")) "Gemma4" else "Gemma2B"}): $formattedPrompt")
+        lastFullResponse = ""
+        asyncLatch = java.util.concurrent.CountDownLatch(1)
         
         return try {
             val startTime = System.currentTimeMillis()
-            val response = inference.generateResponse(formattedPrompt)
+            
+            // Execute Async
+            inference.generateResponseAsync(formattedPrompt)
+            
+            // Wait for result or 30s timeout
+            val success = asyncLatch?.await(30, java.util.concurrent.TimeUnit.SECONDS) ?: false
             val duration = System.currentTimeMillis() - startTime
-            Log.i(TAG, "<<< Neural Response SUCCESS in ${duration}ms: '$response'")
-            response
+            
+            if (!success) {
+                Log.w(TAG, "!!! Neural Spine Timeout (30s reached)")
+                return "Error: Inference Timeout (Gemma 4 processing exceeded 30s)"
+            }
+
+            Log.i(TAG, "<<< Neural Response SUCCESS in ${duration}ms")
+            lastFullResponse
         } catch (e: Exception) {
             Log.e(TAG, "Inference error during execution: ${e.message}")
             "Error: Neural spine execution failed - ${e.message}"
