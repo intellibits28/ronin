@@ -10,15 +10,20 @@ import org.json.JSONArray
 import org.json.JSONObject
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
- * Native Engine (Phase 6.5: Stability Hardening)
- * Uses synchronous generation with model-specific templates for maximum SD778G+ stability.
+ * Native Engine (Phase 6.6: Async Hardening & Stateful Reasoning)
+ * Implements Async-to-Sync bridging with CountDownLatch for stable SD778G+ inference.
+ * Optimized for Gemma 4 Task Bundles and Legacy .bin compatibility.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private var llmInference: LlmInference? = null
     private var currentModelPath: String = ""
+    private var asyncLatch: CountDownLatch? = null
+    private var lastFullResponse: String = ""
 
     companion object {
         private const val TAG = "RoninKernel_Native"
@@ -68,7 +73,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     init {
         if (isLibLoaded) {
             setEngineInstance()
-            initializeKernel(context.filesDir.absolutePath)
         }
     }
 
@@ -90,9 +94,28 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
         return try {
+            // Phase 6.6: Streaming Listener Integration
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
-                .setMaxTokens(512) // Low-memory guard for SD778G+
+                .setMaxTokens(512) // Safety limit for SD778G+
+            
+            // Note: In 0.10.33, the listener is part of the options to ensure 
+            // the stateful session starts correctly during generation.
+            builder.setResultListener { result, done ->
+                if (!done) {
+                    // Collect partial chunks if needed, but for bridge we wait for final
+                    lastFullResponse = result 
+                } else {
+                    lastFullResponse = result
+                    asyncLatch?.countDown()
+                }
+            }
+
+            builder.setErrorListener { error ->
+                Log.e(TAG, "LlmInference Error: $error")
+                lastFullResponse = "Error: $error"
+                asyncLatch?.countDown()
+            }
             
             llmInference = LlmInference.createFromOptions(context, builder.build())
             currentModelPath = path
@@ -101,7 +124,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 notifyModelLoaded(path)
             }
             
-            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated via Kotlin AAR.")
+            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated (Streaming Enabled).")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Hydration attempt failed: ${e.message}")
@@ -119,7 +142,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
-     * Implements model-specific templates to prevent language drift and hangs.
+     * Uses Async-to-Sync bridge with a 30s timeout safety net.
+     * Implements model-specific templates to prevent language drift.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
@@ -133,12 +157,26 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
         }
         
+        lastFullResponse = ""
+        asyncLatch = CountDownLatch(1)
+        
         return try {
             val startTime = System.currentTimeMillis()
-            val response = inference.generateResponse(formattedPrompt)
+            
+            // Initiate Async Generation
+            inference.generateResponseAsync(formattedPrompt)
+            
+            // Wait for CountDownLatch (countDown called in ResultListener)
+            val success = asyncLatch?.await(30, TimeUnit.SECONDS) ?: false
             val duration = System.currentTimeMillis() - startTime
-            Log.i(TAG, "<<< Neural Response SUCCESS in ${duration}ms: '$response'")
-            response
+            
+            if (!success) {
+                Log.w(TAG, "!!! Neural Spine Timeout (30s reached)")
+                return "Error: Inference Timeout (Gemma 4 processing exceeded 30s)"
+            }
+
+            Log.i(TAG, "<<< Neural Response SUCCESS in ${duration}ms: '$lastFullResponse'")
+            lastFullResponse
         } catch (e: Exception) {
             Log.e(TAG, "Inference error during execution: ${e.message}")
             "Error: Neural spine execution failed - ${e.message}"
