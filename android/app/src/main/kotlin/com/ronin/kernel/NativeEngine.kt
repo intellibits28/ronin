@@ -12,14 +12,15 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import java.io.File
 
 /**
- * Native Engine (Phase 6.1: State-Synced Hybrid Ownership)
- * Kotlin owns the LlmInference instance. C++ is notified of state changes.
- * Upgraded for Gemma 4 (.litertlm) support and robust hardware fallback.
+ * Native Engine (Phase 6.5: Async Response Hardening)
+ * Implements Async-to-Sync bridging with CountDownLatch for stable SD778G+ inference.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private var llmInference: LlmInference? = null
     private var currentModelPath: String = ""
+    private var asyncLatch: java.util.concurrent.CountDownLatch? = null
+    private var lastFullResponse: String = ""
 
     companion object {
         private const val TAG = "RoninKernel_Native"
@@ -33,7 +34,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         private fun loadNativeLibraries() {
             if (isLibLoaded) return
             try {
-                // Explicitly load MediaPipe JNI first to ensure symbols are available
                 System.loadLibrary("llm_inference_engine_jni")
                 System.loadLibrary("ronin_kernel")
                 isLibLoaded = true
@@ -44,7 +44,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    // --- JNI API (C++ Kernel Interface) ---
+    // --- JNI API ---
     private external fun initializeKernel(filesDir: String)
     private external fun setEngineInstance()
     private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
@@ -82,29 +82,19 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Kotlin-Side Model Hydration with Automatic Fallback.
-     * Tries GPU first, then falls back to CPU if drivers (OpenCL/Vulkan) fail.
-     * Required for Snapdragon 778G+ driver stability.
      */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
-        // Attempt 1: Default/GPU Acceleration
-        val gpuSuccess = tryHydrate(path, useGpu = true)
+        val gpuSuccess = tryHydrate(path, true)
         if (gpuSuccess) return@withContext true
-
         Log.w(TAG, "GPU Hydration failed. Falling back to CPU reasoning spine...")
-        
-        // Attempt 2: CPU Fallback (Stable for INT4 bugs and driver mismatches)
-        return@withContext tryHydrate(path, useGpu = false)
+        return@withContext tryHydrate(path, false)
     }
-
-    private var asyncLatch: java.util.concurrent.CountDownLatch? = null
-    private var lastFullResponse: String = ""
 
     private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
         return try {
-            // Phase 6.5: Async Response Hardening
-            val builder = LlmInference.LlmInferenceOptions.builder()
+            val options = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
-                .setMaxTokens(512)
+                .setMaxTokens(512) // Hardened for SD778G+ RAM limits
                 .setResultListener { result, done ->
                     if (done) {
                         lastFullResponse = result
@@ -116,12 +106,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     lastFullResponse = "Error: $error"
                     asyncLatch?.countDown()
                 }
+                .build()
             
-            if (!useGpu) {
-                Log.i(TAG, "Enforcing CPU-only mode for stability...")
-            }
-            
-            llmInference = LlmInference.createFromOptions(context, builder.build())
+            llmInference = LlmInference.createFromOptions(context, options)
             currentModelPath = path
             
             if (isLibLoaded) {
@@ -146,13 +133,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
-     * Uses Async-to-Sync bridge with a 30s timeout safety net.
+     * Implements Async-to-Sync bridge with a 30s timeout safety net.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
         Log.d(TAG, ">>> Neural Reasoning START: '$input'")
         val inference = llmInference ?: return "Error: Local reasoning spine not hydrated."
         
+        // Phase 6.4: Dynamic Template Selection
         val formattedPrompt = if (currentModelPath.endsWith(".litertlm")) {
             "<|turn>user\n$input<turn|>\n<|turn>model\n"
         } else {
@@ -164,11 +152,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         
         return try {
             val startTime = System.currentTimeMillis()
-            
-            // Execute Async
             inference.generateResponseAsync(formattedPrompt)
             
-            // Wait for result or 30s timeout
             val success = asyncLatch?.await(30, java.util.concurrent.TimeUnit.SECONDS) ?: false
             val duration = System.currentTimeMillis() - startTime
             
@@ -226,8 +211,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) ?: false
     }
 
-    // --- JNI Callbacks (Invoked from C++ Layer via HardwareBridge) ---
-
+    // --- JNI Callbacks ---
     @Suppress("unused")
     fun pushKernelMessage(message: String) {
         onKernelMessage?.invoke(message)
@@ -250,10 +234,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Suppress("unused")
     fun performCloudInference(input: String, primaryProvider: String): String {
-        if (!isVpnActive(context)) {
-            Log.w(TAG, "Cloud Bridge blocked: VPN inactive.")
-            return "Error: Region Restricted - Please check VPN"
-        }
+        if (!isVpnActive(context)) return "Error: Region Restricted - Please check VPN"
 
         var finalEndpoint = ""
         try {
@@ -286,7 +267,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         val apiKey = getSecureApiKey?.invoke(provider)?.trim() ?: ""
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
         val finalUrl = if (endpoint.contains("?key=")) endpoint else "$endpoint?key=$apiKey"
-
         return try {
             val url = java.net.URL(finalUrl)
             val conn = url.openConnection() as java.net.HttpURLConnection
@@ -294,10 +274,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             conn.requestMethod = "POST"
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
-            
             val jsonBody = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", input)))))
             conn.outputStream.use { os -> os.write(jsonBody.toString().toByteArray()) }
-
             if (conn.responseCode == 200) {
                 val response = conn.inputStream.bufferedReader().use { it.readText() }
                 JSONObject(response).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
@@ -305,7 +283,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
-    // --- ComponentCallbacks2 ---
     override fun onTrimMemory(level: Int) {
         if (isLibLoaded) notifyTrimMemory(level)
     }
