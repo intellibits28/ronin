@@ -40,3 +40,4 @@ ronin_*.log
 providers.json
 inspect_onnx
 inspect_onnx.cpp
+AppIcons.zip
