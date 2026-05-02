@@ -139,21 +139,32 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
      * Maps the C++ request back to the Kotlin-owned LlmInference instance.
+     * Implements model-specific templates to prevent language drift and hangs.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
-        Log.d(TAG, ">>> Neural Reasoning Requested: '$input'")
+        Log.d(TAG, ">>> Neural Reasoning START: '$input'")
         val inference = llmInference ?: run {
             Log.e(TAG, "Inference Engine null - hydration failed?")
             return "Error: Local reasoning spine not hydrated."
         }
         
+        // Phase 6.4: Dynamic Template Selection
+        val formattedPrompt = if (currentModelPath.endsWith(".litertlm")) {
+            // Gemma 4 Format: <|turn>user\nCONTENT<turn|>\n<|turn>model\n
+            "<|turn>user\n$input<turn|>\n<|turn>model\n"
+        } else {
+            // Gemma 2B (Legacy .bin) Format: <start_of_turn>user\nCONTENT<end_of_turn>\n<start_of_turn>model\n
+            "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
+        }
+        
+        Log.v(TAG, "Formatted Prompt (${if (currentModelPath.endsWith(".litertlm")) "Gemma4" else "Gemma2B"}): $formattedPrompt")
+        
         return try {
             val startTime = System.currentTimeMillis()
-            // Phase 6.2: Using RAW input to avoid template conflicts with .litertlm
-            val response = inference.generateResponse(input)
+            val response = inference.generateResponse(formattedPrompt)
             val duration = System.currentTimeMillis() - startTime
-            Log.i(TAG, "<<< Neural Response Generated in ${duration}ms: '$response'")
+            Log.i(TAG, "<<< Neural Response SUCCESS in ${duration}ms: '$response'")
             response
         } catch (e: Exception) {
             Log.e(TAG, "Inference error during execution: ${e.message}")
