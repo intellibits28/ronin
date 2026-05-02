@@ -95,27 +95,21 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
         return try {
             // Phase 6.6: Streaming Listener Integration
+            // In 0.10.33, the listener is provided to the builder
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(512) // Safety limit for SD778G+
-            
-            // Note: In 0.10.33, the listener is part of the options to ensure 
-            // the stateful session starts correctly during generation.
-            builder.setResultListener { result, done ->
-                if (!done) {
-                    // Collect partial chunks if needed, but for bridge we wait for final
-                    lastFullResponse = result 
-                } else {
-                    lastFullResponse = result
+                .setResultListener { result, done ->
+                    if (done) {
+                        lastFullResponse = result
+                        asyncLatch?.countDown()
+                    }
+                }
+                .setErrorListener { error ->
+                    Log.e(TAG, "LlmInference Error: $error")
+                    lastFullResponse = "Error: $error"
                     asyncLatch?.countDown()
                 }
-            }
-
-            builder.setErrorListener { error ->
-                Log.e(TAG, "LlmInference Error: $error")
-                lastFullResponse = "Error: $error"
-                asyncLatch?.countDown()
-            }
             
             llmInference = LlmInference.createFromOptions(context, builder.build())
             currentModelPath = path
