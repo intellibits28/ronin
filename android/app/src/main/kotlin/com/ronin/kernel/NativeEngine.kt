@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit
 /**
  * Native Engine (Phase 6.6: Async Hardening & Stateful Reasoning)
  * Implements Async-to-Sync bridging with CountDownLatch for stable SD778G+ inference.
- * Optimized for Gemma 4 Task Bundles and Legacy .bin compatibility.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
@@ -47,7 +46,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    // --- JNI API (C++ Kernel Interface) ---
+    // --- JNI API ---
     private external fun initializeKernel(filesDir: String)
     private external fun setEngineInstance()
     private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
@@ -82,34 +81,18 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    /**
-     * Kotlin-Side Model Hydration with Automatic Fallback.
-     */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
         val gpuSuccess = tryHydrate(path, true)
         if (gpuSuccess) return@withContext true
-        Log.w(TAG, "GPU Hydration failed. Falling back to CPU reasoning spine...")
         return@withContext tryHydrate(path, false)
     }
 
     private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
         return try {
-            // Phase 6.6: Streaming Listener Integration
-            // In 0.10.33, the listener is provided to the builder
+            // Stability Hardening: Minimal builder without listeners if they fail
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
-                .setMaxTokens(512) // Safety limit for SD778G+
-                .setResultListener { result, done ->
-                    if (done) {
-                        lastFullResponse = result
-                        asyncLatch?.countDown()
-                    }
-                }
-                .setErrorListener { error ->
-                    Log.e(TAG, "LlmInference Error: $error")
-                    lastFullResponse = "Error: $error"
-                    asyncLatch?.countDown()
-                }
+                .setMaxTokens(512)
             
             llmInference = LlmInference.createFromOptions(context, builder.build())
             currentModelPath = path
@@ -118,10 +101,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 notifyModelLoaded(path)
             }
             
-            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated (Streaming Enabled).")
+            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated.")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Hydration attempt failed: ${e.message}")
+            Log.e(TAG, "Hydration failed: ${e.message}")
             false
         }
     }
@@ -136,44 +119,36 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
-     * Uses Async-to-Sync bridge with a 30s timeout safety net.
-     * Implements model-specific templates to prevent language drift.
+     * Uses Synchronous generateResponse with improved template to avoid empty returns.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
-        Log.d(TAG, ">>> Neural Reasoning START: '$input'")
+        Log.d(TAG, ">>> Neural Reasoning Requested: '$input'")
         val inference = llmInference ?: return "Error: Local reasoning spine not hydrated."
         
-        // Phase 6.4: Dynamic Template Selection
+        // Phase 6.6: Stateful Prompt Construction
+        // We wrap the input to simulate a session start as Gemma 4 LiteRT-LM expects
         val formattedPrompt = if (currentModelPath.endsWith(".litertlm")) {
             "<|turn>user\n$input<turn|>\n<|turn>model\n"
         } else {
             "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
         }
         
-        lastFullResponse = ""
-        asyncLatch = CountDownLatch(1)
-        
         return try {
             val startTime = System.currentTimeMillis()
-            
-            // Initiate Async Generation
-            inference.generateResponseAsync(formattedPrompt)
-            
-            // Wait for CountDownLatch (countDown called in ResultListener)
-            val success = asyncLatch?.await(30, TimeUnit.SECONDS) ?: false
+            val response = inference.generateResponse(formattedPrompt)
             val duration = System.currentTimeMillis() - startTime
             
-            if (!success) {
-                Log.w(TAG, "!!! Neural Spine Timeout (30s reached)")
-                return "Error: Inference Timeout (Gemma 4 processing exceeded 30s)"
+            if (response.isEmpty()) {
+                Log.w(TAG, "!!! Empty response received from Gemma 4.")
+                return "Error: Empty response (Session initialization failed?)"
             }
 
-            Log.i(TAG, "<<< Neural Response SUCCESS in ${duration}ms: '$lastFullResponse'")
-            lastFullResponse
+            Log.i(TAG, "<<< Neural Response SUCCESS in ${duration}ms: '$response'")
+            response
         } catch (e: Exception) {
-            Log.e(TAG, "Inference error during execution: ${e.message}")
-            "Error: Neural spine execution failed - ${e.message}"
+            Log.e(TAG, "Inference error: ${e.message}")
+            "Error: Neural spine failure - ${e.message}"
         }
     }
 
@@ -206,7 +181,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Network error during model fetch: ${e.message}")
+            Log.e(TAG, "Network error: ${e.message}")
         }
         models
     }
