@@ -12,15 +12,13 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import java.io.File
 
 /**
- * Native Engine (Phase 6.5: Async Response Hardening)
- * Implements Async-to-Sync bridging with CountDownLatch for stable SD778G+ inference.
+ * Native Engine (Phase 6.5: Stability Hardening)
+ * Uses synchronous generation with model-specific templates for maximum SD778G+ stability.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private var llmInference: LlmInference? = null
     private var currentModelPath: String = ""
-    private var asyncLatch: java.util.concurrent.CountDownLatch? = null
-    private var lastFullResponse: String = ""
 
     companion object {
         private const val TAG = "RoninKernel_Native"
@@ -44,7 +42,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    // --- JNI API ---
+    // --- JNI API (C++ Kernel Interface) ---
     private external fun initializeKernel(filesDir: String)
     private external fun setEngineInstance()
     private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
@@ -92,23 +90,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
         return try {
-            val options = LlmInference.LlmInferenceOptions.builder()
+            val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
-                .setMaxTokens(512) // Hardened for SD778G+ RAM limits
-                .setResultListener { result, done ->
-                    if (done) {
-                        lastFullResponse = result
-                        asyncLatch?.countDown()
-                    }
-                }
-                .setErrorListener { error ->
-                    Log.e(TAG, "Inference Engine Error: $error")
-                    lastFullResponse = "Error: $error"
-                    asyncLatch?.countDown()
-                }
-                .build()
+                .setMaxTokens(512) // Low-memory guard for SD778G+
             
-            llmInference = LlmInference.createFromOptions(context, options)
+            llmInference = LlmInference.createFromOptions(context, builder.build())
             currentModelPath = path
             
             if (isLibLoaded) {
@@ -133,7 +119,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
-     * Implements Async-to-Sync bridge with a 30s timeout safety net.
+     * Implements model-specific templates to prevent language drift and hangs.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
@@ -147,23 +133,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
         }
         
-        lastFullResponse = ""
-        asyncLatch = java.util.concurrent.CountDownLatch(1)
-        
         return try {
             val startTime = System.currentTimeMillis()
-            inference.generateResponseAsync(formattedPrompt)
-            
-            val success = asyncLatch?.await(30, java.util.concurrent.TimeUnit.SECONDS) ?: false
+            val response = inference.generateResponse(formattedPrompt)
             val duration = System.currentTimeMillis() - startTime
-            
-            if (!success) {
-                Log.w(TAG, "!!! Neural Spine Timeout (30s reached)")
-                return "Error: Inference Timeout (Gemma 4 processing exceeded 30s)"
-            }
-
-            Log.i(TAG, "<<< Neural Response SUCCESS in ${duration}ms")
-            lastFullResponse
+            Log.i(TAG, "<<< Neural Response SUCCESS in ${duration}ms: '$response'")
+            response
         } catch (e: Exception) {
             Log.e(TAG, "Inference error during execution: ${e.message}")
             "Error: Neural spine execution failed - ${e.message}"
@@ -235,7 +210,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Suppress("unused")
     fun performCloudInference(input: String, primaryProvider: String): String {
         if (!isVpnActive(context)) return "Error: Region Restricted - Please check VPN"
-
         var finalEndpoint = ""
         try {
             val providersFile = File(File(context.filesDir, "config"), "providers.json")
@@ -250,11 +224,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 }
             }
         } catch (e: Exception) {}
-
-        if (finalEndpoint.isEmpty()) {
-            finalEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-        }
-
+        if (finalEndpoint.isEmpty()) finalEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
         return executeSingleInference(input, primaryProvider, finalEndpoint)
     }
 
