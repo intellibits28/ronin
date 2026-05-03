@@ -175,6 +175,20 @@ Java_com_ronin_kernel_NativeEngine_setPriorityNative(JNIEnv *env, jobject thiz, 
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_ronin_kernel_NativeEngine_checkFileAccessNative(JNIEnv *env, jobject thiz, jstring path) {
+    std::string path_str = ConvertJStringToString(env, path);
+    FILE* file = fopen(path_str.c_str(), "rb");
+    if (file) {
+        fclose(file);
+        return ConvertStringToJString(env, "SUCCESS: File is readable by Native Kernel.");
+    } else {
+        int err = errno;
+        std::string msg = "FAILURE: errno=" + std::to_string(err) + " (" + strerror(err) + ")";
+        return ConvertStringToJString(env, msg);
+    }
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstring input) {
     std::string input_str = ConvertJStringToString(env, input);
     g_last_input_str = input_str; 
@@ -259,6 +273,7 @@ Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdo
 JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
     LOGD(TAG, "System Health: Temp=%.1f, RAM=%.1f/%.1f", temp, used, total);
+    Ronin::Kernel::Capability::HardwareBridge::reportSystemHealth(temp, used, total);
     return JNI_TRUE;
 }
 

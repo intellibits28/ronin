@@ -51,6 +51,20 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun notifyModelLoaded(path: String)
     private external fun stopLowPriorityTasksNative()
     private external fun setPriorityNative(priority: Int)
+    private external fun checkFileAccessNative(path: String): String
+
+    /**
+     * Phase 4.0 Audit: Verify native side can actually read the model file.
+     */
+    fun checkFileAccess(path: String): String {
+        return if (isLibLoaded) {
+            try {
+                checkFileAccessNative(path)
+            } catch (e: UnsatisfiedLinkError) {
+                "Error: Linkage failure"
+            }
+        } else "Error: Library not loaded"
+    }
     
     fun injectLocationSafe(lat: Double, lon: Double) {
         if (isLibLoaded) {
@@ -195,20 +209,35 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
+        Log.i(TAG, ">>> [Phase 4.0 Audit] Hydration START at ${System.currentTimeMillis()}ms")
+        
+        // Audit Step: Verify direct native file access before hydration
+        val accessResult = checkFileAccess(path)
+        Log.i(TAG, "[Phase 4.0 Audit] Native File Access Probe: $accessResult")
+
         return try {
-            // Stability Hardening: Minimal builder without listeners if they fail
+            val startTime = System.currentTimeMillis()
+            
+            // Stability Hardening: Minimal builder
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(512)
             
+            val optionsBuilt = System.currentTimeMillis()
+            Log.d(TAG, "Options Builder took ${optionsBuilt - startTime}ms")
+
+            val startEngine = System.currentTimeMillis()
             llmInference = LlmInference.createFromOptions(context, builder.build())
+            val engineCreated = System.currentTimeMillis()
+            Log.i(TAG, ">>> [CRITICAL] LlmInference.createFromOptions took ${engineCreated - startEngine}ms")
+
             currentModelPath = path
             
             if (isLibLoaded) {
                 notifyModelLoaded(path)
             }
             
-            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated.")
+            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated. Total: ${System.currentTimeMillis() - startTime}ms")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Hydration failed: ${e.message}")
@@ -234,11 +263,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
-        Log.d(TAG, ">>> Neural Reasoning Requested: '$input'")
+        Log.d(TAG, ">>> [Phase 4.0 Audit] Neural Reasoning START: '$input' at ${System.currentTimeMillis()}ms")
         val inference = llmInference ?: return "Error: Local reasoning spine not hydrated."
         
         // Phase 6.6: Stateful Prompt Construction
-        // We wrap the input to simulate a session start as Gemma 4 LiteRT-LM expects
         val formattedPrompt = if (currentModelPath.endsWith(".litertlm")) {
             "<|turn>user\n$input<turn|>\n<|turn>model\n"
         } else {
@@ -251,11 +279,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             val duration = System.currentTimeMillis() - startTime
             
             if (response.isEmpty()) {
-                Log.w(TAG, "!!! Empty response received from Gemma 4.")
+                Log.w(TAG, "!!! Empty response received from Gemma 4 after ${duration}ms")
                 return "Error: Empty response (Session initialization failed?)"
             }
 
-            Log.i(TAG, "<<< Neural Response SUCCESS in ${duration}ms: '$response'")
+            Log.i(TAG, "<<< [Phase 4.0 Audit] Neural Response SUCCESS in ${duration}ms: '$response'")
             response
         } catch (e: Exception) {
             Log.e(TAG, "Inference error: ${e.message}")

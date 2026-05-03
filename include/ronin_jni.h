@@ -18,6 +18,17 @@ JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_setEngineInstance(
     JNIEnv *env, jobject thiz);
 
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_setPriorityNative(
+    JNIEnv *env, jobject thiz, jint priority);
+
+/**
+ * Phase 4.0 Audit: Verify direct file access.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_ronin_kernel_NativeEngine_checkFileAccessNative(
+    JNIEnv *env, jobject thiz, jstring path);
+
 /**
  * Processes input via the reasoning spine.
  */
