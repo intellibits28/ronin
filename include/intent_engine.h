@@ -162,7 +162,7 @@ public:
     /**
      * Sets the global execution priority.
      */
-    void setPriority(SkillPriority priority) {
+    void setPriority(Ronin::Kernel::Capability::SkillPriority priority) {
         m_current_priority = priority;
     }
 
@@ -182,7 +182,7 @@ private:
     std::shared_ptr<Ronin::Kernel::Model::LoraDispatcher> m_lora_dispatcher;
     bool m_offline_mode = false;
     std::string m_primary_cloud_provider = "Gemini";
-    SkillPriority m_current_priority = SkillPriority::LOW;
+    Ronin::Kernel::Capability::SkillPriority m_current_priority = Ronin::Kernel::Capability::SkillPriority::LOW;
 
     // Phase 4.0: Vtable-based Skill Registry
     std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;
