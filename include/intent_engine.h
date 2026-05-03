@@ -153,7 +153,28 @@ public:
     double m_last_lat = 0.0;
     double m_last_lon = 0.0;
 
+    /**
+     * Phase 6.6: Task Management
+     * Stops all LOW_PRIORITY skills (e.g. background indexing).
+     */
+    void stopLowPriorityTasks();
+
+    /**
+     * Sets the global execution priority.
+     */
+    void setPriority(SkillPriority priority) {
+        m_current_priority = priority;
+    }
+
+    /**
+     * Sets the callback to be invoked when low-priority tasks must stop.
+     */
+    void setLowPriorityStopCallback(std::function<void()> callback) {
+        m_stop_callback = callback;
+    }
+
 private:
+    std::function<void()> m_stop_callback;
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
     std::unique_ptr<Model::InferenceEngine> m_inference_engine;
     Memory::MemoryManager* m_memory_manager = nullptr;
@@ -161,6 +182,7 @@ private:
     std::shared_ptr<Ronin::Kernel::Model::LoraDispatcher> m_lora_dispatcher;
     bool m_offline_mode = false;
     std::string m_primary_cloud_provider = "Gemini";
+    SkillPriority m_current_priority = SkillPriority::LOW;
 
     // Phase 4.0: Vtable-based Skill Registry
     std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;

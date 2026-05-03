@@ -94,7 +94,21 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     // 4. Setup Background File Scanner
     g_file_scanner = std::make_unique<Ronin::Kernel::Capability::FileScanner>(*g_ltm, neural_node.get());
     g_file_scanner->setDatabaseReady(true);
-    g_file_scanner->startScan("/storage/emulated/0/"); 
+    
+    // Phase 6.6: Lazy start for file scanner (Wait 10s after boot)
+    std::thread([]() {
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+        if (g_file_scanner) {
+            g_file_scanner->startScan("/storage/emulated/0/"); 
+        }
+    }).detach();
+
+    // Link stop signal
+    g_intent_engine->setLowPriorityStopCallback([]() {
+        if (g_file_scanner) {
+            g_file_scanner->stopScan();
+        }
+    });
 
     // 5. Initialize Kernel Spine
     static HandlerRegistry registry = {
@@ -135,6 +149,28 @@ Java_com_ronin_kernel_NativeEngine_notifyModelLoaded(JNIEnv *env, jobject thiz, 
     // Sync model path to engine instance for /model command visibility
     if (g_llm_context.engine) {
         g_llm_context.engine->loadModel(model_path);
+    }
+
+    // Phase 6.6: Set HIGH priority for reasoning once hydrated
+    if (g_intent_engine) {
+        g_intent_engine->setPriority(Ronin::Kernel::Capability::SkillPriority::HIGH);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_stopLowPriorityTasksNative(JNIEnv *env, jobject thiz) {
+    if (g_intent_engine) {
+        g_intent_engine->stopLowPriorityTasks();
+    }
+    if (g_file_scanner) {
+        g_file_scanner->stopScan();
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_setPriorityNative(JNIEnv *env, jobject thiz, jint priority) {
+    if (g_intent_engine) {
+        g_intent_engine->setPriority(static_cast<Ronin::Kernel::Capability::SkillPriority>(priority));
     }
 }
 

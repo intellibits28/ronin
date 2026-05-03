@@ -149,6 +149,13 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
     return true;
 }
 
+void IntentEngine::stopLowPriorityTasks() {
+    LOGI(TAG, "Task Management: Terminating all LOW_PRIORITY skills due to memory pressure.");
+    if (m_stop_callback) {
+        m_stop_callback();
+    }
+}
+
 IntentEngine::IntentEngine() {
     using namespace Ronin::Kernel::Capability;
     

@@ -28,18 +28,16 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         private const val TAG = "RoninKernel_Native"
         private var isLibLoaded = false
 
-        init {
-            loadNativeLibraries()
-        }
-
-        @Synchronized
-        private fun loadNativeLibraries() {
-            if (isLibLoaded) return
+        /**
+         * Safe initialization to prevent Main Thread blocking during startup.
+         */
+        suspend fun initializeAsync() = withContext(Dispatchers.IO) {
+            if (isLibLoaded) return@withContext
             try {
                 System.loadLibrary("llm_inference_engine_jni")
                 System.loadLibrary("ronin_kernel")
                 isLibLoaded = true
-                Log.i(TAG, "SUCCESS: Ronin Kernel Bridge Hydrated.")
+                Log.i(TAG, "SUCCESS: Ronin Kernel Bridge Hydrated on Worker Thread.")
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "FATAL: Native linkage failed: ${e.message}")
             }
@@ -51,6 +49,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun setEngineInstance()
     private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
     private external fun notifyModelLoaded(path: String)
+    private external fun stopLowPriorityTasksNative()
+    private external fun setPriorityNative(priority: Int)
     
     external fun processInput(input: String): String
     external fun notifyTrimMemory(level: Int)
@@ -62,6 +62,20 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     external fun updateCloudProviders(json: String): Boolean
     external fun getLMKPressure(): Int
 
+    /**
+     * Terminate heavy background tasks (e.g. file indexing) to save RAM.
+     */
+    fun stopLowPriorityTasks() {
+        if (isLibLoaded) stopLowPriorityTasksNative()
+    }
+
+    /**
+     * Adjusts the execution priority of the kernel.
+     */
+    fun setPriority(priority: Int) {
+        if (isLibLoaded) setPriorityNative(priority)
+    }
+
     // --- Callbacks for MainActivity ---
     var onKernelMessage: ((String) -> Unit)? = null
     var getSecureApiKey: ((String) -> String)? = null
@@ -70,21 +84,32 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     var onSystemTiersUpdate: ((Float, Float, Float) -> Unit)? = null
 
     init {
-        if (isLibLoaded) {
-            setEngineInstance()
-        }
+        // Obsolete: engine instance set during initializeAsync
     }
 
-    fun initialize() {
+    suspend fun initialize() = withContext(Dispatchers.IO) {
+        if (!isLibLoaded) initializeAsync()
         if (isLibLoaded) {
+            setEngineInstance()
             initializeKernel(context.filesDir.absolutePath)
         }
     }
 
+    /**
+     * Kotlin-Side Model Hydration with Automatic Fallback.
+     */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
+        // Phase 6.6: Set CRITICAL priority during hydration
+        setPriority(0) // 0 = CRITICAL
         val gpuSuccess = tryHydrate(path, true)
-        if (gpuSuccess) return@withContext true
-        return@withContext tryHydrate(path, false)
+        if (gpuSuccess) {
+            setPriority(1) // 1 = HIGH
+            return@withContext true
+        }
+        Log.w(TAG, "GPU Hydration failed. Falling back to CPU reasoning spine...")
+        val cpuSuccess = tryHydrate(path, false)
+        setPriority(if (cpuSuccess) 1 else 3) // 3 = LOW
+        return@withContext cpuSuccess
     }
 
     private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
@@ -261,10 +286,21 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     override fun onTrimMemory(level: Int) {
-        if (isLibLoaded) notifyTrimMemory(level)
+        if (isLibLoaded) {
+            notifyTrimMemory(level)
+            
+            // Phase 6.6: Critical RAM Guard
+            if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
+                Log.w(TAG, "Aggressive Memory Trim: Halting low-priority background tasks.")
+                stopLowPriorityTasks()
+            }
+        }
     }
     override fun onConfigurationChanged(newConfig: Configuration) {}
     override fun onLowMemory() {
-        if (isLibLoaded) notifyTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+        if (isLibLoaded) {
+            notifyTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+            stopLowPriorityTasks()
+        }
     }
 }

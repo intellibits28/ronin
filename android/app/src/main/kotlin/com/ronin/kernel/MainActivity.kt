@@ -132,10 +132,6 @@ class MainActivity : ComponentActivity() {
     private var lastPermissionState = false
 
     companion object {
-        // JNI Bridge Repair (Requirement 1)
-        init {
-            // Libraries are loaded by NativeEngine
-        }
     }
 
     private val modelPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
@@ -339,6 +335,31 @@ class MainActivity : ComponentActivity() {
         
         nativeEngine = NativeEngine(this)
 
+        // Phase 6.6: Unified Asynchronous Initialization
+        lifecycleScope.launch(Dispatchers.Main) {
+            // 1. Load native libraries off-thread
+            NativeEngine.initializeAsync()
+            
+            // 2. Hydrate spine
+            nativeEngine.initialize()
+            registerComponentCallbacks(nativeEngine)
+            
+            // 3. Setup hardware bridge
+            setupHardwareCallbacks()
+            
+            // 4. Persistence Sync
+            val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
+            nativeEngine.setPrimaryCloudProvider(lastProvider)
+            
+            if (lastPermissionState) {
+                scanLocalModels()
+                val savedModelPath = sharedPreferences.getString("local_model_path", "")
+                if (!savedModelPath.isNullOrEmpty()) {
+                    hydrateModel(savedModelPath)
+                }
+            }
+        }
+
         // Initialize EncryptedSharedPreferences (Phase 4.4)
         val masterKey = MasterKey.Builder(this)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -358,10 +379,6 @@ class MainActivity : ComponentActivity() {
         // Ensure assets (model.onnx) are physically copied to storage before JNI hydration
         copyAssetsToFilesDir(filesDir)
 
-        // Engine Initialization & Lifecycle Guards
-        nativeEngine.initialize()
-        registerComponentCallbacks(nativeEngine)
-        
         // Phase 4.4.3: Initial Hydration of Provider Templates
         val configDir = java.io.File("/storage/emulated/0/Ronin/config")
         if (!configDir.exists()) configDir.mkdirs()
@@ -379,27 +396,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        setupHardwareCallbacks()
         loadCloudProvidersFromDisk()
         
         lastPermissionState = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Environment.isExternalStorageManager()
         } else {
             checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
-
-        if (lastPermissionState) {
-            scanLocalModels()
-        }
-        
-        val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
-        nativeEngine.setPrimaryCloudProvider(lastProvider)
-
-        // Phase 4.9.2: Secure Persistence Sync
-        val savedModelPath = sharedPreferences.getString("local_model_path", "")
-        if (!savedModelPath.isNullOrEmpty() && lastPermissionState) {
-            Log.i("RoninBoot", "Cold Start: Re-hydrating saved model $savedModelPath")
-            hydrateModel(savedModelPath)
         }
 
         checkAndRequestStoragePermission()
@@ -977,20 +979,34 @@ fun RoninChatUI(
     LaunchedEffect(Unit) {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val memInfo = ActivityManager.MemoryInfo()
-        while (true) {
-            activityManager.getMemoryInfo(memInfo)
-            val totalRAM = memInfo.totalMem / (1024f * 1024f * 1024f)
-            val availableRAM = memInfo.availMem / (1024f * 1024f * 1024f)
-            val usedRAM = totalRAM - availableRAM
-            val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            val temp = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
-            chatViewModel.temperature = temp
-            chatViewModel.ramUsedGB = usedRAM
-            chatViewModel.ramTotalGB = totalRAM
-            engine.updateSystemHealth(temp, usedRAM, totalRAM)
-            chatViewModel.lmkPressure = engine.getLMKPressure()
-            chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f
-            delay(2500)
+        
+        // Phase 6.6: Off-thread Health Monitor
+        withContext(Dispatchers.IO) {
+            while (true) {
+                activityManager.getMemoryInfo(memInfo)
+                val totalRAM = memInfo.totalMem / (1024f * 1024f * 1024f)
+                val availableRAM = memInfo.availMem / (1024f * 1024f * 1024f)
+                val usedRAM = totalRAM - availableRAM
+                
+                // Get temperature without registering receiver on Main thread
+                val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { filter ->
+                    context.registerReceiver(null, filter)
+                }
+                val temp = batteryStatus?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
+                
+                withContext(Dispatchers.Main) {
+                    chatViewModel.temperature = temp
+                    chatViewModel.ramUsedGB = usedRAM
+                    chatViewModel.ramTotalGB = totalRAM
+                    chatViewModel.lmkPressure = engine.getLMKPressure()
+                    chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f
+                }
+                
+                engine.updateSystemHealth(temp, usedRAM, totalRAM)
+                
+                // Delay increased to 5 seconds to reduce JNI/Context overhead
+                delay(5000)
+            }
         }
     }
 

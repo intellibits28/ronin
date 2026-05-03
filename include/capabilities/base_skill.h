@@ -6,6 +6,17 @@
 namespace Ronin::Kernel::Capability {
 
 /**
+ * Phase 4.0: Survival Triage
+ * Defines the priority of a skill for resource allocation.
+ */
+enum class SkillPriority {
+    CRITICAL = 0,   // Instant execution required (e.g. Chat)
+    HIGH = 1,       // Hardware control (e.g. Flashlight)
+    MEDIUM = 2,     // Info retrieval (e.g. GPS)
+    LOW = 3         // Background tasks (e.g. File Indexing)
+};
+
+/**
  * Phase 4.0: Vtable-based Registry Foundation.
  * This interface decouples intent resolution from physical execution.
  */
@@ -24,6 +35,11 @@ public:
      * @return The internal registration name of this skill.
      */
     virtual std::string getName() const = 0;
+
+    /**
+     * @return The resource priority of this skill.
+     */
+    virtual SkillPriority getPriority() const { return SkillPriority::MEDIUM; }
 
     /**
      * Phase 4.0: LoRA State Diff Integration.

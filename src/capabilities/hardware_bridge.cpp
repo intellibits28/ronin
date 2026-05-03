@@ -58,16 +58,10 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
     s_last_ram_used = ramUsedGB;
     s_last_ram_total = ramTotalGB;
 
-    // Phase 4.4.7 & 4.4.8: Stability Guard (Thermal) & Naypyidaw Patch
+    // Phase 4.4.7 & 4.4.8: Stability Guard (Thermal)
     if (temperature >= 43.0f) {
         Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::SEVERE;
-        LOGW(TAG, "CRITICAL THERMAL (%.1f°C). Naypyidaw Patch: Forced LOW Power + 64 Token Limit.", temperature);
-        // Node 1 (Reasoning Spine) forced to LOW power state (false)
-        triggerSync(1, false); 
-    } else if (temperature >= 42.0f) {
-        Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::MODERATE;
-        LOGW(TAG, "Thermal THRESHOLD REACHED (%.1f°C). Switching NPU to POWER_SAVE mode.", temperature);
-        // Node 1 (Reasoning Spine) forced to POWER_SAVE (false)
+        LOGW(TAG, "CRITICAL THERMAL (%.1f°C). Throttling ACTIVE.", temperature);
         triggerSync(1, false); 
     } else {
         Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::NORMAL;
@@ -79,7 +73,8 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
     JNIEnv* env = nullptr;
     bool attached = false;
     if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return;
+        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninHealthThread", nullptr };
+        if (s_vm->AttachCurrentThread(&env, &args) != 0) return;
         attached = true;
     }
 
@@ -101,7 +96,8 @@ std::string HardwareBridge::getCloudApiKey(const std::string& provider) {
     JNIEnv* env = nullptr;
     bool attached = false;
     if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return "";
+        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninAuthThread", nullptr };
+        if (s_vm->AttachCurrentThread(&env, &args) != 0) return "";
         attached = true;
     }
 
@@ -137,7 +133,8 @@ void HardwareBridge::pushMessage(const std::string& message) {
     JNIEnv* env = nullptr;
     bool attached = false;
     if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return;
+        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninLogThread", nullptr };
+        if (s_vm->AttachCurrentThread(&env, &args) != 0) return;
         attached = true;
     }
 
@@ -161,7 +158,8 @@ std::string HardwareBridge::requestData(uint32_t nodeId) {
     JNIEnv* env = nullptr;
     bool attached = false;
     if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return "Error: Thread attachment failed.";
+        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninDataThread", nullptr };
+        if (s_vm->AttachCurrentThread(&env, &args) != 0) return "Error: Thread attachment failed.";
         attached = true;
     }
 
@@ -178,15 +176,13 @@ std::string HardwareBridge::requestData(uint32_t nodeId) {
                 }
                 env->DeleteLocalRef(jstr);
             }
-        } else {
-            result = "Error: Method requestHardwareData not found.";
         }
     }
 
     if (attached) s_vm->DetachCurrentThread();
     return result;
 #else
-    return "Host Build: Hardware data retrieval mocked for Node " + std::to_string(nodeId);
+    return "Host Build: Hardware data retrieval mocked.";
 #endif
 }
 
@@ -197,7 +193,8 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
     JNIEnv* env = nullptr;
     bool attached = false;
     if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return "Error: Thread attachment failed.";
+        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninCloudThread", nullptr };
+        if (s_vm->AttachCurrentThread(&env, &args) != 0) return "Error: Thread attachment failed.";
         attached = true;
     }
 
@@ -208,7 +205,6 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
             jstring jinput = env->NewStringUTF(input.c_str());
             jstring jprovider = env->NewStringUTF(provider.c_str());
             jstring jstr = (jstring)env->CallObjectMethod(s_instance, mid, jinput, jprovider);
-            
             if (jstr) {
                 const char* cstr = env->GetStringUTFChars(jstr, nullptr);
                 if (cstr) {
@@ -225,7 +221,7 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
     if (attached) s_vm->DetachCurrentThread();
     return result;
 #else
-    return "Host Build: Cloud response mocked for " + provider;
+    return "Host Build: Cloud response mocked.";
 #endif
 }
 
@@ -236,7 +232,8 @@ std::string HardwareBridge::runNeuralReasoning(const std::string& input) {
     JNIEnv* env = nullptr;
     bool attached = false;
     if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return "Error: Thread attachment failed.";
+        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninReasoningThread", nullptr };
+        if (s_vm->AttachCurrentThread(&env, &args) != 0) return "Error: Thread attachment failed.";
         attached = true;
     }
 
@@ -272,7 +269,8 @@ bool HardwareBridge::triggerSync(uint32_t nodeId, bool state) {
     JNIEnv* env = nullptr;
     bool attached = false;
     if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        if (s_vm->AttachCurrentThread(&env, nullptr) != 0) return state;
+        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninHardwareSyncThread", nullptr };
+        if (s_vm->AttachCurrentThread(&env, &args) != 0) return state;
         attached = true;
     }
 
@@ -287,7 +285,6 @@ bool HardwareBridge::triggerSync(uint32_t nodeId, bool state) {
     if (attached) s_vm->DetachCurrentThread();
     return actual_state;
 #else
-    LOGI(TAG, "Host Build: Bypassing synchronous hardware trigger for Node %u", nodeId);
     return state;
 #endif
 }

@@ -7,6 +7,7 @@ namespace Ronin::Kernel::Capability {
 class ChatSkill : public BaseSkill {
 public:
     std::string getName() const override { return "ChatSkill"; }
+    SkillPriority getPriority() const override { return SkillPriority::CRITICAL; }
     uint32_t getLoraId() const override { return 1; }
     
     std::string execute(const std::string& param) override {
