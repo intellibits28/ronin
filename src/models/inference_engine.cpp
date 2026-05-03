@@ -22,7 +22,7 @@ struct InferenceEngine::Impl {
 
     bool load(const std::string& path) {
         LOGI(TAG, "Hydration Protocol: Hybrid Delegation (Model: %s)", path.c_str());
-        // State tracking only. Real hydration happens in NativeEngine.loadModelAsync().
+        model_path = path;
         is_hydrated = true; 
         return true;
     }

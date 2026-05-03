@@ -165,6 +165,8 @@ IntentEngine::IntentEngine() {
 }
 
 std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param) {
+    if (nodeId == 0) return ""; // Phase 6.6: Fast-path for Tier 0 commands already handled in process()
+
     auto it = m_skill_registry.find(nodeId);
     if (it != m_skill_registry.end()) {
         std::string logMsg = "> Deterministic Match: Routing to " + it->second->getName() + " (ID " + std::to_string(nodeId) + ")";

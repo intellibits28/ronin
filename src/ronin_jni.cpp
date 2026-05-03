@@ -37,7 +37,7 @@ static std::string g_last_skill_output;
 namespace {
 
 struct LlmEngineContext {
-    std::unique_ptr<InferenceEngine> engine;
+    InferenceEngine* engine = nullptr;
     std::string model_path;
     bool initialized = false;
 };
@@ -117,8 +117,10 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
 
     g_kernel = std::make_unique<RoninKernel>(registry, cap_manager);
     
-    // Ensure inference engine wrapper is ready for hybrid calls
-    g_llm_context.engine = std::make_unique<InferenceEngine>("hybrid_mode");
+    // Ensure inference engine wrapper is ready for hybrid calls and linked to IntentEngine
+    auto engine = std::make_unique<InferenceEngine>("hybrid_mode");
+    g_llm_context.engine = engine.get();
+    g_intent_engine->setInferenceEngine(std::move(engine));
     
     LOGI(TAG, "Ronin Kernel Core Active.");
 }
@@ -129,6 +131,11 @@ Java_com_ronin_kernel_NativeEngine_notifyModelLoaded(JNIEnv *env, jobject thiz, 
     LOGI(TAG, "C++ Kernel Notified: Hybrid Model Ready at %s", model_path.c_str());
     g_llm_context.initialized = true;
     g_llm_context.model_path = model_path;
+    
+    // Sync model path to engine instance for /model command visibility
+    if (g_llm_context.engine) {
+        g_llm_context.engine->loadModel(model_path);
+    }
 }
 
 JNIEXPORT jstring JNICALL
