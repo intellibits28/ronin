@@ -409,6 +409,7 @@ class MainActivity : ComponentActivity() {
 
         val offline = sharedPreferences.getBoolean("offline_mode", false)
         nativeEngine.setOfflineMode(offline)
+        val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
 
         setContent {
             val chatViewModel: ChatViewModel = viewModel()
