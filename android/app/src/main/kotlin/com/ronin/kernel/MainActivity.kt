@@ -144,85 +144,302 @@ class MainActivity : ComponentActivity() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         
         lifecycleScope.launch {
-            chatViewModel.reasoningLogs.add(0, "Importing External Model...")
-            
+            chatViewModel.reasoningLogs.add(0, "Importing Model: ${uri.lastPathSegment}")
             val success = withContext(Dispatchers.IO) {
                 try {
-                    val contentResolver = applicationContext.contentResolver
-                    val fileName = getFileName(uri) ?: "imported_model.litertlm"
+                    val inputStream = contentResolver.openInputStream(uri)
                     val modelsDir = java.io.File(filesDir, "models")
                     if (!modelsDir.exists()) modelsDir.mkdirs()
                     
-                    val destFile = java.io.File(modelsDir, fileName)
+                    val fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "imported_model.bin"
+                    val targetFile = java.io.File(modelsDir, fileName)
                     
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        java.io.FileOutputStream(destFile).use { output ->
+                    inputStream?.use { input ->
+                        java.io.FileOutputStream(targetFile).use { output ->
                             input.copyTo(output)
                         }
                     }
-                    Log.i("RoninBridge", "External model imported to: ${destFile.absolutePath}")
-                    destFile.absolutePath
+                    true
                 } catch (e: Exception) {
-                    Log.e("RoninBridge", "Import failed: ${e.message}")
-                    null
+                    Log.e("RoninImport", "Model import failed: ${e.message}")
+                    false
                 }
             }
-
-            if (success != null) {
-                // Phase 4.9.1: Trigger hydration with the new Internal Path
-                hydrateModel(success)
-                Toast.makeText(this@MainActivity, "Model imported successfully.", Toast.LENGTH_SHORT).show()
-                scanLocalModels() // Refresh UI list
-            } else {
-                Toast.makeText(this@MainActivity, "Failed to import model.", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    private fun getFileName(uri: Uri): String? {
-        var name: String? = null
-        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-            if (cursor.moveToFirst()) {
-                name = cursor.getString(nameIndex)
-            }
-        }
-        return name
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Phase 4.6.6: OnResume Refresh Logic
-        val currentPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
-
-        if (currentPermission && !lastPermissionState) {
-            Log.i("RoninLifecycle", "Permission granted while resumed. Refreshing registry.")
-            refreshRegistry()
-        }
-        lastPermissionState = currentPermission
-    }
-
-    private fun refreshRegistry() {
-        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        lifecycleScope.launch {
-            // All Files Access Guard: wait 500ms for OS filesystem sync
-            delay(500)
-            scanLocalModels()
             
-            val savedModelPath = sharedPreferences.getString("local_model_path", "")
-            if (!savedModelPath.isNullOrEmpty()) {
-                hydrateModel(savedModelPath)
-            } else if (chatViewModel.discoveredModels.isNotEmpty()) {
-                // Phase 4.8.5: Auto-select first available model on first run
-                // Phase 4.9.0: Now using Internal Storage
-                val autoPath = chatViewModel.discoveredModels[0]
-                Log.i("RoninBoot", "First Run (Internal): Auto-selecting model $autoPath")
-                hydrateModel(autoPath)
+            if (success) {
+                scanLocalModels()
+                Toast.makeText(this@MainActivity, "Model Imported Successfully.", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MainActivity, "Model Import Failed.", Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    private fun scanLocalModels() {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        val modelsDir = java.io.File(filesDir, "models")
+        if (!modelsDir.exists()) modelsDir.mkdirs()
+        
+        val models = modelsDir.listFiles { file -> 
+            file.extension == "bin" || file.extension == "litertlm" || file.extension == "onnx" 
+        }?.map { it.absolutePath } ?: emptyList()
+        
+        chatViewModel.discoveredModels.clear()
+        chatViewModel.discoveredModels.addAll(models)
+        
+        if (models.isEmpty()) {
+            nativeEngine.pushKernelMessage("> System: No Reasoning Brain found in internal models directory.")
+        } else {
+            Log.i("RoninScan", "Discovered ${models.size} models in private storage.")
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        
+        nativeEngine = NativeEngine(this)
+
+        // Initialize EncryptedSharedPreferences (Phase 4.4)
+        val masterKey = MasterKey.Builder(this)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        
+        sharedPreferences = EncryptedSharedPreferences.create(
+            this,
+            "ronin_secure_prefs",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        
+        // Phase 4.8.1: Critical Initialization Order Fix
+        copyAssetsToFilesDir(filesDir)
+
+        // Phase 6.6: Unified Asynchronous Initialization
+        lifecycleScope.launch(Dispatchers.Main) {
+            // 1. Load native libraries off-thread
+            NativeEngine.initializeAsync()
+            
+            // 2. Hydrate spine
+            nativeEngine.initialize()
+            registerComponentCallbacks(nativeEngine)
+            
+            // 3. Setup hardware bridge
+            setupHardwareCallbacks()
+            
+            // 4. Persistence Sync & Native Config
+            val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
+            nativeEngine.setPrimaryCloudProviderSafe(lastProvider)
+            
+            val offline = sharedPreferences.getBoolean("offline_mode", false)
+            nativeEngine.setOfflineModeSafe(offline)
+            
+            // 5. Load Cloud Providers (touches JNI)
+            loadCloudProvidersFromDisk()
+
+            // 6. Ensure permissions are fresh for hydration
+            lastPermissionState = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Environment.isExternalStorageManager()
+            } else {
+                checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            }
+
+            if (lastPermissionState) {
+                scanLocalModels()
+                val savedModelPath = sharedPreferences.getString("local_model_path", "")
+                if (!savedModelPath.isNullOrEmpty()) {
+                    Log.i("RoninBoot", "Cold Start: Re-hydrating saved model $savedModelPath")
+                    hydrateModel(savedModelPath)
+                }
+            }
+        }
+
+        // Phase 4.4.3: Initial Hydration of Provider Templates
+        val configDir = java.io.File("/storage/emulated/0/Ronin/config")
+        if (!configDir.exists()) configDir.mkdirs()
+        val providersFile = java.io.File(configDir, "providers.json")
+        if (!providersFile.exists()) {
+            try {
+                assets.open("providers.json").use { input ->
+                    java.io.FileOutputStream(providersFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Log.i("RoninBoot", "Initial provider templates hydrated.")
+            } catch (e: Exception) {
+                Log.e("RoninBoot", "Failed to hydrate providers: ${e.message}")
+            }
+        }
+
+        // loadCloudProvidersFromDisk() removed (moved to async block)
+        
+        checkAndRequestStoragePermission()
+        checkAndRequestHardwarePermissions()
+
+        setContent {
+            val chatViewModel: ChatViewModel = viewModel()
+            // Sync active path and provider from Engine/Prefs before showing UI
+            LaunchedEffect(Unit) {
+                // Wait a bit for async init if needed, though UI handles nulls
+                chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
+                chatViewModel.offlineMode = sharedPreferences.getBoolean("offline_mode", false)
+                chatViewModel.primaryCloudProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
+                chatViewModel.isKernelHydrated = nativeEngine.isLoaded()
+            }
+            RoninChatUI(
+                engine = nativeEngine,
+                chatViewModel = chatViewModel,
+                modelPicker = modelPickerLauncher,
+                onSaveOfflineMode = { saveOfflineMode(it) }
+            )
+        }
+    }
+
+    private fun copyAssetsToFilesDir(filesDir: java.io.File) {
+        val assetsDir = java.io.File(filesDir, "assets")
+        if (!assetsDir.exists()) assetsDir.mkdirs()
+        
+        // Copy capabilities.json
+        try {
+            val capFile = java.io.File(assetsDir, "capabilities.json")
+            if (!capFile.exists()) {
+                assets.open("capabilities.json").use { input ->
+                    java.io.FileOutputStream(capFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("RoninBoot", "Failed to copy capabilities: ${e.message}")
+        }
+
+        // Copy models if they don't exist
+        val modelsDir = java.io.File(filesDir, "models")
+        if (!modelsDir.exists()) modelsDir.mkdirs()
+        
+        try {
+            val routerFile = java.io.File(modelsDir, "model.onnx")
+            if (!routerFile.exists()) {
+                assets.open("models/model.onnx").use { input ->
+                    java.io.FileOutputStream(routerFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("RoninBoot", "Failed to copy router model: ${e.message}")
+        }
+    }
+
+    private fun loadCloudProvidersFromDisk() {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        val configDir = java.io.File("/storage/emulated/0/Ronin/config")
+        val providersFile = java.io.File(configDir, "providers.json")
+        
+        if (providersFile.exists()) {
+            try {
+                val json = providersFile.readText()
+                val array = JSONArray(json)
+                chatViewModel.cloudProviders.clear()
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    chatViewModel.cloudProviders.add(CloudProvider(
+                        obj.getString("name"),
+                        obj.getString("endpoint"),
+                        obj.getString("modelId"),
+                        obj.getString("authType")
+                    ))
+                }
+                nativeEngine.updateCloudProvidersSafe(json)
+            } catch (e: Exception) {
+                Log.e("RoninBoot", "Failed to parse providers: ${e.message}")
+            }
+        }
+    }
+
+    private fun setupHardwareCallbacks() {
+        nativeEngine.getSecureApiKey = { provider ->
+            // Phase 4.4: Secure Credential Sovereignty
+            sharedPreferences.getString(provider, "")?.trim() ?: ""
+        }
+
+        nativeEngine.onRequestHardwareData = { nodeId ->
+            when (nodeId) {
+                5 -> {
+                    try {
+                        val hasFine = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        val hasCoarse = checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        if (hasFine || hasCoarse) {
+                            val locationTask = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                            val location = Tasks.await(locationTask)
+                            if (location != null) "(${location.latitude}, ${location.longitude})" else "GPS_ERROR: Location Null"
+                        } else "GPS_ERROR: Permission Denied"
+                    } catch (e: Exception) {
+                        Log.e("RoninUI", "Hardware Data Bridge Failed: ${e.message}")
+                        "GPS_ERROR: ${e.message}"
+                    }
+                }
+                else -> "Error: Unknown data node $nodeId"
+            }
+        }
+
+        nativeEngine.executeHardwareAction = { nodeId, state ->
+            var toolName = ""
+            when (nodeId) {
+                1 -> toolName = "Reasoning Spine (Power Profile)"
+                4 -> toolName = "Flashlight"
+                5 -> toolName = "GPS"
+                6 -> toolName = "WiFi"
+                7 -> toolName = "Bluetooth"
+            }
+            if (nodeId == 1) {
+                 runOnUiThread { 
+                     val message = if (state) "Kernel: NPU Power Level RESTORED." else "Kernel: NPU Throttling ACTIVE (Thermal Protection)."
+                     Toast.makeText(this, message, Toast.LENGTH_SHORT).show() 
+                 }
+                 true
+            } else {
+                runOnUiThread { Toast.makeText(this, "Kernel: Initiating $toolName toggle...", Toast.LENGTH_SHORT).show() }
+                var success = false
+                try {
+                    when (nodeId) {
+                        4 -> {
+                            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                            val cameraId = cameraManager.cameraIdList[0]
+                            cameraManager.setTorchMode(cameraId, state)
+                            success = true
+                        }
+                        6 -> {
+                            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                            @Suppress("DEPRECATION")
+                            wifiManager.isWifiEnabled = state
+                            success = true
+                        }
+                        7 -> {
+                            val bluetoothAdapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
+                            if (state) bluetoothAdapter?.enable() else bluetoothAdapter?.disable()
+                            success = true
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("RoninUI", "Hardware execution failed: ${e.message}")
+                }
+                success
+            }
+        }
+
+        nativeEngine.onSystemTiersUpdate = { temp, used, total ->
+            val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+            chatViewModel.temperature = temp
+            chatViewModel.ramUsedGB = used
+            chatViewModel.ramTotalGB = total
+        }
+
+        nativeEngine.onKernelMessage = { msg ->
+            val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+            chatViewModel.reasoningLogs.add(0, msg)
         }
     }
 
@@ -294,534 +511,89 @@ class MainActivity : ComponentActivity() {
 
     private fun calculateFingerprint(file: java.io.File): String {
         return try {
-            val md = java.security.MessageDigest.getInstance("SHA-256")
-            java.io.FileInputStream(file).use { fis ->
-                val buffer = ByteArray(1024 * 1024) // 1MB streaming chunk
-                var read = fis.read(buffer)
-                while (read != -1) {
-                    md.update(buffer, 0, read)
-                    read = fis.read(buffer)
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(8192)
+                var bytesRead = input.read(buffer)
+                while (bytesRead != -1) {
+                    digest.update(buffer, 0, bytesRead)
+                    bytesRead = input.read(buffer)
                 }
             }
-            md.digest().joinToString("") { "%02x".format(it) }
-        } catch (e: Exception) {
-            "error_${e.message}"
-        }
-    }
-
-
-    private fun scanLocalModels() {
-        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        // Phase 4.9.0: Path Modernization (Private Internal Storage)
-        val modelsDir = java.io.File(filesDir, "models")
-        if (!modelsDir.exists()) modelsDir.mkdirs()
-        
-        val models = modelsDir.listFiles { _, name -> 
-            name.endsWith(".bin") || name.endsWith(".litertlm") 
-        } ?: emptyArray()
-
-        chatViewModel.discoveredModels.clear()
-        models.forEach { chatViewModel.discoveredModels.add(it.absolutePath) }
-
-        if (models.isEmpty()) {
-            nativeEngine.pushKernelMessage("> System: No Reasoning Brain found in internal models directory.")
-        } else {
-            Log.i("RoninScan", "Discovered ${models.size} models in private storage.")
-        }
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        
-        nativeEngine = NativeEngine(this)
-
-        // Phase 6.6: Unified Asynchronous Initialization
-        lifecycleScope.launch(Dispatchers.Main) {
-            // 1. Load native libraries off-thread
-            NativeEngine.initializeAsync()
-            
-            // 2. Hydrate spine
-            nativeEngine.initialize()
-            registerComponentCallbacks(nativeEngine)
-            
-            // 3. Setup hardware bridge
-            setupHardwareCallbacks()
-            
-            // 4. Persistence Sync
-            val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
-            nativeEngine.setPrimaryCloudProvider(lastProvider)
-            
-            if (lastPermissionState) {
-                scanLocalModels()
-                val savedModelPath = sharedPreferences.getString("local_model_path", "")
-                if (!savedModelPath.isNullOrEmpty()) {
-                    hydrateModel(savedModelPath)
-                }
-            }
-        }
-
-        // Initialize EncryptedSharedPreferences (Phase 4.4)
-        val masterKey = MasterKey.Builder(this)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        
-        sharedPreferences = EncryptedSharedPreferences.create(
-            this,
-            "ronin_secure_prefs",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        
-        // Phase 4.8.1: Critical Initialization Order Fix
-        // Ensure assets (model.onnx) are physically copied to storage before JNI hydration
-        copyAssetsToFilesDir(filesDir)
-
-        // Phase 4.4.3: Initial Hydration of Provider Templates
-        val configDir = java.io.File("/storage/emulated/0/Ronin/config")
-        if (!configDir.exists()) configDir.mkdirs()
-        val providersFile = java.io.File(configDir, "providers.json")
-        if (!providersFile.exists()) {
-            try {
-                assets.open("providers.json").use { input ->
-                    java.io.FileOutputStream(providersFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                Log.i("RoninBoot", "Initial provider templates hydrated.")
-            } catch (e: Exception) {
-                Log.e("RoninBoot", "Failed to hydrate providers: ${e.message}")
-            }
-        }
-
-        loadCloudProvidersFromDisk()
-        
-        lastPermissionState = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
-
-        checkAndRequestStoragePermission()
-        checkAndRequestHardwarePermissions()
-
-        val offline = sharedPreferences.getBoolean("offline_mode", false)
-        nativeEngine.setOfflineMode(offline)
-        val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
-
-        setContent {
-            val chatViewModel: ChatViewModel = viewModel()
-            // Sync active path and provider from Engine/Prefs before showing UI
-            LaunchedEffect(Unit) {
-                chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
-                chatViewModel.offlineMode = offline
-                chatViewModel.primaryCloudProvider = lastProvider
-                chatViewModel.isKernelHydrated = nativeEngine.isLoaded()
-            }
-            RoninChatUI(
-                engine = nativeEngine,
-                chatViewModel = chatViewModel,
-                modelPicker = modelPickerLauncher,
-                onSaveOfflineMode = { saveOfflineMode(it) }
-            )
-
-        }
-    }
-
-    fun saveOfflineMode(offline: Boolean) {
-        sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
-    }
-
-    fun savePrimaryCloudProvider(name: String) {
-        sharedPreferences.edit().putString("primary_cloud_provider", name).apply()
-    }
-
-    private fun getPathFromUri(uri: Uri): String? {
-        return uri.path?.let { path ->
-            if (path.contains("primary:")) {
-                "/storage/emulated/0/${path.substringAfter("primary:")}"
-            } else {
-                path
-            }
-        }
-    }
-
-    private fun copyAssetsToFilesDir(targetDir: java.io.File) {
-        try {
-            val assetManager = assets
-            
-            // Phase 4.8.1: Hardened Asset Discovery
-            val assetsList = assetManager.list("models") ?: emptyArray()
-            val modelExists = assetsList.contains("model.onnx")
-            Log.i("RoninBoot", "Asset Verification: assets/models/model.onnx found = $modelExists")
-
-            val files = assetManager.list("") ?: return
-            for (filename in files) {
-                if (filename == "models" || filename == "images" || filename == "webkit") continue
-                if (filename.contains(".")) {
-                    copyFile(filename, "", targetDir)
-                }
-            }
-
-            val models = assetManager.list("models") ?: return
-            for (modelFile in models) {
-                copyFile(modelFile, "models", targetDir)
-            }
-
-            // Phase 5.3: Explicit Provider Hydration
-            val configDir = java.io.File(filesDir, "config")
-            if (!configDir.exists()) configDir.mkdirs()
-            val providersFile = java.io.File(configDir, "providers.json")
-            
-            if (!providersFile.exists()) {
-                Log.i("RoninBoot", "Hydrating default providers.json...")
-                try {
-                    assets.open("providers.json").use { input ->
-                        providersFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
-                    }
-                    Log.i("RoninBoot", "Default providers.json deployed.")
-                } catch (e: Exception) {
-                    Log.e("RoninBoot", "Asset providers.json not found in root.")
-                }
-            }
-            Log.i("RoninBoot", "Assets successfully synchronized to: ${targetDir.absolutePath}")
-        } catch (e: Exception) {
-            Log.e("RoninBoot", "Failed to sync assets: ${e.message}")
-        }
-    }
-
-    private fun copyFile(filename: String, subDir: String, targetDir: java.io.File) {
-        val assetPath = if (subDir.isEmpty()) filename else "$subDir/$filename"
-        val destDir = if (subDir.isEmpty()) {
-            java.io.File(targetDir, "assets")
-        } else {
-            java.io.File(targetDir, "assets/$subDir")
-        }
-        if (!destDir.exists()) destDir.mkdirs()
-        
-        val outFile = java.io.File(destDir, filename)
-        
-        try {
-            assets.open(assetPath).use { inputStream ->
-                val assetSize = inputStream.available().toLong()
-                
-                // Requirement 2: Overwrite logic (Skip if size matches)
-                if (outFile.exists() && outFile.length() == assetSize) {
-                    Log.i("RoninBoot", "Skipping $filename (Size matches: $assetSize bytes)")
-                    return
-                }
-
-                // Requirement 3: Path Verification
-                Log.i("RoninBoot", "Copying asset: $assetPath -> ${outFile.absolutePath}")
-                
-                java.io.FileOutputStream(outFile).use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-                
-                if (filename == "model.onnx") {
-                    Log.i("RoninBoot", "CRITICAL ASSET PLACED: ${outFile.absolutePath} (Size: ${outFile.length()})")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("RoninBoot", "Failed to copy $filename: ${e.message}")
-        }
-    }
-
-    private fun checkAndRequestHardwarePermissions() {
-        val permissions = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            permissions.add(android.Manifest.permission.BLUETOOTH_CONNECT)
-            permissions.add(android.Manifest.permission.BLUETOOTH_SCAN)
-            permissions.add(android.Manifest.permission.BLUETOOTH_ADVERTISE)
-            permissions.add(android.Manifest.permission.BLUETOOTH_ADMIN)
-        }
-        permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
-        permissions.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-        permissions.add(android.Manifest.permission.CAMERA)
-        val missing = permissions.filter { 
-            checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED 
-        }
-        if (missing.isNotEmpty()) {
-            requestPermissions(missing.toTypedArray(), 1001)
-        }
-    }
-
-    private fun setupHardwareCallbacks() {
-        nativeEngine.getSecureApiKey = { provider ->
-            // Phase 4.4: Secure Credential Sovereignty
-            sharedPreferences.getString(provider, "")?.trim() ?: ""
-        }
-
-        nativeEngine.onRequestHardwareData = { nodeId ->
-            when (nodeId) {
-                5 -> {
-                    try {
-                        val hasFine = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                        val hasCoarse = checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                        if (hasFine || hasCoarse) {
-                            val locationTask = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-                            val location = Tasks.await(locationTask)
-                            if (location != null) "(${location.latitude}, ${location.longitude})" else "GPS_ERROR: Location Null"
-                        } else "GPS_ERROR: Permission Denied"
-                    } catch (e: Exception) {
-                        Log.e("RoninUI", "Hardware Data Bridge Failed: ${e.message}")
-                        "GPS_ERROR: ${e.message}"
-                    }
-                }
-                else -> "Error: Unknown data node $nodeId"
-            }
-        }
-
-        nativeEngine.executeHardwareAction = { nodeId, state ->
-            var toolName = ""
-            when (nodeId) {
-                1 -> toolName = "Reasoning Spine (Power Profile)"
-                4 -> toolName = "Flashlight"
-                5 -> toolName = "GPS"
-                6 -> toolName = "WiFi"
-                7 -> toolName = "Bluetooth"
-            }
-            if (nodeId == 1) {
-                 runOnUiThread { 
-                     val message = if (state) "Kernel: NPU Power Level RESTORED." else "Kernel: NPU Throttling ACTIVE (Thermal Protection)."
-                     Toast.makeText(this, message, Toast.LENGTH_SHORT).show() 
-                 }
-                 true
-            } else {
-                runOnUiThread { Toast.makeText(this, "Kernel: Initiating $toolName toggle...", Toast.LENGTH_SHORT).show() }
-                var success = false
-                try {
-                    when (nodeId) {
-                        4 -> {
-                            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                            val cameraId = cameraManager.cameraIdList[0]
-                            cameraManager.setTorchMode(cameraId, state)
-                            success = true
-                        }
-                        5 -> {
-                            val hasFine = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                            val hasCoarse = checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                            if (hasFine || hasCoarse) {
-                                val cancellationToken = CancellationTokenSource()
-                                val locationFound = AtomicBoolean(false)
-                                fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationToken.token)
-                                    .addOnSuccessListener { loc ->
-                                        if (loc != null && !locationFound.get()) {
-                                            locationFound.set(true)
-                                            nativeEngine.injectLocation(loc.latitude, loc.longitude)
-                                        }
-                                    }
-                                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                    if (!locationFound.get()) {
-                                        cancellationToken.cancel()
-                                        @Suppress("MissingPermission")
-                                        fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc ->
-                                            if (lastLoc != null) {
-                                                locationFound.set(true)
-                                                nativeEngine.injectLocation(lastLoc.latitude, lastLoc.longitude)
-                                            } else {
-                                                nativeEngine.injectLocation(0.0, 0.0)
-                                            }
-                                        }.addOnFailureListener { nativeEngine.injectLocation(0.0, 0.0) }
-                                    }
-                                }, 10000)
-                                success = true
-                            } else {
-                                nativeEngine.injectLocation(0.0, 0.0)
-                            }
-                        }
-                        6 -> {
-                            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                startActivity(Intent(Settings.Panel.ACTION_WIFI))
-                                success = true
-                            } else {
-                                @Suppress("DEPRECATION")
-                                success = wifiManager.setWifiEnabled(state)
-                            }
-                        }
-                        7 -> {
-                            val bluetoothAdapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
-                            if (bluetoothAdapter != null) {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-                                    success = true
-                                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                    if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                        @Suppress("DEPRECATION")
-                                        success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
-                                    }
-                                } else {
-                                    @Suppress("MissingPermission", "DEPRECATION")
-                                    success = if (state) bluetoothAdapter.enable() else bluetoothAdapter.disable()
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("RoninUI", "Hardware Node $nodeId failed", e)
-                }
-                success
-            }
-        }
-    }
-
-    private fun loadCloudProvidersFromDisk() {
-        val configDir = java.io.File(filesDir, "config")
-        val file = java.io.File(configDir, "providers.json")
-        if (file.exists()) {
-            try {
-                val json = file.readText()
-                val jsonArray = JSONArray(json)
-                val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-                chatViewModel.cloudProviders.clear()
-                for (i in 0 until jsonArray.length()) {
-                    val obj = jsonArray.getJSONObject(i)
-                    chatViewModel.cloudProviders.add(CloudProvider(
-                        obj.getString("name"),
-                        obj.getString("endpoint"),
-                        obj.getString("model_id"),
-                        obj.optString("auth_type", "api_key")
-                    ))
-                }
-                Log.i("RoninUI", "Loaded ${jsonArray.length()} cloud providers from internal storage.")
-            } catch (e: Exception) {
-                Log.e("RoninUI", "Failed to load providers: ${e.message}")
-            }
-        }
-    }
-
-    fun saveCloudProvider(provider: CloudProvider, apiKey: String) {
-        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        sharedPreferences.edit().putString(provider.name, apiKey).apply()
-
-        val existingIndex = chatViewModel.cloudProviders.indexOfFirst { it.name == provider.name }
-        if (existingIndex != -1) {
-            chatViewModel.cloudProviders[existingIndex] = provider
-        } else {
-            chatViewModel.cloudProviders.add(provider)
-        }
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val configDir = java.io.File(filesDir, "config")
-                if (!configDir.exists()) configDir.mkdirs()
-
-                val providersFile = java.io.File(configDir, "providers.json")
-                val jsonArray = JSONArray()
-                chatViewModel.cloudProviders.forEach { p ->
-                    val obj = JSONObject()
-                    obj.put("name", p.name)
-                    obj.put("endpoint", p.endpoint)
-                    obj.put("model_id", p.modelId)
-                    obj.put("auth_type", p.authType)
-                    jsonArray.put(obj)
-                }
-                val providersJson = jsonArray.toString().replace("\\/", "/")
-                providersFile.writeText(providersJson)
-
-                nativeEngine.updateCloudProviders(providersJson)
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Provider ${provider.name} saved securely.", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Log.e("RoninUI", "Failed to save cloud config: ${e.message}")
-            }
-        }
-    }
-
-    fun removeLocalModel(path: String) {
-        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        val file = java.io.File(path)
-        
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                if (file.exists() && file.delete()) {
-                    // Purge Metadata
-                    sharedPreferences.edit().remove("fingerprint_$path").apply()
-                    
-                    withContext(Dispatchers.Main) {
-                        chatViewModel.discoveredModels.remove(path)
-                        
-                        // If the deleted model was the active one, unhydrate
-                        if (chatViewModel.localModelPath == path) {
-                            chatViewModel.isKernelHydrated = false
-                            chatViewModel.localModelPath = ""
-                            sharedPreferences.edit().remove("local_model_path").apply()
-                        }
-                        
-                        Toast.makeText(this@MainActivity, "Model purged from storage.", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Failed to delete model file.", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("RoninUI", "Error deleting model: ${e.message}")
-            }
-        }
-    }
-
-    fun removeCloudProvider(name: String) {
-        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        chatViewModel.cloudProviders.removeIf { it.name == name }
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val configDir = java.io.File(filesDir, "config")
-                val providersFile = java.io.File(configDir, "providers.json")
-                val jsonArray = JSONArray()
-                chatViewModel.cloudProviders.forEach { p ->
-                    val obj = JSONObject()
-                    obj.put("name", p.name)
-                    obj.put("endpoint", p.endpoint)
-                    obj.put("model_id", p.modelId)
-                    obj.put("auth_type", p.authType)
-                    jsonArray.put(obj)
-                }
-                providersFile.writeText(jsonArray.toString())
-                
-                // Phase 5.1.5: Purge Metadata and Secure Credentials
-                val masterKey = MasterKey.Builder(this@MainActivity)
-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                    .build()
-                val securePrefs = EncryptedSharedPreferences.create(
-                    this@MainActivity,
-                    "secure_creds",
-                    masterKey,
-                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-                )
-                securePrefs.edit().remove("key_$name").apply()
-                
-                nativeEngine.updateCloudProviders(jsonArray.toString())
-                
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Provider $name and credentials purged.", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Log.e("RoninUI", "Failed to purge provider: ${e.message}")
-            }
-        }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) { "" }
     }
 
     private fun checkAndRequestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
-                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                val uri = Uri.fromParts("package", packageName, null)
-                intent.data = uri
-                try { 
-                    startActivity(intent) 
-                } catch (e: Exception) { 
-                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) 
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.addCategory("android.intent.category.DEFAULT")
+                    intent.data = Uri.parse(String.format("package:%s", packageName))
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = Intent()
+                    intent.action = Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION
+                    startActivity(intent)
                 }
+            }
+        } else {
+            if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), 1001)
+            }
+        }
+    }
+
+    private fun checkAndRequestHardwarePermissions() {
+        val permissions = mutableListOf<String>()
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            permissions.add(android.Manifest.permission.CAMERA)
+        }
+        if (permissions.isNotEmpty()) {
+            requestPermissions(permissions.toTypedArray(), 1002)
+        }
+    }
+
+    private fun saveOfflineMode(offline: Boolean) {
+        sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
+        nativeEngine.setOfflineModeSafe(offline)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val currentPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+
+        if (currentPermission && !lastPermissionState) {
+            Log.i("RoninLifecycle", "Permission granted while resumed. Refreshing registry.")
+            refreshRegistry()
+        }
+        lastPermissionState = currentPermission
+    }
+
+    private fun refreshRegistry() {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        lifecycleScope.launch {
+            // All Files Access Guard: wait 500ms for OS filesystem sync
+            delay(500)
+            scanLocalModels()
+            
+            val savedModelPath = sharedPreferences.getString("local_model_path", "")
+            if (!savedModelPath.isNullOrEmpty()) {
+                hydrateModel(savedModelPath)
+            } else if (chatViewModel.discoveredModels.isNotEmpty()) {
+                // Phase 4.8.5: Auto-select first available model on first run
+                // Phase 4.9.0: Now using Internal Storage
+                val autoPath = chatViewModel.discoveredModels[0]
+                Log.i("RoninBoot", "First Run (Internal): Auto-selecting model $autoPath")
+                hydrateModel(autoPath)
             }
         }
     }
@@ -829,147 +601,18 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun RoninChatUI(
-    engine: NativeEngine, 
-    chatViewModel: ChatViewModel = viewModel(), 
+    engine: NativeEngine,
+    chatViewModel: ChatViewModel,
     modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>,
     onSaveOfflineMode: (Boolean) -> Unit
 ) {
-    var inputText by remember { mutableStateOf("") }
-    val messages = chatViewModel.messages
-    val reasoningLogs = chatViewModel.reasoningLogs
     val context = LocalContext.current
-    val scaffoldState = rememberScaffoldState()
-    val chatListState = rememberLazyListState()
+    val reasoningLogs = chatViewModel.reasoningLogs
     val reasoningListState = rememberLazyListState()
+    val scrollState = rememberLazyListState()
+    var currentInput by remember { mutableStateOf("") }
+    val scaffoldState = rememberScaffoldState()
     val scope = rememberCoroutineScope()
-    var showAddProvider by remember { mutableStateOf(false) }
-    var showCommands by remember { mutableStateOf(false) }
-    val commands = listOf("/status", "/skills", "/model", "/reset")
-    val filteredCommands = commands.filter { it.startsWith(inputText) && it != inputText }
-
-    LaunchedEffect(inputText) {
-        showCommands = inputText.startsWith("/") && filteredCommands.isNotEmpty()
-    }
-
-    if (chatViewModel.showSettings) {
-        SettingsDialog(
-            onDismiss = { chatViewModel.showSettings = false },
-            onSelectModel = { 
-                // Phase 4.9.1: Filter for octet-stream and specific extensions
-                modelPicker.launch(arrayOf("application/octet-stream", "application/x-binary")) 
-            },
-            currentModelPath = chatViewModel.localModelPath,
-            providers = chatViewModel.cloudProviders,
-            discoveredModels = chatViewModel.discoveredModels,
-            primaryProvider = chatViewModel.primaryCloudProvider,
-            onPrimaryProviderChange = {
-                chatViewModel.primaryCloudProvider = it
-                engine.setPrimaryCloudProvider(it)
-                (context as? MainActivity)?.savePrimaryCloudProvider(it)
-            },
-            onDeleteProvider = { (context as? MainActivity)?.removeCloudProvider(it) },
-            onDeleteModel = { (context as? MainActivity)?.removeLocalModel(it) },
-            onAddProvider = { showAddProvider = true },
-
-            offlineMode = chatViewModel.offlineMode,
-            onOfflineModeChange = { 
-                chatViewModel.offlineMode = it
-                engine.setOfflineMode(it)
-                onSaveOfflineMode(it)
-            }
-        )
-    }
-
-    if (showAddProvider) {
-        AddProviderDialog(
-            engine = engine,
-            onDismiss = { showAddProvider = false },
-            onSave = { provider, key ->
-                (context as? MainActivity)?.saveCloudProvider(provider, key)
-            }
-        )
-    }
-
-    LaunchedEffect(Unit) {
-        engine.onKernelMessage = { message ->
-            if (message.startsWith("[STREAM]")) {
-                val token = message.substringAfter("[STREAM]")
-                if (messages.isNotEmpty() && messages.last().startsWith("Ronin:")) {
-                    val lastMsg = messages.last()
-                    messages[messages.size - 1] = lastMsg + token
-                } else {
-                    messages.add("Ronin: $token")
-                }
-            } else if (message.startsWith("[THINKING]")) {
-                // Phase 4.6.9 Preview: Thinking UI Readiness
-                val thought = message.substringAfter("[THINKING]")
-                reasoningLogs.add(0, "> THOUGHT: $thought")
-            } else {
-                reasoningLogs.add(0, message)
-            }
-        }
-        engine.onSystemTiersUpdate = { temp, used, total ->
-            chatViewModel.temperature = temp
-            chatViewModel.ramUsedGB = used
-            chatViewModel.ramTotalGB = total
-            val pressure = engine.getLMKPressure()
-            chatViewModel.lmkPressure = pressure
-            chatViewModel.stability = (100 - pressure) / 100.0f
-        }
-    }
-
-    val loadNextHistoryPage = {
-        if (!chatViewModel.isLoadingHistory && chatViewModel.hasMoreHistory) {
-            chatViewModel.isLoadingHistory = true
-            scope.launch {
-                val pageSize = 20
-                val offset = chatViewModel.historyPage * pageSize
-                val newHistory: List<Pair<String, String>> = engine.getChatHistoryAsync(pageSize, offset)
-                if (newHistory.isEmpty()) {
-                    chatViewModel.hasMoreHistory = false
-                } else {
-                    for (pair in newHistory.reversed()) {
-                        val (role, content) = pair
-                        val msg = if (role == "user") "User: $content" else "Ronin: $content"
-                        if (!messages.contains(msg)) {
-                            messages.add(0, msg)
-                        }
-                    }
-                    chatViewModel.historyPage++
-                }
-                chatViewModel.isLoadingHistory = false
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) { 
-        if (messages.isEmpty()) {
-            loadNextHistoryPage() 
-        }
-    }
-    
-    LaunchedEffect(chatListState.firstVisibleItemIndex) {
-        if (chatListState.firstVisibleItemIndex == 0 && messages.isNotEmpty() && !chatViewModel.isLoadingHistory) {
-            loadNextHistoryPage()
-        }
-    }
-
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            val layoutInfo = chatListState.layoutInfo
-            val visibleItemsInfo = layoutInfo.visibleItemsInfo
-            val lastMsg = messages.last()
-            val isUserMsg = lastMsg.startsWith("User:")
-            val isAtBottom = if (visibleItemsInfo.isEmpty()) {
-                true 
-            } else {
-                visibleItemsInfo.last().index >= layoutInfo.totalItemsCount - 2
-            }
-            if (isUserMsg || isAtBottom) {
-                chatListState.animateScrollToItem(messages.size - 1)
-            }
-        }
-    }
 
     LaunchedEffect(reasoningLogs.size) { 
         if (reasoningLogs.isNotEmpty()) {
@@ -999,11 +642,11 @@ fun RoninChatUI(
                     chatViewModel.temperature = temp
                     chatViewModel.ramUsedGB = usedRAM
                     chatViewModel.ramTotalGB = totalRAM
-                    chatViewModel.lmkPressure = engine.getLMKPressure()
+                    chatViewModel.lmkPressure = engine.getLMKPressureSafe()
                     chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f
                 }
                 
-                engine.updateSystemHealth(temp, usedRAM, totalRAM)
+                engine.updateSystemHealthSafe(temp, usedRAM, totalRAM)
                 
                 // Delay increased to 5 seconds to reduce JNI/Context overhead
                 delay(5000)
@@ -1015,436 +658,221 @@ fun RoninChatUI(
         scaffoldState = scaffoldState,
         topBar = {
             TopAppBar(
-                title = { 
-                    Row(verticalAlignment = Alignment.CenterVertically) { 
-                        Text("Ronin Kernel v4.4-DYNAMIC")
-                        Spacer(Modifier.width(8.dp))
-                        StabilityHeartbeat(chatViewModel.lmkPressure) 
-                    } 
-                },
+                title = { Text("Ronin Kernel", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = { chatViewModel.showSettings = true }) { 
-                        Icon(Icons.Default.Settings, "Settings", tint = Color.White) 
+                    IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) {
+                        Icon(if (chatViewModel.showSysInfo) Icons.Default.Info else Icons.Default.BarChart, contentDescription = "System Info")
                     }
-                    IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { 
-                        Icon(Icons.Default.Info, "Info", tint = if (chatViewModel.showSysInfo) Color.Cyan else Color.Gray) 
+                    IconButton(onClick = { chatViewModel.showSettings = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
-                    StabilityMeter(chatViewModel.stability)
                 },
-                backgroundColor = Color(0xFF121212),
-                contentColor = Color.White,
-                elevation = 8.dp
+                backgroundColor = MaterialTheme.colors.surface,
+                contentColor = MaterialTheme.colors.onSurface,
+                elevation = 0.dp
             )
-        },
-        backgroundColor = Color(0xFF1A1A1A)
-    ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            ContextTimeline(chatViewModel.l1Count, chatViewModel.l2Count, chatViewModel.l3Count)
+        }
+    ) { padding ->
+        Column(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
             
-            if (chatViewModel.isLoadingHistory) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(2.dp), 
-                    color = Color.Cyan, 
-                    backgroundColor = Color.Transparent
-                )
+            // Health Stats Bar (Phase 4.4)
+            AnimatedVisibility(visible = chatViewModel.showSysInfo) {
+                SystemInfoPanel(chatViewModel)
             }
-            
-            LazyColumn(
-                state = chatListState, 
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), 
-                verticalArrangement = Arrangement.Bottom
-            ) {
-                items(messages) { msg -> ChatBubble(msg) }
-            }
-            
-            ReasoningConsole(reasoningLogs, reasoningListState)
-            
-            AnimatedVisibility(visible = showCommands) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    elevation = 8.dp,
-                    shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
-                    color = MaterialTheme.colors.surface
-                ) {
-                    Column {
-                        filteredCommands.forEach { cmd ->
-                            Text(
-                                text = cmd,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { 
-                                        inputText = cmd
-                                        showCommands = false
-                                    }
-                                    .padding(12.dp),
-                                color = MaterialTheme.colors.onSurface
-                            )
+
+            // Reasoning Logs Spine (L2 Console)
+            Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Psychology, "Reasoning", tint = Color(0xFF64B5F6), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Reasoning Console", fontSize = 12.sp, color = Color(0xFF64B5F6), fontWeight = FontWeight.Bold)
+                    }
+                    Divider(color = Color(0xFF64B5F6).copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
+                    LazyColumn(state = reasoningListState, modifier = Modifier.fillMaxSize()) {
+                        items(reasoningLogs) { log ->
+                            Text(text = log, color = if (log.startsWith("Error")) Color.Red else Color(0xFFAAAAAA), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(vertical = 1.dp))
                         }
                     }
                 }
             }
 
-            ChatInput(value = inputText, onValueChange = { inputText = it }, onSend = {
-                if (inputText.isNotBlank()) {
-                    val isCommand = inputText.trim().startsWith("/")
-                    
-                    // Phase 4.8.5: Smart Bypass
-                    // Block only if local inference is required but not ready
-                    if (!isCommand && chatViewModel.offlineMode && !chatViewModel.isKernelHydrated) {
-                        Toast.makeText(context, "Local Inference Blocked: Model Not Hydrated.", Toast.LENGTH_SHORT).show()
-                        return@ChatInput
+            // Main Chat (L1 Console)
+            Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) {
+                LazyColumn(state = scrollState, modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) {
+                    items(chatViewModel.messages.reversed()) { msg ->
+                        ChatBubble(msg)
                     }
+                }
+            }
 
-                    messages.add("User: $inputText")
-                    val currentInput = inputText
-                    inputText = ""
-                    chatViewModel.l1Count = 0
-                    chatViewModel.l2Count = 0
-                    chatViewModel.l3Count = 0
-                    scope.launch {
-                        if (currentInput.trim().lowercase() == "/history") { 
-                            loadNextHistoryPage()
-                            return@launch 
-                        }
-                        val kernelRawOutput = engine.processInputAsync(currentInput)
-                        val kernelOutput = try { 
-                            if (kernelRawOutput.startsWith("{")) { 
-                                val start = kernelRawOutput.indexOf("\"result\": \"") + 11
-                                val end = kernelRawOutput.lastIndexOf("\"")
-                                if (start in 11 until end) {
-                                    val result = kernelRawOutput.substring(start, end)
-                                    if (result.startsWith("[DONE]") || result.startsWith("[STREAM_COMPLETE]")) {
-                                        // Already handled by stream tokens
-                                        ""
-                                    } else {
-                                        result
+            // Input Section (Tier 0 Interface)
+            Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
+                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextField(
+                        value = currentInput,
+                        onValueChange = { currentInput = it },
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)),
+                        placeholder = { Text("Send instruction to Kernel...") },
+                        colors = TextFieldDefaults.textFieldColors(
+                            backgroundColor = Color(0xFF25283D),
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            textColor = Color.White
+                        ),
+                        trailingIcon = {
+                             IconButton(onClick = {
+                                if (currentInput.isNotBlank()) {
+                                    val input = currentInput
+                                    chatViewModel.messages.add("User: $input")
+                                    currentInput = ""
+                                    scope.launch {
+                                        val response = withContext(Dispatchers.Default) {
+                                            engine.processInput(input)
+                                        }
+                                        chatViewModel.messages.add("Ronin: $response")
+                                        scrollState.animateScrollToItem(0)
                                     }
-                                } else {
-                                    kernelRawOutput
                                 }
-                            } else {
-                                if (kernelRawOutput.startsWith("[DONE]") || kernelRawOutput.startsWith("[STREAM_COMPLETE]")) "" else kernelRawOutput 
-                            }
-                        } catch (e: Exception) { 
-                            kernelRawOutput 
+                             }) {
+                                 Icon(Icons.Default.Send, "Send", tint = Color(0xFF64B5F6))
+                             }
                         }
-                        if (kernelOutput.isNotEmpty()) {
-                            messages.add("Ronin: $kernelOutput")
-                        }
-                        launch { 
-                            delay(100)
-                            chatListState.animateScrollToItem(messages.size - 1) 
-                        }
-                    }
-                }
-            })
-            
-            if (chatViewModel.showSysInfo) {
-                SystemHealthOverlay(chatViewModel.temperature, chatViewModel.ramUsedGB, chatViewModel.ramTotalGB)
-            }
-        }
-    }
-}
-
-@Composable
-fun SystemHealthOverlay(temp: Float, used: Float, total: Float) {
-    Surface(modifier = Modifier.fillMaxWidth(), color = Color(0xFF121212), elevation = 4.dp) {
-        Row(modifier = Modifier.padding(8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            Text(text = "${"%.1f".format(temp)}°C | RAM: ${"%.2f".format(used)}/${"%.2f".format(total)} GB", color = Color.Green, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-        }
-    }
-}
-
-@Composable
-fun StabilityHeartbeat(pressure: Int) {
-    val color = when { pressure < 30 -> Color.Green; pressure < 70 -> Color.Yellow; else -> Color.Red }
-    Icon(Icons.Default.Favorite, "Heartbeat", tint = color, modifier = Modifier.size(18.dp))
-}
-
-@Composable
-fun ContextTimeline(l1: Int, l2: Int, l3: Int) {
-    Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF252525)).padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-        TimelineZone("L1 (Active)", l1, Color.Cyan)
-        TimelineZone("L2 (Compressed)", l2, Color.Yellow)
-        TimelineZone("L3 (Deep)", l3, Color.Magenta)
-    }
-}
-
-@Composable
-fun TimelineZone(label: String, count: Int, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, style = MaterialTheme.typography.caption, color = Color.Gray)
-        Text("$count items", color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-fun ReasoningConsole(logs: List<String>, scrollState: LazyListState) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(modifier = Modifier.fillMaxWidth().padding(8.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF222222)).animateContentSize()) {
-        Row(modifier = Modifier.clickable { expanded = !expanded }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp, "Expand", tint = Color.Gray)
-            Spacer(Modifier.width(8.dp)); Text("Reasoning Console", color = Color.Gray, fontSize = 12.sp)
-        }
-        if (expanded) {
-            Box(modifier = Modifier.height(120.dp).padding(horizontal = 12.dp, vertical = 4.dp)) {
-                LazyColumn(state = scrollState) {
-                    items(logs) { log -> 
-                        val isCommand = log.startsWith("[COMMAND]")
-                        val displayLog = if (isCommand) log.substringAfter("[COMMAND] ") else log
-                        val textColor = if (isCommand) Color.Cyan else Color(0xFF00FF00)
-                        
-                        Text(
-                            text = "> $displayLog", 
-                            color = textColor, 
-                            fontSize = 11.sp, 
-                            fontFamily = FontFamily.Monospace, 
-                            modifier = Modifier.padding(vertical = 2.dp)
-                        ) 
-                    }
+                    )
                 }
             }
         }
     }
+
+    if (chatViewModel.showSettings) {
+        SettingsDialog(chatViewModel, modelPicker, onSaveOfflineMode)
+    }
+}
+
+@Composable
+fun SystemInfoPanel(chatViewModel: ChatViewModel) {
+    Surface(color = Color(0xFF161922), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                InfoItem("Thermal", "${chatViewModel.temperature}°C", if (chatViewModel.temperature > 40) Color.Red else Color.Green)
+                InfoItem("RAM Used", "${"%.2f".format(chatViewModel.ramUsedGB)} GB", Color.White)
+                InfoItem("Stability", "${(chatViewModel.stability * 100).toInt()}%", Color.Cyan)
+            }
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = chatViewModel.stability,
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                color = if (chatViewModel.stability < 0.5f) Color.Red else Color.Cyan,
+                backgroundColor = Color.White.copy(alpha = 0.1f)
+            )
+        }
+    }
+}
+
+@Composable
+fun InfoItem(label: String, value: String, color: Color) {
+    Column {
+        Text(label, size = 10.sp, color = Color.Gray)
+        Text(value, size = 14.sp, color = color, fontWeight = FontWeight.Bold)
+    }
+}
+
+private fun Text(text: String, size: androidx.compose.ui.unit.TextUnit, color: Color, fontWeight: FontWeight = FontWeight.Normal) {
+    androidx.compose.material.Text(text = text, fontSize = size, color = color, fontWeight = fontWeight)
 }
 
 @Composable
 fun ChatBubble(message: String) {
     val isUser = message.startsWith("User:")
-    val text = message.substringAfter(": ")
-    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart) {
-        Text(
-            text = text, 
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (isUser) MaterialTheme.colors.primary else MaterialTheme.colors.surface)
-                .padding(12.dp), 
-            color = MaterialTheme.colors.onPrimary.takeIf { isUser } ?: MaterialTheme.colors.onSurface, 
-            fontSize = 14.sp
-        )
-    }
-}
-
-@Composable
-fun ChatInput(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit) {
-    Surface(elevation = 8.dp, color = MaterialTheme.colors.surface) {
-        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextField(
-                value = value, 
-                onValueChange = onValueChange, 
-                modifier = Modifier.weight(1f), 
-                colors = TextFieldDefaults.textFieldColors(
-                    backgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.1f), 
-                    textColor = MaterialTheme.colors.onSurface, 
-                    focusedIndicatorColor = Color.Transparent, 
-                    unfocusedIndicatorColor = Color.Transparent
-                ), 
-                shape = RoundedCornerShape(24.dp), 
-                placeholder = { Text("Ask Ronin...", color = MaterialTheme.colors.onSurface.copy(alpha = 0.4f)) }
+    val content = if (isUser) message.removePrefix("User: ") else message.removePrefix("Ronin: ")
+    
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
+        Surface(
+            color = if (isUser) Color(0xFF2D3142) else Color(0xFF64B5F6).copy(alpha = 0.1f),
+            shape = RoundedCornerShape(
+                topStart = 16.dp, topEnd = 16.dp, 
+                bottomStart = if (isUser) 16.dp else 0.dp, 
+                bottomEnd = if (isUser) 0.dp else 16.dp
+            ),
+            border = if (!isUser) BorderStroke(1.dp, Color(0xFF64B5F6).copy(alpha = 0.3f)) else null
+        ) {
+            Text(
+                content,
+                modifier = Modifier.padding(12.dp),
+                color = Color.White,
+                fontSize = 14.sp
             )
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = onSend, 
-                shape = RoundedCornerShape(24.dp), 
-                colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.primary)
-            ) { 
-                Text("Send", color = MaterialTheme.colors.onPrimary) 
-            }
         }
     }
 }
 
 @Composable
 fun SettingsDialog(
-    onDismiss: () -> Unit,
-    onSelectModel: () -> Unit,
-    currentModelPath: String,
-    providers: List<CloudProvider>,
-    discoveredModels: List<String>,
-    primaryProvider: String,
-    onPrimaryProviderChange: (String) -> Unit,
-    onDeleteProvider: (String) -> Unit,
-    onDeleteModel: (String) -> Unit,
-    onAddProvider: () -> Unit,
-    offlineMode: Boolean,
-    onOfflineModeChange: (Boolean) -> Unit
+    chatViewModel: ChatViewModel,
+    modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+    onSaveOfflineMode: (Boolean) -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("Ronin Kernel Settings", color = MaterialTheme.colors.onSurface)
-        },
+        onDismissRequest = { chatViewModel.showSettings = false },
+        title = { Text("Ronin Kernel Configuration", fontWeight = FontWeight.Bold) },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Offline-only Mode", modifier = Modifier.weight(1f), color = MaterialTheme.colors.onSurface)
-                    Switch(checked = offlineMode, onCheckedChange = onOfflineModeChange)
-                }
+            Column {
+                Divider()
+                Spacer(Modifier.height(16.dp))
+                
+                Text("Reasoning Brain", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text(chatViewModel.localModelPath.substringAfterLast("/"), fontSize = 12.sp, color = Color.Gray)
+                
                 Spacer(Modifier.height(8.dp))
-                Text("Reasoning Brains", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
-                if (discoveredModels.isEmpty()) {
-                    Text("No models detected in internal storage.", color = Color.Red, fontSize = 10.sp)
-                } else {
-                    discoveredModels.forEach { path ->
-                        val name = path.substringAfterLast("/")
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            RadioButton(selected = path == currentModelPath, onClick = { /* Picked via OpenDocument */ })
-                            Text(name, fontSize = 10.sp, color = MaterialTheme.colors.onSurface, modifier = Modifier.weight(1f))
-                            IconButton(onClick = { onDeleteModel(path) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+                OutlinedButton(
+                    onClick = { modelPicker.launch(arrayOf("*/*")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.CloudDownload, "Import")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Import .litertlm / .bin")
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Offline-Only Mode", modifier = Modifier.weight(1f))
+                    Switch(checked = chatViewModel.offlineMode, onCheckedChange = { 
+                        chatViewModel.offlineMode = it 
+                        onSaveOfflineMode(it)
+                    })
+                }
+                Text("Disables Cloud Fallback for maximum data sovereignty.", fontSize = 10.sp, color = Color.Gray)
+
+                Spacer(Modifier.height(16.dp))
+                Text("Cloud Provider", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                var expanded by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(chatViewModel.primaryCloudProvider)
+                        Icon(Icons.Default.ArrowDropDown, "Expand")
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        chatViewModel.cloudProviders.forEach { provider ->
+                            DropdownMenuItem(onClick = {
+                                chatViewModel.primaryCloudProvider = provider.name
+                                expanded = false
+                            }) {
+                                Text(provider.name)
                             }
                         }
                     }
-                }
-                Button(onClick = onSelectModel, modifier = Modifier.padding(top = 4.dp)) {
-                    Text("Load External Model")
-                }
-
-                Spacer(Modifier.height(16.dp))
-                Text("Cloud Registry", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
-                providers.forEach { provider ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                    ) {
-                        RadioButton(selected = provider.name == primaryProvider, onClick = { onPrimaryProviderChange(provider.name) })
-                        Text("${provider.name} (${provider.modelId})", modifier = Modifier.weight(1f).clickable { onPrimaryProviderChange(provider.name) }, color = MaterialTheme.colors.onSurface)
-                        IconButton(onClick = { onDeleteProvider(provider.name) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.7f))
-                        }
-                    }
-                }
-                Button(onClick = onAddProvider, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    Text("Add Live Provider")
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { 
-                Text("Close") 
-            } 
-        }, 
-        backgroundColor = MaterialTheme.colors.surface, 
-        contentColor = MaterialTheme.colors.onSurface
-    )
-}
-
-@Composable
-fun AddProviderDialog(engine: NativeEngine, onDismiss: () -> Unit, onSave: (CloudProvider, String) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var endpoint by remember { mutableStateOf("") }
-    var modelId by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
-    var expanded by remember { mutableStateOf(false) }
-    var isFetching by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    
-    val fetchedModels = remember { mutableStateListOf<JSONObject>() }
-
-    AlertDialog(
-        onDismissRequest = onDismiss, 
-        title = { 
-            Text("Add Cloud Provider (Phase 5.0)", color = MaterialTheme.colors.onSurface) 
-        }, 
-        text = {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextField(
-                        value = apiKey, 
-                        onValueChange = { apiKey = it }, 
-                        label = { Text("API Key (Required to Fetch)") },
-                        modifier = Modifier.weight(1f),
-                        colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (apiKey.isNotEmpty()) {
-                                isFetching = true
-                                scope.launch {
-                                    val models = engine.fetchAvailableModels(apiKey)
-                                    fetchedModels.clear()
-                                    fetchedModels.addAll(models)
-                                    isFetching = false
-                                    if (models.isNotEmpty()) expanded = true
-                                }
-                            }
-                        },
-                        enabled = !isFetching
-                    ) {
-                        Text(if (isFetching) "..." else "Fetch")
-                    }
-                }
-                
-                Spacer(Modifier.height(8.dp))
-                
-                Box {
-                    OutlinedButton(onClick = { if (fetchedModels.isNotEmpty()) expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (name.isEmpty()) "Select Live Model" else "Model: $name")
-                    }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        fetchedModels.forEach { model ->
-                            val displayName = model.optString("displayName", "Unknown")
-                            val id = model.getString("name").substringAfter("models/")
-                            DropdownMenuItem(onClick = {
-                                name = displayName
-                                modelId = id
-                                endpoint = "https://generativelanguage.googleapis.com/v1/models/$id:generateContent"
-                                expanded = false
-                            }) {
-                                Text(displayName)
-                            }
-                        }
-                    }
-                }
-                
-                Spacer(Modifier.height(8.dp))
-                
-                TextField(
-                    value = endpoint, 
-                    onValueChange = { endpoint = it }, 
-                    label = { Text("Endpoint URL") },
-                    colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
-                )
-                TextField(
-                    value = modelId, 
-                    onValueChange = { modelId = it }, 
-                    label = { Text("Model ID") },
-                    colors = TextFieldDefaults.textFieldColors(textColor = MaterialTheme.colors.onSurface)
-                )
+            TextButton(onClick = { chatViewModel.showSettings = false }) {
+                Text("CLOSE")
             }
-        }, 
-        confirmButton = { 
-            Button(onClick = { 
-                if (apiKey.isNotEmpty() && name.isNotEmpty()) {
-                    // Sync Registry to Kernel (Requirement 2)
-                    val metadataJson = JSONArray().apply {
-                        fetchedModels.forEach { put(it) }
-                    }.toString()
-                    engine.updateModelRegistry(metadataJson)
-                    
-                    onSave(CloudProvider(name, endpoint, modelId, "api_key"), apiKey)
-                    onDismiss()
-                }
-            }) { 
-                Text("Verify & Save") 
-            } 
-        }, 
-        dismissButton = { 
-            TextButton(onClick = onDismiss) { 
-                Text("Cancel") 
-            } 
-        }, 
-        backgroundColor = MaterialTheme.colors.surface, 
-        contentColor = MaterialTheme.colors.onSurface
+        }
     )
 }
 
 @Composable
-fun StabilityMeter(stability: Float) {
-    val color = when { stability > 0.7f -> Color.Green; stability > 0.4f -> Color.Yellow; else -> Color.Red }
-    Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(end = 16.dp)) {
-        Text("Stability", style = MaterialTheme.typography.caption, color = MaterialTheme.colors.onSurface)
-        LinearProgressIndicator(progress = stability, color = color, backgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.1f), modifier = Modifier.width(100.dp))
-    }
+fun Divider(color: Color = Color.Gray.copy(alpha = 0.2f), modifier: Modifier = Modifier) {
+    androidx.compose.material.Divider(color = color, modifier = modifier)
 }

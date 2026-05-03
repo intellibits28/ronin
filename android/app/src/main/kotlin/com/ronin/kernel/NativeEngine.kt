@@ -52,6 +52,25 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun stopLowPriorityTasksNative()
     private external fun setPriorityNative(priority: Int)
     
+    fun injectLocationSafe(lat: Double, lon: Double) {
+        if (isLibLoaded) {
+            try {
+                injectLocation(lat, lon)
+            } catch (e: UnsatisfiedLinkError) {}
+        }
+    }
+
+    fun updateModelRegistrySafe(json: String): Boolean {
+        if (isLibLoaded) {
+            return try {
+                updateModelRegistry(json)
+            } catch (e: UnsatisfiedLinkError) {
+                false
+            }
+        }
+        return false
+    }
+
     external fun processInput(input: String): String
     external fun notifyTrimMemory(level: Int)
     external fun injectLocation(lat: Double, lon: Double)
@@ -66,14 +85,73 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      * Terminate heavy background tasks (e.g. file indexing) to save RAM.
      */
     fun stopLowPriorityTasks() {
-        if (isLibLoaded) stopLowPriorityTasksNative()
+        if (isLibLoaded) {
+            try {
+                stopLowPriorityTasksNative()
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "Native task management call failed: ${e.message}")
+            }
+        }
     }
 
     /**
      * Adjusts the execution priority of the kernel.
      */
     fun setPriority(priority: Int) {
-        if (isLibLoaded) setPriorityNative(priority)
+        if (isLibLoaded) {
+            try {
+                setPriorityNative(priority)
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "Native priority call failed: ${e.message}")
+            }
+        }
+    }
+
+    fun isNativeLibraryLoaded(): Boolean = isLibLoaded
+
+    // --- External Call Wrappers ---
+
+    fun setOfflineModeSafe(offline: Boolean) {
+        if (isLibLoaded) {
+            try {
+                setOfflineMode(offline)
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "setOfflineMode failed: ${e.message}")
+            }
+        }
+    }
+
+    fun setPrimaryCloudProviderSafe(provider: String) {
+        if (isLibLoaded) {
+            try {
+                setPrimaryCloudProvider(provider)
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "setPrimaryCloudProvider failed: ${e.message}")
+            }
+        }
+    }
+
+    fun updateCloudProvidersSafe(json: String): Boolean {
+        if (isLibLoaded) {
+            return try {
+                updateCloudProviders(json)
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "updateCloudProviders failed: ${e.message}")
+                false
+            }
+        }
+        return false
+    }
+
+    fun getLMKPressureSafe(): Int {
+        if (isLibLoaded) {
+            return try {
+                getLMKPressure()
+            } catch (e: UnsatisfiedLinkError) {
+                0
+            }
+        }
+        return 0
     }
 
     // --- Callbacks for MainActivity ---
@@ -90,8 +168,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     suspend fun initialize() = withContext(Dispatchers.IO) {
         if (!isLibLoaded) initializeAsync()
         if (isLibLoaded) {
-            setEngineInstance()
-            initializeKernel(context.filesDir.absolutePath)
+            try {
+                setEngineInstance()
+                initializeKernel(context.filesDir.absolutePath)
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "initializeKernel failed: ${e.message}")
+            }
         }
     }
 
@@ -139,7 +221,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext "Error: Native libraries not loaded."
-        processInput(input)
+        try {
+            processInput(input)
+        } catch (e: UnsatisfiedLinkError) {
+            "Error: Native bridge disconnected."
+        }
     }
 
     /**
@@ -179,12 +265,16 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         if (!isLibLoaded) return@withContext emptyList<Pair<String, String>>()
-        val raw = getChatHistory(limit, offset) ?: return@withContext emptyList<Pair<String, String>>()
-        val result = mutableListOf<Pair<String, String>>()
-        for (i in 0 until (raw.size / 2)) {
-            result.add(raw[i * 2] to raw[i * 2 + 1])
+        try {
+            val raw = getChatHistory(limit, offset) ?: return@withContext emptyList<Pair<String, String>>()
+            val result = mutableListOf<Pair<String, String>>()
+            for (i in 0 until (raw.size / 2)) {
+                result.add(raw[i * 2] to raw[i * 2 + 1])
+            }
+            result
+        } catch (e: UnsatisfiedLinkError) {
+            emptyList<Pair<String, String>>()
         }
-        result
     }
 
     suspend fun fetchAvailableModels(apiKey: String): List<JSONObject> = withContext(Dispatchers.IO) {
@@ -285,9 +375,22 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
+    fun updateSystemHealthSafe(temp: Float, used: Float, total: Float): Boolean {
+        if (isLibLoaded) {
+            return try {
+                updateSystemHealth(temp, used, total)
+            } catch (e: UnsatisfiedLinkError) {
+                false
+            }
+        }
+        return false
+    }
+
     override fun onTrimMemory(level: Int) {
         if (isLibLoaded) {
-            notifyTrimMemory(level)
+            try {
+                notifyTrimMemory(level)
+            } catch (e: UnsatisfiedLinkError) {}
             
             // Phase 6.6: Critical RAM Guard
             if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
@@ -299,7 +402,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     override fun onConfigurationChanged(newConfig: Configuration) {}
     override fun onLowMemory() {
         if (isLibLoaded) {
-            notifyTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+            try {
+                notifyTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+            } catch (e: UnsatisfiedLinkError) {}
             stopLowPriorityTasks()
         }
     }
