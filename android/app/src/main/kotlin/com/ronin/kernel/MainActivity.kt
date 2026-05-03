@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
                     
                     inputStream?.use { input ->
                         java.io.FileOutputStream(targetFile).use { output ->
-                            input.copyTo(output)
+                            input.copyTo(output, bufferSize = 1024 * 1024) // Phase 6.6: 1MB Buffer for high-speed import
                         }
                     }
                     true
@@ -307,7 +307,7 @@ class MainActivity : ComponentActivity() {
             if (!capFile.exists()) {
                 assets.open("capabilities.json").use { input ->
                     java.io.FileOutputStream(capFile).use { output ->
-                        input.copyTo(output)
+                        input.copyTo(output, bufferSize = 1024 * 1024)
                     }
                 }
             }
@@ -324,7 +324,7 @@ class MainActivity : ComponentActivity() {
             if (!routerFile.exists()) {
                 assets.open("models/model.onnx").use { input ->
                     java.io.FileOutputStream(routerFile).use { output ->
-                        input.copyTo(output)
+                        input.copyTo(output, bufferSize = 1024 * 1024)
                     }
                 }
             }
@@ -513,7 +513,7 @@ class MainActivity : ComponentActivity() {
         return try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             file.inputStream().use { input ->
-                val buffer = ByteArray(8192)
+                val buffer = ByteArray(1024 * 1024) // Phase 6.6: 1MB Buffer for high-speed hashing
                 var bytesRead = input.read(buffer)
                 while (bytesRead != -1) {
                     digest.update(buffer, 0, bytesRead)
