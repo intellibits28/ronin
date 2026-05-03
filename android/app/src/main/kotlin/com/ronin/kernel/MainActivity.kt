@@ -777,6 +777,7 @@ fun InfoItem(label: String, value: String, color: Color) {
     }
 }
 
+@Composable
 private fun Text(text: String, size: androidx.compose.ui.unit.TextUnit, color: Color, fontWeight: FontWeight = FontWeight.Normal) {
     androidx.compose.material.Text(text = text, fontSize = size, color = color, fontWeight = fontWeight)
 }
