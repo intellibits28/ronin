@@ -1,6 +1,7 @@
 #pragma once
 
 #include <jni.h>
+#include <string>
 #include "ronin_log.h"
 
 namespace Ronin::Kernel::JNI {
@@ -37,5 +38,11 @@ private:
     JNIEnv* m_env = nullptr;
     bool m_attached = false;
 };
+
+/**
+ * JNI String Utilities.
+ */
+std::string ConvertJStringToString(JNIEnv* env, jstring jstr);
+jstring ConvertStringToJString(JNIEnv* env, const std::string& str);
 
 } // namespace Ronin::Kernel::JNI

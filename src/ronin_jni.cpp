@@ -20,7 +20,7 @@
 
 #define TAG "RoninKernel_JNI"
 
-using namespace ronin::jni;
+using namespace Ronin::Kernel::JNI;
 using namespace Ronin::Kernel;
 using namespace Ronin::Kernel::Model;
 
