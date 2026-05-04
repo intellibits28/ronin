@@ -1,0 +1,145 @@
+@Composable
+fun SettingsDialog(
+    chatViewModel: ChatViewModel,
+    modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+    onSaveOfflineMode: (Boolean) -> Unit,
+    onDeleteModel: (String) -> Unit,
+    onSelectModel: (String) -> Unit
+) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = { chatViewModel.showSettings = false },
+        title = { Text("Ronin Kernel Configuration", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Divider()
+                Spacer(Modifier.height(16.dp))
+                
+                Text("Reasoning Brains (Internal)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                chatViewModel.discoveredModels.forEach { path ->
+                    val filename = path.substringAfterLast("/")
+                    val isActive = path == chatViewModel.localModelPath && chatViewModel.isKernelHydrated
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        RadioButton(
+                            selected = path == chatViewModel.localModelPath,
+                            onClick = { onSelectModel(path) },
+                            colors = androidx.compose.material.RadioButtonDefaults.colors(
+                                selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)
+                            )
+                        )
+                        Text(filename, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White)
+                        IconButton(onClick = { onDeleteModel(path) }) {
+                            Icon(Icons.Default.Delete, "Delete", tint = Color.Gray)
+                        }
+                    }
+                }
+                
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { modelPicker.launch(arrayOf("*/*")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.CloudDownload, "Import")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Import .litertlm / .bin")
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Offline-Only Mode", modifier = Modifier.weight(1f))
+                    Switch(checked = chatViewModel.offlineMode, onCheckedChange = { 
+                        chatViewModel.offlineMode = it 
+                        onSaveOfflineMode(it)
+                    })
+                }
+                Text("Disables Cloud Fallback for maximum data sovereignty.", fontSize = 10.sp, color = Color.Gray)
+
+                Spacer(Modifier.height(16.dp))
+                Text("Cloud Provider", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                var expanded by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(chatViewModel.primaryCloudProvider)
+                        Icon(Icons.Default.ArrowDropDown, "Expand")
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        chatViewModel.cloudProviders.forEach { provider ->
+                            DropdownMenuItem(onClick = {
+                                chatViewModel.primaryCloudProvider = provider.name
+                                expanded = false
+                                val existingKey = (context as MainActivity).getApiKey(provider.name)
+                                if (existingKey.isEmpty()) {
+                                    chatViewModel.pendingProvider = provider.name
+                                    chatViewModel.showApiKeyDialog = true
+                                } else {
+                                    (context as MainActivity).savePrimaryCloudProvider(provider.name)
+                                }
+                            }) {
+                                Text(provider.name)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { chatViewModel.showSettings = false }) {
+                Text("CLOSE")
+            }
+        }
+    )
+
+    if (chatViewModel.showApiKeyDialog) {
+        ApiKeyDialog(
+            provider = chatViewModel.pendingProvider,
+            onDismiss = { chatViewModel.showApiKeyDialog = false },
+            onSave = { key ->
+                (context as MainActivity).saveApiKey(chatViewModel.pendingProvider, key)
+                (context as MainActivity).savePrimaryCloudProvider(chatViewModel.pendingProvider)
+                chatViewModel.showApiKeyDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun ApiKeyDialog(provider: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var key by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Enter API Key for $provider", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text("Your key will be stored securely in Android KeyStore.", fontSize = 12.sp, color = Color.Gray)
+                Spacer(Modifier.height(8.dp))
+                TextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Paste API Key here...") },
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(key) }) {
+                Text("SAVE")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL")
+            }
+        }
+    )
+}
+
+@Composable
+private fun Text(text: String, size: androidx.compose.ui.unit.TextUnit, color: Color, fontWeight: FontWeight = FontWeight.Normal) {
+    androidx.compose.material.Text(text = text, fontSize = size, color = color, fontWeight = fontWeight)
+}
+
+@Composable
+fun Divider(color: Color = Color.Gray.copy(alpha = 0.2f), modifier: Modifier = Modifier) {
+    androidx.compose.material.Divider(color = color, modifier = modifier)
+}

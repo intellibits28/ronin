@@ -452,7 +452,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun hydrateModel(path: String) {
+    fun hydrateModel(path: String) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         val file = java.io.File(path)
         if (!file.exists()) {
@@ -585,7 +585,7 @@ class MainActivity : ComponentActivity() {
         nativeEngine.setPrimaryCloudProviderSafe(provider)
     }
 
-    private fun deleteModel(path: String) {
+    fun deleteModel(path: String) {
         val file = java.io.File(path)
         if (file.exists() && file.delete()) {
             Toast.makeText(this, "Model deleted.", Toast.LENGTH_SHORT).show()
@@ -889,6 +889,7 @@ fun SettingsDialog(
     onDeleteModel: (String) -> Unit,
     onSelectModel: (String) -> Unit
 ) {
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = { chatViewModel.showSettings = false },
         title = { Text("Ronin Kernel Configuration", fontWeight = FontWeight.Bold) },
@@ -964,7 +965,13 @@ fun SettingsDialog(
                 }
             }
         },
-...
+        confirmButton = {
+            TextButton(onClick = { chatViewModel.showSettings = false }) {
+                Text("CLOSE")
+            }
+        }
+    )
+
     if (chatViewModel.showApiKeyDialog) {
         ApiKeyDialog(
             provider = chatViewModel.pendingProvider,
@@ -1005,13 +1012,6 @@ fun ApiKeyDialog(provider: String, onDismiss: () -> Unit, onSave: (String) -> Un
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("CANCEL")
-            }
-        }
-    )
-}
-        confirmButton = {
-            TextButton(onClick = { chatViewModel.showSettings = false }) {
-                Text("CLOSE")
             }
         }
     )
