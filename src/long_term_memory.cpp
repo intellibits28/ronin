@@ -46,6 +46,12 @@ bool LongTermMemory::initSchema() {
         "  content TEXT, "
         "  timestamp INTEGER);"
         
+        "CREATE TABLE IF NOT EXISTS vectorized_interactions ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "  content TEXT, "
+        "  embedding BLOB, "
+        "  timestamp INTEGER);"
+        
         "CREATE VIRTUAL TABLE IF NOT EXISTS file_index USING fts5("
         "  name, "
         "  path, "
@@ -328,6 +334,26 @@ bool LongTermMemory::storeMessage(const std::string& role, const std::string& co
     sqlite3_bind_text(stmt, 1, role.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, content.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int64(stmt, 3, std::time(nullptr));
+    bool success = sqlite3_step(stmt) == SQLITE_DONE;
+    sqlite3_finalize(stmt);
+    return success;
+}
+
+bool LongTermMemory::storeInteraction(const std::string& content, const std::vector<float>& embedding) {
+    if (!m_db) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "INSERT INTO vectorized_interactions (content, embedding, timestamp) VALUES (?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    
+    sqlite3_bind_text(stmt, 1, content.c_str(), -1, SQLITE_STATIC);
+    if (!embedding.empty()) {
+        sqlite3_bind_blob(stmt, 2, embedding.data(), static_cast<int>(embedding.size() * sizeof(float)), SQLITE_STATIC);
+    } else {
+        sqlite3_bind_null(stmt, 2);
+    }
+    sqlite3_bind_int64(stmt, 3, std::time(nullptr));
+    
     bool success = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
     return success;

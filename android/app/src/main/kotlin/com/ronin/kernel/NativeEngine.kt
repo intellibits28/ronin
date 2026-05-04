@@ -4,22 +4,40 @@ import android.content.Context
 import android.util.Log
 import android.content.ComponentCallbacks2
 import android.content.res.Configuration
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.IBinder
+import android.os.RemoteException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Native Engine (Phase 6.6: Async Hardening & Stateful Reasoning)
- * Implements Async-to-Sync bridging with CountDownLatch for stable SD778G+ inference.
+ * Native Engine (Phase 4.5: Dual-Process Isolation)
+ * Communicates with :inference_core process via Binder IPC.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
-    private var llmInference: LlmInference? = null
+    private var inferenceService: IInferenceService? = null
+    private var isServiceBound = false
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: android.content.ComponentName?, service: IBinder?) {
+            inferenceService = IInferenceService.Stub.asInterface(service)
+            isServiceBound = true
+            Log.i(TAG, "Inference Service Connected (IPC Active).")
+        }
+
+        override fun onServiceDisconnected(name: android.content.ComponentName?) {
+            inferenceService = null
+            isServiceBound = false
+            Log.w(TAG, "Inference Service Disconnected.")
+        }
+    }
     private var currentModelPath: String = ""
     private var asyncLatch: CountDownLatch? = null
     private var lastFullResponse: String = ""
@@ -52,6 +70,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun stopLowPriorityTasksNative()
     private external fun setPriorityNative(priority: Int)
     private external fun checkFileAccessNative(path: String): String
+    private external fun getFreeRamGBNative(): Float
 
     /**
      * Phase 4.0 Audit: Verify native side can actually read the model file.
@@ -145,6 +164,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
+    fun setSafeMode(enabled: Boolean) {
+        try {
+            inferenceService?.setSafeMode(enabled)
+        } catch (e: RemoteException) {
+            Log.e(TAG, "IPC setSafeMode failed: ${e.message}")
+        }
+    }
+
     fun updateCloudProvidersSafe(json: String): Boolean {
         if (isLibLoaded) {
             return try {
@@ -189,64 +216,52 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 Log.e(TAG, "initializeKernel failed: ${e.message}")
             }
         }
+        bindInferenceService()
+    }
+
+    private fun bindInferenceService() {
+        val intent = Intent(context, InferenceService::class.java)
+        context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
     /**
-     * Kotlin-Side Model Hydration with Automatic Fallback.
+     * Kotlin-Side Model Hydration with IPC Delegation.
      */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
         // Phase 6.6: Set CRITICAL priority during hydration
         setPriority(0) // 0 = CRITICAL
-        val gpuSuccess = tryHydrate(path, true)
-        if (gpuSuccess) {
-            setPriority(1) // 1 = HIGH
-            return@withContext true
-        }
-        Log.w(TAG, "GPU Hydration failed. Falling back to CPU reasoning spine...")
-        val cpuSuccess = tryHydrate(path, false)
-        setPriority(if (cpuSuccess) 1 else 3) // 3 = LOW
-        return@withContext cpuSuccess
-    }
-
-    private fun tryHydrate(path: String, useGpu: Boolean): Boolean {
-        Log.i(TAG, ">>> [Phase 4.0 Audit] Hydration START at ${System.currentTimeMillis()}ms")
         
-        // Audit Step: Verify direct native file access before hydration
-        val accessResult = checkFileAccess(path)
-        Log.i(TAG, "[Phase 4.0 Audit] Native File Access Probe: $accessResult")
-
-        return try {
-            val startTime = System.currentTimeMillis()
-            
-            // Stability Hardening: Minimal builder
-            val builder = LlmInference.LlmInferenceOptions.builder()
-                .setModelPath(path)
-                .setMaxTokens(512)
-            
-            val optionsBuilt = System.currentTimeMillis()
-            Log.d(TAG, "Options Builder took ${optionsBuilt - startTime}ms")
-
-            val startEngine = System.currentTimeMillis()
-            llmInference = LlmInference.createFromOptions(context, builder.build())
-            val engineCreated = System.currentTimeMillis()
-            Log.i(TAG, ">>> [CRITICAL] LlmInference.createFromOptions took ${engineCreated - startEngine}ms")
-
-            currentModelPath = path
-            
-            if (isLibLoaded) {
-                notifyModelLoaded(path)
-            }
-            
-            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated. Total: ${System.currentTimeMillis() - startTime}ms")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Hydration failed: ${e.message}")
+        Log.i(TAG, ">>> [Phase 4.5 IPC] Delegating Hydration to :inference_core")
+        
+        val success = try {
+            inferenceService?.loadModel(path) ?: false
+        } catch (e: RemoteException) {
+            Log.e(TAG, "IPC loadModel failed: ${e.message}")
             false
         }
+
+        if (success) {
+            currentModelPath = path
+            setPriority(1) // 1 = HIGH
+            if (isLibLoaded) notifyModelLoaded(path)
+            return@withContext true
+        }
+        
+        setPriority(3) // 3 = LOW
+        return@withContext false
     }
 
-    fun isLoaded(): Boolean = llmInference != null
-    fun getActiveModelPath(): String = currentModelPath
+    fun isLoaded(): Boolean {
+        return try {
+            inferenceService?.isHydrated ?: false
+        } catch (e: RemoteException) { false }
+    }
+
+    fun getActiveModelPath(): String {
+        return try {
+            inferenceService?.activeModelPath ?: currentModelPath
+        } catch (e: RemoteException) { currentModelPath }
+    }
 
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext "Error: Native libraries not loaded."
@@ -256,38 +271,39 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             "Error: Native bridge disconnected."
         }
     }
+fun checkFreeRamGB(): Float {
+    return if (isLibLoaded) {
+        try {
+            getFreeRamGBNative()
+        } catch (e: UnsatisfiedLinkError) { 0f }
+    } else 0f
+}
 
-    /**
-     * Callback invoked by C++ Kernel for neural reasoning.
-     * Uses Synchronous generateResponse with improved template to avoid empty returns.
-     */
-    @Suppress("unused")
-    fun runNeuralReasoning(input: String): String {
-        Log.d(TAG, ">>> [Phase 4.0 Audit] Neural Reasoning START: '$input' at ${System.currentTimeMillis()}ms")
-        val inference = llmInference ?: return "Error: Local reasoning spine not hydrated."
-        
-        // Phase 6.6: Stateful Prompt Construction
-        val formattedPrompt = if (currentModelPath.endsWith(".litertlm")) {
-            "<|turn>user\n$input<turn|>\n<|turn>model\n"
-        } else {
-            "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
-        }
-        
-        return try {
+/**
+ * Callback invoked by C++ Kernel for neural reasoning.
+ * Proxied via Binder to :inference_core process.
+ */
+@Suppress("unused")
+fun runNeuralReasoning(input: String): String {
+    Log.d(TAG, ">>> [Phase 4.5 IPC] Neural Reasoning Delegation: '$input'")
+
+    val freeRam = checkFreeRamGB()
+    if (freeRam < 0.5f) { // 500MB Threshold
+        Log.w(TAG, "Insufficient RAM (%.2f GB free). Reasoning aborted.".format(freeRam))
+        return "Error: Insufficient RAM for reasoning."
+    }
+
+    return try {
+...
             val startTime = System.currentTimeMillis()
-            val response = inference.generateResponse(formattedPrompt)
+            val response = inferenceService?.runReasoning(input) ?: "Error: Inference Service unavailable."
             val duration = System.currentTimeMillis() - startTime
             
-            if (response.isEmpty()) {
-                Log.w(TAG, "!!! Empty response received from Gemma 4 after ${duration}ms")
-                return "Error: Empty response (Session initialization failed?)"
-            }
-
-            Log.i(TAG, "<<< [Phase 4.0 Audit] Neural Response SUCCESS in ${duration}ms: '$response'")
+            Log.i(TAG, "<<< [Phase 4.5 IPC] Neural Response Received in ${duration}ms")
             response
-        } catch (e: Exception) {
-            Log.e(TAG, "Inference error: ${e.message}")
-            "Error: Neural spine failure - ${e.message}"
+        } catch (e: RemoteException) {
+            Log.e(TAG, "IPC reasoning failed: ${e.message}")
+            "Error: IPC failure - ${e.message}"
         }
     }
 

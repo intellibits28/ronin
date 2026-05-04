@@ -48,6 +48,9 @@ public:
     bool storeMessage(const std::string& role, const std::string& content);
     std::vector<std::pair<std::string, std::string>> getHistory(int limit = 50, int offset = 0);
 
+    // SOUL Persistence: Vectorized interactions for self-improvement
+    bool storeInteraction(const std::string& content, const std::vector<float>& embedding);
+
     // File Indexing (FTS5 + Semantic)
     struct FileEmbedding {
         std::string name;

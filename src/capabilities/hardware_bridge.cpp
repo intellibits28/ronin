@@ -70,13 +70,8 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return;
 
-    JNIEnv* env = nullptr;
-    bool attached = false;
-    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninHealthThread", nullptr };
-        if (s_vm->AttachCurrentThread(&env, &args) != 0) return;
-        attached = true;
-    }
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninHealthThread");
+    JNIEnv* env = scopedEnv.env();
 
     if (env) {
         jmethodID mid = env->GetMethodID(s_clazz, "updateSystemTiers", "(FFF)V");
@@ -84,8 +79,6 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
             env->CallVoidMethod(s_instance, mid, temperature, ramUsedGB, ramTotalGB);
         }
     }
-
-    if (attached) s_vm->DetachCurrentThread();
 #endif
 }
 
@@ -93,13 +86,8 @@ std::string HardwareBridge::getCloudApiKey(const std::string& provider) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return "";
 
-    JNIEnv* env = nullptr;
-    bool attached = false;
-    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninAuthThread", nullptr };
-        if (s_vm->AttachCurrentThread(&env, &args) != 0) return "";
-        attached = true;
-    }
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninAuthThread");
+    JNIEnv* env = scopedEnv.env();
 
     std::string result = "";
     if (env) {
@@ -119,7 +107,6 @@ std::string HardwareBridge::getCloudApiKey(const std::string& provider) {
         }
     }
 
-    if (attached) s_vm->DetachCurrentThread();
     return result;
 #else
     return "mock_key_host_build";
@@ -130,13 +117,8 @@ void HardwareBridge::pushMessage(const std::string& message) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return;
 
-    JNIEnv* env = nullptr;
-    bool attached = false;
-    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninLogThread", nullptr };
-        if (s_vm->AttachCurrentThread(&env, &args) != 0) return;
-        attached = true;
-    }
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninLogThread");
+    JNIEnv* env = scopedEnv.env();
 
     if (env) {
         jmethodID mid = env->GetMethodID(s_clazz, "pushKernelMessage", "(Ljava/lang/String;)V");
@@ -146,8 +128,6 @@ void HardwareBridge::pushMessage(const std::string& message) {
             env->DeleteLocalRef(jmsg);
         }
     }
-
-    if (attached) s_vm->DetachCurrentThread();
 #endif
 }
 
@@ -155,13 +135,8 @@ std::string HardwareBridge::requestData(uint32_t nodeId) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return "Error: HardwareBridge not initialized.";
 
-    JNIEnv* env = nullptr;
-    bool attached = false;
-    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninDataThread", nullptr };
-        if (s_vm->AttachCurrentThread(&env, &args) != 0) return "Error: Thread attachment failed.";
-        attached = true;
-    }
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninDataThread");
+    JNIEnv* env = scopedEnv.env();
 
     std::string result = "Error: Method invocation failed.";
     if (env) {
@@ -179,7 +154,6 @@ std::string HardwareBridge::requestData(uint32_t nodeId) {
         }
     }
 
-    if (attached) s_vm->DetachCurrentThread();
     return result;
 #else
     return "Host Build: Hardware data retrieval mocked.";
@@ -190,13 +164,8 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return "Error: HardwareBridge not initialized.";
 
-    JNIEnv* env = nullptr;
-    bool attached = false;
-    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninCloudThread", nullptr };
-        if (s_vm->AttachCurrentThread(&env, &args) != 0) return "Error: Thread attachment failed.";
-        attached = true;
-    }
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninCloudThread");
+    JNIEnv* env = scopedEnv.env();
 
     std::string result = "Error: Method performCloudInference failed.";
     if (env) {
@@ -218,7 +187,6 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
         }
     }
 
-    if (attached) s_vm->DetachCurrentThread();
     return result;
 #else
     return "Host Build: Cloud response mocked.";
@@ -229,13 +197,8 @@ std::string HardwareBridge::runNeuralReasoning(const std::string& input) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return "Error: HardwareBridge not initialized.";
 
-    JNIEnv* env = nullptr;
-    bool attached = false;
-    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninReasoningThread", nullptr };
-        if (s_vm->AttachCurrentThread(&env, &args) != 0) return "Error: Thread attachment failed.";
-        attached = true;
-    }
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninReasoningThread");
+    JNIEnv* env = scopedEnv.env();
 
     std::string result = "";
     if (env) {
@@ -255,7 +218,6 @@ std::string HardwareBridge::runNeuralReasoning(const std::string& input) {
         }
     }
 
-    if (attached) s_vm->DetachCurrentThread();
     return result;
 #else
     return "Host Build: Neural reasoning mocked.";
@@ -266,13 +228,8 @@ bool HardwareBridge::triggerSync(uint32_t nodeId, bool state) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return state;
 
-    JNIEnv* env = nullptr;
-    bool attached = false;
-    if (s_vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_EDETACHED) {
-        JavaVMAttachArgs args = { JNI_VERSION_1_6, "RoninHardwareSyncThread", nullptr };
-        if (s_vm->AttachCurrentThread(&env, &args) != 0) return state;
-        attached = true;
-    }
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninHardwareSyncThread");
+    JNIEnv* env = scopedEnv.env();
 
     bool actual_state = state;
     if (env) {
@@ -282,7 +239,6 @@ bool HardwareBridge::triggerSync(uint32_t nodeId, bool state) {
         }
     }
 
-    if (attached) s_vm->DetachCurrentThread();
     return actual_state;
 #else
     return state;

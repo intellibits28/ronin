@@ -23,6 +23,7 @@ public:
     static float getTemperature() { return s_last_temp; }
     static float getRamUsed() { return s_last_ram_used; }
     static float getRamTotal() { return s_last_ram_total; }
+    static float getFreeRamGB() { return s_last_ram_total - s_last_ram_used; }
 
     /**
      * Retrieves encrypted API keys from AndroidKeyStore via JNI.

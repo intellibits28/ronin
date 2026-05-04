@@ -95,6 +95,10 @@ class ChatViewModel : ViewModel() {
     var l2Count by mutableStateOf(0)
     var l3Count by mutableStateOf(0)
     
+    // Command Intelligence
+    var showCommandSuggestions by mutableStateOf(false)
+    val commandSuggestions = mutableStateListOf<String>()
+
     // Lazy Loading History
     var historyPage by mutableStateOf(0)
     var isLoadingHistory by mutableStateOf(false)
@@ -113,6 +117,10 @@ class ChatViewModel : ViewModel() {
     var primaryCloudProvider by mutableStateOf("Gemini")
     val cloudProviders = mutableStateListOf<CloudProvider>()
     val discoveredModels = mutableStateListOf<String>()
+
+    // Cloud Intelligence
+    var showApiKeyDialog by mutableStateOf(false)
+    var pendingProvider by mutableStateOf("")
 }
 
 class MainActivity : ComponentActivity() {
@@ -399,6 +407,7 @@ class MainActivity : ComponentActivity() {
                      val message = if (state) "Kernel: NPU Power Level RESTORED." else "Kernel: NPU Throttling ACTIVE (Thermal Protection)."
                      Toast.makeText(this, message, Toast.LENGTH_SHORT).show() 
                  }
+                 nativeEngine.setSafeMode(!state) // state=false means safe mode active
                  true
             } else {
                 runOnUiThread { Toast.makeText(this, "Kernel: Initiating $toolName toggle...", Toast.LENGTH_SHORT).show() }
@@ -563,6 +572,27 @@ class MainActivity : ComponentActivity() {
         nativeEngine.setOfflineModeSafe(offline)
     }
 
+    fun getApiKey(provider: String): String {
+        return sharedPreferences.getString(provider, "") ?: ""
+    }
+
+    fun saveApiKey(provider: String, key: String) {
+        sharedPreferences.edit().putString(provider, key).apply()
+    }
+
+    fun savePrimaryCloudProvider(provider: String) {
+        sharedPreferences.edit().putString("primary_cloud_provider", provider).apply()
+        nativeEngine.setPrimaryCloudProviderSafe(provider)
+    }
+
+    private fun deleteModel(path: String) {
+        val file = java.io.File(path)
+        if (file.exists() && file.delete()) {
+            Toast.makeText(this, "Model deleted.", Toast.LENGTH_SHORT).show()
+            scanLocalModels()
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         val currentPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -708,44 +738,88 @@ fun RoninChatUI(
 
             // Input Section (Tier 0 Interface)
             Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
-                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextField(
-                        value = currentInput,
-                        onValueChange = { currentInput = it },
-                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)),
-                        placeholder = { Text("Send instruction to Kernel...") },
-                        colors = TextFieldDefaults.textFieldColors(
-                            backgroundColor = Color(0xFF25283D),
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            textColor = Color.White
-                        ),
-                        trailingIcon = {
-                             IconButton(onClick = {
-                                if (currentInput.isNotBlank()) {
-                                    val input = currentInput
-                                    chatViewModel.messages.add("User: $input")
-                                    currentInput = ""
-                                    scope.launch {
-                                        val response = withContext(Dispatchers.Default) {
-                                            engine.processInput(input)
-                                        }
-                                        chatViewModel.messages.add("Ronin: $response")
-                                        scrollState.animateScrollToItem(0)
+                Column {
+                    // Command Suggester Popup
+                    AnimatedVisibility(visible = chatViewModel.showCommandSuggestions) {
+                        Surface(
+                            color = Color(0xFF25283D),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = 4.dp
+                        ) {
+                            val allCommands = listOf("/status", "/skills", "/model", "/reset", "/more")
+                            val suggestions = allCommands.filter { it.startsWith(currentInput, ignoreCase = true) }
+                            
+                            LazyColumn(modifier = Modifier.heightIn(max = 150.dp)) {
+                                items(suggestions) { suggestion ->
+                                    TextButton(
+                                        onClick = {
+                                            currentInput = suggestion
+                                            chatViewModel.showCommandSuggestions = false
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        androidx.compose.material.Text(suggestion, color = Color(0xFF64B5F6), modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
                                     }
                                 }
-                             }) {
-                                 Icon(Icons.Default.Send, "Send", tint = Color(0xFF64B5F6))
-                             }
+                            }
                         }
-                    )
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextField(
+                            value = currentInput,
+                            onValueChange = { 
+                                currentInput = it 
+                                chatViewModel.showCommandSuggestions = it.startsWith("/")
+                            },
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)),
+                            placeholder = { androidx.compose.material.Text("Send instruction to Kernel...") },
+                            colors = TextFieldDefaults.textFieldColors(
+                                backgroundColor = Color(0xFF25283D),
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                textColor = Color.White
+                            ),
+                            trailingIcon = {
+                                 IconButton(onClick = {
+                                    if (currentInput.isNotBlank()) {
+                                        val input = currentInput
+                                        chatViewModel.messages.add("User: $input")
+                                        currentInput = ""
+                                        chatViewModel.showCommandSuggestions = false
+                                        chatViewModel.lmkPressure = 100 // Visual indicator of 'thinking'
+                                        scope.launch {
+                                            val response = withContext(Dispatchers.Default) {
+                                                engine.processInput(input)
+                                            }
+                                            chatViewModel.messages.add("Ronin: $response")
+                                            chatViewModel.lmkPressure = engine.getLMKPressureSafe()
+                                            scrollState.animateScrollToItem(0)
+                                        }
+                                    }
+                                 }) {
+                                     Icon(Icons.Default.Send, "Send", tint = Color(0xFF64B5F6))
+                                 }
+                            }
+                        )
+                    }
                 }
             }
         }
     }
 
     if (chatViewModel.showSettings) {
-        SettingsDialog(chatViewModel, modelPicker, onSaveOfflineMode)
+        SettingsDialog(
+            chatViewModel = chatViewModel, 
+            modelPicker = modelPicker, 
+            onSaveOfflineMode = onSaveOfflineMode,
+            onDeleteModel = { (context as MainActivity).deleteModel(it) },
+            onSelectModel = { 
+                chatViewModel.localModelPath = it
+                (context as MainActivity).hydrateModel(it)
+            }
+        )
     }
 }
 
@@ -811,18 +885,36 @@ fun ChatBubble(message: String) {
 fun SettingsDialog(
     chatViewModel: ChatViewModel,
     modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>,
-    onSaveOfflineMode: (Boolean) -> Unit
+    onSaveOfflineMode: (Boolean) -> Unit,
+    onDeleteModel: (String) -> Unit,
+    onSelectModel: (String) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = { chatViewModel.showSettings = false },
         title = { Text("Ronin Kernel Configuration", fontWeight = FontWeight.Bold) },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Divider()
                 Spacer(Modifier.height(16.dp))
                 
-                Text("Reasoning Brain", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Text(chatViewModel.localModelPath.substringAfterLast("/"), fontSize = 12.sp, color = Color.Gray)
+                Text("Reasoning Brains (Internal)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                chatViewModel.discoveredModels.forEach { path ->
+                    val filename = path.substringAfterLast("/")
+                    val isActive = path == chatViewModel.localModelPath && chatViewModel.isKernelHydrated
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        RadioButton(
+                            selected = path == chatViewModel.localModelPath,
+                            onClick = { onSelectModel(path) },
+                            colors = androidx.compose.material.RadioButtonDefaults.colors(
+                                selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)
+                            )
+                        )
+                        Text(filename, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White)
+                        IconButton(onClick = { onDeleteModel(path) }) {
+                            Icon(Icons.Default.Delete, "Delete", tint = Color.Gray)
+                        }
+                    }
+                }
                 
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
@@ -857,6 +949,13 @@ fun SettingsDialog(
                             DropdownMenuItem(onClick = {
                                 chatViewModel.primaryCloudProvider = provider.name
                                 expanded = false
+                                val existingKey = (context as MainActivity).getApiKey(provider.name)
+                                if (existingKey.isEmpty()) {
+                                    chatViewModel.pendingProvider = provider.name
+                                    chatViewModel.showApiKeyDialog = true
+                                } else {
+                                    (context as MainActivity).savePrimaryCloudProvider(provider.name)
+                                }
                             }) {
                                 Text(provider.name)
                             }
@@ -865,6 +964,51 @@ fun SettingsDialog(
                 }
             }
         },
+...
+    if (chatViewModel.showApiKeyDialog) {
+        ApiKeyDialog(
+            provider = chatViewModel.pendingProvider,
+            onDismiss = { chatViewModel.showApiKeyDialog = false },
+            onSave = { key ->
+                (context as MainActivity).saveApiKey(chatViewModel.pendingProvider, key)
+                (context as MainActivity).savePrimaryCloudProvider(chatViewModel.pendingProvider)
+                chatViewModel.showApiKeyDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun ApiKeyDialog(provider: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var key by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Enter API Key for $provider", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text("Your key will be stored securely in Android KeyStore.", fontSize = 12.sp, color = Color.Gray)
+                Spacer(Modifier.height(8.dp))
+                TextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Paste API Key here...") },
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(key) }) {
+                Text("SAVE")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL")
+            }
+        }
+    )
+}
         confirmButton = {
             TextButton(onClick = { chatViewModel.showSettings = false }) {
                 Text("CLOSE")

@@ -174,6 +174,11 @@ Java_com_ronin_kernel_NativeEngine_setPriorityNative(JNIEnv *env, jobject thiz, 
     }
 }
 
+JNIEXPORT jfloat JNICALL
+Java_com_ronin_kernel_NativeEngine_getFreeRamGBNative(JNIEnv *env, jobject thiz) {
+    return Ronin::Kernel::Capability::HardwareBridge::getFreeRamGB();
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_ronin_kernel_NativeEngine_checkFileAccessNative(JNIEnv *env, jobject thiz, jstring path) {
     std::string path_str = ConvertJStringToString(env, path);

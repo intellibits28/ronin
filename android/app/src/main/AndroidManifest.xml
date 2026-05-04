@@ -22,6 +22,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:allowBackup="true"
@@ -29,6 +31,14 @@
         android:label="Ronin Kernel"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        
+        <service
+            android:name=".InferenceService"
+            android:enabled="true"
+            android:exported="false"
+            android:process=":inference_core"
+            android:foregroundServiceType="specialUse" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

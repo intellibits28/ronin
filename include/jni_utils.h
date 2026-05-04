@@ -1,77 +1,41 @@
-#ifndef RONIN_JNI_UTILS_H_
-#define RONIN_JNI_UTILS_H_
+#pragma once
 
 #include <jni.h>
-#include <string>
-#include <vector>
 #include "ronin_log.h"
 
-namespace tflite {
-namespace jni {
+namespace Ronin::Kernel::JNI {
 
 /**
- * LiteRT-LM (Production) JNI Utilities.
- */
-
-// Retrieve the JNIEnv for the current thread
-JNIEnv* GetJNIEnv(JavaVM* vm);
-
-// Convert jstring to std::string
-std::string ConvertJStringToString(JNIEnv* env, jstring jstr);
-
-// Convert std::string to jstring
-jstring ConvertStringToJString(JNIEnv* env, const std::string& str);
-
-// Throw a Java RuntimeException
-void ThrowException(JNIEnv* env, const char* message);
-
-/**
- * ScopedJniEnv: RAII wrapper to ensure Attach/Detach pairing.
+ * RAII-based JNI Environment Manager.
+ * Ensures strict AttachCurrentThread/DetachCurrentThread pairing.
  */
 class ScopedJniEnv {
 public:
-    explicit ScopedJniEnv(JavaVM* vm);
-    ~ScopedJniEnv();
+    ScopedJniEnv(JavaVM* vm, const char* threadName = "RoninNativeThread") : m_vm(vm) {
+        if (vm->GetEnv((void**)&m_env, JNI_VERSION_1_6) == JNI_EDETACHED) {
+            JavaVMAttachArgs args = { JNI_VERSION_1_6, const_cast<char*>(threadName), nullptr };
+            if (vm->AttachCurrentThread(&m_env, &args) != 0) {
+                LOGE("ScopedJniEnv", "Failed to attach thread: %s", threadName);
+                m_env = nullptr;
+            } else {
+                m_attached = true;
+            }
+        }
+    }
 
-    JNIEnv* operator->() const { return env_; }
-    JNIEnv* get() const { return env_; }
-    bool isValid() const { return env_ != nullptr; }
+    ~ScopedJniEnv() {
+        if (m_attached && m_vm) {
+            m_vm->DetachCurrentThread();
+        }
+    }
 
-private:
-    JavaVM* vm_;
-    JNIEnv* env_;
-    bool attached_;
-};
-
-/**
- * GlobalRef: RAII wrapper for global references.
- */
-class GlobalRef {
-public:
-    GlobalRef(JNIEnv* env, jobject obj);
-    ~GlobalRef();
-    
-    GlobalRef(const GlobalRef&) = delete;
-    GlobalRef& operator=(const GlobalRef&) = delete;
-    GlobalRef(GlobalRef&& other) noexcept;
-    GlobalRef& operator=(GlobalRef&& other) noexcept;
-
-    jobject get() const { return obj_; }
-    operator jobject() const { return obj_; }
+    JNIEnv* env() const { return m_env; }
+    bool isValid() const { return m_env != nullptr; }
 
 private:
-    JNIEnv* env_ = nullptr;
-    jobject obj_ = nullptr;
+    JavaVM* m_vm;
+    JNIEnv* m_env = nullptr;
+    bool m_attached = false;
 };
 
-} // namespace jni
-} // namespace tflite
-
-// Compatibility Aliases for Ronin (Transition layer)
-namespace ronin::jni {
-    using namespace tflite::jni;
-    inline std::string JStringToStdString(JNIEnv* env, jstring jstr) { return tflite::jni::ConvertJStringToString(env, jstr); }
-    inline jstring StdStringToJString(JNIEnv* env, const std::string& str) { return tflite::jni::ConvertStringToJString(env, str); }
-}
-
-#endif // RONIN_JNI_UTILS_H_
+} // namespace Ronin::Kernel::JNI
