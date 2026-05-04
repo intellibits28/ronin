@@ -1,6 +1,6 @@
 #pragma once
 
-#include <jni.h>
+#include "ronin_jni_stubs.h"
 #include <string>
 #include "ronin_log.h"
 
@@ -13,21 +13,25 @@ namespace Ronin::Kernel::JNI {
 class ScopedJniEnv {
 public:
     ScopedJniEnv(JavaVM* vm, const char* threadName = "RoninNativeThread") : m_vm(vm) {
-        if (vm->GetEnv((void**)&m_env, JNI_VERSION_1_6) == JNI_EDETACHED) {
+#ifdef __ANDROID__
+        if (m_vm && m_vm->GetEnv((void**)&m_env, JNI_VERSION_1_6) == JNI_EDETACHED) {
             JavaVMAttachArgs args = { JNI_VERSION_1_6, const_cast<char*>(threadName), nullptr };
-            if (vm->AttachCurrentThread(&m_env, &args) != 0) {
+            if (m_vm->AttachCurrentThread(&m_env, &args) != 0) {
                 LOGE("ScopedJniEnv", "Failed to attach thread: %s", threadName);
                 m_env = nullptr;
             } else {
                 m_attached = true;
             }
         }
+#endif
     }
 
     ~ScopedJniEnv() {
+#ifdef __ANDROID__
         if (m_attached && m_vm) {
             m_vm->DetachCurrentThread();
         }
+#endif
     }
 
     JNIEnv* env() const { return m_env; }
