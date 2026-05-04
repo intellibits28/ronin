@@ -790,9 +790,7 @@ fun RoninChatUI(
                                         chatViewModel.showCommandSuggestions = false
                                         chatViewModel.lmkPressure = 100 // Visual indicator of 'thinking'
                                         scope.launch {
-                                            val response = withContext(Dispatchers.Default) {
-                                                engine.processInput(input)
-                                            }
+                                            val response = engine.processInputAsync(input)
                                             chatViewModel.messages.add("Ronin: $response")
                                             chatViewModel.lmkPressure = engine.getLMKPressureSafe()
                                             scrollState.animateScrollToItem(0)
