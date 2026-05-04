@@ -20,6 +20,7 @@
 
 #define TAG "RoninKernel_JNI"
 
+// Phase 4.5: Dual-Process Bridge Implementation
 using namespace Ronin::Kernel::JNI;
 using namespace Ronin::Kernel;
 using namespace Ronin::Kernel::Model;
