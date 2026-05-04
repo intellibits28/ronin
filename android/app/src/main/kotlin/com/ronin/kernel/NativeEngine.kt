@@ -104,15 +104,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return false
     }
 
-    external fun processInput(input: String): String
-    external fun notifyTrimMemory(level: Int)
-    external fun injectLocation(lat: Double, lon: Double)
-    external fun updateSystemHealth(temp: Float, used: Float, total: Float): Boolean
-    external fun setOfflineMode(offline: Boolean)
-    external fun setPrimaryCloudProvider(provider: String)
-    external fun updateModelRegistry(json: String): Boolean
-    external fun updateCloudProviders(json: String): Boolean
-    external fun getLMKPressure(): Int
+    private external fun processInput(input: String): String
+    private external fun notifyTrimMemory(level: Int)
+    private external fun injectLocation(lat: Double, lon: Double)
+    private external fun updateSystemHealth(temp: Float, used: Float, total: Float): Boolean
+    private external fun setOfflineMode(offline: Boolean)
+    private external fun setPrimaryCloudProvider(provider: String)
+    private external fun updateModelRegistry(json: String): Boolean
+    private external fun updateCloudProviders(json: String): Boolean
+    private external fun getLMKPressure(): Int
 
     /**
      * Terminate heavy background tasks (e.g. file indexing) to save RAM.
@@ -271,30 +271,30 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             "Error: Native bridge disconnected."
         }
     }
-fun checkFreeRamGB(): Float {
-    return if (isLibLoaded) {
-        try {
-            getFreeRamGBNative()
-        } catch (e: UnsatisfiedLinkError) { 0f }
-    } else 0f
-}
 
-/**
- * Callback invoked by C++ Kernel for neural reasoning.
- * Proxied via Binder to :inference_core process.
- */
-@Suppress("unused")
-fun runNeuralReasoning(input: String): String {
-    Log.d(TAG, ">>> [Phase 4.5 IPC] Neural Reasoning Delegation: '$input'")
-
-    val freeRam = checkFreeRamGB()
-    if (freeRam < 0.5f) { // 500MB Threshold
-        Log.w(TAG, "Insufficient RAM (%.2f GB free). Reasoning aborted.".format(freeRam))
-        return "Error: Insufficient RAM for reasoning."
+    fun checkFreeRamGB(): Float {
+        return if (isLibLoaded) {
+            try {
+                getFreeRamGBNative()
+            } catch (e: UnsatisfiedLinkError) { 0f }
+        } else 0f
     }
 
-    return try {
-...
+    /**
+     * Callback invoked by C++ Kernel for neural reasoning.
+     * Proxied via Binder to :inference_core process.
+     */
+    @Suppress("unused")
+    fun runNeuralReasoning(input: String): String {
+        Log.d(TAG, ">>> [Phase 4.5 IPC] Neural Reasoning Delegation: '$input'")
+        
+        val freeRam = checkFreeRamGB()
+        if (freeRam < 0.5f) { // 500MB Threshold
+            Log.w(TAG, "Insufficient RAM (%.2f GB free). Reasoning aborted.".format(freeRam))
+            return "Error: Insufficient RAM for reasoning."
+        }
+        
+        return try {
             val startTime = System.currentTimeMillis()
             val response = inferenceService?.runReasoning(input) ?: "Error: Inference Service unavailable."
             val duration = System.currentTimeMillis() - startTime
