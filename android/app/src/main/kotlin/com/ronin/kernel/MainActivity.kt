@@ -188,17 +188,18 @@ class MainActivity : ComponentActivity() {
         val modelsDir = java.io.File(filesDir, "models")
         if (!modelsDir.exists()) modelsDir.mkdirs()
         
+        // Phase 4.5: Strict filtering for Reasoning Brains
         val models = modelsDir.listFiles { file -> 
-            file.extension == "bin" || file.extension == "litertlm" || file.extension == "onnx" 
-        }?.map { it.absolutePath } ?: emptyList()
+            file.extension == "bin" || file.extension == "litertlm"
+        }?.map { it.absolutePath }?.distinct() ?: emptyList()
         
         chatViewModel.discoveredModels.clear()
         chatViewModel.discoveredModels.addAll(models)
         
         if (models.isEmpty()) {
-            nativeEngine.pushKernelMessage("> System: No Reasoning Brain found in internal models directory.")
+            nativeEngine.pushKernelMessage("> System: No Reasoning Brain found (.litertlm or .bin) in internal storage.")
         } else {
-            Log.i("RoninScan", "Discovered ${models.size} models in private storage.")
+            Log.i("RoninScan", "Discovered ${models.size} valid models in private storage.")
         }
     }
 
@@ -294,7 +295,16 @@ class MainActivity : ComponentActivity() {
                 chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
                 chatViewModel.offlineMode = sharedPreferences.getBoolean("offline_mode", false)
                 chatViewModel.primaryCloudProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini"
-                chatViewModel.isKernelHydrated = nativeEngine.isLoaded()
+                
+                // Polling for hydration status to ensure UI reflects IPC state correctly
+                while(true) {
+                    val loaded = nativeEngine.isLoaded()
+                    if (chatViewModel.isKernelHydrated != loaded) {
+                        chatViewModel.isKernelHydrated = loaded
+                        chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
+                    }
+                    delay(3000)
+                }
             }
             RoninChatUI(
                 engine = nativeEngine,
@@ -421,15 +431,40 @@ class MainActivity : ComponentActivity() {
                             success = true
                         }
                         6 -> {
-                            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                            @Suppress("DEPRECATION")
-                            wifiManager.isWifiEnabled = state
-                            success = true
+                            // WiFi Control via Settings Panel (Android 10+)
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    val intent = Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    startActivity(intent)
+                                } else {
+                                    val intent = Intent(Settings.ACTION_WIFI_SETTINGS)
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    startActivity(intent)
+                                }
+                                success = true
+                            } catch (e: Exception) {
+                                Log.e("RoninUI", "WiFi Panel Failed: ${e.message}")
+                                // Fallback for very old devices
+                                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                                @Suppress("DEPRECATION")
+                                wifiManager.isWifiEnabled = state
+                                success = true
+                            }
                         }
                         7 -> {
-                            val bluetoothAdapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
-                            if (state) bluetoothAdapter?.enable() else bluetoothAdapter?.disable()
-                            success = true
+                            // Bluetooth Control via Settings
+                            try {
+                                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(intent)
+                                success = true
+                            } catch (e: Exception) {
+                                Log.e("RoninUI", "BT Settings Failed: ${e.message}")
+                                val bluetoothAdapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
+                                if (state) bluetoothAdapter?.enable() else bluetoothAdapter?.disable()
+                                success = true
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -570,6 +605,39 @@ class MainActivity : ComponentActivity() {
     private fun saveOfflineMode(offline: Boolean) {
         sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
         nativeEngine.setOfflineModeSafe(offline)
+    }
+
+    fun updateCloudProvider(name: String, endpoint: String, modelId: String) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        val index = chatViewModel.cloudProviders.indexOfFirst { it.name == name }
+        if (index != -1) {
+            val updated = chatViewModel.cloudProviders[index].copy(endpoint = endpoint, modelId = modelId)
+            chatViewModel.cloudProviders[index] = updated
+            saveCloudProvidersToDisk()
+        }
+    }
+
+    private fun saveCloudProvidersToDisk() {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        val configDir = java.io.File("/storage/emulated/0/Ronin/config")
+        if (!configDir.exists()) configDir.mkdirs()
+        val providersFile = java.io.File(configDir, "providers.json")
+        
+        try {
+            val array = JSONArray()
+            chatViewModel.cloudProviders.forEach { p ->
+                val obj = JSONObject()
+                obj.put("name", p.name)
+                obj.put("endpoint", p.endpoint)
+                obj.put("modelId", p.modelId)
+                obj.put("authType", p.authType)
+                array.put(obj)
+            }
+            providersFile.writeText(array.toString(2))
+            nativeEngine.updateCloudProvidersSafe(array.toString())
+        } catch (e: Exception) {
+            Log.e("RoninUI", "Failed to save providers: ${e.message}")
+        }
     }
 
     fun getApiKey(provider: String): String {
@@ -898,7 +966,7 @@ fun SettingsDialog(
                 
                 Text("Reasoning Brains (Internal)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 chatViewModel.discoveredModels.forEach { path ->
-                    val filename = path.substringAfterLast("/")
+                    val filename = java.io.File(path).name
                     val isActive = path == chatViewModel.localModelPath && chatViewModel.isKernelHydrated
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         RadioButton(
@@ -958,6 +1026,54 @@ fun SettingsDialog(
                             }) {
                                 Text(provider.name)
                             }
+                        }
+                    }
+                }
+                
+                // Detailed Cloud Config (Phase 4.5 Restoration)
+                chatViewModel.cloudProviders.find { it.name == chatViewModel.primaryCloudProvider }?.let { provider ->
+                    Spacer(Modifier.height(12.dp))
+                    Text("Cloud Configuration", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF64B5F6))
+                    
+                    // Endpoint Field
+                    var endpoint by remember(provider.name) { mutableStateOf(provider.endpoint) }
+                    TextField(
+                        value = endpoint,
+                        onValueChange = { 
+                            endpoint = it
+                            // Note: Real-time update of provider in list might be needed for persistence
+                        },
+                        label = { Text("Endpoint URL", fontSize = 10.sp) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
+                        colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.Black.copy(alpha = 0.2f), textColor = Color.White)
+                    )
+
+                    // Model ID Field
+                    var modelId by remember(provider.name) { mutableStateOf(provider.modelId) }
+                    TextField(
+                        value = modelId,
+                        onValueChange = { modelId = it },
+                        label = { Text("Model Name/ID", fontSize = 10.sp) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
+                        colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.Black.copy(alpha = 0.2f), textColor = Color.White)
+                    )
+                    
+                    Row {
+                        TextButton(onClick = {
+                            chatViewModel.pendingProvider = provider.name
+                            chatViewModel.showApiKeyDialog = true
+                        }) {
+                            Text("Update API Key", fontSize = 12.sp, color = Color(0xFF64B5F6))
+                        }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = {
+                            // Save logic: Update providers.json and native engine
+                            (context as MainActivity).updateCloudProvider(provider.name, endpoint, modelId)
+                            Toast.makeText(context, "Cloud Config Updated.", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Text("Save Config", fontSize = 12.sp, color = Color.Green)
                         }
                     }
                 }

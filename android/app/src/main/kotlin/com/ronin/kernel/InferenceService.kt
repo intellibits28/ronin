@@ -58,6 +58,17 @@ class InferenceService : Service() {
     }
 
     private fun tryHydrate(path: String): Boolean {
+        Log.i(TAG, ">>> IPC Hydration Request for: $path")
+        val modelFile = java.io.File(path)
+        if (!modelFile.exists()) {
+            Log.e(TAG, "FATAL: Model file NOT FOUND in :inference_core process at $path")
+            return false
+        }
+        if (!modelFile.canRead()) {
+            Log.e(TAG, "FATAL: Model file NOT READABLE in :inference_core process.")
+            return false
+        }
+
         return try {
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)

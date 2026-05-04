@@ -365,6 +365,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun performCloudInference(input: String, primaryProvider: String): String {
         if (!isVpnActive(context)) return "Error: Region Restricted - Please check VPN"
         var finalEndpoint = ""
+        var modelId = ""
         try {
             val configDir = File(context.filesDir, "config")
             val providersFile = File(configDir, "providers.json")
@@ -374,13 +375,18 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     val p = providersJson.getJSONObject(i)
                     if (p.getString("name") == primaryProvider) {
                         finalEndpoint = p.getString("endpoint")
+                        modelId = p.optString("modelId", "")
                         break
                     }
                 }
             }
         } catch (e: Exception) {}
-        if (finalEndpoint.isEmpty()) finalEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-        return executeSingleInference(input, primaryProvider, finalEndpoint)
+        
+        if (finalEndpoint.isEmpty()) {
+            finalEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        }
+        
+        return executeSingleInference(input, primaryProvider, finalEndpoint, modelId)
     }
 
     @Suppress("unused")
@@ -388,10 +394,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         onSystemTiersUpdate?.invoke(temp, used, total)
     }
 
-    private fun executeSingleInference(input: String, provider: String, endpoint: String): String {
+    private fun executeSingleInference(input: String, provider: String, endpoint: String, modelId: String): String {
         val apiKey = getSecureApiKey?.invoke(provider)?.trim() ?: ""
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
-        val finalUrl = if (endpoint.contains("?key=")) endpoint else "$endpoint?key=$apiKey"
+        
+        val isGemini = endpoint.contains("generativelanguage.googleapis.com")
+        val finalUrl = if (isGemini) {
+            if (endpoint.contains("?key=")) endpoint else "$endpoint?key=$apiKey"
+        } else endpoint
+
         return try {
             val url = java.net.URL(finalUrl)
             val conn = url.openConnection() as java.net.HttpURLConnection
@@ -399,12 +410,31 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             conn.requestMethod = "POST"
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
-            val jsonBody = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", input)))))
+            
+            if (!isGemini) {
+                conn.setRequestProperty("Authorization", "Bearer $apiKey")
+            }
+
+            val jsonBody = if (isGemini) {
+                JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", input)))))
+            } else {
+                JSONObject()
+                    .put("model", if (modelId.isNotEmpty()) modelId else "meta-llama/llama-3.1-8b-instruct")
+                    .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", input)))
+            }
+
             conn.outputStream.use { os -> os.write(jsonBody.toString().toByteArray()) }
             if (conn.responseCode == 200) {
                 val response = conn.inputStream.bufferedReader().use { it.readText() }
-                JSONObject(response).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
-            } else "Error: [${conn.responseCode}]"
+                if (isGemini) {
+                    JSONObject(response).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                } else {
+                    JSONObject(response).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+                }
+            } else {
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+                "Error: [${conn.responseCode}] $err"
+            }
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
