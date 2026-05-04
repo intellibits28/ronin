@@ -38,6 +38,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             Log.w(TAG, "Inference Service Disconnected.")
         }
     }
+
     private var currentModelPath: String = ""
     private var asyncLatch: CountDownLatch? = null
     private var lastFullResponse: String = ""
@@ -71,6 +72,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun setPriorityNative(priority: Int)
     private external fun checkFileAccessNative(path: String): String
     private external fun getFreeRamGBNative(): Float
+    private external fun processInput(input: String): String
+    private external fun notifyTrimMemory(level: Int)
+    private external fun injectLocation(lat: Double, lon: Double)
+    private external fun updateSystemHealth(temp: Float, used: Float, total: Float): Boolean
+    private external fun setOfflineMode(offline: Boolean)
+    private external fun setPrimaryCloudProvider(provider: String)
+    private external fun updateModelRegistry(json: String): Boolean
+    private external fun updateCloudProviders(json: String): Boolean
+    private external fun getLMKPressure(): Int
 
     /**
      * Phase 4.0 Audit: Verify native side can actually read the model file.
@@ -103,16 +113,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
         return false
     }
-
-    private external fun processInput(input: String): String
-    private external fun notifyTrimMemory(level: Int)
-    private external fun injectLocation(lat: Double, lon: Double)
-    private external fun updateSystemHealth(temp: Float, used: Float, total: Float): Boolean
-    private external fun setOfflineMode(offline: Boolean)
-    private external fun setPrimaryCloudProvider(provider: String)
-    private external fun updateModelRegistry(json: String): Boolean
-    private external fun updateCloudProviders(json: String): Boolean
-    private external fun getLMKPressure(): Int
 
     /**
      * Terminate heavy background tasks (e.g. file indexing) to save RAM.
@@ -202,10 +202,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     var executeHardwareAction: ((Int, Boolean) -> Boolean)? = null
     var onSystemTiersUpdate: ((Float, Float, Float) -> Unit)? = null
 
-    init {
-        // Obsolete: engine instance set during initializeAsync
-    }
-
     suspend fun initialize() = withContext(Dispatchers.IO) {
         if (!isLibLoaded) initializeAsync()
         if (isLibLoaded) {
@@ -228,25 +224,20 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      * Kotlin-Side Model Hydration with IPC Delegation.
      */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
-        // Phase 6.6: Set CRITICAL priority during hydration
         setPriority(0) // 0 = CRITICAL
-        
         Log.i(TAG, ">>> [Phase 4.5 IPC] Delegating Hydration to :inference_core")
-        
         val success = try {
             inferenceService?.loadModel(path) ?: false
         } catch (e: RemoteException) {
             Log.e(TAG, "IPC loadModel failed: ${e.message}")
             false
         }
-
         if (success) {
             currentModelPath = path
             setPriority(1) // 1 = HIGH
             if (isLibLoaded) notifyModelLoaded(path)
             return@withContext true
         }
-        
         setPriority(3) // 3 = LOW
         return@withContext false
     }
@@ -287,18 +278,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
         Log.d(TAG, ">>> [Phase 4.5 IPC] Neural Reasoning Delegation: '$input'")
-        
         val freeRam = checkFreeRamGB()
-        if (freeRam < 0.5f) { // 500MB Threshold
+        if (freeRam < 0.5f) {
             Log.w(TAG, "Insufficient RAM (%.2f GB free). Reasoning aborted.".format(freeRam))
             return "Error: Insufficient RAM for reasoning."
         }
-        
         return try {
             val startTime = System.currentTimeMillis()
             val response = inferenceService?.runReasoning(input) ?: "Error: Inference Service unavailable."
             val duration = System.currentTimeMillis() - startTime
-            
             Log.i(TAG, "<<< [Phase 4.5 IPC] Neural Response Received in ${duration}ms")
             response
         } catch (e: RemoteException) {
@@ -378,7 +366,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (!isVpnActive(context)) return "Error: Region Restricted - Please check VPN"
         var finalEndpoint = ""
         try {
-            val providersFile = File(File(context.filesDir, "config"), "providers.json")
+            val configDir = File(context.filesDir, "config")
+            val providersFile = File(configDir, "providers.json")
             if (providersFile.exists()) {
                 val providersJson = JSONArray(providersFile.readText())
                 for (i in 0 until providersJson.length()) {
@@ -435,15 +424,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             try {
                 notifyTrimMemory(level)
             } catch (e: UnsatisfiedLinkError) {}
-            
-            // Phase 6.6: Critical RAM Guard
             if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
                 Log.w(TAG, "Aggressive Memory Trim: Halting low-priority background tasks.")
                 stopLowPriorityTasks()
             }
         }
     }
+
     override fun onConfigurationChanged(newConfig: Configuration) {}
+
     override fun onLowMemory() {
         if (isLibLoaded) {
             try {
