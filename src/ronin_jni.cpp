@@ -229,7 +229,12 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
         response = g_llm_context.engine->runLiteRTReasoning(input_str);
     }
 
-    if (response.empty()) {
+    // Phase 6.6: Explicit Fallback if response is empty OR starts with "Error:"
+    if (response.empty() || response.starts_with("Error:")) {
+        if (!response.empty()) {
+            LOGW(TAG, "Local Reasoning Failed: %s. Escalating to Cloud...", response.c_str());
+        }
+        
         std::string provider = "Gemini"; 
         if (g_intent_engine) {
             provider = g_intent_engine->getPrimaryCloudProvider();
@@ -241,7 +246,7 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
             LOGI(TAG, "Attempting Cloud Fallback for Reasoning (Provider: %s)...", provider.c_str());
             return ConvertStringToJString(env, g_llm_context.engine->escalateToCloud(input_str, apiKey, provider));
         } else {
-            return ConvertStringToJString(env, "Error: Reasoning spine not hydrated and Cloud API Key missing for " + provider);
+            return ConvertStringToJString(env, "Error: Reasoning spine failed and no Cloud API Key found for " + provider);
         }
     }
 
