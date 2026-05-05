@@ -87,26 +87,30 @@ class InferenceService : Service() {
     private fun executeReasoning(input: String): String {
         val inference = llmInference ?: return "Error: Local reasoning spine not hydrated in service."
         
-        val formattedPrompt = if (currentModelPath.endsWith(".litertlm")) {
+        // Phase 6.6: Refined Template Logic for Gemma 4
+        val isLiteRTLM = currentModelPath.endsWith(".litertlm")
+        val formattedPrompt = if (isLiteRTLM) {
             "<|turn>user\n$input<turn|>\n<|turn>model\n"
         } else {
             "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
         }
+        
+        Log.d(TAG, "Executing Reasoning [Type: ${if(isLiteRTLM) "LiteRT-LM" else "Legacy"}]. Length: ${formattedPrompt.length} chars.")
         
         return try {
             val startTime = System.currentTimeMillis()
             val response = inference.generateResponse(formattedPrompt)
             val duration = System.currentTimeMillis() - startTime
             
-            if (response.isEmpty()) {
-                Log.w(TAG, "!!! Empty response received in service.")
-                return "Error: Empty response"
+            if (response.isNullOrEmpty()) {
+                Log.w(TAG, "!!! CRITICAL: Gemma 4 returned NULL/EMPTY response after ${duration}ms. Prompt may be invalid or context saturated.")
+                return "Error: Empty response from neural spine. Check logcat for details."
             }
 
-            Log.i(TAG, "Neural Response SUCCESS in ${duration}ms")
+            Log.i(TAG, "Neural Response SUCCESS in ${duration}ms. Tokens generated: ~${response.length / 4}")
             response
         } catch (e: Exception) {
-            Log.e(TAG, "Inference error in service: ${e.message}")
+            Log.e(TAG, "Inference crash in service: ${e.message}")
             "Error: Neural spine failure - ${e.message}"
         }
     }
