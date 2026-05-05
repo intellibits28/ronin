@@ -296,6 +296,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun deleteModel(path: String) {
+        val file = java.io.File(path)
+        if (file.exists() && file.delete()) {
+            Toast.makeText(this, "Model deleted.", Toast.LENGTH_SHORT).show()
+            scanLocalModels()
+        }
+    }
+
     private fun setupHardwareCallbacks() {
         nativeEngine.getSecureApiKey = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
         nativeEngine.onRequestHardwareData = { nodeId -> if (nodeId == 5) "GPS_MOCK" else "Error" }
@@ -348,15 +356,30 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
         withContext(Dispatchers.IO) {
             while (true) {
                 am.getMemoryInfo(mi); val total = mi.totalMem / 1073741824f; val avail = mi.availMem / 1073741824f; val used = total - avail
-                val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED); val battery = context.registerReceiver(null, filter)
+                val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+                // Note: In Compose, registering receiver without intent inside LaunchedEffect(Unit) needs careful cleanup or use disposableEffect
+                // But for a persistent background loop, this is one way.
+                val battery = context.registerReceiver(null, filter)
                 val temp = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
-                withContext(Dispatchers.Main) { chatViewModel.temperature = temp; chatViewModel.ramUsedGB = used; chatViewModel.ramTotalGB = total; chatViewModel.lmkPressure = engine.getLMKPressureSafe(); chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f }
+                withContext(Dispatchers.Main) { 
+                    chatViewModel.temperature = temp
+                    chatViewModel.ramUsedGB = used
+                    chatViewModel.ramTotalGB = total
+                    chatViewModel.lmkPressure = engine.getLMKPressureSafe()
+                    chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f 
+                }
                 engine.updateSystemHealthSafe(temp, used, total); delay(5000)
             }
         }
     }
 
-    Scaffold(scaffoldState = scaffoldState, topBar = { TopAppBar(title = { Text("Ronin Kernel", fontWeight = FontWeight.Bold) }, actions = { IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.BarChart, null) }; IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, null) } }) }) { padding ->
+    Scaffold(
+        scaffoldState = scaffoldState, 
+        topBar = { TopAppBar(title = { Text("Ronin Kernel", fontWeight = FontWeight.Bold) }, actions = { 
+            IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.BarChart, null) }; 
+            IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, null) } 
+        }) }
+    ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
             if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
             Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) { LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } } }
@@ -395,16 +418,26 @@ fun SettingsDialog(chatViewModel: ChatViewModel, modelPicker: androidx.activity.
             Text("Reasoning Brains (Internal)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             chatViewModel.discoveredModels.forEach { path ->
                 val filename = java.io.File(path).name; val isActive = path == chatViewModel.localModelPath && chatViewModel.isKernelHydrated
-                Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = path == chatViewModel.localModelPath, onClick = { onSelectModel(path) }, colors = androidx.compose.material.RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6))); Text(filename, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White); IconButton(onClick = { onDeleteModel(path) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray) } }
+                Row(verticalAlignment = Alignment.CenterVertically) { 
+                    RadioButton(selected = path == chatViewModel.localModelPath, onClick = { onSelectModel(path) }, colors = androidx.compose.material.RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6))); 
+                    Text(filename, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White); 
+                    IconButton(onClick = { onDeleteModel(path) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray) } 
+                }
             }
             OutlinedButton(onClick = { modelPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Model") }
             Spacer(Modifier.height(16.dp)); Divider()
-            Row(verticalAlignment = Alignment.CenterVertically) { Text("Cloud Reasoning Models", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f)); IconButton(onClick = { chatViewModel.showAddCloudDialog = true }) { Icon(Icons.Default.Add, null, tint = Color(0xFF64B5F6)) } }
+            Row(verticalAlignment = Alignment.CenterVertically) { 
+                Text("Cloud Reasoning Models", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f)); 
+                IconButton(onClick = { chatViewModel.showAddCloudDialog = true }) { Icon(Icons.Default.Add, null, tint = Color(0xFF64B5F6)) } 
+            }
             chatViewModel.cloudProviders.forEach { profile ->
                 val isActive = profile.name == chatViewModel.primaryCloudProvider && !chatViewModel.offlineMode
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = profile.name == chatViewModel.primaryCloudProvider, onClick = { (context as MainActivity).savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }, colors = androidx.compose.material.RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)))
-                    Column(modifier = Modifier.weight(1f)) { Text(profile.name, color = if (isActive) Color.Green else Color.White); Text(profile.modelId, fontSize = 10.sp, color = Color.Gray) }
+                    Column(modifier = Modifier.weight(1f)) { 
+                        Text(profile.name, color = if (isActive) Color.Green else Color.White); 
+                        Text(profile.modelId, fontSize = 10.sp, color = Color.Gray) 
+                    }
                     IconButton(onClick = { (context as MainActivity).deleteCloudProvider(profile.name) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray, modifier = Modifier.size(18.dp)) }
                 }
             }
@@ -432,9 +465,9 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
             }
             Spacer(Modifier.height(8.dp))
             if (selectedTemplate == "Custom") {
-                TextField(value = customProfileName, onValueChange = { customProfileName = it }, label = { Text("Profile Name") })
-                TextField(value = customEndpoint, onValueChange = { customEndpoint = it }, label = { Text("Endpoint URL") })
-                TextField(value = selectedModelId, onValueChange = { selectedModelId = it }, label = { Text("Model ID") })
+                TextField(value = customProfileName, onValueChange = { customProfileName = it }, label = { Text("Profile Name") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                TextField(value = customEndpoint, onValueChange = { customEndpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                TextField(value = selectedModelId, onValueChange = { selectedModelId = it }, label = { Text("Model ID") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextField(value = apiKey, onValueChange = { apiKey = it }, modifier = Modifier.weight(1f), label = { Text("API Key") }, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
@@ -445,11 +478,20 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
             if (isFetching) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
             if (fetchedModels.isNotEmpty()) {
                 Text("Select Model:", fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-                fetchedModels.forEach { m -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { selectedModelId = m }) { RadioButton(selected = selectedModelId == m, onClick = { selectedModelId = m }); Text(m, fontSize = 11.sp) } }
+                fetchedModels.forEach { m -> 
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { selectedModelId = m }) { 
+                        RadioButton(selected = selectedModelId == m, onClick = { selectedModelId = m }); 
+                        Text(m, fontSize = 11.sp) 
+                    } 
+                }
             }
         }
     }, confirmButton = { Button(onClick = {
-        val endpoint = when(selectedTemplate) { "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/$selectedModelId:generateContent"; "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"; else -> customEndpoint }
+        val endpoint = when(selectedTemplate) { 
+            "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/$selectedModelId:generateContent"
+            "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
+            else -> customEndpoint 
+        }
         val name = if (selectedTemplate == "Custom") customProfileName else selectedModelId
         if (name.isNotBlank() && selectedModelId.isNotBlank() && apiKey.isNotBlank()) onAdd(name, selectedTemplate, endpoint, selectedModelId, apiKey)
     }) { Text("VERIFY & SAVE") } })
