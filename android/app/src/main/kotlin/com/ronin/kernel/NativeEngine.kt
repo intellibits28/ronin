@@ -453,8 +453,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
         
         val isGemini = endpoint.contains("generativelanguage.googleapis.com")
-        val finalUrl = if (isGemini) {
-            if (endpoint.contains("?key=")) endpoint else "$endpoint?key=$apiKey"
+        
+        // Phase 4.5.9: Robust Gemini Endpoint alignment
+        var finalUrl = if (isGemini) {
+            // Attempt to upgrade to v1 if v1beta fails or is hardcoded
+            var upgradedEndpoint = endpoint.replace("v1beta", "v1")
+            if (upgradedEndpoint.contains("?key=")) upgradedEndpoint else "$upgradedEndpoint?key=$apiKey"
         } else endpoint
 
         return try {
@@ -486,6 +490,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     JSONObject(response).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
                 }
             } else {
+                // Fallback attempt for v1beta if v1 failed with 404 for Gemini
+                if (isGemini && conn.responseCode == 404 && finalUrl.contains("/v1/")) {
+                    return executeSingleInference(input, provider, endpoint.replace("v1", "v1beta"), modelId)
+                }
                 val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
                 "Error: [${conn.responseCode}] $err"
             }
