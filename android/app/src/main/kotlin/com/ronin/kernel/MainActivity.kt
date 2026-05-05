@@ -462,36 +462,120 @@ fun SettingsDialog(chatViewModel: ChatViewModel, modelPicker: androidx.activity.
 
 @Composable
 fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String) -> Unit) {
-    var selectedTemplate by remember { mutableStateOf("Gemini") }; var expanded by remember { mutableStateOf(false) }
-    var profileName by remember { mutableStateOf("") }; var endpoint by remember { mutableStateOf(""); var modelId by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Add Cloud Profile", fontWeight = FontWeight.Bold) }, text = {
-        Column {
-            Box {
-                OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text(selectedTemplate); Icon(Icons.Default.ArrowDropDown, null) }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    listOf("Gemini", "OpenRouter", "Custom").forEach { t -> DropdownMenuItem(onClick = { selectedTemplate = t; expanded = false; if (t == "Gemini") { endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"; modelId = "gemini-1.5-flash" } else if (t == "OpenRouter") { endpoint = "https://openrouter.ai/api/v1/chat/completions"; modelId = "meta-llama/llama-3.1-8b-instruct" } }) { Text(t) } }
+    var selectedTemplate by remember { mutableStateOf("Gemini") }
+    var expanded by remember { mutableStateOf(false) }
+    var profileName by remember { mutableStateOf("") }
+    var endpoint by remember { mutableStateOf("") }
+    var modelId by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Cloud Profile", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Box {
+                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(selectedTemplate)
+                        Icon(Icons.Default.ArrowDropDown, null)
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        listOf("Gemini", "OpenRouter", "Custom").forEach { t ->
+                            DropdownMenuItem(onClick = {
+                                selectedTemplate = t
+                                expanded = false
+                                when (t) {
+                                    "Gemini" -> {
+                                        endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+                                        modelId = "gemini-1.5-flash"
+                                    }
+                                    "OpenRouter" -> {
+                                        endpoint = "https://openrouter.ai/api/v1/chat/completions"
+                                        modelId = "meta-llama/llama-3.1-8b-instruct"
+                                    }
+                                }
+                            }) { Text(t) }
+                        }
+                    }
                 }
+                TextField(value = profileName, onValueChange = { profileName = it }, label = { Text("Profile Name") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                if (selectedTemplate == "Custom") {
+                    TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                }
+                TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
             }
-            TextField(value = profileName, onValueChange = { profileName = it }, label = { Text("Profile Name") })
-            if (selectedTemplate == "Custom") TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") })
-            TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID") })
+        },
+        confirmButton = {
+            Button(onClick = { if (profileName.isNotBlank()) onAdd(profileName, selectedTemplate, endpoint, modelId) }) {
+                Text("VERIFY & SAVE")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL") }
         }
-    }, confirmButton = { Button(onClick = { if (profileName.isNotBlank()) onAdd(profileName, selectedTemplate, endpoint, modelId) }) { Text("VERIFY & SAVE") } })
+    )
 }
 
 @Composable
 fun ApiKeyDialog(provider: String, type: String, engine: NativeEngine, onDismiss: () -> Unit, onSave: (String) -> Unit, onModelSelected: (String) -> Unit) {
-    var key by remember { mutableStateOf("") }; var isFetching by remember { mutableStateOf(false) }; var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }; var showModelPicker by remember { mutableStateOf(false) }; val scope = rememberCoroutineScope()
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Configure $provider", fontWeight = FontWeight.Bold) }, text = {
-        Column {
-            TextField(value = key, onValueChange = { key = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Paste API Key here...") }, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
-            if (isFetching) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    var key by remember { mutableStateOf("") }
+    var isFetching by remember { mutableStateOf(false) }
+    var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showModelPicker by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Configure $provider", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                TextField(
+                    value = key, 
+                    onValueChange = { key = it }, 
+                    modifier = Modifier.fillMaxWidth(), 
+                    placeholder = { Text("Paste API Key here...") }, 
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+                )
+                if (isFetching) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            }
+        },
+        confirmButton = {
+            Row {
+                if (type == "Gemini" || type == "OpenRouter") {
+                    TextButton(onClick = {
+                        if (key.isNotBlank()) {
+                            isFetching = true
+                            scope.launch {
+                                val models = engine.fetchAvailableModels(key, type)
+                                fetchedModels = if (type == "Gemini") models.map { it.getString("name").substringAfterLast("/") } else models.map { it.getString("id") }
+                                isFetching = false
+                                if (fetchedModels.isNotEmpty()) showModelPicker = true
+                            }
+                        }
+                    }) { Text("FETCH MODELS") }
+                }
+                Button(onClick = { onSave(key) }) { Text("VERIFY & SAVE") }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL") }
         }
-    }, confirmButton = { Row {
-        if (type == "Gemini" || type == "OpenRouter") TextButton(onClick = { if (key.isNotBlank()) { isFetching = true; scope.launch { val models = engine.fetchAvailableModels(key, type); fetchedModels = if (type == "Gemini") models.map { it.getString("name").substringAfterLast("/") } else models.map { it.getString("id") }; isFetching = false; if (fetchedModels.isNotEmpty()) showModelPicker = true } } }) { Text("FETCH MODELS") }
-        Button(onClick = { onSave(key) }) { Text("VERIFY & SAVE") }
-    } })
-    if (showModelPicker) AlertDialog(onDismissRequest = { showModelPicker = false }, title = { Text("Select Model") }, text = { LazyColumn { items(fetchedModels) { m -> TextButton(onClick = { onModelSelected(m); showModelPicker = false }, modifier = Modifier.fillMaxWidth()) { Text(m, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Start) } } } }, confirmButton = { TextButton(onClick = { showModelPicker = false }) { Text("CLOSE") } })
+    )
+    if (showModelPicker) {
+        AlertDialog(
+            onDismissRequest = { showModelPicker = false },
+            title = { Text("Select Model") },
+            text = {
+                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                    items(fetchedModels) { m ->
+                        TextButton(onClick = { onModelSelected(m); showModelPicker = false }, modifier = Modifier.fillMaxWidth()) {
+                            Text(m, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showModelPicker = false }) { Text("CLOSE") } }
+        )
+    }
 }
 
 @Composable
