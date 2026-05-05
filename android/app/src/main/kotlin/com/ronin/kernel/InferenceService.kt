@@ -97,7 +97,7 @@ class InferenceService : Service() {
         // Phase 6.6: Refined Template Logic for Gemma 4
         val isLiteRTLM = currentModelPath.endsWith(".litertlm")
         val formattedPrompt = if (isLiteRTLM) {
-            "<|turn>user\n$input<turn|>\n<|turn>model\n"
+            "<|turn|>user\n$input<|turn|>model\n"
         } else {
             "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
         }
@@ -110,12 +110,23 @@ class InferenceService : Service() {
             val duration = System.currentTimeMillis() - startTime
             
             if (response.isNullOrEmpty()) {
-                Log.w(TAG, "!!! CRITICAL: Gemma 4 returned NULL/EMPTY response after ${duration}ms. Prompt may be invalid or context saturated.")
+                Log.w(TAG, "!!! CRITICAL: Gemma 4 returned NULL/EMPTY response after ${duration}ms.")
                 return "Error: Empty response from neural spine. Check logcat for details."
             }
 
-            Log.i(TAG, "Neural Response SUCCESS in ${duration}ms. Tokens generated: ~${response.length / 4}")
-            response
+            // Phase 4.5.8: Post-processing to strip internal artifacts (turn|user, etc.)
+            val cleanedResponse = response
+                .replace("<|turn|>", "")
+                .replace("<turn|>", "")
+                .replace("<|turn>", "")
+                .replace("turn|user", "")
+                .replace("turn|model", "")
+                .replace("<start_of_turn>", "")
+                .replace("<end_of_turn>", "")
+                .trim()
+
+            Log.i(TAG, "Neural Response SUCCESS in ${duration}ms. Tokens generated: ~${cleanedResponse.length / 4}")
+            cleanedResponse
         } catch (e: Exception) {
             Log.e(TAG, "Inference crash in service: ${e.message}")
             "Error: Neural spine failure - ${e.message}"
