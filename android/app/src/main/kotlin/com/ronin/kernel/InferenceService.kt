@@ -73,7 +73,7 @@ class InferenceService : Service() {
         return try {
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
-                .setMaxTokens(512)
+                .setMaxTokens(1024)
             
             llmInference = LlmInference.createFromOptions(this, builder.build())
             currentModelPath = path

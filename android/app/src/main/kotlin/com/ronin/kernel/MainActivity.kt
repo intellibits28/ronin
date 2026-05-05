@@ -100,11 +100,6 @@ class ChatViewModel : ViewModel() {
     var showCommandSuggestions by mutableStateOf(false)
     val commandSuggestions = mutableStateListOf<String>()
 
-    // Lazy Loading History
-    var historyPage by mutableStateOf(0)
-    var isLoadingHistory by mutableStateOf(false)
-    var hasMoreHistory by mutableStateOf(true)
-
     // Health metrics
     var temperature by mutableStateOf(0f)
     var ramUsedGB by mutableStateOf(0f)
@@ -114,7 +109,7 @@ class ChatViewModel : ViewModel() {
     var showSettings by mutableStateOf(false)
     var offlineMode by mutableStateOf(false)
     var isKernelHydrated by mutableStateOf(false)
-    var localModelPath by mutableStateOf("/storage/emulated/0/Ronin/models/gemma_4.litertlm")
+    var localModelPath by mutableStateOf("")
     var primaryCloudProvider by mutableStateOf("Gemini-Flash")
     val cloudProviders = mutableStateListOf<CloudProvider>()
     val discoveredModels = mutableStateListOf<String>()
@@ -128,21 +123,16 @@ class ChatViewModel : ViewModel() {
 
 class MainActivity : ComponentActivity() {
     internal lateinit var nativeEngine: NativeEngine
-    
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var sharedPreferences: android.content.SharedPreferences
     private var lastPermissionState = false
 
     private val modelPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
-            importModelFromUri(it)
-        }
+        uri?.let { importModelFromUri(it) }
     }
 
     private fun importModelFromUri(uri: Uri) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
-            chatViewModel.reasoningLogs.add(0, "Importing Model: ${uri.lastPathSegment}")
             val success = withContext(Dispatchers.IO) {
                 try {
                     val inputStream = contentResolver.openInputStream(uri)
@@ -150,16 +140,9 @@ class MainActivity : ComponentActivity() {
                     if (!modelsDir.exists()) modelsDir.mkdirs()
                     val fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "imported_model.bin"
                     val targetFile = java.io.File(modelsDir, fileName)
-                    inputStream?.use { input ->
-                        java.io.FileOutputStream(targetFile).use { output ->
-                            input.copyTo(output, bufferSize = 1024 * 1024)
-                        }
-                    }
+                    inputStream?.use { input -> java.io.FileOutputStream(targetFile).use { output -> input.copyTo(output, bufferSize = 1024 * 1024) } }
                     true
-                } catch (e: Exception) {
-                    Log.e("RoninImport", "Model import failed: ${e.message}")
-                    false
-                }
+                } catch (e: Exception) { false }
             }
             if (success) scanLocalModels()
         }
@@ -170,7 +153,7 @@ class MainActivity : ComponentActivity() {
         val modelsDir = java.io.File(filesDir, "models")
         if (!modelsDir.exists()) modelsDir.mkdirs()
         val models = modelsDir.listFiles { file -> 
-            file.name != "model.onnx" && !file.isDirectory
+            file.name != "model.onnx" && !file.isDirectory 
         }?.map { it.absolutePath }?.distinct() ?: emptyList()
         chatViewModel.discoveredModels.clear()
         chatViewModel.discoveredModels.addAll(models)
@@ -181,7 +164,6 @@ class MainActivity : ComponentActivity() {
         nativeEngine = NativeEngine(this)
         val masterKey = MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         sharedPreferences = EncryptedSharedPreferences.create(this, "ronin_secure_prefs", masterKey, EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         copyAssetsToFilesDir(filesDir)
 
         lifecycleScope.launch(Dispatchers.Main) {
@@ -190,8 +172,10 @@ class MainActivity : ComponentActivity() {
             registerComponentCallbacks(nativeEngine)
             setupHardwareCallbacks()
             loadCloudProvidersFromDisk()
+            
             val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini-Flash") ?: "Gemini-Flash"
             nativeEngine.setPrimaryCloudProviderSafe(lastProvider)
+            
             val offline = sharedPreferences.getBoolean("offline_mode", false)
             nativeEngine.setOfflineModeSafe(offline)
 
@@ -206,9 +190,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             val chatViewModel: ChatViewModel = viewModel()
             LaunchedEffect(Unit) {
-                chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
+                chatViewModel.localModelPath = sharedPreferences.getString("local_model_path", "") ?: ""
                 chatViewModel.offlineMode = sharedPreferences.getBoolean("offline_mode", false)
                 chatViewModel.primaryCloudProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini-Flash") ?: "Gemini-Flash"
+                
                 while(true) {
                     val loaded = nativeEngine.isLoaded()
                     if (chatViewModel.isKernelHydrated != loaded) {
@@ -218,7 +203,7 @@ class MainActivity : ComponentActivity() {
                     delay(3000)
                 }
             }
-            RoninChatUI(engine = nativeEngine, chatViewModel = chatViewModel, modelPicker = modelPickerLauncher, onSaveOfflineMode = { saveOfflineMode(it) })
+            RoninChatUI(nativeEngine, chatViewModel, modelPickerLauncher, { saveOfflineMode(it) })
         }
     }
 
@@ -244,11 +229,10 @@ class MainActivity : ComponentActivity() {
                     chatViewModel.cloudProviders.add(CloudProvider(obj.getString("name"), obj.optString("providerType", "Gemini"), obj.getString("endpoint"), obj.getString("modelId"), obj.getString("authType")))
                 }
                 nativeEngine.updateCloudProvidersSafe(array.toString())
-            } catch (e: Exception) { Log.e("RoninBoot", "Failed to parse providers: ${e.message}") }
+            } catch (e: Exception) {}
         } else {
-            val defaultProfile = CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key")
-            chatViewModel.cloudProviders.add(defaultProfile)
-            saveCloudProvidersToDisk()
+            val default = CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key")
+            chatViewModel.cloudProviders.add(default); saveCloudProvidersToDisk()
         }
     }
 
@@ -260,13 +244,12 @@ class MainActivity : ComponentActivity() {
         try {
             val array = JSONArray()
             chatViewModel.cloudProviders.forEach { p ->
-                val obj = JSONObject()
-                obj.put("name", p.name); obj.put("providerType", p.providerType); obj.put("endpoint", p.endpoint); obj.put("modelId", p.modelId); obj.put("authType", p.authType)
+                val obj = JSONObject().put("name", p.name).put("providerType", p.providerType).put("endpoint", p.endpoint).put("modelId", p.modelId).put("authType", p.authType)
                 array.put(obj)
             }
             providersFile.writeText(array.toString(2))
             nativeEngine.updateCloudProvidersSafe(array.toString())
-        } catch (e: Exception) { Log.e("RoninUI", "Failed to save: ${e.message}") }
+        } catch (e: Exception) {}
     }
 
     fun addCloudProvider(name: String, providerType: String, endpoint: String, modelId: String) {
@@ -306,7 +289,7 @@ class MainActivity : ComponentActivity() {
 
     private fun setupHardwareCallbacks() {
         nativeEngine.getSecureApiKey = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
-        nativeEngine.onRequestHardwareData = { nodeId -> if (nodeId == 5) "GPS_MOCK" else "Error" }
+        nativeEngine.onRequestHardwareData = { nodeId -> "MOCK_DATA" }
         nativeEngine.executeHardwareAction = { nodeId, state -> if (nodeId == 1) { nativeEngine.setSafeMode(!state); true } else false }
         nativeEngine.onSystemTiersUpdate = { temp, used, total ->
             val vm = ViewModelProvider(this)[ChatViewModel::class.java]
@@ -321,7 +304,7 @@ class MainActivity : ComponentActivity() {
             if (nativeEngine.loadModel(path)) {
                 chatViewModel.isKernelHydrated = true
                 sharedPreferences.edit().putString("local_model_path", path).apply()
-                chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
+                chatViewModel.localModelPath = path
             }
         }
     }
@@ -348,7 +331,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
-    val context = LocalContext.current; val scaffoldState = rememberScaffoldState(); val scope = rememberCoroutineScope()
+    val context = LocalContext.current; val scope = rememberCoroutineScope()
     var currentInput by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
@@ -357,26 +340,17 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
             while (true) {
                 am.getMemoryInfo(mi); val total = mi.totalMem / 1073741824f; val avail = mi.availMem / 1073741824f; val used = total - avail
                 val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-                // Note: In Compose, registering receiver without intent inside LaunchedEffect(Unit) needs careful cleanup or use disposableEffect
-                // But for a persistent background loop, this is one way.
                 val battery = context.registerReceiver(null, filter)
                 val temp = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
-                withContext(Dispatchers.Main) { 
-                    chatViewModel.temperature = temp
-                    chatViewModel.ramUsedGB = used
-                    chatViewModel.ramTotalGB = total
-                    chatViewModel.lmkPressure = engine.getLMKPressureSafe()
-                    chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f 
-                }
+                withContext(Dispatchers.Main) { chatViewModel.temperature = temp; chatViewModel.ramUsedGB = used; chatViewModel.ramTotalGB = total; chatViewModel.lmkPressure = engine.getLMKPressureSafe(); chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f }
                 engine.updateSystemHealthSafe(temp, used, total); delay(5000)
             }
         }
     }
 
     Scaffold(
-        scaffoldState = scaffoldState, 
         topBar = { TopAppBar(title = { Text("Ronin Kernel", fontWeight = FontWeight.Bold) }, actions = { 
-            IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.BarChart, null) }; 
+            IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.BarChart, null) }
             IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, null) } 
         }) }
     ) { padding ->
@@ -384,9 +358,22 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
             if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
             Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) { LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } } }
             Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) { LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } }
+            
+            // Command Suggester Logic
+            if (chatViewModel.showCommandSuggestions) {
+                val suggestions = listOf("/status", "/skills", "/model", "/reset", "/more").filter { it.startsWith(currentInput) }
+                if (suggestions.isNotEmpty()) {
+                    Surface(color = Color(0xFF25283D), modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                        LazyColumn(modifier = Modifier.heightIn(max = 120.dp)) {
+                            items(suggestions) { s -> TextButton(onClick = { currentInput = s; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { Text(s, color = Color(0xFF64B5F6), modifier = Modifier.fillMaxWidth()) } }
+                        }
+                    }
+                }
+            }
+
             Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
                 Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextField(value = currentInput, onValueChange = { currentInput = it }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } } }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
+                    TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; chatViewModel.showCommandSuggestions = false; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } } }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
                 }
             }
         }
@@ -452,7 +439,7 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
     val context = LocalContext.current; val engine = (context as MainActivity).nativeEngine; val scope = rememberCoroutineScope()
     var selectedTemplate by remember { mutableStateOf("Gemini") }; var expanded by remember { mutableStateOf(false) }
     var apiKey by remember { mutableStateOf("") }; var isFetching by remember { mutableStateOf(false) }
-    var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }; var selectedModelId by remember { mutableStateOf("") }
+    var fetchedModels by remember { mutableStateOf<List<JSONObject>>(emptyList()) }; var selectedModelId by remember { mutableStateOf("") }
     var customEndpoint by remember { mutableStateOf("") }; var customProfileName by remember { mutableStateOf("") }
 
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Add Cloud Profile", fontWeight = FontWeight.Bold) }, text = {
@@ -460,35 +447,36 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
             Box {
                 OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text(selectedTemplate); Icon(Icons.Default.ArrowDropDown, null) }
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    listOf("Gemini", "OpenRouter", "Custom").forEach { t -> DropdownMenuItem(onClick = { selectedTemplate = t; expanded = false; selectedModelId = ""; apiKey = "" }) { Text(t) } }
+                    listOf("Gemini", "OpenRouter", "Custom").forEach { t -> DropdownMenuItem(onClick = { selectedTemplate = t; expanded = false; selectedModelId = ""; apiKey = ""; fetchedModels = emptyList() }) { Text(t) } }
                 }
             }
             Spacer(Modifier.height(8.dp))
             if (selectedTemplate == "Custom") {
-                TextField(value = customProfileName, onValueChange = { customProfileName = it }, label = { Text("Profile Name") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
-                TextField(value = customEndpoint, onValueChange = { customEndpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
-                TextField(value = selectedModelId, onValueChange = { selectedModelId = it }, label = { Text("Model ID") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                TextField(value = customProfileName, onValueChange = { customProfileName = it }, label = { Text("Profile Name") })
+                TextField(value = customEndpoint, onValueChange = { customEndpoint = it }, label = { Text("Endpoint URL") })
+                TextField(value = selectedModelId, onValueChange = { selectedModelId = it }, label = { Text("Model ID") })
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextField(value = apiKey, onValueChange = { apiKey = it }, modifier = Modifier.weight(1f), label = { Text("API Key") }, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
                 if (selectedTemplate != "Custom") {
-                    IconButton(onClick = { if (apiKey.isNotBlank()) { isFetching = true; scope.launch { val models = engine.fetchAvailableModels(apiKey, selectedTemplate); fetchedModels = if (selectedTemplate == "Gemini") models.map { it.getString("name").substringAfterLast("/") } else models.map { it.getString("id") }; isFetching = false } } }) { Icon(Icons.Default.CloudDownload, null, tint = Color(0xFF64B5F6)) }
+                    IconButton(onClick = { if (apiKey.isNotBlank()) { isFetching = true; scope.launch { fetchedModels = engine.fetchAvailableModels(apiKey, selectedTemplate); isFetching = false } } }) { Icon(Icons.Default.CloudDownload, null, tint = Color(0xFF64B5F6)) }
                 }
             }
             if (isFetching) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
             if (fetchedModels.isNotEmpty()) {
                 Text("Select Model:", fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-                fetchedModels.forEach { m -> 
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { selectedModelId = m }) { 
-                        RadioButton(selected = selectedModelId == m, onClick = { selectedModelId = m }); 
-                        Text(m, fontSize = 11.sp) 
+                fetchedModels.forEach { obj -> 
+                    val mId = if (selectedTemplate == "Gemini") obj.getString("name").substringAfterLast("/") else obj.getString("id")
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { selectedModelId = mId }) { 
+                        RadioButton(selected = selectedModelId == mId, onClick = { selectedModelId = mId }); 
+                        Text(mId, fontSize = 11.sp) 
                     } 
                 }
             }
         }
     }, confirmButton = { Button(onClick = {
         val endpoint = when(selectedTemplate) { 
-            "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/$selectedModelId:generateContent"
+            "Gemini" -> "https://generativelanguage.googleapis.com/v1/models/$selectedModelId:generateContent"
             "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
             else -> customEndpoint 
         }
