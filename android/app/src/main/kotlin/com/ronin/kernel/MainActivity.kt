@@ -125,7 +125,7 @@ class ChatViewModel : ViewModel() {
 }
 
 class MainActivity : ComponentActivity() {
-    private lateinit var nativeEngine: NativeEngine
+    internal lateinit var nativeEngine: NativeEngine
     
     // Phase 5.10: Full Integrity Registry
     private val MODEL_REGISTRY = mapOf(
