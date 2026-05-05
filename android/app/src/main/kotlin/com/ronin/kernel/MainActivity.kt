@@ -148,10 +148,8 @@ class MainActivity : ComponentActivity() {
                     val inputStream = contentResolver.openInputStream(uri)
                     val modelsDir = java.io.File(filesDir, "models")
                     if (!modelsDir.exists()) modelsDir.mkdirs()
-                    
                     val fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "imported_model.bin"
                     val targetFile = java.io.File(modelsDir, fileName)
-                    
                     inputStream?.use { input ->
                         java.io.FileOutputStream(targetFile).use { output ->
                             input.copyTo(output, bufferSize = 1024 * 1024)
@@ -248,7 +246,8 @@ class MainActivity : ComponentActivity() {
                 nativeEngine.updateCloudProvidersSafe(array.toString())
             } catch (e: Exception) { Log.e("RoninBoot", "Failed to parse providers: ${e.message}") }
         } else {
-            chatViewModel.cloudProviders.add(CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key"))
+            val defaultProfile = CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key")
+            chatViewModel.cloudProviders.add(defaultProfile)
             saveCloudProvidersToDisk()
         }
     }
@@ -262,11 +261,7 @@ class MainActivity : ComponentActivity() {
             val array = JSONArray()
             chatViewModel.cloudProviders.forEach { p ->
                 val obj = JSONObject()
-                obj.put("name", p.name)
-                obj.put("providerType", p.providerType)
-                obj.put("endpoint", p.endpoint)
-                obj.put("modelId", p.modelId)
-                obj.put("authType", p.authType)
+                obj.put("name", p.name); obj.put("providerType", p.providerType); obj.put("endpoint", p.endpoint); obj.put("modelId", p.modelId); obj.put("authType", p.authType)
                 array.put(obj)
             }
             providersFile.writeText(array.toString(2))
@@ -285,7 +280,7 @@ class MainActivity : ComponentActivity() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         chatViewModel.cloudProviders.removeAll { it.name == name }
         if (chatViewModel.primaryCloudProvider == name) {
-            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else "Gemini-Flash"
+            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else ""
             savePrimaryCloudProvider(chatViewModel.primaryCloudProvider)
         }
         saveCloudProvidersToDisk()
@@ -304,9 +299,7 @@ class MainActivity : ComponentActivity() {
     private fun setupHardwareCallbacks() {
         nativeEngine.getSecureApiKey = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
         nativeEngine.onRequestHardwareData = { nodeId -> if (nodeId == 5) "GPS_MOCK" else "Error" }
-        nativeEngine.executeHardwareAction = { nodeId, state -> 
-            if (nodeId == 1) { nativeEngine.setSafeMode(!state); true } else false
-        }
+        nativeEngine.executeHardwareAction = { nodeId, state -> if (nodeId == 1) { nativeEngine.setSafeMode(!state); true } else false }
         nativeEngine.onSystemTiersUpdate = { temp, used, total ->
             val vm = ViewModelProvider(this)[ChatViewModel::class.java]
             vm.temperature = temp; vm.ramUsedGB = used; vm.ramTotalGB = total
@@ -325,7 +318,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun saveOfflineMode(offline: Boolean) {
+    fun saveOfflineMode(offline: Boolean) {
         sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
         nativeEngine.setOfflineModeSafe(offline)
     }
@@ -335,14 +328,6 @@ class MainActivity : ComponentActivity() {
     fun savePrimaryCloudProvider(provider: String) {
         sharedPreferences.edit().putString("primary_cloud_provider", provider).apply()
         nativeEngine.setPrimaryCloudProviderSafe(provider)
-    }
-
-    fun deleteModel(path: String) {
-        val file = java.io.File(path)
-        if (file.exists() && file.delete()) {
-            Toast.makeText(this, "Model deleted.", Toast.LENGTH_SHORT).show()
-            scanLocalModels()
-        }
     }
 
     override fun onResume() {
@@ -355,57 +340,40 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
-    val context = LocalContext.current
-    val scaffoldState = rememberScaffoldState()
-    val scope = rememberCoroutineScope()
+    val context = LocalContext.current; val scaffoldState = rememberScaffoldState(); val scope = rememberCoroutineScope()
     var currentInput by remember { mutableStateOf("") }
 
-    Scaffold(
-        scaffoldState = scaffoldState,
-        topBar = { TopAppBar(title = { Text("Ronin Kernel", fontWeight = FontWeight.Bold) }, actions = {
-            IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.BarChart, null) }
-            IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, null) }
-        }) }
-    ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
-            if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
-            Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
-                }
-            }
-            Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) {
-                LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) {
-                    items(chatViewModel.messages.reversed()) { ChatBubble(it) }
-                }
-            }
-            Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
-                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextField(value = currentInput, onValueChange = { currentInput = it }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = {
-                        IconButton(onClick = {
-                            if (currentInput.isNotBlank()) {
-                                val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""
-                                scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") }
-                            }
-                        }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) }
-                    })
-                }
+    LaunchedEffect(Unit) {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager; val mi = ActivityManager.MemoryInfo()
+        withContext(Dispatchers.IO) {
+            while (true) {
+                am.getMemoryInfo(mi); val total = mi.totalMem / 1073741824f; val avail = mi.availMem / 1073741824f; val used = total - avail
+                val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED); val battery = context.registerReceiver(null, filter)
+                val temp = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
+                withContext(Dispatchers.Main) { chatViewModel.temperature = temp; chatViewModel.ramUsedGB = used; chatViewModel.ramTotalGB = total; chatViewModel.lmkPressure = engine.getLMKPressureSafe(); chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f }
+                engine.updateSystemHealthSafe(temp, used, total); delay(5000)
             }
         }
     }
 
+    Scaffold(scaffoldState = scaffoldState, topBar = { TopAppBar(title = { Text("Ronin Kernel", fontWeight = FontWeight.Bold) }, actions = { IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.BarChart, null) }; IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, null) } }) }) { padding ->
+        Column(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
+            if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
+            Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) { LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } } }
+            Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) { LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } }
+            Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
+                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextField(value = currentInput, onValueChange = { currentInput = it }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } } }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
+                }
+            }
+        }
+    }
     if (chatViewModel.showSettings) SettingsDialog(chatViewModel, modelPicker, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
 }
 
 @Composable
 fun SystemInfoPanel(chatViewModel: ChatViewModel) {
-    Surface(color = Color(0xFF161922), modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            InfoItem("Thermal", "${chatViewModel.temperature}°C", if (chatViewModel.temperature > 40) Color.Red else Color.Green)
-            InfoItem("RAM", "${"%.2f".format(chatViewModel.ramUsedGB)}GB", Color.White)
-            InfoItem("Stability", "${(chatViewModel.stability * 100).toInt()}%", Color.Cyan)
-        }
-    }
+    Surface(color = Color(0xFF161922), modifier = Modifier.fillMaxWidth().padding(16.dp)) { Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) { InfoItem("Thermal", "${chatViewModel.temperature}°C", if (chatViewModel.temperature > 40) Color.Red else Color.Green); InfoItem("RAM", "${"%.2f".format(chatViewModel.ramUsedGB)}GB", Color.White); InfoItem("Stability", "${(chatViewModel.stability * 100).toInt()}%", Color.Cyan) } }
 }
 
 @Composable
@@ -413,177 +381,78 @@ fun InfoItem(l: String, v: String, c: Color) { Column { Text(l, fontSize = 10.sp
 
 @Composable
 fun ChatBubble(m: String) {
-    val isUser = m.startsWith("User:")
-    val content = m.substringAfter(": ")
+    val isUser = m.startsWith("User:"); val content = m.substringAfter(": ")
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
-        Surface(color = if (isUser) Color(0xFF2D3142) else Color(0xFF64B5F6).copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp)) {
-            Text(content, modifier = Modifier.padding(12.dp), color = Color.White, fontSize = 14.sp)
-        }
+        Surface(color = if (isUser) Color(0xFF2D3142) else Color(0xFF64B5F6).copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp)) { Text(content, modifier = Modifier.padding(12.dp), color = Color.White, fontSize = 14.sp) }
     }
 }
 
 @Composable
 fun SettingsDialog(chatViewModel: ChatViewModel, modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit, onDeleteModel: (String) -> Unit, onSelectModel: (String) -> Unit) {
     val context = LocalContext.current
-    AlertDialog(
-        onDismissRequest = { chatViewModel.showSettings = false },
-        title = { Text("Ronin Configuration", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Text("Reasoning Brains (Internal)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                chatViewModel.discoveredModels.forEach { path ->
-                    val filename = java.io.File(path).name
-                    val isActive = path == chatViewModel.localModelPath && chatViewModel.isKernelHydrated
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = path == chatViewModel.localModelPath, onClick = { onSelectModel(path) }, colors = androidx.compose.material.RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)))
-                        Text(filename, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White)
-                        IconButton(onClick = { onDeleteModel(path) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray) }
-                    }
-                }
-                OutlinedButton(onClick = { modelPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Model") }
-                
-                Spacer(Modifier.height(16.dp)); Divider()
+    AlertDialog(onDismissRequest = { chatViewModel.showSettings = false }, title = { Text("Ronin Configuration", fontWeight = FontWeight.Bold) }, text = {
+        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Text("Reasoning Brains (Internal)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            chatViewModel.discoveredModels.forEach { path ->
+                val filename = java.io.File(path).name; val isActive = path == chatViewModel.localModelPath && chatViewModel.isKernelHydrated
+                Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = path == chatViewModel.localModelPath, onClick = { onSelectModel(path) }, colors = androidx.compose.material.RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6))); Text(filename, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White); IconButton(onClick = { onDeleteModel(path) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray) } }
+            }
+            OutlinedButton(onClick = { modelPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Model") }
+            Spacer(Modifier.height(16.dp)); Divider()
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("Cloud Reasoning Models", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f)); IconButton(onClick = { chatViewModel.showAddCloudDialog = true }) { Icon(Icons.Default.Add, null, tint = Color(0xFF64B5F6)) } }
+            chatViewModel.cloudProviders.forEach { profile ->
+                val isActive = profile.name == chatViewModel.primaryCloudProvider && !chatViewModel.offlineMode
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Cloud Reasoning Models", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { chatViewModel.showAddCloudDialog = true }) { Icon(Icons.Default.Add, null, tint = Color(0xFF64B5F6)) }
-                }
-                chatViewModel.cloudProviders.forEach { profile ->
-                    val isActive = profile.name == chatViewModel.primaryCloudProvider && !chatViewModel.offlineMode
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = profile.name == chatViewModel.primaryCloudProvider, onClick = { (context as MainActivity).savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }, colors = androidx.compose.material.RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)))
-                        Column(modifier = Modifier.weight(1f)) { Text(profile.name, color = if (isActive) Color.Green else Color.White); Text(profile.modelId, fontSize = 10.sp, color = Color.Gray) }
-                        IconButton(onClick = { chatViewModel.pendingProviderName = profile.name; chatViewModel.pendingProviderType = profile.providerType; chatViewModel.showApiKeyDialog = true }) { Icon(Icons.Default.Edit, null, tint = Color.Gray, modifier = Modifier.size(18.dp)) }
-                        if (profile.name != "Gemini-Flash") IconButton(onClick = { (context as MainActivity).deleteCloudProvider(profile.name) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray, modifier = Modifier.size(18.dp)) }
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Offline-Only", modifier = Modifier.weight(1f))
-                    Switch(checked = chatViewModel.offlineMode, onCheckedChange = { chatViewModel.offlineMode = it; onSaveOfflineMode(it) })
+                    RadioButton(selected = profile.name == chatViewModel.primaryCloudProvider, onClick = { (context as MainActivity).savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }, colors = androidx.compose.material.RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)))
+                    Column(modifier = Modifier.weight(1f)) { Text(profile.name, color = if (isActive) Color.Green else Color.White); Text(profile.modelId, fontSize = 10.sp, color = Color.Gray) }
+                    IconButton(onClick = { (context as MainActivity).deleteCloudProvider(profile.name) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray, modifier = Modifier.size(18.dp)) }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = { chatViewModel.showSettings = false }) { Text("CLOSE") } }
-    )
-    if (chatViewModel.showApiKeyDialog) ApiKeyDialog(chatViewModel.pendingProviderName, chatViewModel.pendingProviderType, (context as MainActivity).nativeEngine, { chatViewModel.showApiKeyDialog = false }, { (context as MainActivity).saveApiKey(chatViewModel.pendingProviderName, it); chatViewModel.showApiKeyDialog = false }, { (context as MainActivity).updateCloudProvider(chatViewModel.pendingProviderName, null, it) })
-    if (chatViewModel.showAddCloudDialog) AddCloudProviderDialog({ chatViewModel.showAddCloudDialog = false }, { n, t, e, m -> (context as MainActivity).addCloudProvider(n, t, e, m); chatViewModel.showAddCloudDialog = false })
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("Offline-Only", modifier = Modifier.weight(1f)); Switch(checked = chatViewModel.offlineMode, onCheckedChange = { chatViewModel.offlineMode = it; onSaveOfflineMode(it) }) }
+        }
+    }, confirmButton = { TextButton(onClick = { chatViewModel.showSettings = false }) { Text("CLOSE") } })
+    if (chatViewModel.showAddCloudDialog) AddCloudProviderDialog(onDismiss = { chatViewModel.showAddCloudDialog = false }, onAdd = { n, t, e, m, k -> (context as MainActivity).saveApiKey(n, k); (context as MainActivity).addCloudProvider(n, t, e, m); chatViewModel.showAddCloudDialog = false })
 }
 
 @Composable
-fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String) -> Unit) {
-    var selectedTemplate by remember { mutableStateOf("Gemini") }
-    var expanded by remember { mutableStateOf(false) }
-    var profileName by remember { mutableStateOf("") }
-    var endpoint by remember { mutableStateOf("") }
-    var modelId by remember { mutableStateOf("") }
+fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String, String) -> Unit) {
+    val context = LocalContext.current; val engine = (context as MainActivity).nativeEngine; val scope = rememberCoroutineScope()
+    var selectedTemplate by remember { mutableStateOf("Gemini") }; var expanded by remember { mutableStateOf(false) }
+    var apiKey by remember { mutableStateOf("") }; var isFetching by remember { mutableStateOf(false) }
+    var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }; var selectedModelId by remember { mutableStateOf("") }
+    var customEndpoint by remember { mutableStateOf("") }; var customProfileName by remember { mutableStateOf("") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add Cloud Profile", fontWeight = FontWeight.Bold) },
-        text = {
-            Column {
-                Box {
-                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(selectedTemplate)
-                        Icon(Icons.Default.ArrowDropDown, null)
-                    }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        listOf("Gemini", "OpenRouter", "Custom").forEach { t ->
-                            DropdownMenuItem(onClick = {
-                                selectedTemplate = t
-                                expanded = false
-                                when (t) {
-                                    "Gemini" -> {
-                                        endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-                                        modelId = "gemini-1.5-flash"
-                                    }
-                                    "OpenRouter" -> {
-                                        endpoint = "https://openrouter.ai/api/v1/chat/completions"
-                                        modelId = "meta-llama/llama-3.1-8b-instruct"
-                                    }
-                                }
-                            }) { Text(t) }
-                        }
-                    }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Add Cloud Profile", fontWeight = FontWeight.Bold) }, text = {
+        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Box {
+                OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text(selectedTemplate); Icon(Icons.Default.ArrowDropDown, null) }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    listOf("Gemini", "OpenRouter", "Custom").forEach { t -> DropdownMenuItem(onClick = { selectedTemplate = t; expanded = false; selectedModelId = ""; apiKey = "" }) { Text(t) } }
                 }
-                TextField(value = profileName, onValueChange = { profileName = it }, label = { Text("Profile Name") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
-                if (selectedTemplate == "Custom") {
-                    TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            if (selectedTemplate == "Custom") {
+                TextField(value = customProfileName, onValueChange = { customProfileName = it }, label = { Text("Profile Name") })
+                TextField(value = customEndpoint, onValueChange = { customEndpoint = it }, label = { Text("Endpoint URL") })
+                TextField(value = selectedModelId, onValueChange = { selectedModelId = it }, label = { Text("Model ID") })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextField(value = apiKey, onValueChange = { apiKey = it }, modifier = Modifier.weight(1f), label = { Text("API Key") }, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                if (selectedTemplate != "Custom") {
+                    IconButton(onClick = { if (apiKey.isNotBlank()) { isFetching = true; scope.launch { val models = engine.fetchAvailableModels(apiKey, selectedTemplate); fetchedModels = if (selectedTemplate == "Gemini") models.map { it.getString("name").substringAfterLast("/") } else models.map { it.getString("id") }; isFetching = false } } }) { Icon(Icons.Default.CloudDownload, null, tint = Color(0xFF64B5F6)) }
                 }
-                TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
             }
-        },
-        confirmButton = {
-            Button(onClick = { if (profileName.isNotBlank()) onAdd(profileName, selectedTemplate, endpoint, modelId) }) {
-                Text("VERIFY & SAVE")
+            if (isFetching) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+            if (fetchedModels.isNotEmpty()) {
+                Text("Select Model:", fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                fetchedModels.forEach { m -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { selectedModelId = m }) { RadioButton(selected = selectedModelId == m, onClick = { selectedModelId = m }); Text(m, fontSize = 11.sp) } }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL") }
         }
-    )
-}
-
-@Composable
-fun ApiKeyDialog(provider: String, type: String, engine: NativeEngine, onDismiss: () -> Unit, onSave: (String) -> Unit, onModelSelected: (String) -> Unit) {
-    var key by remember { mutableStateOf("") }
-    var isFetching by remember { mutableStateOf(false) }
-    var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }
-    var showModelPicker by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Configure $provider", fontWeight = FontWeight.Bold) },
-        text = {
-            Column {
-                TextField(
-                    value = key, 
-                    onValueChange = { key = it }, 
-                    modifier = Modifier.fillMaxWidth(), 
-                    placeholder = { Text("Paste API Key here...") }, 
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
-                )
-                if (isFetching) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-            }
-        },
-        confirmButton = {
-            Row {
-                if (type == "Gemini" || type == "OpenRouter") {
-                    TextButton(onClick = {
-                        if (key.isNotBlank()) {
-                            isFetching = true
-                            scope.launch {
-                                val models = engine.fetchAvailableModels(key, type)
-                                fetchedModels = if (type == "Gemini") models.map { it.getString("name").substringAfterLast("/") } else models.map { it.getString("id") }
-                                isFetching = false
-                                if (fetchedModels.isNotEmpty()) showModelPicker = true
-                            }
-                        }
-                    }) { Text("FETCH MODELS") }
-                }
-                Button(onClick = { onSave(key) }) { Text("VERIFY & SAVE") }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL") }
-        }
-    )
-    if (showModelPicker) {
-        AlertDialog(
-            onDismissRequest = { showModelPicker = false },
-            title = { Text("Select Model") },
-            text = {
-                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                    items(fetchedModels) { m ->
-                        TextButton(onClick = { onModelSelected(m); showModelPicker = false }, modifier = Modifier.fillMaxWidth()) {
-                            Text(m, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showModelPicker = false }) { Text("CLOSE") } }
-        )
-    }
+    }, confirmButton = { Button(onClick = {
+        val endpoint = when(selectedTemplate) { "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/$selectedModelId:generateContent"; "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"; else -> customEndpoint }
+        val name = if (selectedTemplate == "Custom") customProfileName else selectedModelId
+        if (name.isNotBlank() && selectedModelId.isNotBlank() && apiKey.isNotBlank()) onAdd(name, selectedTemplate, endpoint, selectedModelId, apiKey)
+    }) { Text("VERIFY & SAVE") } })
 }
 
 @Composable
