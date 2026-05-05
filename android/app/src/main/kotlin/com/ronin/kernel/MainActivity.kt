@@ -1154,18 +1154,59 @@ fun SettingsDialog(
 
 @Composable
 fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var endpoint by remember { mutableStateOf("") }
-    var modelId by remember { mutableStateOf("") }
+    var selectedTemplate by remember { mutableStateOf("Gemini") }
+    val templates = listOf("Gemini", "OpenRouter", "Custom")
+    var expanded by remember { mutableStateOf(false) }
+    
+    var name by remember { mutableStateOf("Gemini") }
+    var endpoint by remember { mutableStateOf("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent") }
+    var modelId by remember { mutableStateOf("gemini-1.5-flash") }
     
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Cloud Provider", fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                TextField(value = name, onValueChange = { name = it }, label = { Text("Provider Name (e.g. OpenRouter)") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
-                TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
-                TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Default Model ID") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                Text("Select Template", fontSize = 12.sp, color = Color.Gray)
+                Box {
+                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(selectedTemplate)
+                        Icon(Icons.Default.ArrowDropDown, "Expand")
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        templates.forEach { t ->
+                            DropdownMenuItem(onClick = {
+                                selectedTemplate = t
+                                expanded = false
+                                when (t) {
+                                    "Gemini" -> {
+                                        name = "Gemini"
+                                        endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+                                        modelId = "gemini-1.5-flash"
+                                    }
+                                    "OpenRouter" -> {
+                                        name = "OpenRouter"
+                                        endpoint = "https://openrouter.ai/api/v1/chat/completions"
+                                        modelId = "meta-llama/llama-3.1-8b-instruct"
+                                    }
+                                    "Custom" -> {
+                                        name = ""
+                                        endpoint = ""
+                                        modelId = ""
+                                    }
+                                }
+                            }) { Text(t) }
+                        }
+                    }
+                }
+                
+                Spacer(Modifier.height(8.dp))
+                TextField(value = name, onValueChange = { name = it }, label = { Text("Provider Name") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                
+                if (selectedTemplate == "Custom") {
+                    TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                    TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Default Model ID") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                }
             }
         },
         confirmButton = {
@@ -1192,6 +1233,7 @@ fun ApiKeyDialog(
     var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }
     var showModelPicker by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val isGeminiOrOR = provider.contains("Gemini", ignoreCase = true) || provider.contains("OpenRouter", ignoreCase = true)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1215,15 +1257,19 @@ fun ApiKeyDialog(
         },
         confirmButton = {
             Row {
-                if (provider == "Gemini") {
+                if (isGeminiOrOR) {
                     TextButton(onClick = {
                         if (key.isNotBlank()) {
                             isFetching = true
                             scope.launch {
-                                val models = engine.fetchAvailableModels(key)
-                                fetchedModels = models.map { it.getString("name").substringAfterLast("/") }
+                                val models = engine.fetchAvailableModels(key, provider)
+                                fetchedModels = if (provider.contains("Gemini", ignoreCase = true)) {
+                                    models.map { it.getString("name").substringAfterLast("/") }
+                                } else {
+                                    models.map { it.getString("id") }
+                                }
                                 isFetching = false
-                                showModelPicker = true
+                                if (fetchedModels.isNotEmpty()) showModelPicker = true
                             }
                         }
                     }) {

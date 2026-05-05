@@ -30,6 +30,21 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             inferenceService = IInferenceService.Stub.asInterface(service)
             isServiceBound = true
             Log.i(TAG, "Inference Service Connected (IPC Active).")
+            
+            try {
+                service?.linkToDeath({
+                    Log.e(TAG, "CRITICAL: Inference Service Process DIED.")
+                    isServiceBound = false
+                    inferenceService = null
+                    // Trigger re-bind attempt
+                    scope.launch {
+                        delay(2000)
+                        bindInferenceService()
+                    }
+                }, 0)
+            } catch (e: RemoteException) {
+                Log.e(TAG, "Failed to link to death: ${e.message}")
+            }
         }
 
         override fun onServiceDisconnected(name: android.content.ComponentName?) {
@@ -38,6 +53,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             Log.w(TAG, "Inference Service Disconnected.")
         }
     }
+
+    private val scope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
 
     private var currentModelPath: String = ""
     private var asyncLatch: CountDownLatch? = null
@@ -285,7 +302,19 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
         return try {
             val startTime = System.currentTimeMillis()
-            val response = inferenceService?.runReasoning(input) ?: "Error: Inference Service unavailable."
+            
+            // Phase 6.6: Add IPC Timeout to prevent blocking the Kernel Core
+            val response = try {
+                kotlinx.coroutines.runBlocking {
+                    kotlinx.coroutines.withTimeout(30000) { // 30 second timeout
+                        inferenceService?.runReasoning(input)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "IPC reasoning TIMEOUT or Error: ${e.message}")
+                "Error: Reasoning timed out or remote failure. The model might be too heavy."
+            } ?: "Error: Inference Service unavailable."
+
             val duration = System.currentTimeMillis() - startTime
             Log.i(TAG, "<<< [Phase 4.5 IPC] Neural Response Received in ${duration}ms")
             response
@@ -309,26 +338,44 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    suspend fun fetchAvailableModels(apiKey: String): List<JSONObject> = withContext(Dispatchers.IO) {
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey"
+    suspend fun fetchAvailableModels(apiKey: String, provider: String = "Gemini"): List<JSONObject> = withContext(Dispatchers.IO) {
+        val isGemini = provider.equals("Gemini", ignoreCase = true)
+        val endpoint = if (isGemini) {
+            "https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey"
+        } else {
+            "https://openrouter.ai/api/v1/models"
+        }
+        
         val models = mutableListOf<JSONObject>()
         try {
             val url = java.net.URL(endpoint)
             val conn = url.openConnection() as java.net.HttpURLConnection
             conn.requestMethod = "GET"
+            if (!isGemini) {
+                conn.setRequestProperty("Authorization", "Bearer $apiKey")
+            }
+            
             if (conn.responseCode == 200) {
                 val response = conn.inputStream.bufferedReader().use { it.readText() }
                 val root = JSONObject(response)
-                val modelArray = root.getJSONArray("models")
-                for (i in 0 until modelArray.length()) {
-                    val m = modelArray.getJSONObject(i)
-                    if (m.getJSONArray("supportedGenerationMethods").toString().contains("generateContent")) {
-                        models.add(m)
+                if (isGemini) {
+                    val modelArray = root.getJSONArray("models")
+                    for (i in 0 until modelArray.length()) {
+                        val m = modelArray.getJSONObject(i)
+                        if (m.getJSONArray("supportedGenerationMethods").toString().contains("generateContent")) {
+                            models.add(m)
+                        }
+                    }
+                } else {
+                    // OpenRouter
+                    val modelArray = root.getJSONArray("data")
+                    for (i in 0 until modelArray.length()) {
+                        models.add(modelArray.getJSONObject(i))
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Network error: ${e.message}")
+            Log.e(TAG, "Network error fetching models: ${e.message}")
         }
         models
     }

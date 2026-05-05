@@ -87,6 +87,12 @@ class InferenceService : Service() {
     private fun executeReasoning(input: String): String {
         val inference = llmInference ?: return "Error: Local reasoning spine not hydrated in service."
         
+        // Memory Audit before generation
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val mi = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(mi)
+        Log.i(TAG, "Memory state before inference: Avail=${mi.availMem/1024/1024}MB, LowMem=${mi.lowMemory}")
+
         // Phase 6.6: Refined Template Logic for Gemma 4
         val isLiteRTLM = currentModelPath.endsWith(".litertlm")
         val formattedPrompt = if (isLiteRTLM) {
