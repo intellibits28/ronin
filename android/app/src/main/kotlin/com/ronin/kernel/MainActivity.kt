@@ -120,6 +120,7 @@ class ChatViewModel : ViewModel() {
 
     // Cloud Intelligence
     var showApiKeyDialog by mutableStateOf(false)
+    var showAddCloudDialog by mutableStateOf(false)
     var pendingProvider by mutableStateOf("")
 }
 
@@ -188,18 +189,18 @@ class MainActivity : ComponentActivity() {
         val modelsDir = java.io.File(filesDir, "models")
         if (!modelsDir.exists()) modelsDir.mkdirs()
         
-        // Phase 4.5: Strict filtering for Reasoning Brains
+        // Phase 4.5 Restoration: Allow all extensions but EXCLUDE core model.onnx
         val models = modelsDir.listFiles { file -> 
-            file.extension == "bin" || file.extension == "litertlm"
+            file.name != "model.onnx" && !file.isDirectory
         }?.map { it.absolutePath }?.distinct() ?: emptyList()
         
         chatViewModel.discoveredModels.clear()
         chatViewModel.discoveredModels.addAll(models)
         
         if (models.isEmpty()) {
-            nativeEngine.pushKernelMessage("> System: No Reasoning Brain found (.litertlm or .bin) in internal storage.")
+            nativeEngine.pushKernelMessage("> System: No Reasoning Brain found in internal storage.")
         } else {
-            Log.i("RoninScan", "Discovered ${models.size} valid models in private storage.")
+            Log.i("RoninScan", "Discovered ${models.size} models in private storage.")
         }
     }
 
@@ -607,11 +608,15 @@ class MainActivity : ComponentActivity() {
         nativeEngine.setOfflineModeSafe(offline)
     }
 
-    fun updateCloudProvider(name: String, endpoint: String, modelId: String) {
+    fun updateCloudProvider(name: String, endpoint: String?, modelId: String?) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         val index = chatViewModel.cloudProviders.indexOfFirst { it.name == name }
         if (index != -1) {
-            val updated = chatViewModel.cloudProviders[index].copy(endpoint = endpoint, modelId = modelId)
+            val old = chatViewModel.cloudProviders[index]
+            val updated = old.copy(
+                endpoint = endpoint ?: old.endpoint,
+                modelId = modelId ?: old.modelId
+            )
             chatViewModel.cloudProviders[index] = updated
             saveCloudProvidersToDisk()
         }
@@ -638,6 +643,26 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             Log.e("RoninUI", "Failed to save providers: ${e.message}")
         }
+    }
+
+    fun deleteCloudProvider(name: String) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        chatViewModel.cloudProviders.removeAll { it.name == name }
+        if (chatViewModel.primaryCloudProvider == name) {
+            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else "Gemini"
+            savePrimaryCloudProvider(chatViewModel.primaryCloudProvider)
+        }
+        saveCloudProvidersToDisk()
+    }
+
+    fun addCloudProvider(name: String, endpoint: String, modelId: String) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        if (chatViewModel.cloudProviders.any { it.name == name }) {
+            Toast.makeText(this, "Provider already exists.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        chatViewModel.cloudProviders.add(CloudProvider(name, endpoint, modelId, "bearer"))
+        saveCloudProvidersToDisk()
     }
 
     fun getApiKey(provider: String): String {
@@ -1004,7 +1029,13 @@ fun SettingsDialog(
                 Text("Disables Cloud Fallback for maximum data sovereignty.", fontSize = 10.sp, color = Color.Gray)
 
                 Spacer(Modifier.height(16.dp))
-                Text("Cloud Provider", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Cloud Provider", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { chatViewModel.showAddCloudDialog = true }) {
+                        Icon(Icons.Default.Add, "Add Provider", tint = Color(0xFF64B5F6))
+                    }
+                }
+                
                 var expanded by remember { mutableStateOf(false) }
                 Box {
                     OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
@@ -1024,7 +1055,14 @@ fun SettingsDialog(
                                     (context as MainActivity).savePrimaryCloudProvider(provider.name)
                                 }
                             }) {
-                                Text(provider.name)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(provider.name, modifier = Modifier.weight(1f))
+                                    if (provider.name != "Gemini") {
+                                        IconButton(onClick = { (context as MainActivity).deleteCloudProvider(provider.name) }) {
+                                            Icon(Icons.Default.Delete, "Delete", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1089,25 +1127,78 @@ fun SettingsDialog(
     if (chatViewModel.showApiKeyDialog) {
         ApiKeyDialog(
             provider = chatViewModel.pendingProvider,
+            engine = (context as MainActivity).nativeEngine,
             onDismiss = { chatViewModel.showApiKeyDialog = false },
             onSave = { key ->
                 (context as MainActivity).saveApiKey(chatViewModel.pendingProvider, key)
                 (context as MainActivity).savePrimaryCloudProvider(chatViewModel.pendingProvider)
                 chatViewModel.showApiKeyDialog = false
+            },
+            onModelSelected = { modelId ->
+                (context as MainActivity).updateCloudProvider(chatViewModel.pendingProvider, null, modelId)
+                Toast.makeText(context, "Model updated to $modelId", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    if (chatViewModel.showAddCloudDialog) {
+        AddCloudProviderDialog(
+            onDismiss = { chatViewModel.showAddCloudDialog = false },
+            onAdd = { name, endpoint, modelId ->
+                (context as MainActivity).addCloudProvider(name, endpoint, modelId)
+                chatViewModel.showAddCloudDialog = false
             }
         )
     }
 }
 
 @Composable
-fun ApiKeyDialog(provider: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    var key by remember { mutableStateOf("") }
+fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var endpoint by remember { mutableStateOf("") }
+    var modelId by remember { mutableStateOf("") }
+    
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Enter API Key for $provider", fontWeight = FontWeight.Bold) },
+        title = { Text("Add Cloud Provider", fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                Text("Your key will be stored securely in Android KeyStore.", fontSize = 12.sp, color = Color.Gray)
+                TextField(value = name, onValueChange = { name = it }, label = { Text("Provider Name (e.g. OpenRouter)") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Default Model ID") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+            }
+        },
+        confirmButton = {
+            Button(onClick = { if (name.isNotBlank()) onAdd(name, endpoint, modelId) }) {
+                Text("ADD")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL") }
+        }
+    )
+}
+
+@Composable
+fun ApiKeyDialog(
+    provider: String, 
+    engine: NativeEngine,
+    onDismiss: () -> Unit, 
+    onSave: (String) -> Unit,
+    onModelSelected: (String) -> Unit
+) {
+    var key by remember { mutableStateOf("") }
+    var isFetching by remember { mutableStateOf(false) }
+    var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showModelPicker by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Configure $provider", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text("API Key will be stored securely.", fontSize = 12.sp, color = Color.Gray)
                 Spacer(Modifier.height(8.dp))
                 TextField(
                     value = key,
@@ -1116,11 +1207,32 @@ fun ApiKeyDialog(provider: String, onDismiss: () -> Unit, onSave: (String) -> Un
                     placeholder = { Text("Paste API Key here...") },
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
                 )
+                
+                if (isFetching) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(key) }) {
-                Text("SAVE")
+            Row {
+                if (provider == "Gemini") {
+                    TextButton(onClick = {
+                        if (key.isNotBlank()) {
+                            isFetching = true
+                            scope.launch {
+                                val models = engine.fetchAvailableModels(key)
+                                fetchedModels = models.map { it.getString("name").substringAfterLast("/") }
+                                isFetching = false
+                                showModelPicker = true
+                            }
+                        }
+                    }) {
+                        Text("FETCH MODELS")
+                    }
+                }
+                Button(onClick = { onSave(key) }) {
+                    Text("SAVE KEY")
+                }
             }
         },
         dismissButton = {
@@ -1129,6 +1241,31 @@ fun ApiKeyDialog(provider: String, onDismiss: () -> Unit, onSave: (String) -> Un
             }
         }
     )
+
+    if (showModelPicker) {
+        AlertDialog(
+            onDismissRequest = { showModelPicker = false },
+            title = { Text("Select Model") },
+            text = {
+                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                    items(fetchedModels) { model ->
+                        TextButton(
+                            onClick = {
+                                onModelSelected(model)
+                                showModelPicker = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(model, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showModelPicker = false }) { Text("CLOSE") }
+            }
+        )
+    }
 }
 
 @Composable
