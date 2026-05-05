@@ -337,6 +337,14 @@ class MainActivity : ComponentActivity() {
         nativeEngine.setPrimaryCloudProviderSafe(provider)
     }
 
+    fun deleteModel(path: String) {
+        val file = java.io.File(path)
+        if (file.exists() && file.delete()) {
+            Toast.makeText(this, "Model deleted.", Toast.LENGTH_SHORT).show()
+            scanLocalModels()
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager() else checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED

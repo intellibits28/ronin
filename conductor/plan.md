@@ -28,7 +28,15 @@
 *   Ensure the `path` passed via AIDL to `InferenceService` is an absolute, readable path accessible by the isolated process. The `:inference_core` process shares the same UID but might have different `filesDir` mappings depending on how it's launched. We will ensure the path is absolute.
 *   Implement a callback or state flow so that when `loadModel` succeeds in the service, the UI `chatViewModel.isKernelHydrated = true` is explicitly updated, making the radio button turn green automatically.
 
-## 5. Verification
-*   Verify that custom OpenRouter API endpoints work.
+## 5. UI/UX & Gemma 4 Optimization
+**Objective:** Refine the Cloud Profile UI and optimize Gemma 4 response quality.
+**Implementation Steps:**
+*   Implement a Radio Button list for Cloud Profiles to allow switching between different API providers/models easily.
+*   Implement post-processing in `InferenceService.kt` to strip internal tokens (like `turn|user`, `turn|model`) that leak into output.
+*   Aggressively halt low-priority background tasks during local inference to maximize RAM availability for Gemma 4.
+
+## 6. Verification
+*   Verify that custom OpenRouter/Gemini API endpoints work with the new Profile Registry.
 *   Verify model names are clean in the UI and turn green on load.
 *   Verify WiFi/Bluetooth toggles open the correct system panels.
+*   Verify that internal tokens are stripped from local LLM responses.
