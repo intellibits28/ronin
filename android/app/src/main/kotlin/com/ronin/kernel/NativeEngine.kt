@@ -9,6 +9,8 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.RemoteException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -242,6 +244,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
         setPriority(0) // 0 = CRITICAL
+        stopLowPriorityTasks()
         Log.i(TAG, ">>> [Phase 4.5 IPC] Delegating Hydration to :inference_core")
         val success = try {
             inferenceService?.loadModel(path) ?: false
@@ -295,6 +298,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
         Log.d(TAG, ">>> [Phase 4.5 IPC] Neural Reasoning Delegation: '$input'")
+        
+        // Phase 6.6: Aggressively free RAM before local inference as per user suggestion
+        stopLowPriorityTasks()
+        
         val freeRam = checkFreeRamGB()
         if (freeRam < 0.5f) {
             Log.w(TAG, "Insufficient RAM (%.2f GB free). Reasoning aborted.".format(freeRam))
