@@ -521,7 +521,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 val fallbackUrl = if (finalUrl.contains("v1beta")) finalUrl.replace("v1beta", "v1") else finalUrl.replace("v1", "v1beta")
                 if (fallbackUrl != finalUrl) {
                     Log.i(TAG, "404 detected. Retrying with fallback URL: $fallbackUrl")
-                    return executeSingleInference(input, provider, fallbackUrl, modelId, true)
+                    return executeSingleInference(input, provider, fallbackUrl, modelId, passedApiKey, true)
                 }
                 "Error: [404] Endpoint not found even after fallback."
             } else {

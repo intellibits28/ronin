@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

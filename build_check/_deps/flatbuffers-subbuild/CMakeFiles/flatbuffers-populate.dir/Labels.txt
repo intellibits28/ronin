@@ -1,0 +1,14 @@
+# Target labels
+ flatbuffers-populate
+# Source files and their labels
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/CMakeFiles/flatbuffers-populate
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/CMakeFiles/flatbuffers-populate.rule
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/CMakeFiles/flatbuffers-populate-complete.rule
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/flatbuffers-populate-prefix/src/flatbuffers-populate-stamp/flatbuffers-populate-build.rule
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/flatbuffers-populate-prefix/src/flatbuffers-populate-stamp/flatbuffers-populate-configure.rule
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/flatbuffers-populate-prefix/src/flatbuffers-populate-stamp/flatbuffers-populate-download.rule
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/flatbuffers-populate-prefix/src/flatbuffers-populate-stamp/flatbuffers-populate-install.rule
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/flatbuffers-populate-prefix/src/flatbuffers-populate-stamp/flatbuffers-populate-mkdir.rule
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/flatbuffers-populate-prefix/src/flatbuffers-populate-stamp/flatbuffers-populate-patch.rule
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/flatbuffers-populate-prefix/src/flatbuffers-populate-stamp/flatbuffers-populate-test.rule
+/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/flatbuffers-populate-prefix/src/flatbuffers-populate-stamp/flatbuffers-populate-update.rule

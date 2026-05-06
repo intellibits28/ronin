@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/CMakeFiles/sqlite3_src-populate"
+		},
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/CMakeFiles/sqlite3_src-populate.rule"
+		},
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/CMakeFiles/sqlite3_src-populate-complete.rule"
+		},
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/sqlite3_src-populate-prefix/src/sqlite3_src-populate-stamp/sqlite3_src-populate-build.rule"
+		},
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/sqlite3_src-populate-prefix/src/sqlite3_src-populate-stamp/sqlite3_src-populate-configure.rule"
+		},
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/sqlite3_src-populate-prefix/src/sqlite3_src-populate-stamp/sqlite3_src-populate-download.rule"
+		},
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/sqlite3_src-populate-prefix/src/sqlite3_src-populate-stamp/sqlite3_src-populate-install.rule"
+		},
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/sqlite3_src-populate-prefix/src/sqlite3_src-populate-stamp/sqlite3_src-populate-mkdir.rule"
+		},
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/sqlite3_src-populate-prefix/src/sqlite3_src-populate-stamp/sqlite3_src-populate-patch.rule"
+		},
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/sqlite3_src-populate-prefix/src/sqlite3_src-populate-stamp/sqlite3_src-populate-test.rule"
+		},
+		{
+			"file" : "/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/sqlite3_src-subbuild/sqlite3_src-populate-prefix/src/sqlite3_src-populate-stamp/sqlite3_src-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"sqlite3_src-populate"
+		],
+		"name" : "sqlite3_src-populate"
+	}
+}
