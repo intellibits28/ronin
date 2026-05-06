@@ -355,44 +355,46 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     suspend fun fetchAvailableModels(apiKey: String, provider: String = "Gemini"): List<JSONObject> = withContext(Dispatchers.IO) {
         val isGemini = provider.equals("Gemini", ignoreCase = true)
-        val endpoint = if (isGemini) {
-            "https://generativelanguage.googleapis.com/v1/models?key=$apiKey"
-        } else {
-            "https://openrouter.ai/api/v1/models"
-        }
+        val baseUrl = if (isGemini) "https://generativelanguage.googleapis.com" else "https://openrouter.ai/api/v1"
         
-        val models = mutableListOf<JSONObject>()
-        try {
-            val url = java.net.URL(endpoint)
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.requestMethod = "GET"
-            if (!isGemini) {
-                conn.setRequestProperty("Authorization", "Bearer $apiKey")
-            }
-            
-            if (conn.responseCode == 200) {
-                val response = conn.inputStream.bufferedReader().use { it.readText() }
-                val root = JSONObject(response)
-                if (isGemini) {
-                    val modelArray = root.getJSONArray("models")
-                    for (i in 0 until modelArray.length()) {
-                        val m = modelArray.getJSONObject(i)
-                        if (m.getJSONArray("supportedGenerationMethods").toString().contains("generateContent")) {
-                            models.add(m)
+        fun tryFetch(version: String): List<JSONObject>? {
+            val endpoint = if (isGemini) "$baseUrl/$version/models?key=$apiKey" else "$baseUrl/models"
+            try {
+                val conn = java.net.URL(endpoint).openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "GET"
+                if (!isGemini) conn.setRequestProperty("Authorization", "Bearer $apiKey")
+                
+                if (conn.responseCode == 200) {
+                    val response = conn.inputStream.bufferedReader().use { it.readText() }
+                    val root = JSONObject(response)
+                    val models = mutableListOf<JSONObject>()
+                    if (isGemini) {
+                        val modelArray = root.getJSONArray("models")
+                        for (i in 0 until modelArray.length()) {
+                            val m = modelArray.getJSONObject(i)
+                            if (m.optJSONArray("supportedGenerationMethods")?.toString()?.contains("generateContent") == true) {
+                                models.add(m)
+                            }
                         }
+                    } else {
+                        val modelArray = root.getJSONArray("data")
+                        for (i in 0 until modelArray.length()) models.add(modelArray.getJSONObject(i))
                     }
-                } else {
-                    // OpenRouter
-                    val modelArray = root.getJSONArray("data")
-                    for (i in 0 until modelArray.length()) {
-                        models.add(modelArray.getJSONObject(i))
-                    }
+                    return models
+                } else if (isGemini && conn.responseCode == 404) {
+                    return null // Trigger fallback
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Fetch error ($version): ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Network error fetching models: ${e.message}")
+            return emptyList()
         }
-        models
+
+        if (isGemini) {
+            tryFetch("v1beta") ?: tryFetch("v1") ?: emptyList()
+        } else {
+            tryFetch("") ?: emptyList()
+        }
     }
 
     private fun isVpnActive(context: Context): Boolean {
@@ -456,7 +458,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         onSystemTiersUpdate?.invoke(temp, used, total)
     }
 
-    private fun executeSingleInference(input: String, provider: String, endpoint: String, modelId: String): String {
+    private fun executeSingleInference(input: String, provider: String, endpoint: String, modelId: String, isRetry: Boolean = false): String {
         val apiKey = getSecureApiKey?.invoke(provider)?.trim() ?: ""
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
         
@@ -497,14 +499,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 } else {
                     JSONObject(response).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
                 }
-            } else {
+            } else if (isGemini && conn.responseCode == 404 && !isRetry) {
                 // Fallback attempt for v1 if v1beta failed with 404 for Gemini (and vice versa)
-                if (isGemini && conn.responseCode == 404) {
-                    val fallbackUrl = if (finalUrl.contains("v1beta")) finalUrl.replace("v1beta", "v1") else finalUrl.replace("v1", "v1beta")
-                    if (fallbackUrl != finalUrl) {
-                        return executeSingleInference(input, provider, fallbackUrl, modelId)
-                    }
+                val fallbackUrl = if (finalUrl.contains("v1beta")) finalUrl.replace("v1beta", "v1") else finalUrl.replace("v1", "v1beta")
+                if (fallbackUrl != finalUrl) {
+                    Log.i(TAG, "404 detected. Retrying with fallback URL: $fallbackUrl")
+                    return executeSingleInference(input, provider, fallbackUrl, modelId, true)
                 }
+                "Error: [404] Endpoint not found even after fallback."
+            } else {
                 val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
                 "Error: [${conn.responseCode}] $err"
             }
