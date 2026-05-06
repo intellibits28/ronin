@@ -476,7 +476,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 5) bypassing Thompson Sampling.");
         return {5, 1.0f, true};
     }
-    if (sv_input.starts_with("search ") || sv_input.starts_with("find ") || sv_input.starts_with("locate ")) {
+    if (sv_input.starts_with("/search") || sv_input.starts_with("/find") || 
+        sv_input.starts_with("search ") || sv_input.starts_with("find ") || sv_input.starts_with("locate ")) {
         LOGI(TAG, ">>> Routing: Deterministic Match (ID 2) bypassing Thompson Sampling.");
         return {2, 1.0f, true};
     }
