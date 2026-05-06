@@ -29,7 +29,7 @@
 ## Phase 4: Optimization & Verification
 - [x] Task: Increase context tokens to 1024 to prevent truncated responses. (Verified)
     - [ ] Update `InferenceService.kt` to set `maxTokens` to 1024 in the `LlmInference` builder.
-- [ ] Task: Optimize local inference response speed.
+- [x] Task: Optimize local inference response speed. ecef4c6
     - [ ] Profile and refine the `stopLowPriorityTasks()` overhead to ensure maximum responsiveness.
 - [ ] Task: Final comprehensive verification of all modular skills and cloud fallback.
 - [ ] Task: Conductor - User Manual Verification 'Phase 4: Optimization & Verification' (Protocol in workflow.md)
