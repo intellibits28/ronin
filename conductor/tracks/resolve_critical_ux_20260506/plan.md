@@ -27,7 +27,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 3: Cloud & Persistence Layer Fixes' (Protocol in workflow.md) b32e572
 
 ## Phase 4: Optimization & Verification
-- [ ] Task: Increase context tokens to 1024 to prevent truncated responses.
+- [x] Task: Increase context tokens to 1024 to prevent truncated responses. (Verified)
     - [ ] Update `InferenceService.kt` to set `maxTokens` to 1024 in the `LlmInference` builder.
 - [ ] Task: Optimize local inference response speed.
     - [ ] Profile and refine the `stopLowPriorityTasks()` overhead to ensure maximum responsiveness.
