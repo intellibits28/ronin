@@ -18,13 +18,13 @@
     - [ ] Update `src/intent_engine.cpp` and `src/capabilities/file_search_node.cpp` to handle explicit search prefixes.
 - [x] Task: Conductor - User Manual Verification 'Phase 2: UI Restoration & Command Intelligence' (Protocol in workflow.md) 3999b53
 
-## Phase 3: Cloud & Persistence Layer Fixes
+## Phase 3: Cloud & Persistence Layer Fixes [checkpoint: b32e572]
 - [x] Task: Resolve Cloud 404 errors with v1/v1beta auto-fallback. 93042ac
     - [ ] Update `NativeEngine.kt` to attempt `v1` endpoint if `v1beta` fails (and vice versa) for Gemini models.
 - [x] Task: Fix model selection persistence on app restart. 894bdd1
     - [ ] Implement a wait mechanism in `loadModel` to ensure the Inference Service is bound before attempting hydration.
     - [ ] Ensure `primary_cloud_provider` and `local_model_path` are correctly saved and restored from `SharedPreferences`.
-- [ ] Task: Conductor - User Manual Verification 'Phase 3: Cloud & Persistence Layer Fixes' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 3: Cloud & Persistence Layer Fixes' (Protocol in workflow.md) b32e572
 
 ## Phase 4: Optimization & Verification
 - [ ] Task: Increase context tokens to 1024 to prevent truncated responses.
