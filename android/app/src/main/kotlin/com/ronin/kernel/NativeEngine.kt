@@ -314,14 +314,18 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun runNeuralReasoning(input: String): String {
         Log.d(TAG, ">>> [Phase 4.5 IPC] Neural Reasoning Delegation: '$input'")
         
-        // Phase 6.6: Aggressively free RAM before local inference as per user suggestion
-        stopLowPriorityTasks()
-        
+        // Phase 4.5.9: Intelligent RAM clearing - only trigger if RAM is < 1GB
         val freeRam = checkFreeRamGB()
-        if (freeRam < 0.5f) {
-            Log.w(TAG, "Insufficient RAM (%.2f GB free). Reasoning aborted.".format(freeRam))
-            return "Error: Insufficient RAM for reasoning."
+        if (freeRam < 1.0f) {
+            Log.i(TAG, "Low RAM (%.2f GB). Freeing background tasks...".format(freeRam))
+            stopLowPriorityTasks()
         }
+        
+        if (freeRam < 0.4f) {
+            Log.w(TAG, "CRITICAL: Insufficient RAM (%.2f GB free).".format(freeRam))
+            // We still attempt inference but warn
+        }
+
         return try {
             val startTime = System.currentTimeMillis()
             
