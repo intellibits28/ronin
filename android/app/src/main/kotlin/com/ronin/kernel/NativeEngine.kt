@@ -356,7 +356,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     suspend fun fetchAvailableModels(apiKey: String, provider: String = "Gemini"): List<JSONObject> = withContext(Dispatchers.IO) {
         val isGemini = provider.equals("Gemini", ignoreCase = true)
         val endpoint = if (isGemini) {
-            "https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey"
+            "https://generativelanguage.googleapis.com/v1/models?key=$apiKey"
         } else {
             "https://openrouter.ai/api/v1/models"
         }
