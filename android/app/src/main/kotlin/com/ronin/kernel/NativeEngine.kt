@@ -243,6 +243,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      * Kotlin-Side Model Hydration with IPC Delegation.
      */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
+        // Phase 6.6: Wait for service binding if necessary
+        var retryCount = 0
+        while (inferenceService == null && retryCount < 10) {
+            Log.w(TAG, "Waiting for Inference Service binding... ($retryCount)")
+            delay(500)
+            retryCount++
+        }
+
         setPriority(0) // 0 = CRITICAL
         stopLowPriorityTasks()
         Log.i(TAG, ">>> [Phase 4.5 IPC] Delegating Hydration to :inference_core")

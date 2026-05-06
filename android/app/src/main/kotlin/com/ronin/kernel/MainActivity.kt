@@ -214,21 +214,18 @@ class MainActivity : ComponentActivity() {
     private fun copyAssetsToFilesDir(filesDir: java.io.File) {
         val assetsDir = java.io.File(filesDir, "assets")
         if (!assetsDir.exists()) assetsDir.mkdirs()
-        val modelsDir = java.io.File(filesDir, "models") // For legacy/router
+        val modelsDir = java.io.File(filesDir, "models")
         if (!modelsDir.exists()) modelsDir.mkdirs()
-        val assetsModelsDir = java.io.File(assetsDir, "models") // For JNI bge_base
+        val assetsModelsDir = java.io.File(assetsDir, "models")
         if (!assetsModelsDir.exists()) assetsModelsDir.mkdirs()
 
         try {
-            // 1. Copy Manifest (Crucial for Skills)
             val capFile = java.io.File(assetsDir, "capabilities.json")
             if (!capFile.exists()) {
                 assets.open("capabilities.json").use { input -> 
                     java.io.FileOutputStream(capFile).use { output -> input.copyTo(output) } 
                 }
             }
-
-            // 2. Copy Router Model
             val routerFile = java.io.File(modelsDir, "model.onnx")
             if (!routerFile.exists()) {
                 assets.open("models/model.onnx").use { input -> 
@@ -255,7 +252,7 @@ class MainActivity : ComponentActivity() {
                 nativeEngine.updateCloudProvidersSafe(array.toString())
             } catch (e: Exception) {}
         } else {
-            val default = CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key")
+            val default = CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key")
             chatViewModel.cloudProviders.add(default); saveCloudProvidersToDisk()
         }
     }
@@ -287,7 +284,7 @@ class MainActivity : ComponentActivity() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         chatViewModel.cloudProviders.removeAll { it.name == name }
         if (chatViewModel.primaryCloudProvider == name) {
-            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else "Gemini-Flash"
+            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else ""
             savePrimaryCloudProvider(chatViewModel.primaryCloudProvider)
         }
         saveCloudProvidersToDisk()
@@ -364,14 +361,17 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
             while (true) {
                 am.getMemoryInfo(mi); val total = mi.totalMem / 1073741824f; val avail = mi.availMem / 1073741824f; val used = total - avail
                 val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-                val battery = context.applicationContext.registerReceiver(null, filter)
-                val temp = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
-                withContext(Dispatchers.Main) { 
-                    chatViewModel.temperature = temp; chatViewModel.ramUsedGB = used; chatViewModel.ramTotalGB = total
-                    chatViewModel.lmkPressure = engine.getLMKPressureSafe()
-                    chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f 
-                }
-                engine.updateSystemHealthSafe(temp, used, total); delay(5000)
+                try {
+                    val battery = context.applicationContext.registerReceiver(null, filter)
+                    val temp = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
+                    withContext(Dispatchers.Main) { 
+                        chatViewModel.temperature = temp; chatViewModel.ramUsedGB = used; chatViewModel.ramTotalGB = total
+                        chatViewModel.lmkPressure = engine.getLMKPressureSafe()
+                        chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f 
+                    }
+                    engine.updateSystemHealthSafe(temp, used, total)
+                } catch (e: Exception) {}
+                delay(5000)
             }
         }
     }
@@ -385,26 +385,32 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
             Column(modifier = Modifier.fillMaxSize()) {
                 if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
-                Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) { LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } } }
-                Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) { LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } }
-                Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; chatViewModel.showCommandSuggestions = false; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } } }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
-                    }
+                Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) { 
+                    LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } } 
                 }
-            }
+                Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) { 
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } 
+                }
 
-            // Command Suggester Overlay (Floating above input)
-            if (chatViewModel.showCommandSuggestions) {
-                val suggestions = listOf("/status", "/skills", "/model", "/reset", "/more", "/search").filter { it.startsWith(currentInput.lowercase()) }
-                if (suggestions.isNotEmpty()) {
-                    Surface(
-                        color = Color(0xFF25283D),
-                        modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 80.dp, start = 16.dp, end = 16.dp).fillMaxWidth(0.8f).clip(RoundedCornerShape(8.dp)),
-                        elevation = 16.dp
-                    ) {
-                        LazyColumn(modifier = Modifier.heightIn(max = 150.dp)) {
-                            items(suggestions) { s -> TextButton(onClick = { currentInput = s; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { Text(s, color = Color(0xFF64B5F6), modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Start) } }
+                // Input Section with Suggester
+                Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
+                    Column {
+                        if (chatViewModel.showCommandSuggestions) {
+                            val suggestions = listOf("/status", "/skills", "/model", "/reset", "/more", "/search").filter { it.startsWith(currentInput.lowercase()) }
+                            if (suggestions.isNotEmpty()) {
+                                Surface(color = Color(0xFF25283D), modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).clip(RoundedCornerShape(8.dp))) {
+                                    LazyColumn(modifier = Modifier.heightIn(max = 150.dp)) {
+                                        items(suggestions) { s -> 
+                                            TextButton(onClick = { currentInput = s; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { 
+                                                Text(s, color = Color(0xFF64B5F6), modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Start) 
+                                            } 
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; chatViewModel.showCommandSuggestions = false; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } } }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
                         }
                     }
                 }
@@ -509,7 +515,7 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
         }
     }, confirmButton = { Button(onClick = {
         val endpoint = when(selectedTemplate) { 
-            "Gemini" -> "https://generativelanguage.googleapis.com/v1/models/$selectedModelId:generateContent"
+            "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/$selectedModelId:generateContent"
             "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
             else -> customEndpoint 
         }
