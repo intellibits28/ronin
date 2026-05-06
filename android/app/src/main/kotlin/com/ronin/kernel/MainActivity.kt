@@ -79,8 +79,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class CloudProvider(
-    val name: String, // Profile Name
-    val providerType: String, // Gemini, OpenRouter, Custom
+    val name: String, 
+    val providerType: String,
     val endpoint: String,
     val modelId: String,
     val authType: String
@@ -96,16 +96,13 @@ class ChatViewModel : ViewModel() {
     var l2Count by mutableStateOf(0)
     var l3Count by mutableStateOf(0)
     
-    // Command Intelligence
     var showCommandSuggestions by mutableStateOf(false)
     val commandSuggestions = mutableStateListOf<String>()
 
-    // Health metrics
     var temperature by mutableStateOf(0f)
     var ramUsedGB by mutableStateOf(0f)
     var ramTotalGB by mutableStateOf(0f)
 
-    // Phase 4.4: Dynamic Configuration
     var showSettings by mutableStateOf(false)
     var offlineMode by mutableStateOf(false)
     var isKernelHydrated by mutableStateOf(false)
@@ -114,7 +111,6 @@ class ChatViewModel : ViewModel() {
     val cloudProviders = mutableStateListOf<CloudProvider>()
     val discoveredModels = mutableStateListOf<String>()
 
-    // Cloud Intelligence
     var showApiKeyDialog by mutableStateOf(false)
     var showAddCloudDialog by mutableStateOf(false)
     var pendingProviderName by mutableStateOf("")
@@ -155,6 +151,7 @@ class MainActivity : ComponentActivity() {
         val models = modelsDir.listFiles { file -> 
             file.name != "model.onnx" && !file.isDirectory 
         }?.map { it.absolutePath }?.distinct() ?: emptyList()
+        
         chatViewModel.discoveredModels.clear()
         chatViewModel.discoveredModels.addAll(models)
     }
@@ -183,12 +180,10 @@ class MainActivity : ComponentActivity() {
                 Toast.makeText(this@MainActivity, "Ronin Kernel: Neural Bridge Active.", Toast.LENGTH_SHORT).show()
             }
 
-            lastPermissionState = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager() else checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            if (lastPermissionState) {
-                scanLocalModels()
-                val savedModelPath = sharedPreferences.getString("local_model_path", "")
-                if (!savedModelPath.isNullOrEmpty()) hydrateModel(savedModelPath)
-            }
+            // Phase 4.6: Ensure models are scanned on every boot
+            scanLocalModels()
+            val savedModelPath = sharedPreferences.getString("local_model_path", "")
+            if (!savedModelPath.isNullOrEmpty()) hydrateModel(savedModelPath)
         }
 
         setContent {
@@ -252,7 +247,7 @@ class MainActivity : ComponentActivity() {
                 nativeEngine.updateCloudProvidersSafe(array.toString())
             } catch (e: Exception) {}
         } else {
-            val default = CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key")
+            val default = CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key")
             chatViewModel.cloudProviders.add(default); saveCloudProvidersToDisk()
         }
     }
@@ -284,7 +279,7 @@ class MainActivity : ComponentActivity() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         chatViewModel.cloudProviders.removeAll { it.name == name }
         if (chatViewModel.primaryCloudProvider == name) {
-            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else ""
+            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else "Gemini-Flash"
             savePrimaryCloudProvider(chatViewModel.primaryCloudProvider)
         }
         saveCloudProvidersToDisk()
@@ -310,8 +305,51 @@ class MainActivity : ComponentActivity() {
 
     private fun setupHardwareCallbacks() {
         nativeEngine.getSecureApiKey = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
-        nativeEngine.onRequestHardwareData = { nodeId -> "MOCK_DATA" }
-        nativeEngine.executeHardwareAction = { nodeId, state -> if (nodeId == 1) { nativeEngine.setSafeMode(!state); true } else false }
+        nativeEngine.onRequestHardwareData = { nodeId ->
+            when (nodeId) {
+                5 -> {
+                    val location = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token))
+                    location?.let { "${it.latitude}, ${it.longitude}" } ?: "Unknown Location"
+                }
+                else -> "Error: Node $nodeId data not implemented"
+            }
+        }
+        nativeEngine.executeHardwareAction = { nodeId, state -> 
+            when (nodeId) {
+                1 -> { nativeEngine.setSafeMode(!state); true }
+                4 -> {
+                    try {
+                        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                        val cameraId = cameraManager.cameraIdList[0]
+                        cameraManager.setTorchMode(cameraId, state)
+                        true
+                    } catch (e: Exception) { false }
+                }
+                6 -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val intent = Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                        } else {
+                            val intent = Intent(Settings.ACTION_WIFI_SETTINGS)
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                        }
+                        true
+                    } catch (e: Exception) { false }
+                }
+                7 -> {
+                    try {
+                        val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                        true
+                    } catch (e: Exception) { false }
+                }
+                else -> false
+            }
+        }
         nativeEngine.onSystemTiersUpdate = { temp, used, total ->
             val vm = ViewModelProvider(this)[ChatViewModel::class.java]
             vm.temperature = temp; vm.ramUsedGB = used; vm.ramTotalGB = total
@@ -344,9 +382,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager() else checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (perm && !lastPermissionState) scanLocalModels()
-        lastPermissionState = perm
+        scanLocalModels()
     }
 }
 
@@ -359,9 +395,10 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager; val mi = ActivityManager.MemoryInfo()
         withContext(Dispatchers.IO) {
             while (true) {
-                am.getMemoryInfo(mi); val total = mi.totalMem / 1073741824f; val avail = mi.availMem / 1073741824f; val used = total - avail
-                val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
                 try {
+                    am.getMemoryInfo(mi)
+                    val total = mi.totalMem / 1073741824f; val avail = mi.availMem / 1073741824f; val used = total - avail
+                    val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
                     val battery = context.applicationContext.registerReceiver(null, filter)
                     val temp = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
                     withContext(Dispatchers.Main) { 
@@ -392,7 +429,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
                     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } 
                 }
 
-                // Input Section with Suggester
                 Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
                     Column {
                         if (chatViewModel.showCommandSuggestions) {
@@ -417,7 +453,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
             }
         }
     }
-    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, modelPicker, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
+    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, modelPickerLauncher, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
 }
 
 @Composable

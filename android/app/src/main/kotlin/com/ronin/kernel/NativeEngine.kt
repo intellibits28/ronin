@@ -462,12 +462,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         
         val isGemini = endpoint.contains("generativelanguage.googleapis.com")
         
-        // Phase 4.5.9: Robust Gemini Endpoint alignment
-        var finalUrl = if (isGemini) {
-            // Attempt to upgrade to v1 if v1beta fails or is hardcoded
-            var upgradedEndpoint = endpoint.replace("v1beta", "v1")
-            if (upgradedEndpoint.contains("?key=")) upgradedEndpoint else "$upgradedEndpoint?key=$apiKey"
+        // Phase 4.5.9: Use endpoint as provided, append key if missing
+        var finalUrl = if (isGemini && !endpoint.contains("?key=")) {
+            "$endpoint?key=$apiKey"
         } else endpoint
+
+        Log.d(TAG, "Cloud Inference [Provider: $provider]. URL: $finalUrl")
 
         return try {
             val url = java.net.URL(finalUrl)
@@ -498,9 +498,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     JSONObject(response).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
                 }
             } else {
-                // Fallback attempt for v1beta if v1 failed with 404 for Gemini
-                if (isGemini && conn.responseCode == 404 && finalUrl.contains("/v1/")) {
-                    return executeSingleInference(input, provider, endpoint.replace("v1", "v1beta"), modelId)
+                // Fallback attempt for v1 if v1beta failed with 404 for Gemini (and vice versa)
+                if (isGemini && conn.responseCode == 404) {
+                    val fallbackUrl = if (finalUrl.contains("v1beta")) finalUrl.replace("v1beta", "v1") else finalUrl.replace("v1", "v1beta")
+                    if (fallbackUrl != finalUrl) {
+                        return executeSingleInference(input, provider, fallbackUrl, modelId)
+                    }
                 }
                 val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
                 "Error: [${conn.responseCode}] $err"

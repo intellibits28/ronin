@@ -107,6 +107,7 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
 
     // 3. Step 2: Keyword Fallback (Direct SQLite LIKE)
     auto kw_results = m_ltm->searchFiles(query);
+    LOGI(TAG, "Keyword Search Results: %zu found", kw_results.size());
     for (const auto& path : kw_results) {
         // Boost keyword matches if they match extension filters
         float sim = 0.90f;
