@@ -472,27 +472,38 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
                 }
                 Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) { 
                     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } 
-                }
 
-                Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
-                    Column {
-                        if (chatViewModel.showCommandSuggestions) {
-                            val suggestions = listOf("/status", "/skills", "/model", "/reset", "/more", "/search").filter { it.startsWith(currentInput.lowercase()) }
-                            if (suggestions.isNotEmpty()) {
-                                Surface(color = Color(0xFF25283D), modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).clip(RoundedCornerShape(8.dp))) {
-                                    LazyColumn(modifier = Modifier.heightIn(max = 150.dp)) {
-                                        items(suggestions) { s -> 
-                                            TextButton(onClick = { currentInput = s; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { 
-                                                Text(s, color = Color(0xFF64B5F6), modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Start) 
-                                            } 
-                                        }
+                    if (chatViewModel.showCommandSuggestions) {
+                        val suggestions = listOf("/status", "/skills", "/model", "/reset", "/more", "/search", "/find", "/flashlight", "/wifi", "/bluetooth", "/location").filter { it.startsWith(currentInput.lowercase()) }
+                        if (suggestions.isNotEmpty()) {
+                            Surface(
+                                color = Color(0xFF25283D).copy(alpha = 0.95f),
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+                                    .fillMaxWidth(0.8f)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                elevation = 8.dp
+                            ) {
+                                LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                                    items(suggestions) { s -> 
+                                        TextButton(onClick = { currentInput = if (s.endsWith(" ")) s else "$s "; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { 
+                                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                                Icon(Icons.Default.Terminal, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(16.dp))
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(s, color = Color.White, fontSize = 14.sp) 
+                                            }
+                                        } 
                                     }
                                 }
                             }
                         }
-                        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; chatViewModel.showCommandSuggestions = false; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } } }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
-                        }
+                    }
+                }
+
+                Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; chatViewModel.showCommandSuggestions = false; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } } }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
                     }
                 }
             }
