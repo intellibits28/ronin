@@ -1,7 +1,7 @@
 # Implementation Plan - Resolve Critical UX Regressions and Stabilize IPC Hydration
 
 ## Phase 1: Stabilization of Boot & Permissions
-- [ ] Task: Re-implement comprehensive 1st-run permission requests (WiFi, BT, GPS, All Files).
+- [x] Task: Re-implement comprehensive 1st-run permission requests (WiFi, BT, GPS, All Files). ef44bdb
     - [ ] Update `MainActivity.kt` to request all necessary runtime permissions upon first launch.
     - [ ] Implement special handling for `MANAGE_EXTERNAL_STORAGE` on Android 11+.
 - [ ] Task: Fix asset deployment logic to ensure skills are available on 1st run.
