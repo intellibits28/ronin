@@ -1,3 +1,0 @@
-/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/CMakeFiles/flatbuffers-populate.dir
-/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/CMakeFiles/edit_cache.dir
-/data/data/com.termux/files/home/play-ground/ronin/build_check/_deps/flatbuffers-subbuild/CMakeFiles/rebuild_cache.dir

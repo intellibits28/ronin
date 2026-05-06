@@ -43,3 +43,4 @@ inspect_onnx.cpp
 AppIcons.zip
 Cloud.pdf
 ss_*.jpg
+build_check/
