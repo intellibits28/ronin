@@ -219,22 +219,23 @@ class MainActivity : ComponentActivity() {
     private fun copyAssetsToFilesDir(filesDir: java.io.File) {
         val assetsDir = java.io.File(filesDir, "assets")
         if (!assetsDir.exists()) assetsDir.mkdirs()
-        val modelsDir = java.io.File(filesDir, "models")
-        if (!modelsDir.exists()) modelsDir.mkdirs()
         val assetsModelsDir = java.io.File(assetsDir, "models")
         if (!assetsModelsDir.exists()) assetsModelsDir.mkdirs()
+
+        val userModelsDir = java.io.File(filesDir, "models")
+        if (!userModelsDir.exists()) userModelsDir.mkdirs()
 
         try {
             val capFile = java.io.File(assetsDir, "capabilities.json")
             if (!capFile.exists()) {
-                assets.open("capabilities.json").use { input -> 
-                    java.io.FileOutputStream(capFile).use { output -> input.copyTo(output) } 
+                assets.open("capabilities.json").use { input ->
+                    java.io.FileOutputStream(capFile).use { output -> input.copyTo(output) }
                 }
             }
-            val routerFile = java.io.File(modelsDir, "model.onnx")
-            if (!routerFile.exists()) {
-                assets.open("models/model.onnx").use { input -> 
-                    java.io.FileOutputStream(routerFile).use { output -> input.copyTo(output) } 
+            val embeddingFile = java.io.File(assetsModelsDir, "bge_base.onnx")
+            if (!embeddingFile.exists()) {
+                assets.open("models/model.onnx").use { input ->
+                    java.io.FileOutputStream(embeddingFile).use { output -> input.copyTo(output) }
                 }
             }
         } catch (e: Exception) { Log.e("RoninBoot", "Asset copy failed: ${e.message}") }
