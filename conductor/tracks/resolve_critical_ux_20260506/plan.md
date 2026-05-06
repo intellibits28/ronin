@@ -9,7 +9,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Stabilization of Boot & Permissions' (Protocol in workflow.md) e35692d
 
 ## Phase 2: UI Restoration & Command Intelligence
-- [ ] Task: Restore and refine the floating command suggester UI.
+- [x] Task: Restore and refine the floating command suggester UI. 12df5fa
     - [ ] Re-implement the `/` suggester to float above the input field within the `Scaffold`.
     - [ ] Ensure suggestions are filtered in real-time as the user types.
 - [ ] Task: Implement 'Kernel Ready' notification system.
