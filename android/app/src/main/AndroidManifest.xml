@@ -6,6 +6,7 @@
     <!-- WiFi Control -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
     
     <!-- Bluetooth Control -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
