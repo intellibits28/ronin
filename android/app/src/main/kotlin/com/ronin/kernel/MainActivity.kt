@@ -212,12 +212,32 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun copyAssetsToFilesDir(filesDir: java.io.File) {
-        val modelsDir = java.io.File(filesDir, "models")
+        val assetsDir = java.io.File(filesDir, "assets")
+        if (!assetsDir.exists()) assetsDir.mkdirs()
+        val modelsDir = java.io.File(filesDir, "models") // For legacy/router
         if (!modelsDir.exists()) modelsDir.mkdirs()
+        val assetsModelsDir = java.io.File(assetsDir, "models") // For JNI bge_base
+        if (!assetsModelsDir.exists()) assetsModelsDir.mkdirs()
+
         try {
+            // 1. Copy Manifest (Crucial for Skills)
+            val capFile = java.io.File(assetsDir, "capabilities.json")
+            if (!capFile.exists()) {
+                assets.open("capabilities.json").use { input -> 
+                    java.io.FileOutputStream(capFile).use { output -> input.copyTo(output) } 
+                }
+            }
+
+            // 2. Copy Router Model
             val routerFile = java.io.File(modelsDir, "model.onnx")
-            if (!routerFile.exists()) assets.open("models/model.onnx").use { input -> java.io.FileOutputStream(routerFile).use { output -> input.copyTo(output) } }
-        } catch (e: Exception) {}
+            if (!routerFile.exists()) {
+                assets.open("models/model.onnx").use { input -> 
+                    java.io.FileOutputStream(routerFile).use { output -> input.copyTo(output) } 
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("RoninBoot", "Asset copy failed: ${e.message}")
+        }
     }
 
     private fun loadCloudProvidersFromDisk() {
@@ -391,7 +411,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
             }
         }
     }
-    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, modelPickerLauncher, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
+    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, modelPicker, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
 }
 
 @Composable
