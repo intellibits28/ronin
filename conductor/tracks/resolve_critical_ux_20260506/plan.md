@@ -12,7 +12,7 @@
 - [x] Task: Restore and refine the floating command suggester UI. 12df5fa
     - [ ] Re-implement the `/` suggester to float above the input field within the `Scaffold`.
     - [ ] Ensure suggestions are filtered in real-time as the user types.
-- [ ] Task: Implement 'Kernel Ready' notification system.
+- [x] Task: Implement 'Kernel Ready' notification system. 5ab0aad
     - [ ] Add a Toast or UI indicator that appears once the native neural bridge is fully active.
 - [ ] Task: Add explicit `/search` and `/find` commands to the intent engine.
     - [ ] Update `src/intent_engine.cpp` and `src/capabilities/file_search_node.cpp` to handle explicit search prefixes.
