@@ -4,10 +4,33 @@
 
 1. **The Plan is the Source of Truth:** All work must be tracked in `plan.md`
 2. **The Tech Stack is Deliberate:** Changes to the tech stack must be documented in `tech-stack.md` *before* implementation
-3. **Test-Driven Development:** Write unit tests before implementing functionality
-4. **High Code Coverage:** Aim for >80% code coverage for all modules
-5. **User Experience First:** Every decision should prioritize user experience
-6. **Non-Interactive & CI-Aware:** Prefer non-interactive commands. Use `CI=true` for watch-mode tools (tests, linters) to ensure single execution.
+3. **Dual-Process Isolation (Phase 4.5+):** Kernel Core (UI/Logic) and Inference Engine (Gemma) must remain in separate processes with Binder IPC.
+4. **Architecture Consolidation:** Maintain a single source of truth for class definitions. Prefer `.hpp` for C++ headers and strictly avoid redundant definitions.
+5. **Test-Driven Development:** Write unit tests before implementing functionality
+6. **High Code Coverage:** Aim for >80% code coverage for all modules
+7. **User Experience First:** Every decision should prioritize user experience
+8. **Non-Interactive & CI-Aware:** Prefer non-interactive commands. Use `CI=true` for watch-mode tools (tests, linters) to ensure single execution.
+
+## Architectural Standards (Phase 4.5+)
+
+### 1. Process Isolation (NullClaw Style)
+- **Kernel Core:** Handles UI, Skill dispatching, and Context management.
+- **Inference Spine:** Runs in `:inference_core` process. This process must be isolated to prevent model-related OOMs from crashing the main UI.
+- **IPC:** All communication between processes must use Binder IPC (AIDL).
+
+### 2. JNI & Bridge Stability
+- **Non-Blocking JNI:** C++ threads must never block Android callbacks. Use `std::thread().detach()` or async patterns for hardware triggers.
+- **Global Reference Management:** Always use `NewGlobalRef` for long-lived JNI objects and ensure proper release in `HardwareBridge`.
+- **Thread Attachment:** Strictly pair `AttachCurrentThread` and `DetachCurrentThread`.
+
+### 3. Resource Awareness
+- **Thermal Throttling:** Implement `ThermalState` listeners. Shift to "Safe Mode" (Low Precision or Fallback) if temperature exceeds 42°C.
+- **Memory Pressure (LMK):** Use `ComponentCallbacks2` to purge KV caches and stop low-priority tasks (e.g., `FileScanner`) when free RAM is < 1GB.
+
+### 4. Hybrid Reasoning Workflow
+- **Local First:** Attempt LiteRT-LM reasoning on-device.
+- **Cloud Fallback:** Only escalate to cloud if local reasoning fails or specific "Deep Research" models are required.
+- **VPN Guard:** Do not hard-block cloud requests; log warnings for region restrictions and allow the network layer to handle failures gracefully.
 
 ## Task Workflow
 
