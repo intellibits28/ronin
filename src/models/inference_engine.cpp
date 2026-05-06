@@ -48,7 +48,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
 }
 
 std::string InferenceEngine::escalateToCloud(const std::string& input, const std::string& apiKey, const std::string& provider) {
-    return Ronin::Kernel::Capability::HardwareBridge::fetchCloudResponse(input, provider);
+    return Ronin::Kernel::Capability::HardwareBridge::fetchCloudResponse(input, provider, apiKey);
 }
 
 int InferenceEngine::classifyCoarse(const std::string& input) { return 1; }

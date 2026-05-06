@@ -55,7 +55,7 @@ public:
      * Phase 4.4.6: Cloud Bridge Activation
      * Performs a synchronous (but off-main-thread) network request via Kotlin.
      */
-    static std::string fetchCloudResponse(const std::string& input, const std::string& provider);
+    static std::string fetchCloudResponse(const std::string& input, const std::string& provider, const std::string& apiKey = "");
 
     /**
      * Phase 6.0: Hybrid Neural Bridge

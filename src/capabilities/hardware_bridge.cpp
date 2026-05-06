@@ -161,7 +161,7 @@ std::string HardwareBridge::requestData(uint32_t nodeId) {
 #endif
 }
 
-std::string HardwareBridge::fetchCloudResponse(const std::string& input, const std::string& provider) {
+std::string HardwareBridge::fetchCloudResponse(const std::string& input, const std::string& provider, const std::string& apiKey) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return "Error: HardwareBridge not initialized.";
 
@@ -170,11 +170,12 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
 
     std::string result = "Error: Method performCloudInference failed.";
     if (env) {
-        jmethodID mid = env->GetMethodID(s_clazz, "performCloudInference", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+        jmethodID mid = env->GetMethodID(s_clazz, "performCloudInference", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
         if (mid) {
             jstring jinput = env->NewStringUTF(input.c_str());
             jstring jprovider = env->NewStringUTF(provider.c_str());
-            jstring jstr = (jstring)env->CallObjectMethod(s_instance, mid, jinput, jprovider);
+            jstring jkey = env->NewStringUTF(apiKey.c_str());
+            jstring jstr = (jstring)env->CallObjectMethod(s_instance, mid, jinput, jprovider, jkey);
             if (jstr) {
                 const char* cstr = env->GetStringUTFChars(jstr, nullptr);
                 if (cstr) {
@@ -185,6 +186,7 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
             }
             env->DeleteLocalRef(jinput);
             env->DeleteLocalRef(jprovider);
+            env->DeleteLocalRef(jkey);
         }
     }
 

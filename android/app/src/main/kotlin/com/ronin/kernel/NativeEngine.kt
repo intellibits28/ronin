@@ -437,8 +437,13 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     @Suppress("unused")
-    fun performCloudInference(input: String, primaryProvider: String): String {
-        if (!isVpnActive(context)) return "Error: Region Restricted - Please check VPN"
+    fun performCloudInference(input: String, primaryProvider: String, passedApiKey: String): String {
+        // Phase 4.5.9: Relaxed Connectivity Guard
+        // Instead of hard-blocking, we log a warning. The request will fail naturally if restricted.
+        if (!isVpnActive(context)) {
+            Log.w(TAG, "Cloud Inference requested without active VPN. This may fail in restricted regions.")
+        }
+
         var finalEndpoint = ""
         var modelId = ""
         try {
@@ -461,7 +466,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             finalEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
         }
         
-        return executeSingleInference(input, primaryProvider, finalEndpoint, modelId)
+        return executeSingleInference(input, primaryProvider, finalEndpoint, modelId, passedApiKey)
     }
 
     @Suppress("unused")
@@ -469,8 +474,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         onSystemTiersUpdate?.invoke(temp, used, total)
     }
 
-    private fun executeSingleInference(input: String, provider: String, endpoint: String, modelId: String, isRetry: Boolean = false): String {
-        val apiKey = getSecureApiKey?.invoke(provider)?.trim() ?: ""
+    private fun executeSingleInference(input: String, provider: String, endpoint: String, modelId: String, passedApiKey: String = "", isRetry: Boolean = false): String {
+        val apiKey = if (passedApiKey.isNotEmpty()) passedApiKey else (getSecureApiKey?.invoke(provider)?.trim() ?: "")
+        
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
         
         val isGemini = endpoint.contains("generativelanguage.googleapis.com")
