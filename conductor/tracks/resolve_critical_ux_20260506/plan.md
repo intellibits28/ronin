@@ -19,7 +19,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 2: UI Restoration & Command Intelligence' (Protocol in workflow.md) 3999b53
 
 ## Phase 3: Cloud & Persistence Layer Fixes
-- [ ] Task: Resolve Cloud 404 errors with v1/v1beta auto-fallback.
+- [x] Task: Resolve Cloud 404 errors with v1/v1beta auto-fallback. 93042ac
     - [ ] Update `NativeEngine.kt` to attempt `v1` endpoint if `v1beta` fails (and vice versa) for Gemini models.
 - [ ] Task: Fix model selection persistence on app restart.
     - [ ] Implement a wait mechanism in `loadModel` to ensure the Inference Service is bound before attempting hydration.
