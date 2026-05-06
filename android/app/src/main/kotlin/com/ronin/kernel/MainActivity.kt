@@ -120,7 +120,15 @@ class ChatViewModel : ViewModel() {
 class MainActivity : ComponentActivity() {
     internal lateinit var nativeEngine: NativeEngine
     private lateinit var sharedPreferences: android.content.SharedPreferences
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var lastPermissionState = false
+
+    private val requestPermissionLauncher = registerForActivityResult(androidx.activity.result.contract.RequestMultiplePermissions()) { permissions ->
+        val allGranted = permissions.entries.all { it.value }
+        if (allGranted) {
+            scanLocalModels()
+        }
+    }
 
     private val modelPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importModelFromUri(it) }
@@ -161,6 +169,7 @@ class MainActivity : ComponentActivity() {
         nativeEngine = NativeEngine(this)
         val masterKey = MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         sharedPreferences = EncryptedSharedPreferences.create(this, "ronin_secure_prefs", masterKey, EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         copyAssetsToFilesDir(filesDir)
 
         lifecycleScope.launch(Dispatchers.Main) {
@@ -180,7 +189,7 @@ class MainActivity : ComponentActivity() {
                 Toast.makeText(this@MainActivity, "Ronin Kernel: Neural Bridge Active.", Toast.LENGTH_SHORT).show()
             }
 
-            // Phase 4.6: Ensure models are scanned on every boot
+            checkAndRequestPermissions()
             scanLocalModels()
             val savedModelPath = sharedPreferences.getString("local_model_path", "")
             if (!savedModelPath.isNullOrEmpty()) hydrateModel(savedModelPath)
@@ -227,9 +236,7 @@ class MainActivity : ComponentActivity() {
                     java.io.FileOutputStream(routerFile).use { output -> input.copyTo(output) } 
                 }
             }
-        } catch (e: Exception) {
-            Log.e("RoninBoot", "Asset copy failed: ${e.message}")
-        }
+        } catch (e: Exception) { Log.e("RoninBoot", "Asset copy failed: ${e.message}") }
     }
 
     private fun loadCloudProvidersFromDisk() {
@@ -306,13 +313,12 @@ class MainActivity : ComponentActivity() {
     private fun setupHardwareCallbacks() {
         nativeEngine.getSecureApiKey = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
         nativeEngine.onRequestHardwareData = { nodeId ->
-            when (nodeId) {
-                5 -> {
+            if (nodeId == 5) {
+                try {
                     val location = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token))
-                    location?.let { "${it.latitude}, ${it.longitude}" } ?: "Unknown Location"
-                }
-                else -> "Error: Node $nodeId data not implemented"
-            }
+                    location?.let { "${it.latitude}, ${it.longitude}" } ?: "Error: GPS Timeout"
+                } catch (e: Exception) { "Error: ${e.message}" }
+            } else "Error: Not Implemented"
         }
         nativeEngine.executeHardwareAction = { nodeId, state -> 
             when (nodeId) {
@@ -378,6 +384,36 @@ class MainActivity : ComponentActivity() {
     fun savePrimaryCloudProvider(provider: String) {
         sharedPreferences.edit().putString("primary_cloud_provider", provider).apply()
         nativeEngine.setPrimaryCloudProviderSafe(provider)
+    }
+
+    private fun checkAndRequestPermissions() {
+        val permissions = mutableListOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            android.Manifest.permission.CAMERA
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions.add(android.Manifest.permission.BLUETOOTH_SCAN)
+            permissions.add(android.Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(android.Manifest.permission.NEARBY_WIFI_DEVICES)
+        }
+        requestPermissionLauncher.launch(permissions.toTypedArray())
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.addCategory("android.intent.category.DEFAULT")
+                    intent.data = Uri.parse(String.format("package:%s", applicationContext.packageName))
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivity(intent)
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -453,7 +489,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
             }
         }
     }
-    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, modelPickerLauncher, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
+    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, modelPicker, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
 }
 
 @Composable
@@ -551,7 +587,7 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
         }
     }, confirmButton = { Button(onClick = {
         val endpoint = when(selectedTemplate) { 
-            "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/$selectedModelId:generateContent"
+            "Gemini" -> "https://generativelanguage.googleapis.com/v1/models/$selectedModelId:generateContent"
             "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
             else -> customEndpoint 
         }
