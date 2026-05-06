@@ -24,6 +24,7 @@ import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -123,14 +124,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var lastPermissionState = false
 
-    private val requestPermissionLauncher = registerForActivityResult(androidx.activity.result.contract.RequestMultiplePermissions()) { permissions ->
+    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
         val allGranted = permissions.entries.all { it.value }
         if (allGranted) {
             scanLocalModels()
         }
     }
 
-    private val modelPickerLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+    private val modelPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importModelFromUri(it) }
     }
 
@@ -254,7 +255,7 @@ class MainActivity : ComponentActivity() {
                 nativeEngine.updateCloudProvidersSafe(array.toString())
             } catch (e: Exception) {}
         } else {
-            val default = CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key")
+            val default = CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key")
             chatViewModel.cloudProviders.add(default); saveCloudProvidersToDisk()
         }
     }
@@ -409,7 +410,8 @@ class MainActivity : ComponentActivity() {
                     intent.data = Uri.parse(String.format("package:%s", applicationContext.packageName))
                     startActivity(intent)
                 } catch (e: Exception) {
-                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    val intent = Intent()
+                    intent.action = Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION
                     startActivity(intent)
                 }
             }
@@ -587,7 +589,7 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
         }
     }, confirmButton = { Button(onClick = {
         val endpoint = when(selectedTemplate) { 
-            "Gemini" -> "https://generativelanguage.googleapis.com/v1/models/$selectedModelId:generateContent"
+            "Gemini" -> "https://generativelanguage.googleapis.com/v1beta/models/$selectedModelId:generateContent"
             "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions"
             else -> customEndpoint 
         }
