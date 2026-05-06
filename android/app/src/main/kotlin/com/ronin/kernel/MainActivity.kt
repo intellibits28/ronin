@@ -384,6 +384,7 @@ class MainActivity : ComponentActivity() {
                 chatViewModel.isKernelHydrated = true
                 sharedPreferences.edit().putString("local_model_path", path).apply()
                 chatViewModel.localModelPath = path
+                Log.i("RoninPersistence", "Saved local_model_path: $path")
             }
         }
     }
@@ -391,13 +392,19 @@ class MainActivity : ComponentActivity() {
     fun saveOfflineMode(offline: Boolean) {
         sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
         nativeEngine.setOfflineModeSafe(offline)
+        Log.i("RoninPersistence", "Saved offline_mode: $offline")
     }
 
     fun getApiKey(provider: String): String = sharedPreferences.getString(provider, "") ?: ""
-    fun saveApiKey(provider: String, key: String) = sharedPreferences.edit().putString(provider, key).apply()
+    fun saveApiKey(provider: String, key: String) {
+        sharedPreferences.edit().putString(provider, key).apply()
+        Log.i("RoninPersistence", "Saved API key for $provider")
+    }
+    
     fun savePrimaryCloudProvider(provider: String) {
         sharedPreferences.edit().putString("primary_cloud_provider", provider).apply()
         nativeEngine.setPrimaryCloudProviderSafe(provider)
+        Log.i("RoninPersistence", "Saved primary_cloud_provider: $provider")
     }
 
     private fun checkAndRequestPermissions() {

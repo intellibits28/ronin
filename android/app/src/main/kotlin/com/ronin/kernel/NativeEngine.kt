@@ -243,12 +243,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      * Kotlin-Side Model Hydration with IPC Delegation.
      */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
-        // Phase 6.6: Wait for service binding if necessary
-        var retryCount = 0
-        while (inferenceService == null && retryCount < 10) {
-            Log.w(TAG, "Waiting for Inference Service binding... ($retryCount)")
-            delay(500)
-            retryCount++
+        // Phase 4.5.9: More robust wait for service binding
+        if (!waitForService(10000)) {
+            Log.e(TAG, "ABORT: Inference Service failed to bind within 10s.")
+            return@withContext false
         }
 
         setPriority(0) // 0 = CRITICAL
@@ -268,6 +266,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
         setPriority(3) // 3 = LOW
         return@withContext false
+    }
+
+    private suspend fun waitForService(timeoutMs: Long): Boolean {
+        val start = System.currentTimeMillis()
+        while (inferenceService == null && (System.currentTimeMillis() - start) < timeoutMs) {
+            Log.w(TAG, "Waiting for Inference Service binding...")
+            delay(500)
+        }
+        return inferenceService != null
     }
 
     fun isLoaded(): Boolean {
