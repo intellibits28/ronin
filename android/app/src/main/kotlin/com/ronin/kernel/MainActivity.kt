@@ -116,6 +116,9 @@ class ChatViewModel : ViewModel() {
     var showAddCloudDialog by mutableStateOf(false)
     var pendingProviderName by mutableStateOf("")
     var pendingProviderType by mutableStateOf("Gemini")
+
+    var kernelStatus by mutableStateOf("Initializing...")
+    var isKernelReady by mutableStateOf(false)
 }
 
 class MainActivity : ComponentActivity() {
@@ -167,6 +170,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         nativeEngine = NativeEngine(this)
         val masterKey = MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         sharedPreferences = EncryptedSharedPreferences.create(this, "ronin_secure_prefs", masterKey, EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
@@ -174,6 +178,7 @@ class MainActivity : ComponentActivity() {
         copyAssetsToFilesDir(filesDir)
 
         lifecycleScope.launch(Dispatchers.Main) {
+            chatViewModel.kernelStatus = "Booting Engine..."
             NativeEngine.initializeAsync()
             nativeEngine.initialize()
             registerComponentCallbacks(nativeEngine)
@@ -186,6 +191,8 @@ class MainActivity : ComponentActivity() {
             val offline = sharedPreferences.getBoolean("offline_mode", false)
             nativeEngine.setOfflineModeSafe(offline)
 
+            chatViewModel.kernelStatus = "Neural Bridge Active"
+            chatViewModel.isKernelReady = true
             withContext(Dispatchers.Main) {
                 Toast.makeText(this@MainActivity, "Ronin Kernel: Neural Bridge Active.", Toast.LENGTH_SHORT).show()
             }
@@ -197,7 +204,6 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val chatViewModel: ChatViewModel = viewModel()
             LaunchedEffect(Unit) {
                 chatViewModel.localModelPath = sharedPreferences.getString("local_model_path", "") ?: ""
                 chatViewModel.offlineMode = sharedPreferences.getBoolean("offline_mode", false)
@@ -208,6 +214,12 @@ class MainActivity : ComponentActivity() {
                     if (chatViewModel.isKernelHydrated != loaded) {
                         chatViewModel.isKernelHydrated = loaded
                         chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
+                        if (loaded) {
+                            chatViewModel.kernelStatus = "Kernel Hydrated"
+                            Toast.makeText(this@MainActivity, "Local Brain Ready.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            chatViewModel.kernelStatus = "Bridge Active (Cloud)"
+                        }
                     }
                     delay(3000)
                 }
@@ -459,10 +471,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Ronin Kernel", fontWeight = FontWeight.Bold) }, actions = { 
-            IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.BarChart, null) }
-            IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, null) } 
-        }) }
+        topBar = { 
+            TopAppBar(
+                title = { 
+                    Column {
+                        Text("Ronin Kernel", fontWeight = FontWeight.Bold)
+                        Text(chatViewModel.kernelStatus, fontSize = 10.sp, color = if (chatViewModel.isKernelReady) Color.Green else Color.Yellow)
+                    }
+                }, 
+                actions = { 
+                    IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.BarChart, null) }
+                    IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, null) } 
+                }
+            ) 
+        }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
             Column(modifier = Modifier.fillMaxSize()) {
