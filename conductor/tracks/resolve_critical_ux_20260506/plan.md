@@ -21,7 +21,7 @@
 ## Phase 3: Cloud & Persistence Layer Fixes
 - [x] Task: Resolve Cloud 404 errors with v1/v1beta auto-fallback. 93042ac
     - [ ] Update `NativeEngine.kt` to attempt `v1` endpoint if `v1beta` fails (and vice versa) for Gemini models.
-- [ ] Task: Fix model selection persistence on app restart.
+- [x] Task: Fix model selection persistence on app restart. 894bdd1
     - [ ] Implement a wait mechanism in `loadModel` to ensure the Inference Service is bound before attempting hydration.
     - [ ] Ensure `primary_cloud_provider` and `local_model_path` are correctly saved and restored from `SharedPreferences`.
 - [ ] Task: Conductor - User Manual Verification 'Phase 3: Cloud & Persistence Layer Fixes' (Protocol in workflow.md)
