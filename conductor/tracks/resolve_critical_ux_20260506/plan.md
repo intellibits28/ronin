@@ -8,7 +8,7 @@
     - [ ] Update `copyAssetsToFilesDir` to correctly deploy `capabilities.json` and model files to the paths expected by the C++ Kernel.
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Stabilization of Boot & Permissions' (Protocol in workflow.md) e35692d
 
-## Phase 2: UI Restoration & Command Intelligence
+## Phase 2: UI Restoration & Command Intelligence [checkpoint: 3999b53]
 - [x] Task: Restore and refine the floating command suggester UI. 12df5fa
     - [ ] Re-implement the `/` suggester to float above the input field within the `Scaffold`.
     - [ ] Ensure suggestions are filtered in real-time as the user types.
@@ -16,7 +16,7 @@
     - [ ] Add a Toast or UI indicator that appears once the native neural bridge is fully active.
 - [x] Task: Add explicit `/search` and `/find` commands to the intent engine. f33803d
     - [ ] Update `src/intent_engine.cpp` and `src/capabilities/file_search_node.cpp` to handle explicit search prefixes.
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: UI Restoration & Command Intelligence' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 2: UI Restoration & Command Intelligence' (Protocol in workflow.md) 3999b53
 
 ## Phase 3: Cloud & Persistence Layer Fixes
 - [ ] Task: Resolve Cloud 404 errors with v1/v1beta auto-fallback.
