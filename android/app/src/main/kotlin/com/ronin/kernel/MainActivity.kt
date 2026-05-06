@@ -179,6 +179,10 @@ class MainActivity : ComponentActivity() {
             val offline = sharedPreferences.getBoolean("offline_mode", false)
             nativeEngine.setOfflineModeSafe(offline)
 
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "Ronin Kernel: Neural Bridge Active.", Toast.LENGTH_SHORT).show()
+            }
+
             lastPermissionState = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager() else checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
             if (lastPermissionState) {
                 scanLocalModels()
@@ -263,7 +267,7 @@ class MainActivity : ComponentActivity() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         chatViewModel.cloudProviders.removeAll { it.name == name }
         if (chatViewModel.primaryCloudProvider == name) {
-            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else ""
+            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else "Gemini-Flash"
             savePrimaryCloudProvider(chatViewModel.primaryCloudProvider)
         }
         saveCloudProvidersToDisk()
@@ -340,9 +344,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
             while (true) {
                 am.getMemoryInfo(mi); val total = mi.totalMem / 1073741824f; val avail = mi.availMem / 1073741824f; val used = total - avail
                 val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-                val battery = context.registerReceiver(null, filter)
+                val battery = context.applicationContext.registerReceiver(null, filter)
                 val temp = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.div(10f) ?: 0f
-                withContext(Dispatchers.Main) { chatViewModel.temperature = temp; chatViewModel.ramUsedGB = used; chatViewModel.ramTotalGB = total; chatViewModel.lmkPressure = engine.getLMKPressureSafe(); chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f }
+                withContext(Dispatchers.Main) { 
+                    chatViewModel.temperature = temp; chatViewModel.ramUsedGB = used; chatViewModel.ramTotalGB = total
+                    chatViewModel.lmkPressure = engine.getLMKPressureSafe()
+                    chatViewModel.stability = (100 - chatViewModel.lmkPressure) / 100.0f 
+                }
                 engine.updateSystemHealthSafe(temp, used, total); delay(5000)
             }
         }
@@ -354,31 +362,36 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
             IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, null) } 
         }) }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
-            if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
-            Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) { LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } } }
-            Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) { LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } }
-            
-            // Command Suggester Logic
-            if (chatViewModel.showCommandSuggestions) {
-                val suggestions = listOf("/status", "/skills", "/model", "/reset", "/more").filter { it.startsWith(currentInput) }
-                if (suggestions.isNotEmpty()) {
-                    Surface(color = Color(0xFF25283D), modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                        LazyColumn(modifier = Modifier.heightIn(max = 120.dp)) {
-                            items(suggestions) { s -> TextButton(onClick = { currentInput = s; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { Text(s, color = Color(0xFF64B5F6), modifier = Modifier.fillMaxWidth()) } }
-                        }
+        Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
+                Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) { LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } } }
+                Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) { LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } }
+                Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; chatViewModel.showCommandSuggestions = false; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } } }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
                     }
                 }
             }
 
-            Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
-                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; chatViewModel.showCommandSuggestions = false; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } } }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
+            // Command Suggester Overlay (Floating above input)
+            if (chatViewModel.showCommandSuggestions) {
+                val suggestions = listOf("/status", "/skills", "/model", "/reset", "/more", "/search").filter { it.startsWith(currentInput.lowercase()) }
+                if (suggestions.isNotEmpty()) {
+                    Surface(
+                        color = Color(0xFF25283D),
+                        modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 80.dp, start = 16.dp, end = 16.dp).fillMaxWidth(0.8f).clip(RoundedCornerShape(8.dp)),
+                        elevation = 16.dp
+                    ) {
+                        LazyColumn(modifier = Modifier.heightIn(max = 150.dp)) {
+                            items(suggestions) { s -> TextButton(onClick = { currentInput = s; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { Text(s, color = Color(0xFF64B5F6), modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Start) } }
+                        }
+                    }
                 }
             }
         }
     }
-    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, modelPicker, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
+    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, modelPickerLauncher, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
 }
 
 @Composable
@@ -452,9 +465,9 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
             }
             Spacer(Modifier.height(8.dp))
             if (selectedTemplate == "Custom") {
-                TextField(value = customProfileName, onValueChange = { customProfileName = it }, label = { Text("Profile Name") })
-                TextField(value = customEndpoint, onValueChange = { customEndpoint = it }, label = { Text("Endpoint URL") })
-                TextField(value = selectedModelId, onValueChange = { selectedModelId = it }, label = { Text("Model ID") })
+                TextField(value = customProfileName, onValueChange = { customProfileName = it }, label = { Text("Profile Name") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                TextField(value = customEndpoint, onValueChange = { customEndpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                TextField(value = selectedModelId, onValueChange = { selectedModelId = it }, label = { Text("Model ID") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextField(value = apiKey, onValueChange = { apiKey = it }, modifier = Modifier.weight(1f), label = { Text("API Key") }, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())

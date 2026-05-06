@@ -147,6 +147,12 @@ std::string FileSearchNode::execute(const std::string& param) {
     std::string lower_param = param;
     std::transform(lower_param.begin(), lower_param.end(), lower_param.begin(), ::tolower);
 
+    // Phase 4.5.9: Handle explicit /search and /find prefixes
+    std::string clean_query = param;
+    if (lower_param.starts_with("/search ")) clean_query = param.substr(8);
+    else if (lower_param.starts_with("/find ")) clean_query = param.substr(6);
+    else if (lower_param == "/search" || lower_param == "/find") return "Usage: /search <filename>";
+
     // Phase 6.2: Pagination Logic (/more or arrow-like triggers)
     if (lower_param.find("/more") != std::string::npos || lower_param.find("next") != std::string::npos || lower_param == ">") {
         if (m_last_results.empty()) return "No previous search results to show.";
@@ -158,7 +164,7 @@ std::string FileSearchNode::execute(const std::string& param) {
         }
     } else {
         // Fresh search
-        m_last_results = search(param);
+        m_last_results = search(clean_query);
         m_last_offset = 0;
     }
 

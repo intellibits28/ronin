@@ -98,6 +98,11 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
         return true;
     }
 
+    if (cmd.starts_with("/search") || cmd.starts_with("/find")) {
+        // Delegate to FileSearchNode (ID 2)
+        return false; 
+    }
+
     if (cmd == "/model") {
         if (m_inference_engine) {
             output = "Loaded Brain: " + m_inference_engine->getModelPath();
