@@ -364,10 +364,13 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    suspend fun fetchAvailableModels(apiKey: String, provider: String = "Gemini"): List<JSONObject> = withContext(Dispatchers.IO) {
+    data class FetchResult(val models: List<JSONObject>, val error: String? = null)
+
+    suspend fun fetchAvailableModels(apiKey: String, provider: String = "Gemini"): FetchResult = withContext(Dispatchers.IO) {
         val isGemini = provider.equals("Gemini", ignoreCase = true)
         val baseUrl = if (isGemini) "https://generativelanguage.googleapis.com" else "https://openrouter.ai/api/v1"
-        
+        var lastError: String? = null
+
         fun tryFetch(version: String): List<JSONObject>? {
             val endpoint = if (isGemini) "$baseUrl/$version/models?key=$apiKey" else "$baseUrl/models"
             try {
@@ -392,19 +395,24 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                         for (i in 0 until modelArray.length()) models.add(modelArray.getJSONObject(i))
                     }
                     return models
-                } else if (isGemini && conn.responseCode == 404) {
-                    return null // Trigger fallback
+                } else {
+                    val errorBody = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+                    lastError = "Error: [${conn.responseCode}] $errorBody"
+                    if (isGemini && conn.responseCode == 404) return null // Trigger fallback
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Fetch error ($version): ${e.message}")
+                lastError = "Fetch error ($version): ${e.message}"
+                Log.e(TAG, lastError!!)
             }
             return emptyList()
         }
 
         if (isGemini) {
-            tryFetch("v1beta") ?: tryFetch("v1") ?: emptyList()
+            val models = tryFetch("v1beta") ?: tryFetch("v2") ?: tryFetch("v1") ?: emptyList()
+            FetchResult(models, if (models.isEmpty()) lastError else null)
         } else {
-            tryFetch("") ?: emptyList()
+            val models = tryFetch("") ?: emptyList()
+            FetchResult(models, if (models.isEmpty()) lastError else null)
         }
     }
 
@@ -463,7 +471,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } catch (e: Exception) {}
         
         if (finalEndpoint.isEmpty()) {
-            finalEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+            return "Error: No cloud endpoint configured for $primaryProvider. Please select a model in Settings."
         }
         
         return executeSingleInference(input, primaryProvider, finalEndpoint, modelId, passedApiKey)
@@ -517,8 +525,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     JSONObject(response).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
                 }
             } else if (isGemini && conn.responseCode == 404 && !isRetry) {
-                // Fallback attempt for v1 if v1beta failed with 404 for Gemini (and vice versa)
-                val fallbackUrl = if (finalUrl.contains("v1beta")) finalUrl.replace("v1beta", "v1") else finalUrl.replace("v1", "v1beta")
+                // Fallback attempt for v2/v1 if v1beta failed with 404 for Gemini
+                val fallbackUrl = when {
+                    finalUrl.contains("v1beta") -> finalUrl.replace("v1beta", "v2")
+                    finalUrl.contains("v2") -> finalUrl.replace("v2", "v1")
+                    finalUrl.contains("v1") -> finalUrl.replace("v1", "v1beta") // Cycle back? Or just stop.
+                    else -> finalUrl
+                }
+                
                 if (fallbackUrl != finalUrl) {
                     Log.i(TAG, "404 detected. Retrying with fallback URL: $fallbackUrl")
                     return executeSingleInference(input, provider, fallbackUrl, modelId, passedApiKey, true)

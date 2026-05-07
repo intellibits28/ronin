@@ -267,9 +267,6 @@ class MainActivity : ComponentActivity() {
                 }
                 nativeEngine.updateCloudProvidersSafe(array.toString())
             } catch (e: Exception) {}
-        } else {
-            val default = CloudProvider("Gemini-Flash", "Gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key")
-            chatViewModel.cloudProviders.add(default); saveCloudProvidersToDisk()
         }
     }
 
@@ -300,7 +297,7 @@ class MainActivity : ComponentActivity() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         chatViewModel.cloudProviders.removeAll { it.name == name }
         if (chatViewModel.primaryCloudProvider == name) {
-            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else "Gemini-Flash"
+            chatViewModel.primaryCloudProvider = if (chatViewModel.cloudProviders.isNotEmpty()) chatViewModel.cloudProviders[0].name else ""
             savePrimaryCloudProvider(chatViewModel.primaryCloudProvider)
         }
         saveCloudProvidersToDisk()
@@ -601,13 +598,14 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
     var apiKey by remember { mutableStateOf("") }; var isFetching by remember { mutableStateOf(false) }
     var fetchedModels by remember { mutableStateOf<List<JSONObject>>(emptyList()) }; var selectedModelId by remember { mutableStateOf("") }
     var customEndpoint by remember { mutableStateOf("") }; var customProfileName by remember { mutableStateOf("") }
+    var fetchError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Add Cloud Profile", fontWeight = FontWeight.Bold) }, text = {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             Box {
                 OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text(selectedTemplate); Icon(Icons.Default.ArrowDropDown, null) }
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    listOf("Gemini", "OpenRouter", "Custom").forEach { t -> DropdownMenuItem(onClick = { selectedTemplate = t; expanded = false; selectedModelId = ""; apiKey = ""; fetchedModels = emptyList() }) { Text(t) } }
+                    listOf("Gemini", "OpenRouter", "Custom").forEach { t -> DropdownMenuItem(onClick = { selectedTemplate = t; expanded = false; selectedModelId = ""; apiKey = ""; fetchedModels = emptyList(); fetchError = null }) { Text(t) } }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -619,10 +617,21 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextField(value = apiKey, onValueChange = { apiKey = it }, modifier = Modifier.weight(1f), label = { Text("API Key") }, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
                 if (selectedTemplate != "Custom") {
-                    IconButton(onClick = { if (apiKey.isNotBlank()) { isFetching = true; scope.launch { fetchedModels = engine.fetchAvailableModels(apiKey, selectedTemplate); isFetching = false } } }) { Icon(Icons.Default.CloudDownload, null, tint = Color(0xFF64B5F6)) }
+                    IconButton(onClick = { 
+                        if (apiKey.isNotBlank()) { 
+                            isFetching = true; fetchError = null; 
+                            scope.launch { 
+                                val res = engine.fetchAvailableModels(apiKey, selectedTemplate)
+                                fetchedModels = res.models
+                                fetchError = res.error
+                                isFetching = false 
+                            } 
+                        } 
+                    }) { Icon(Icons.Default.CloudDownload, null, tint = Color(0xFF64B5F6)) }
                 }
             }
             if (isFetching) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+            fetchError?.let { Text(it, color = Color.Red, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp)) }
             if (fetchedModels.isNotEmpty()) {
                 Text("Select Model:", fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
                 fetchedModels.forEach { obj -> 
