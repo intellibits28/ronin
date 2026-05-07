@@ -244,6 +244,16 @@ class MainActivity : ComponentActivity() {
                     java.io.FileOutputStream(capFile).use { output -> input.copyTo(output) }
                 }
             }
+            
+            val configDir = java.io.File(filesDir, "config")
+            if (!configDir.exists()) configDir.mkdirs()
+            val providersFile = java.io.File(configDir, "providers.json")
+            if (!providersFile.exists()) {
+                assets.open("providers.json").use { input ->
+                    java.io.FileOutputStream(providersFile).use { output -> input.copyTo(output) }
+                }
+            }
+
             val embeddingFile = java.io.File(assetsModelsDir, "bge_base.onnx")
             if (!embeddingFile.exists()) {
                 assets.open("models/model.onnx").use { input ->
@@ -255,7 +265,7 @@ class MainActivity : ComponentActivity() {
 
     private fun loadCloudProvidersFromDisk() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        val configDir = java.io.File("/storage/emulated/0/Ronin/config")
+        val configDir = java.io.File(filesDir, "config")
         val providersFile = java.io.File(configDir, "providers.json")
         if (providersFile.exists()) {
             try {
@@ -272,7 +282,7 @@ class MainActivity : ComponentActivity() {
 
     private fun saveCloudProvidersToDisk() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        val configDir = java.io.File("/storage/emulated/0/Ronin/config")
+        val configDir = java.io.File(filesDir, "config")
         if (!configDir.exists()) configDir.mkdirs()
         val providersFile = java.io.File(configDir, "providers.json")
         try {

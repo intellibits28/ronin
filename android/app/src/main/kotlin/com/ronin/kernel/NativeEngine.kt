@@ -192,11 +192,21 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     fun updateCloudProvidersSafe(json: String): Boolean {
+        // Phase 4.5.9: Ensure providers.json is written to internal storage
+        try {
+            val configDir = File(context.filesDir, "config")
+            if (!configDir.exists()) configDir.mkdirs()
+            File(configDir, "providers.json").writeText(json)
+            Log.i(TAG, "Successfully synced cloud providers to internal storage.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write providers.json: ${e.message}")
+        }
+
         if (isLibLoaded) {
             return try {
                 updateCloudProviders(json)
             } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "updateCloudProviders failed: ${e.message}")
+                Log.e(TAG, "updateCloudProviders native call failed: ${e.message}")
                 false
             }
         }
