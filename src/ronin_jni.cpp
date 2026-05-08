@@ -5,6 +5,7 @@
 #include <algorithm>
 #include "ronin_jni.h"
 #include "jni_utils.h"
+#include "hal/shared_memory_bridge.h"
 #include "ronin_kernel.hpp"
 #include "intent_engine.h"
 #include "models/inference_engine.h"
@@ -34,7 +35,7 @@ static std::unique_ptr<Ronin::Kernel::Memory::LongTermMemory> g_ltm;
 static std::unique_ptr<Ronin::Kernel::Capability::FileScanner> g_file_scanner;
 static std::string g_last_input_str;
 static std::string g_last_skill_output;
-static std::unique_ptr<Ronin::Kernel::HAL::SharedMemoryBridge<Ronin::Kernel::HAL::SpineRingBuffer>> g_spine_consumer;
+static std::unique_ptr<::Ronin::Kernel::HAL::SharedMemoryBridge<::Ronin::Kernel::HAL::SpineRingBuffer>> g_spine_consumer;
 
 // --- Hybrid Reasoning State ---
 namespace {
@@ -68,7 +69,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     LOGI(TAG, "Initializing Ronin Kernel Core...");
 
     // Phase 1: Initialize SHM Consumer for UI Streaming
-    g_spine_consumer = std::make_unique<Ronin::Kernel::HAL::SharedMemoryBridge<Ronin::Kernel::HAL::SpineRingBuffer>>("spine_stream");
+    g_spine_consumer = std::make_unique<::Ronin::Kernel::HAL::SharedMemoryBridge<::Ronin::Kernel::HAL::SpineRingBuffer>>("spine_stream");
     if (!g_spine_consumer->create(base_path, false)) {
         LOGW(TAG, "JNI: Could not connect to SHM Spine Stream. Consumer mode disabled.");
     }
@@ -260,7 +261,7 @@ Java_com_ronin_kernel_NativeEngine_pollInferenceStream(JNIEnv *env, jobject thiz
     auto* rb = g_spine_consumer->get();
     if (!rb) return nullptr;
 
-    Ronin::Kernel::HAL::InferencePacket packet;
+    ::Ronin::Kernel::HAL::InferencePacket packet;
     if (rb->pop(packet)) {
         // Find Kotlin InferencePacket class (Assumed package: com.ronin.kernel)
         jclass cls = env->FindClass("com/ronin/kernel/InferencePacket");

@@ -12,7 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -63,7 +63,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private val scope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
 
     // --- NATIVE INFERENCE STREAM (PHASE 3) ---
-    private val _inferenceFlow = kotlinx.coroutines.flow.MutableSharedFlow<InferencePacket>(replay = 0)
+    private val _inferenceFlow = MutableSharedFlow<InferencePacket>(replay = 0)
     val inferenceFlow = _inferenceFlow.asSharedFlow()
     private var pollingJob: kotlinx.coroutines.Job? = null
 
