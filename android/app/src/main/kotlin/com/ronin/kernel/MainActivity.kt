@@ -119,6 +119,7 @@ class ChatViewModel : ViewModel() {
 
     var kernelStatus by mutableStateOf("Initializing...")
     var isKernelReady by mutableStateOf(false)
+    var isImporting by mutableStateOf(false)
 }
 
 class MainActivity : ComponentActivity() {
@@ -141,6 +142,7 @@ class MainActivity : ComponentActivity() {
     private fun importModelFromUri(uri: Uri) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
+            chatViewModel.isImporting = true
             val success = withContext(Dispatchers.IO) {
                 try {
                     val inputStream = contentResolver.openInputStream(uri)
@@ -148,11 +150,24 @@ class MainActivity : ComponentActivity() {
                     if (!modelsDir.exists()) modelsDir.mkdirs()
                     val fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "imported_model.bin"
                     val targetFile = java.io.File(modelsDir, fileName)
-                    inputStream?.use { input -> java.io.FileOutputStream(targetFile).use { output -> input.copyTo(output, bufferSize = 1024 * 1024) } }
+                    inputStream?.use { input -> 
+                        java.io.FileOutputStream(targetFile).use { output -> 
+                            input.copyTo(output, bufferSize = 1024 * 1024) 
+                        } 
+                    }
                     true
-                } catch (e: Exception) { false }
+                } catch (e: Exception) {
+                    Log.e("Ronin_Import", "Failed to import model: ${e.message}")
+                    false
+                }
             }
-            if (success) scanLocalModels()
+            chatViewModel.isImporting = false
+            if (success) {
+                scanLocalModels()
+                Toast.makeText(this@MainActivity, "Brain Imported Successfully", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MainActivity, "Import Failed", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -502,7 +517,25 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
             Column(modifier = Modifier.fillMaxSize()) {
+                // Import Progress Indicator
+                if (chatViewModel.isImporting) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.8f),
+                        modifier = Modifier.fillMaxWidth().zIndex(10f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Importing Brain... Please wait", color = Color.Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(8.dp))
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color.Cyan)
+                        }
+                    }
+                }
+
                 if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
+
                 Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) { 
                     LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } } 
                 }

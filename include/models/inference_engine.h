@@ -80,6 +80,11 @@ public:
     void setContextWindow(int tokens);
 
     /**
+     * Portability: Set the base path for SHM and model storage.
+     */
+    void setBasePath(const std::string& path);
+
+    /**
      * Phase 5.9.2: KV-Cache Pruning
      * Clears internal buffers to reclaim RAM during Memory Pressure.
      */

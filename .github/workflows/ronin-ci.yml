@@ -1,0 +1,66 @@
+name: Ronin Isolated Inference CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-inference-module:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Host Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ flatbuffers-compiler sqlite3 libsqlite3-dev
+
+      - name: Build Host Unit Tests
+        run: |
+          mkdir build_host && cd build_host
+          cmake -DCMAKE_BUILD_TYPE=Release ..
+          make ronin_inference_test -j$(nproc)
+
+      - name: Run Inference Module Tests
+        run: |
+          cd build_host
+          ./ronin_inference_test
+
+  build-android-jni:
+    needs: validate-inference-module
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+
+      - name: Set up Android NDK r26b
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26b
+
+      - name: Build Android JNI & APK (arm64-v8a)
+        run: |
+          cd android
+          ./gradlew assembleDebug -Pandroid.bundle.enableUncompressedNativeLibs=false
+
+      - name: Extract Native Library (.so)
+        run: |
+          mkdir -p output_libs
+          find android/app/build/intermediates/cmake/debug -name "libronin_kernel.so" -exec cp {} output_libs/ \;
+          echo "Native library extracted to output_libs/"
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ronin-inference-artifacts
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            output_libs/libronin_kernel.so
+          retention-days: 7

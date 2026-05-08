@@ -85,6 +85,7 @@ endif()
 set(RONIN_CORE_SOURCES
     src/intent_engine.cpp
     src/models/inference_engine.cpp
+    src/models/hydration_manager.cpp
     src/checkpoint_engine.cpp
     src/checkpoint_manager.cpp
     src/lora_engine.cpp
@@ -162,4 +163,7 @@ if(NOT ANDROID)
 
     add_executable(ronin_search_test tests/search_capability_test.cpp)
     target_link_libraries(ronin_search_test ronin_core gtest_main)
+
+    add_executable(ronin_inference_test tests/inference_unit_test.cpp)
+    target_link_libraries(ronin_inference_test ronin_core gtest_main)
 endif()

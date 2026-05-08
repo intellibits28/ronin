@@ -15,8 +15,8 @@ public:
     static std::string wrap(const std::string& input, BackendType type) {
         switch (type) {
             case BackendType::LOCAL_GEMMA:
-                // Phase 4.6.3: Standardized Gemma Turn-based Template
-                return "<start_of_turn>user\n" + input + "<end_of_turn>\n<start_of_turn>model\n";
+                // Phase 3: Gemma 4 Specialized Turn-based Formatting
+                return "<|turn>system\nYou are Ronin, a sentient edge AI.\n<turn|>\n<|turn>user\n" + input + "<turn|>\n<|turn>model\n";
             
             case BackendType::CLOUD_GEMINI:
             case BackendType::CLOUD_OPENROUTER:

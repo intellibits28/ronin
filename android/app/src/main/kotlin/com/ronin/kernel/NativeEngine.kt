@@ -24,6 +24,8 @@ import java.util.concurrent.TimeUnit
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
+    // --- LEGACY INFERENCE SERVICE (FALLBACK ONLY) ---
+    /*
     private var inferenceService: IInferenceService? = null
     private var isServiceBound = false
 
@@ -55,8 +57,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             Log.w(TAG, "Inference Service Disconnected.")
         }
     }
+    */
 
     private val scope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
+
+    // --- NATIVE INFERENCE STREAM (PHASE 3) ---
+    private val _inferenceFlow = kotlinx.coroutines.flow.MutableSharedFlow<InferencePacket>(replay = 0)
+    val inferenceFlow = _inferenceFlow.asSharedFlow()
+    private var pollingJob: kotlinx.coroutines.Job? = null
 
     private var currentModelPath: String = ""
     private var asyncLatch: CountDownLatch? = null
@@ -100,6 +108,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun updateModelRegistry(json: String): Boolean
     private external fun updateCloudProviders(json: String): Boolean
     private external fun getLMKPressure(): Int
+    private external fun pollInferenceStream(): InferencePacket?
 
     /**
      * Phase 4.0 Audit: Verify native side can actually read the model file.
@@ -184,11 +193,13 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     fun setSafeMode(enabled: Boolean) {
+        /*
         try {
             inferenceService?.setSafeMode(enabled)
         } catch (e: RemoteException) {
             Log.e(TAG, "IPC setSafeMode failed: ${e.message}")
         }
+        */
     }
 
     fun updateCloudProvidersSafe(json: String): Boolean {
@@ -241,43 +252,44 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 Log.e(TAG, "initializeKernel failed: ${e.message}")
             }
         }
-        bindInferenceService()
+        // bindInferenceService()
     }
 
+    /*
     private fun bindInferenceService() {
         val intent = Intent(context, InferenceService::class.java)
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
+    */
 
     /**
-     * Kotlin-Side Model Hydration with IPC Delegation.
+     * Kotlin-Side Model Hydration with Native Delegation.
      */
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
-        // Phase 4.5.9: More robust wait for service binding
-        if (!waitForService(10000)) {
-            Log.e(TAG, "ABORT: Inference Service failed to bind within 10s.")
-            return@withContext false
-        }
-
+        if (!isLibLoaded) return@withContext false
+        
         setPriority(0) // 0 = CRITICAL
         stopLowPriorityTasks()
-        Log.i(TAG, ">>> [Phase 4.5 IPC] Delegating Hydration to :inference_core")
+        Log.i(TAG, ">>> [Phase 3 Native] Initializing Native Inference Hydration")
+        
         val success = try {
-            inferenceService?.loadModel(path) ?: false
-        } catch (e: RemoteException) {
-            Log.e(TAG, "IPC loadModel failed: ${e.message}")
+            notifyModelLoaded(path)
+            true 
+        } catch (e: Exception) {
+            Log.e(TAG, "Native loadModel notification failed: ${e.message}")
             false
         }
+
         if (success) {
             currentModelPath = path
             setPriority(1) // 1 = HIGH
-            if (isLibLoaded) notifyModelLoaded(path)
             return@withContext true
         }
         setPriority(3) // 3 = LOW
         return@withContext false
     }
 
+    /*
     private suspend fun waitForService(timeoutMs: Long): Boolean {
         val start = System.currentTimeMillis()
         while (inferenceService == null && (System.currentTimeMillis() - start) < timeoutMs) {
@@ -286,25 +298,56 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
         return inferenceService != null
     }
+    */
 
     fun isLoaded(): Boolean {
-        return try {
-            inferenceService?.isHydrated ?: false
-        } catch (e: RemoteException) { false }
+        // Simplified for native mode
+        return currentModelPath.isNotEmpty()
     }
 
     fun getActiveModelPath(): String {
-        return try {
-            inferenceService?.activeModelPath ?: currentModelPath
-        } catch (e: RemoteException) { currentModelPath }
+        return currentModelPath
     }
 
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext "Error: Native libraries not loaded."
         try {
-            processInput(input)
+            val result = processInput(input)
+            
+            // Phase 3: If reasoning started, trigger the polling coroutine
+            if (result.contains("[SHM Active]")) {
+                startInferencePolling()
+            }
+            
+            result
         } catch (e: UnsatisfiedLinkError) {
             "Error: Native bridge disconnected."
+        }
+    }
+
+    private fun startInferencePolling() {
+        pollingJob?.cancel()
+        pollingJob = scope.launch(Dispatchers.IO) {
+            Log.d(TAG, "Starting SHM Inference Polling...")
+            var finalReceived = false
+            while (!finalReceived) {
+                try {
+                    val packet = pollInferenceStream()
+                    if (packet != null) {
+                        _inferenceFlow.emit(packet)
+                        if (packet.isFinal) {
+                            finalReceived = true
+                            Log.d(TAG, "SHM Stream Finalized.")
+                        }
+                    } else {
+                        // Battery-optimized delay when buffer is empty
+                        delay(16) // ~60fps sync
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Polling Error: ${e.message}")
+                    break
+                }
+            }
         }
     }
 
@@ -318,46 +361,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
-     * Proxied via Binder to :inference_core process.
+     * LEGACY: No longer used by Phase 3 Native Engine as it uses SHM.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
-        Log.d(TAG, ">>> [Phase 4.5 IPC] Neural Reasoning Delegation: '$input'")
-        
-        // Phase 4.5.9: Intelligent RAM clearing - only trigger if RAM is < 1GB
-        val freeRam = checkFreeRamGB()
-        if (freeRam < 1.0f) {
-            Log.i(TAG, "Low RAM (%.2f GB). Freeing background tasks...".format(freeRam))
-            stopLowPriorityTasks()
-        }
-        
-        if (freeRam < 0.4f) {
-            Log.w(TAG, "CRITICAL: Insufficient RAM (%.2f GB free).".format(freeRam))
-            // We still attempt inference but warn
-        }
-
-        return try {
-            val startTime = System.currentTimeMillis()
-            
-            // Phase 6.6: Add IPC Timeout to prevent blocking the Kernel Core
-            val response = try {
-                kotlinx.coroutines.runBlocking {
-                    kotlinx.coroutines.withTimeout(30000) { // 30 second timeout
-                        inferenceService?.runReasoning(input)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "IPC reasoning TIMEOUT or Error: ${e.message}")
-                "Error: Reasoning timed out or remote failure. The model might be too heavy."
-            } ?: "Error: Inference Service unavailable."
-
-            val duration = System.currentTimeMillis() - startTime
-            Log.i(TAG, "<<< [Phase 4.5 IPC] Neural Response Received in ${duration}ms")
-            response
-        } catch (e: RemoteException) {
-            Log.e(TAG, "IPC reasoning failed: ${e.message}")
-            "Error: IPC failure - ${e.message}"
-        }
+        Log.w(TAG, "DEPRECATED: Hybrid runNeuralReasoning called. Bypassing to SHM flow.")
+        return "Reasoning Started [SHM Active]"
     }
 
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
