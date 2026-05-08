@@ -14,6 +14,7 @@
 #include "capabilities/neural_embedding_node.h"
 #include "capabilities/hardware_nodes.h"
 #include "capabilities/file_scanner.h"
+#include "hal/shared_memory_bridge.h"
 #include "memory_manager.h"
 #include "long_term_memory.h"
 #include "ronin_log.h"

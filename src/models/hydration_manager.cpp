@@ -62,7 +62,7 @@ bool HydrationManager::hydrate(const std::string& model_path) {
 
     // Phase 2 Logic: Threshold Guard (1GB)
     uint64_t available = getAvailableRAM();
-    LOGI(TAG, "Hydration: Available RAM is %llu MB", available / (1024 * 1024));
+    LOGI(TAG, "Hydration: Available RAM is %llu MB", (unsigned long long)(available / (1024 * 1024)));
 
     if (available > 1024ULL * 1024ULL * 1024ULL) {
         LOGI(TAG, "Hydration: Attempting mlock for ultra-low latency.");
