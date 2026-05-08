@@ -1,6 +1,7 @@
 #include "models/hydration_manager.h"
 #include <fstream>
 #include <sstream>
+#include <cstdint>
 #include <sys/stat.h>
 #include <errno.h>
 

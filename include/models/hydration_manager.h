@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <cstdint>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
