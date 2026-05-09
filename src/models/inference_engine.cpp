@@ -9,6 +9,7 @@
 #include <mutex>
 #include <queue>
 #include <condition_variable>
+#include <dlfcn.h>
 
 #define TAG "RoninInferenceEngine"
 
@@ -16,6 +17,9 @@ namespace Ronin::Kernel::Model {
 
 using namespace mediapipe::tasks::genai::llm_inference;
 using namespace Ronin::Kernel::HAL;
+
+// Function pointer type for CreateFromOptions (Mangled name for Clang arm64)
+typedef absl::StatusOr<std::unique_ptr<LlmInference>> (*CreateFromOptionsFunc)(const LlmInferenceOptions&);
 
 struct InferenceEngine::Impl {
     std::string model_path;
@@ -31,7 +35,6 @@ struct InferenceEngine::Impl {
     bool is_processing = false;
 
     Impl(const std::string& path) : model_path(path) {
-        // Path will be set via setBasePath() before initLlm()
     }
 
     bool initLlm() {
@@ -39,29 +42,49 @@ struct InferenceEngine::Impl {
             LOGE(TAG, "Failed to hydrate model: %s", model_path.c_str());
             return false;
         }
-LlmInferenceOptions options;
-options.model_path = model_path; 
-options.model_asset_buffer = static_cast<const char*>(hydration_manager.getModelPtr());
-options.model_asset_buffer_size = hydration_manager.getModelSize();
-options.max_tokens = context_window;
 
-// SD778G+ Optimization: Try GPU first
-options.accel_type = LlmInferenceOptions::AccelType::GPU;
+        LlmInferenceOptions options;
+        options.model_path = model_path; 
+        options.model_asset_buffer = static_cast<const char*>(hydration_manager.getModelPtr());
+        options.model_asset_buffer_size = hydration_manager.getModelSize();
+        options.max_tokens = context_window;
+        options.accel_type = LlmInferenceOptions::AccelType::GPU;
 
-auto result = LlmInference::CreateFromOptions(options);
-if (!result.ok()) {
-    LOGW(TAG, "GPU acceleration failed: %s. Falling back to CPU...", result.status().message().c_str());
-    options.accel_type = LlmInferenceOptions::AccelType::CPU;
-    result = LlmInference::CreateFromOptions(options);
-}
+        // Phase 3.5: Dynamic Symbol Resolution (Avoid Linker Errors)
+        void* handle = dlopen("libllm_inference_engine_jni.so", RTLD_NOW);
+        if (!handle) {
+            LOGE(TAG, "dlopen failed for libllm_inference_engine_jni.so: %s", dlerror());
+            return false;
+        }
 
-if (!result.ok()) {
-    LOGE(TAG, "LlmInference::Create failed (CPU & GPU): %s", result.status().message().c_str());
-    return false;
-}
+        // Mangled name for: mediapipe::tasks::genai::llm_inference::LlmInference::CreateFromOptions(mediapipe::tasks::genai::llm_inference::LlmInferenceOptions const&)
+        const char* symbol = "_ZN9mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS2_19LlmInferenceOptionsE";
+        auto create_func = (CreateFromOptionsFunc)dlsym(handle, symbol);
 
-llm_inference = result.release();
+        if (!create_func) {
+            LOGW(TAG, "dlsym failed for %s. Trying fallback symbol...", symbol);
+            // Try another potential mangling if needed
+            if (!create_func) {
+                LOGE(TAG, "Could not resolve LlmInference::CreateFromOptions");
+                dlclose(handle);
+                return false;
+            }
+        }
 
+        auto result = create_func(options);
+        if (!result.ok()) {
+            LOGW(TAG, "GPU acceleration failed: %s. Falling back to CPU...", result.status().message().c_str());
+            options.accel_type = LlmInferenceOptions::AccelType::CPU;
+            result = create_func(options);
+        }
+
+        if (!result.ok()) {
+            LOGE(TAG, "LlmInference::Create failed (CPU & GPU): %s", result.status().message().c_str());
+            dlclose(handle);
+            return false;
+        }
+
+        llm_inference = result.release();
         
         // Initialize SpineBridge with dynamic base_path
         spine_bridge = std::make_unique<SharedMemoryBridge<SpineRingBuffer>>("spine_stream");

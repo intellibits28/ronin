@@ -126,7 +126,6 @@ if(ANDROID)
         PUBLIC 
         ronin_core 
         onnxruntime_lib 
-        llm_inference_engine_jni
         ${log-lib} 
         ${android-lib}
     )

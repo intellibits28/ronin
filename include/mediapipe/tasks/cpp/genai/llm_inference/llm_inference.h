@@ -13,11 +13,12 @@
 namespace absl {
     class Status {
     public:
-        Status() : state_(0) {}
-        bool ok() const { return state_ == 0; }
-        std::string message() const { return state_ == 0 ? "OK" : "Error"; }
-    private:
-        uintptr_t state_;
+        Status() : is_ok(true), msg("OK") {}
+        bool ok() const { return is_ok; }
+        std::string message() const { return msg; }
+        
+        bool is_ok;
+        std::string msg;
     };
 
     template <typename T>
