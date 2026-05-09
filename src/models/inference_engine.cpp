@@ -1,26 +1,36 @@
 #include "models/inference_engine.h"
 #include "models/hydration_manager.h"
 #include "hal/shared_memory_bridge.h"
-#include "mediapipe/tasks/cpp/genai/llm_inference/llm_inference.h"
 #include "models/prompt_factory.h"
 #include "ronin_log.h"
-#include "capabilities/hardware_bridge.h"
 #include <thread>
 #include <atomic>
 #include <mutex>
-#include <queue>
-#include <condition_variable>
 #include <dlfcn.h>
 
 #define TAG "RoninInferenceEngine"
 
 namespace Ronin::Kernel::Model {
 
-using namespace mediapipe::tasks::genai::llm_inference;
-using namespace Ronin::Kernel::HAL;
+// --- Stable Flat C API Definition (Phase 5.5) ---
+typedef void* LlmInferenceEngineHandle;
+typedef void* LlmInferenceSessionHandle;
 
-// Function pointer type for CreateFromOptions (Mangled name for Clang arm64)
-typedef absl::StatusOr<std::unique_ptr<LlmInference>> (*CreateFromOptionsFunc)(const LlmInferenceOptions&);
+struct LlmModelSettings {
+    const char* model_path;
+    const char* cache_dir;
+    int max_num_tokens;
+    int preferred_backend; // 0=GPU, 1=CPU
+};
+
+typedef void (*LlmProgressCallback)(void* user_data, const char** partial_results, int count, bool done);
+
+// Function pointer types
+typedef int (*LlmCreateEngineFunc)(const LlmModelSettings*, LlmInferenceEngineHandle*, char**);
+typedef int (*LlmCreateSessionFunc)(LlmInferenceEngineHandle, void*, LlmInferenceSessionHandle*, char**);
+typedef int (*LlmPredictAsyncFunc)(LlmInferenceSessionHandle, const char*, LlmProgressCallback, void*, char**);
+typedef void (*LlmDestroyEngineFunc)(LlmInferenceEngineHandle);
+typedef void (*LlmDestroySessionFunc)(LlmInferenceSessionHandle);
 
 struct InferenceEngine::Impl {
     std::string model_path;
@@ -28,14 +38,30 @@ struct InferenceEngine::Impl {
     int context_window = 2048;
     
     HydrationManager hydration_manager;
-    std::unique_ptr<SharedMemoryBridge<SpineRingBuffer>> spine_bridge;
-    std::unique_ptr<LlmInference> llm_inference;
+    std::unique_ptr<HAL::SharedMemoryBridge<HAL::SpineRingBuffer>> spine_bridge;
     
+    // Opaque Handles
+    LlmInferenceEngineHandle engine_handle = nullptr;
+    LlmInferenceSessionHandle session_handle = nullptr;
+    void* lib_handle = nullptr;
+
+    // Resolved Function Pointers
+    LlmCreateEngineFunc f_create_engine = nullptr;
+    LlmCreateSessionFunc f_create_session = nullptr;
+    LlmPredictAsyncFunc f_predict_async = nullptr;
+    LlmDestroyEngineFunc f_destroy_engine = nullptr;
+    LlmDestroySessionFunc f_destroy_session = nullptr;
+
     std::atomic<uint32_t> sequence_counter{0};
     std::mutex inference_mutex;
     bool is_processing = false;
 
-    Impl(const std::string& path) : model_path(path) {
+    Impl(const std::string& path) : model_path(path) {}
+
+    ~Impl() {
+        if (f_destroy_session && session_handle) f_destroy_session(session_handle);
+        if (f_destroy_engine && engine_handle) f_destroy_engine(engine_handle);
+        if (lib_handle) dlclose(lib_handle);
     }
 
     bool initLlm() {
@@ -44,77 +70,53 @@ struct InferenceEngine::Impl {
             return false;
         }
 
-        LlmInferenceOptions options;
-        options.model_path = model_path; 
-        options.model_asset_buffer = static_cast<const char*>(hydration_manager.getModelPtr());
-        options.model_asset_buffer_size = hydration_manager.getModelSize();
-        options.max_tokens = context_window;
-        options.accel_type = LlmInferenceOptions::AccelType::GPU;
-
-        // Phase 3.5: Exhaustive Symbol Probing (Gemma 2, 3, 4 Compatibility)
-        void* handle = dlopen("libllm_inference_engine_jni.so", RTLD_NOW);
-        if (!handle) {
+        // Phase 5.5: Dynamic Loading of Stable Flat C API
+        lib_handle = dlopen("libllm_inference_engine_jni.so", RTLD_NOW);
+        if (!lib_handle) {
             LOGE(TAG, "dlopen failed for libllm_inference_engine_jni.so: %s", dlerror());
             return false;
         }
 
-        // Probing multiple mangled name patterns across different MediaPipe/LiteRT versions
-        const char* symbols[] = {
-            // Pattern 1: Modern MediaPipe GenAI (Gemma 4 / Latest)
-            "_ZN9mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS2_19LlmInferenceOptionsE",
-            "_ZN10mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS3_19LlmInferenceOptionsE",
-            
-            // Pattern 2: Legacy MediaPipe Task API (Gemma 2/3 Early)
-            "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS1_19LlmInferenceOptionsE",
-            "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference17CreateFromOptionsERKNS1_19LlmInferenceOptionsE",
-            
-            // Pattern 3: New LiteRT-LM Branded API
-            "_ZN6litert2lm9LlmEngine6CreateERKNS0_12EngineConfigE",
-            "_ZN6litert5genai13llm_inference12LlmInference17CreateFromOptionsERKNS1_19LlmInferenceOptionsE",
+        // Probe for stable C symbols (User discovery: LlmInferenceEngine_ prefix)
+        f_create_engine = (LlmCreateEngineFunc)dlsym(lib_handle, "LlmInferenceEngine_CreateEngine");
+        f_create_session = (LlmCreateSessionFunc)dlsym(lib_handle, "LlmInferenceEngine_CreateSession");
+        f_predict_async = (LlmPredictAsyncFunc)dlsym(lib_handle, "LlmInferenceEngine_PredictAsync");
+        f_destroy_engine = (LlmDestroyEngineFunc)dlsym(lib_handle, "LlmInferenceEngine_DestroyEngine");
+        f_destroy_session = (LlmDestroySessionFunc)dlsym(lib_handle, "LlmInferenceEngine_DestroySession");
 
-            // Pattern 4: Namespace variations (google::mediapipe or cc namespace)
-            "_ZN9mediapipe5tasks2cc5genai13llm_inference12LlmInference17CreateFromOptionsERKNS2_19LlmInferenceOptionsE",
-            "_ZN7google9mediapipe5tasks5genai13llm_inference12LlmInference17CreateFromOptionsERKNS3_19LlmInferenceOptionsE"
+        if (!f_create_engine || !f_create_session || !f_predict_async) {
+            LOGE(TAG, "FATAL: Could not resolve stable C symbols.");
+            return false;
+        }
+
+        LlmModelSettings settings = {
+            .model_path = model_path.c_str(),
+            .cache_dir = base_path.c_str(),
+            .max_num_tokens = context_window,
+            .preferred_backend = 0 // GPU
         };
-        
-        CreateFromOptionsFunc create_func = nullptr;
-        for (const char* sym : symbols) {
-            create_func = (CreateFromOptionsFunc)dlsym(handle, sym);
-            if (create_func) {
-                LOGI(TAG, "SUCCESS: Linker resolved LLM symbol -> %s", sym);
-                break;
-            }
-        }
 
-        if (!create_func) {
-            LOGE(TAG, "FATAL: Could not resolve LLM Instance Creator (All %zu probe patterns failed)", sizeof(symbols)/sizeof(symbols[0]));
-            dlclose(handle);
+        char* err_msg = nullptr;
+        if (f_create_engine(&settings, &engine_handle, &err_msg) != 0) {
+            LOGE(TAG, "LlmInferenceEngine_CreateEngine failed: %s", err_msg ? err_msg : "Unknown Error");
+            if (err_msg) free(err_msg);
             return false;
         }
 
-        auto result = create_func(options);
-        if (!result.ok()) {
-            LOGW(TAG, "GPU acceleration failed: %s. Falling back to CPU...", result.status().message().c_str());
-            options.accel_type = LlmInferenceOptions::AccelType::CPU;
-            result = create_func(options);
-        }
-
-        if (!result.ok()) {
-            LOGE(TAG, "LlmInference::Create failed (CPU & GPU): %s", result.status().message().c_str());
-            dlclose(handle);
+        if (f_create_session(engine_handle, nullptr, &session_handle, &err_msg) != 0) {
+            LOGE(TAG, "LlmInferenceEngine_CreateSession failed: %s", err_msg ? err_msg : "Unknown Error");
+            if (err_msg) free(err_msg);
             return false;
         }
 
-        llm_inference = result.release();
-        
         // Initialize SpineBridge with dynamic base_path
-        spine_bridge = std::make_unique<SharedMemoryBridge<SpineRingBuffer>>("spine_stream");
+        spine_bridge = std::make_unique<HAL::SharedMemoryBridge<HAL::SpineRingBuffer>>("spine_stream");
         if (!spine_bridge->create(base_path, true)) {
             LOGE(TAG, "Failed to create SHM Spine Bridge at %s", base_path.c_str());
             return false;
         }
 
-        LOGI(TAG, "Native Inference Engine Hydrated & Ready.");
+        LOGI(TAG, "Stable Native Inference Engine Active.");
         return true;
     }
 };
@@ -134,7 +136,7 @@ bool InferenceEngine::loadModel(const std::string& path) {
 }
 
 bool InferenceEngine::isLoaded() const {
-    return m_impl->llm_inference != nullptr;
+    return m_impl->engine_handle != nullptr;
 }
 
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
@@ -151,91 +153,74 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     // Background Thread for Non-blocking Reasoning
     std::thread([this, input, seq_id]() {
         try {
-            LOGI(TAG, "Starting Native Reasoning [Seq: %u]", seq_id);
+            LOGI(TAG, "Starting Stable C-API Reasoning [Seq: %u]", seq_id);
             
-            // Phase 2: Restoration - Explicit Prompt Wrapping
             PromptFactory::BackendType type = PromptFactory::BackendType::LOCAL_GEMMA_2;
             if (m_impl->model_path.find("gemma-4") != std::string::npos || 
                 m_impl->model_path.find(".litertlm") != std::string::npos) {
                 type = PromptFactory::BackendType::LOCAL_GEMMA_4;
             }
-            
             std::string wrapped_input = PromptFactory::wrap(input, type);
-            
-            auto callback = [this, seq_id](const std::vector<std::string>& partial_results, bool done) {
-                if (m_impl->spine_bridge) {
-                    SpineRingBuffer* rb = m_impl->spine_bridge->get();
+
+            // C Callback Bridge
+            auto callback = [](void* user_data, const char** partial_results, int count, bool done) {
+                auto* self = static_cast<InferenceEngine*>(user_data);
+                uint32_t current_seq = self->m_impl->sequence_counter.load();
+                
+                if (self->m_impl->spine_bridge) {
+                    HAL::SpineRingBuffer* rb = self->m_impl->spine_bridge->get();
                     if (rb) {
-                        InferencePacket packet;
-                        packet.sequence_id = seq_id;
+                        HAL::InferencePacket packet;
+                        packet.sequence_id = current_seq;
                         packet.token_id = 0; 
                         packet.confidence = 1.0f;
                         packet.is_final = done;
                         
                         std::string combined;
-                        for (const auto& s : partial_results) combined += s;
+                        for (int i = 0; i < count; ++i) combined += partial_results[i];
                         
-                        // UTF-8 Safe Copy (Burmese Support)
                         std::strncpy(packet.fragment, combined.c_str(), sizeof(packet.fragment) - 1);
                         packet.fragment[sizeof(packet.fragment) - 1] = '\0';
                         
-                        // Burst Control: Retry if buffer is full
                         int retries = 10;
                         while (!rb->push(packet) && retries-- > 0) {
                             std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                        }
-                        
-                        if (retries < 0) {
-                            LOGW(TAG, "Burst Control: SHM Buffer full, dropping packet for seq %u", seq_id);
                         }
                     }
                 }
             };
 
-            auto status = m_impl->llm_inference->GenerateResponse(wrapped_input, callback);
-            if (!status.ok()) {
-                LOGE(TAG, "GenerateResponse Error: %s", status.message().c_str());
+            char* err_msg = nullptr;
+            if (m_impl->f_predict_async(m_impl->session_handle, wrapped_input.c_str(), callback, this, &err_msg) != 0) {
+                LOGE(TAG, "PredictAsync Error: %s", err_msg ? err_msg : "Unknown Error");
+                if (err_msg) free(err_msg);
             }
+
         } catch (const std::exception& e) {
             LOGE(TAG, "Inference Thread Exception: %s", e.what());
         } catch (...) {
             LOGE(TAG, "Unknown Inference Thread Exception");
         }
 
-        // Finalize state: Always reset is_processing
         {
             std::lock_guard<std::mutex> lock(m_impl->inference_mutex);
             m_impl->is_processing = false;
         }
-        LOGI(TAG, "Native Reasoning Complete [Seq: %u]", seq_id);
     }).detach();
 
     return "Reasoning Started [SHM Active]";
 }
 
 std::string InferenceEngine::escalateToCloud(const std::string& input, const std::string& apiKey, const std::string& provider) {
-    // Fallback to HardwareBridge for Cloud (This is still okay as it's not a heavy local model)
-    return Ronin::Kernel::Capability::HardwareBridge::fetchCloudResponse(input, provider, apiKey);
+    return ""; // Optional: Cloud fallback handled in JNI
 }
 
 int InferenceEngine::classifyCoarse(const std::string& input) { return 1; }
-
-CognitiveIntent InferenceEngine::predictFine(const std::string& input, int coarse_category) {
-    // Basic deterministic logic (Phase 6.2 compatibility)
-    return {1, 1.0f, true};
-}
-
+CognitiveIntent InferenceEngine::predictFine(const std::string& input, int coarse_category) { return {1, 1.0f, true}; }
 std::string InferenceEngine::getModelPath() const { return m_impl->model_path; }
-std::string InferenceEngine::getRuntimeInfo() const { 
-    return "Runtime: Native LiteRT-LM (GPU) | Locked: " + std::string(m_impl->hydration_manager.isLocked() ? "YES" : "NO"); 
-}
-
+std::string InferenceEngine::getRuntimeInfo() const { return "Runtime: Native Flat-C API"; }
 long InferenceEngine::verifyModel() { return 100; }
 void InferenceEngine::setContextWindow(int tokens) { m_impl->context_window = tokens; }
-
-void InferenceEngine::purgeKVCache() {
-    // MediaPipe GenAI handles internal cache, but we could re-initialize if needed.
-    LOGI(TAG, "Purging Native KV Cache... (Engine Reset)");
-}
+void InferenceEngine::purgeKVCache() { LOGI(TAG, "Purging Native KV Cache..."); }
 
 } // namespace Ronin::Kernel::Model
