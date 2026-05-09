@@ -296,6 +296,27 @@ Java_com_ronin_kernel_NativeEngine_pollInferenceStream(JNIEnv *env, jobject thiz
 }
 
 JNIEXPORT jboolean JNICALL
+Java_com_ronin_kernel_NativeEngine_pushTokenToSHM(JNIEnv *env, jobject thiz, jstring fragment, jboolean is_final) {
+    if (!g_spine_consumer) return JNI_FALSE;
+
+    auto* rb = g_spine_consumer->get();
+    if (!rb) return JNI_FALSE;
+
+    std::string text = ConvertJStringToString(env, fragment);
+    
+    ::Ronin::Kernel::HAL::InferencePacket packet;
+    packet.sequence_id = 0; 
+    packet.token_id = 0;
+    packet.confidence = 1.0f;
+    packet.is_final = (is_final == JNI_TRUE);
+    
+    std::strncpy(packet.fragment, text.c_str(), sizeof(packet.fragment) - 1);
+    packet.fragment[sizeof(packet.fragment) - 1] = '\0';
+
+    return rb->push(packet) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
 Java_com_ronin_kernel_NativeEngine_isLoaded(JNIEnv *env, jobject thiz) {
     return g_llm_context.initialized ? JNI_TRUE : JNI_FALSE;
 }

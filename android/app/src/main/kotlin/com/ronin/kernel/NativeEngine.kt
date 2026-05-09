@@ -110,6 +110,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun updateCloudProviders(json: String): Boolean
     private external fun getLMKPressure(): Int
     private external fun pollInferenceStream(): InferencePacket?
+    private external fun pushTokenToSHM(fragment: String, isFinal: Boolean): Boolean
 
     /**
      * Phase 4.0 Audit: Verify native side can actually read the model file.
@@ -362,22 +363,33 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
      * Proxied via Binder to :inference_core process.
+     * In Microkernel mode, this also streams results to SHM.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
-        Log.d(TAG, ">>> [JNI Fallback] Neural Reasoning Delegation: '$input'")
+        Log.d(TAG, ">>> [Microkernel] Worker Reasoning: '$input'")
         
-        return try {
-            val response = kotlinx.coroutines.runBlocking {
-                kotlinx.coroutines.withTimeout(30000) { // 30 second timeout
+        scope.launch {
+            try {
+                // Ensure Polling is active for UI to see this
+                startInferencePolling()
+
+                // Call the actual LLM Engine (InferenceService)
+                // We use a streaming-compatible approach if available, but for now wrap sync response into SHM
+                val response = withContext(Dispatchers.IO) {
                     inferenceService?.runReasoning(input)
-                }
-            } ?: "Error: Inference Service unavailable."
-            response
-        } catch (e: Exception) {
-            Log.e(TAG, "Fallback reasoning failed: ${e.message}")
-            "Error: Fallback failure - ${e.message}"
+                } ?: "Error: Inference Service unavailable."
+                
+                // Push final result to SHM so Native Core/UI can consume it
+                pushTokenToSHM(response, true)
+                Log.i(TAG, "<<< [Microkernel] Reasoning complete and pushed to SHM.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Microkernel reasoning failed: ${e.message}")
+                pushTokenToSHM("Error: ${e.message}", true)
+            }
         }
+        
+        return "Reasoning Started [SHM Active]"
     }
 
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
