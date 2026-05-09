@@ -236,6 +236,12 @@ Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstri
             LOGW(TAG, "Local Reasoning Failed: %s. Escalating to Cloud...", response.c_str());
         }
         
+        // --- THE LOGIC WALL ---
+        if (g_intent_engine && g_intent_engine->isOfflineMode()) {
+            LOGW(TAG, "Offline Mode Active: Blocking Cloud Fallback.");
+            return ConvertStringToJString(env, "Error: Offline mode is active and local reasoning failed.");
+        }
+
         std::string provider = "Gemini"; 
         if (g_intent_engine) {
             provider = g_intent_engine->getPrimaryCloudProvider();

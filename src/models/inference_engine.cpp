@@ -2,6 +2,7 @@
 #include "models/hydration_manager.h"
 #include "hal/shared_memory_bridge.h"
 #include "mediapipe/tasks/cpp/genai/llm_inference/llm_inference.h"
+#include "models/prompt_factory.h"
 #include "ronin_log.h"
 #include "capabilities/hardware_bridge.h"
 #include <thread>
@@ -132,6 +133,15 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
         try {
             LOGI(TAG, "Starting Native Reasoning [Seq: %u]", seq_id);
             
+            // Phase 2: Restoration - Explicit Prompt Wrapping
+            PromptFactory::BackendType type = PromptFactory::BackendType::LOCAL_GEMMA_2;
+            if (m_impl->model_path.find("gemma-4") != std::string::npos || 
+                m_impl->model_path.find(".litertlm") != std::string::npos) {
+                type = PromptFactory::BackendType::LOCAL_GEMMA_4;
+            }
+            
+            std::string wrapped_input = PromptFactory::wrap(input, type);
+            
             auto callback = [this, seq_id](const std::vector<std::string>& partial_results, bool done) {
                 if (m_impl->spine_bridge) {
                     SpineRingBuffer* rb = m_impl->spine_bridge->get();
@@ -162,7 +172,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
                 }
             };
 
-            auto status = m_impl->llm_inference->GenerateResponse(input, callback);
+            auto status = m_impl->llm_inference->GenerateResponse(wrapped_input, callback);
             if (!status.ok()) {
                 LOGE(TAG, "GenerateResponse Error: %s", status.message().c_str());
             }
