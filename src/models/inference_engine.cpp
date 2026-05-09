@@ -51,25 +51,33 @@ struct InferenceEngine::Impl {
         options.max_tokens = context_window;
         options.accel_type = LlmInferenceOptions::AccelType::GPU;
 
-        // Phase 3.5: Dynamic Symbol Resolution (Avoid Linker Errors)
+        // Phase 3.5: Robust Dynamic Symbol Resolution
         void* handle = dlopen("libllm_inference_engine_jni.so", RTLD_NOW);
         if (!handle) {
             LOGE(TAG, "dlopen failed for libllm_inference_engine_jni.so: %s", dlerror());
             return false;
         }
 
-        // Mangled name for: mediapipe::tasks::genai::llm_inference::LlmInference::CreateFromOptions(mediapipe::tasks::genai::llm_inference::LlmInferenceOptions const&)
-        const char* symbol = "_ZN9mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS2_19LlmInferenceOptionsE";
-        auto create_func = (CreateFromOptionsFunc)dlsym(handle, symbol);
+        // Probing multiple mangled name patterns for CreateFromOptions
+        const char* symbols[] = {
+            "_ZN9mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS2_19LlmInferenceOptionsE",
+            "_ZN10mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS3_19LlmInferenceOptionsE",
+            "_ZN9mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS_5tasks3cpp5genai13llm_inference19LlmInferenceOptionsE"
+        };
+        
+        CreateFromOptionsFunc create_func = nullptr;
+        for (const char* sym : symbols) {
+            create_func = (CreateFromOptionsFunc)dlsym(handle, sym);
+            if (create_func) {
+                LOGI(TAG, "Successfully resolved CreateFromOptions using symbol: %s", sym);
+                break;
+            }
+        }
 
         if (!create_func) {
-            LOGW(TAG, "dlsym failed for %s. Trying fallback symbol...", symbol);
-            // Try another potential mangling if needed
-            if (!create_func) {
-                LOGE(TAG, "Could not resolve LlmInference::CreateFromOptions");
-                dlclose(handle);
-                return false;
-            }
+            LOGE(TAG, "FATAL: Could not resolve LlmInference::CreateFromOptions (All probe patterns failed)");
+            dlclose(handle);
+            return false;
         }
 
         auto result = create_func(options);

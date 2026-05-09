@@ -37,9 +37,19 @@ uint64_t HydrationManager::getAvailableRAM() {
 bool HydrationManager::hydrate(const std::string& model_path) {
     dehydrate();
 
-    m_fd = open(model_path.c_str(), O_RDONLY);
+    std::string sanitized_path = model_path;
+    
+    // Phase 2 Sanitization: Handle Android symlinks (/data/user/0/ -> /data/data/)
+    if (sanitized_path.find("/data/user/0/") == 0) {
+        if (access(sanitized_path.c_str(), F_OK) != 0) {
+            LOGW(TAG, "Path %s not found. Attempting symlink resolution...", sanitized_path.c_str());
+            sanitized_path.replace(0, 13, "/data/data/");
+        }
+    }
+
+    m_fd = open(sanitized_path.c_str(), O_RDONLY);
     if (m_fd == -1) {
-        LOGE(TAG, "Hydration Error: Cannot open file %s (errno: %d)", model_path.c_str(), errno);
+        LOGE(TAG, "Hydration Error: Cannot open file %s (errno: %d)", sanitized_path.c_str(), errno);
         return false;
     }
 
