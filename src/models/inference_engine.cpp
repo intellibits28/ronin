@@ -119,10 +119,11 @@ struct InferenceEngine::Impl {
             m_use_kotlin_fallback = true;
         }
 
+        LOGI(TAG, "Initializing SHM Spine Bridge at base_path: '%s'", base_path.c_str());
         spine_bridge = std::make_unique<HAL::SharedMemoryBridge<HAL::SpineRingBuffer>>("spine_stream");
         if (!spine_bridge->create(base_path, true)) {
             LOGE(TAG, "Failed to create SHM Spine Bridge at %s", base_path.c_str());
-            return false;
+            // Do not return false, allow fallback to work without streaming if necessary
         }
 
         LOGI(TAG, "Inference Spine Ready (Mode: %s)", m_use_kotlin_fallback ? "Kotlin Fallback" : "Pure Native");
@@ -157,18 +158,13 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
 
             if (m_impl->m_use_kotlin_fallback) {
                 LOGI(TAG, "Executing JNI Fallback Reasoning [Seq: %u]", seq_id);
-                // Call back to Kotlin via HardwareBridge
                 std::string response = Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
                 
-                // Stream response into SHM even in fallback mode for UI consistency
-                if (m_impl->spine_bridge) {
+                if (m_impl->spine_bridge && m_impl->spine_bridge->is_valid()) {
                     HAL::SpineRingBuffer* rb = m_impl->spine_bridge->get();
                     if (rb) {
                         HAL::InferencePacket packet;
-                        packet.sequence_id = seq_id;
-                        packet.token_id = 0;
-                        packet.confidence = 1.0f;
-                        packet.is_final = true;
+                        packet.sequence_id = seq_id; packet.token_id = 0; packet.confidence = 1.0f; packet.is_final = true;
                         std::strncpy(packet.fragment, response.c_str(), sizeof(packet.fragment) - 1);
                         packet.fragment[sizeof(packet.fragment) - 1] = '\0';
                         rb->push(packet);
@@ -179,14 +175,11 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
                 auto callback = [](void* user_data, const char** partial_results, int count, bool done) {
                     auto* self = static_cast<InferenceEngine*>(user_data);
                     uint32_t current_seq = self->m_impl->sequence_counter.load();
-                    if (self->m_impl->spine_bridge) {
+                    if (self->m_impl->spine_bridge && self->m_impl->spine_bridge->is_valid()) {
                         HAL::SpineRingBuffer* rb = self->m_impl->spine_bridge->get();
                         if (rb) {
                             HAL::InferencePacket packet;
-                            packet.sequence_id = current_seq;
-                            packet.token_id = 0; 
-                            packet.confidence = 1.0f;
-                            packet.is_final = done;
+                            packet.sequence_id = current_seq; packet.token_id = 0; packet.confidence = 1.0f; packet.is_final = done;
                             std::string combined;
                             for (int i = 0; i < count; ++i) combined += partial_results[i];
                             std::strncpy(packet.fragment, combined.c_str(), sizeof(packet.fragment) - 1);

@@ -110,6 +110,10 @@ public:
 
     T* get() { return static_cast<T*>(m_ptr); }
 
+    bool is_valid() const {
+        return m_ptr != MAP_FAILED && m_ptr != nullptr;
+    }
+
 private:
     std::string m_name;
     size_t m_size;

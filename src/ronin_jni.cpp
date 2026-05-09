@@ -141,6 +141,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     // Ensure inference engine wrapper is ready for hybrid calls and linked to IntentEngine
     auto engine = std::make_unique<InferenceEngine>("hybrid_mode");
     engine->setLibPath(native_lib_path);
+    engine->setBasePath(base_path); // FIX: Set base path immediately
     g_llm_context.engine = engine.get();
     g_intent_engine->setInferenceEngine(std::move(engine));
     
