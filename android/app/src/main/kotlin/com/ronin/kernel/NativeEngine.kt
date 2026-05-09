@@ -94,7 +94,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     // --- JNI API ---
-    private external fun initializeKernel(filesDir: String)
+    private external fun initializeKernel(filesDir: String, libDir: String)
     private external fun setEngineInstance()
     private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
     private external fun notifyModelLoaded(path: String)
