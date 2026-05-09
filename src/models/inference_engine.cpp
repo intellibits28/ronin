@@ -51,31 +51,43 @@ struct InferenceEngine::Impl {
         options.max_tokens = context_window;
         options.accel_type = LlmInferenceOptions::AccelType::GPU;
 
-        // Phase 3.5: Robust Dynamic Symbol Resolution
+        // Phase 3.5: Exhaustive Symbol Probing (Gemma 2, 3, 4 Compatibility)
         void* handle = dlopen("libllm_inference_engine_jni.so", RTLD_NOW);
         if (!handle) {
             LOGE(TAG, "dlopen failed for libllm_inference_engine_jni.so: %s", dlerror());
             return false;
         }
 
-        // Probing multiple mangled name patterns for CreateFromOptions
+        // Probing multiple mangled name patterns across different MediaPipe/LiteRT versions
         const char* symbols[] = {
+            // Pattern 1: Modern MediaPipe GenAI (Gemma 4 / Latest)
             "_ZN9mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS2_19LlmInferenceOptionsE",
             "_ZN10mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS3_19LlmInferenceOptionsE",
-            "_ZN9mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS_5tasks3cpp5genai13llm_inference19LlmInferenceOptionsE"
+            
+            // Pattern 2: Legacy MediaPipe Task API (Gemma 2/3 Early)
+            "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS1_19LlmInferenceOptionsE",
+            "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference17CreateFromOptionsERKNS1_19LlmInferenceOptionsE",
+            
+            // Pattern 3: New LiteRT-LM Branded API
+            "_ZN6litert2lm9LlmEngine6CreateERKNS0_12EngineConfigE",
+            "_ZN6litert5genai13llm_inference12LlmInference17CreateFromOptionsERKNS1_19LlmInferenceOptionsE",
+
+            // Pattern 4: Namespace variations (google::mediapipe or cc namespace)
+            "_ZN9mediapipe5tasks2cc5genai13llm_inference12LlmInference17CreateFromOptionsERKNS2_19LlmInferenceOptionsE",
+            "_ZN7google9mediapipe5tasks5genai13llm_inference12LlmInference17CreateFromOptionsERKNS3_19LlmInferenceOptionsE"
         };
         
         CreateFromOptionsFunc create_func = nullptr;
         for (const char* sym : symbols) {
             create_func = (CreateFromOptionsFunc)dlsym(handle, sym);
             if (create_func) {
-                LOGI(TAG, "Successfully resolved CreateFromOptions using symbol: %s", sym);
+                LOGI(TAG, "SUCCESS: Linker resolved LLM symbol -> %s", sym);
                 break;
             }
         }
 
         if (!create_func) {
-            LOGE(TAG, "FATAL: Could not resolve LlmInference::CreateFromOptions (All probe patterns failed)");
+            LOGE(TAG, "FATAL: Could not resolve LLM Instance Creator (All %zu probe patterns failed)", sizeof(symbols)/sizeof(symbols[0]));
             dlclose(handle);
             return false;
         }
