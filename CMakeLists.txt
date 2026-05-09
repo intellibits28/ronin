@@ -62,10 +62,6 @@ add_custom_target(generate_fbs DEPENDS ${FBS_OUT})
 
 # --- Requirement: ONNX Runtime ---
 if(ANDROID)
-    # MediaPipe GenAI (User provided .so in root for exact symbol matching)
-    add_library(llm_inference_engine_jni SHARED IMPORTED)
-    set_target_properties(llm_inference_engine_jni PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/libllm_inference_engine_jni.so)
-
     FetchContent_Declare(
       onnxruntime
       URL https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.17.1/onnxruntime-android-1.17.1.aar
@@ -130,7 +126,6 @@ if(ANDROID)
         PUBLIC 
         ronin_core 
         onnxruntime_lib 
-        llm_inference_engine_jni
         ${log-lib} 
         ${android-lib}
     )
