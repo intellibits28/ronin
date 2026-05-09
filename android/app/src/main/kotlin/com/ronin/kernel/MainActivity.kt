@@ -30,6 +30,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -515,9 +516,12 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
 
                 if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
 
-                Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) { 
-                    LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } } 
+                Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
+                    SelectionContainer {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }
+                    }
                 }
+
                 Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) { 
                     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } 
 
@@ -572,7 +576,11 @@ fun InfoItem(l: String, v: String, c: Color) { Column { Text(l, fontSize = 10.sp
 fun ChatBubble(m: String) {
     val isUser = m.startsWith("User:"); val content = m.substringAfter(": ")
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
-        Surface(color = if (isUser) Color(0xFF2D3142) else Color(0xFF64B5F6).copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp)) { Text(content, modifier = Modifier.padding(12.dp), color = Color.White, fontSize = 14.sp) }
+        Surface(color = if (isUser) Color(0xFF2D3142) else Color(0xFF64B5F6).copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp)) { 
+            SelectionContainer {
+                Text(content, modifier = Modifier.padding(12.dp), color = Color.White, fontSize = 14.sp) 
+            }
+        }
     }
 }
 
