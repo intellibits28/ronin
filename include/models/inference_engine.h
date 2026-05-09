@@ -85,6 +85,11 @@ public:
     void setBasePath(const std::string& path);
 
     /**
+     * Android: Set explicit native library directory for dlopen.
+     */
+    void setLibPath(const std::string& path);
+
+    /**
      * Phase 5.9.2: KV-Cache Pruning
      * Clears internal buffers to reclaim RAM during Memory Pressure.
      */

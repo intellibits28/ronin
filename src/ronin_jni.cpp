@@ -64,9 +64,14 @@ Java_com_ronin_kernel_NativeEngine_setEngineInstance(JNIEnv *env, jobject thiz) 
 }
 
 JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir) {
+Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstring lib_dir) {
     std::string base_path = ConvertJStringToString(env, files_dir);
+    std::string native_lib_path = ConvertJStringToString(env, lib_dir);
     LOGI(TAG, "Initializing Ronin Kernel Core...");
+
+    // Store native_lib_path for dlopen in InferenceEngine
+    // We can pass it to the engine instance later or use a global.
+    // For now, let's update InferenceEngine::setBasePath or add setLibPath.
 
     // Phase 1: Initialize SHM Consumer for UI Streaming
     g_spine_consumer = std::make_unique<::Ronin::Kernel::HAL::SharedMemoryBridge<::Ronin::Kernel::HAL::SpineRingBuffer>>("spine_stream");
@@ -135,6 +140,7 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     
     // Ensure inference engine wrapper is ready for hybrid calls and linked to IntentEngine
     auto engine = std::make_unique<InferenceEngine>("hybrid_mode");
+    engine->setLibPath(native_lib_path);
     g_llm_context.engine = engine.get();
     g_intent_engine->setInferenceEngine(std::move(engine));
     

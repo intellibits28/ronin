@@ -250,12 +250,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (isLibLoaded) {
             try {
                 setEngineInstance()
-                initializeKernel(context.filesDir.absolutePath)
+                val libDir = context.applicationInfo.nativeLibraryDir
+                initializeKernel(context.filesDir.absolutePath, libDir)
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "initializeKernel failed: ${e.message}")
             }
         }
-        // bindInferenceService()
     }
 
     /*

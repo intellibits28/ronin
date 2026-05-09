@@ -35,6 +35,7 @@ typedef void (*LlmDestroySessionFunc)(LlmInferenceSessionHandle);
 struct InferenceEngine::Impl {
     std::string model_path;
     std::string base_path;
+    std::string lib_path;
     int context_window = 2048;
     
     HydrationManager hydration_manager;
@@ -70,22 +71,44 @@ struct InferenceEngine::Impl {
             return false;
         }
 
-        // Phase 5.5: Dynamic Loading of Stable Flat C API
-        lib_handle = dlopen("libllm_inference_engine_jni.so", RTLD_NOW);
-        if (!lib_handle) {
-            LOGE(TAG, "dlopen failed for libllm_inference_engine_jni.so: %s", dlerror());
-            return false;
+        // Phase 5.5: Dynamic Loading with Explicit Path
+        std::string lib_full_path = "libllm_inference_engine_jni.so";
+        if (!lib_path.empty()) {
+            lib_full_path = lib_path + "/libllm_inference_engine_jni.so";
+            LOGI(TAG, "Attempting dlopen with explicit path: %s", lib_full_path.c_str());
         }
 
-        // Probe for stable C symbols (User discovery: LlmInferenceEngine_ prefix)
-        f_create_engine = (LlmCreateEngineFunc)dlsym(lib_handle, "LlmInferenceEngine_CreateEngine");
-        f_create_session = (LlmCreateSessionFunc)dlsym(lib_handle, "LlmInferenceEngine_CreateSession");
-        f_predict_async = (LlmPredictAsyncFunc)dlsym(lib_handle, "LlmInferenceEngine_PredictAsync");
-        f_destroy_engine = (LlmDestroyEngineFunc)dlsym(lib_handle, "LlmInferenceEngine_DestroyEngine");
-        f_destroy_session = (LlmDestroySessionFunc)dlsym(lib_handle, "LlmInferenceEngine_DestroySession");
+        lib_handle = dlopen(lib_full_path.c_str(), RTLD_NOW);
+        if (!lib_handle) {
+            const char* err = dlerror();
+            LOGE(TAG, "dlopen failed for %s: %s", lib_full_path.c_str(), err ? err : "Unknown Error");
+            // Fallback to library name only
+            lib_handle = dlopen("libllm_inference_engine_jni.so", RTLD_NOW);
+            if (!lib_handle) return false;
+        }
+
+        // Probing Loop for Stable C Symbols
+        auto probe = [&](const char* base_name) -> void* {
+            void* sym = dlsym(lib_handle, base_name);
+            if (sym) return sym;
+            
+            // Try with leading underscore (common in some NDK/toolchains)
+            std::string underscore = "_" + std::string(base_name);
+            sym = dlsym(lib_handle, underscore.c_str());
+            if (sym) return sym;
+
+            LOGW(TAG, "dlsym failed for %s: %s", base_name, dlerror());
+            return nullptr;
+        };
+
+        f_create_engine = (LlmCreateEngineFunc)probe("LlmInferenceEngine_CreateEngine");
+        f_create_session = (LlmCreateSessionFunc)probe("LlmInferenceEngine_CreateSession");
+        f_predict_async = (LlmPredictAsyncFunc)probe("LlmInferenceEngine_PredictAsync");
+        f_destroy_engine = (LlmDestroyEngineFunc)probe("LlmInferenceEngine_DestroyEngine");
+        f_destroy_session = (LlmDestroySessionFunc)probe("LlmInferenceEngine_DestroySession");
 
         if (!f_create_engine || !f_create_session || !f_predict_async) {
-            LOGE(TAG, "FATAL: Could not resolve stable C symbols.");
+            LOGE(TAG, "FATAL: Could not resolve stable C symbols from libllm_inference_engine_jni.so");
             return false;
         }
 
@@ -128,6 +151,10 @@ InferenceEngine::~InferenceEngine() = default;
 
 void InferenceEngine::setBasePath(const std::string& path) {
     if (m_impl) m_impl->base_path = path;
+}
+
+void InferenceEngine::setLibPath(const std::string& path) {
+    if (m_impl) m_impl->lib_path = path;
 }
 
 bool InferenceEngine::loadModel(const std::string& path) {
