@@ -44,3 +44,4 @@ AppIcons.zip
 Cloud.pdf
 ss_*.jpg
 build_check/
+libllm_inference_engine_jni.so

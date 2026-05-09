@@ -30,6 +30,15 @@ public:
      */
     void dehydrate();
 
+    /**
+     * Phase 7.0: Integrity & Metadata
+     */
+    bool verifyChecksum();
+    bool parseMetadata();
+    
+    std::string getModelFingerprint() const { return m_checksum; }
+    bool isGemma4() const { return m_is_gemma4; }
+
     void* getModelPtr() const { return m_model_ptr; }
     size_t getModelSize() const { return m_model_size; }
     bool isLocked() const { return m_is_locked; }
@@ -50,6 +59,10 @@ private:
     size_t m_model_size = 0;
     int m_fd = -1;
     bool m_is_locked = false;
+
+    // Phase 7.0 state
+    std::string m_checksum;
+    bool m_is_gemma4 = false;
 };
 
 } // namespace Ronin::Kernel::Model

@@ -13,7 +13,7 @@
 
 namespace Ronin::Kernel::Model {
 
-// --- Stable Flat C API Definition ---
+// --- EXACT C-API Definition from libllm_inference_engine_jni.so (Lock-on Fix) ---
 typedef void* LlmInferenceEngineHandle;
 typedef void* LlmInferenceSessionHandle;
 
@@ -29,8 +29,8 @@ typedef void (*LlmProgressCallback)(void* user_data, const char** partial_result
 typedef int (*LlmCreateEngineFunc)(const LlmModelSettings*, LlmInferenceEngineHandle*, char**);
 typedef int (*LlmCreateSessionFunc)(LlmInferenceEngineHandle, void*, LlmInferenceSessionHandle*, char**);
 typedef int (*LlmPredictAsyncFunc)(LlmInferenceSessionHandle, const char*, LlmProgressCallback, void*, char**);
-typedef void (*LlmDestroyEngineFunc)(LlmInferenceEngineHandle);
-typedef void (*LlmDestroySessionFunc)(LlmInferenceSessionHandle);
+typedef void (*LlmEngineDeleteFunc)(LlmInferenceEngineHandle);
+typedef void (*LlmSessionDeleteFunc)(LlmInferenceSessionHandle);
 
 struct InferenceEngine::Impl {
     std::string model_path;
@@ -48,8 +48,8 @@ struct InferenceEngine::Impl {
     LlmCreateEngineFunc f_create_engine = nullptr;
     LlmCreateSessionFunc f_create_session = nullptr;
     LlmPredictAsyncFunc f_predict_async = nullptr;
-    LlmDestroyEngineFunc f_destroy_engine = nullptr;
-    LlmDestroySessionFunc f_destroy_session = nullptr;
+    LlmEngineDeleteFunc f_engine_delete = nullptr;
+    LlmSessionDeleteFunc f_session_delete = nullptr;
 
     bool m_use_kotlin_fallback = false;
 
@@ -60,73 +60,70 @@ struct InferenceEngine::Impl {
     Impl(const std::string& path) : model_path(path) {}
 
     ~Impl() {
-        if (f_destroy_session && session_handle) f_destroy_session(session_handle);
-        if (f_destroy_engine && engine_handle) f_destroy_engine(engine_handle);
-        if (lib_handle) dlclose(lib_handle);
+        if (f_session_delete && session_handle) f_session_delete(session_handle);
+        if (f_engine_delete && engine_handle) f_engine_delete(engine_handle);
+        // Do not close lib_handle if it's the process-global one
     }
 
     bool initLlm() {
+        // Stage 1, 2, 3: Hydration Pipeline (mmap -> checksum -> metadata)
         if (!hydration_manager.hydrate(model_path)) {
-            LOGE(TAG, "Failed to hydrate model: %s", model_path.c_str());
+            LOGE(TAG, "Pipeline Error: Failed to hydrate model: %s", model_path.c_str());
             return false;
         }
 
+        // Stage 4: Runtime Binding (Lock-on Fix)
         lib_handle = dlopen(nullptr, RTLD_NOW);
         if (!lib_handle) {
             LOGE(TAG, "dlopen(nullptr) failed: %s", dlerror());
             return false;
         }
 
-        LOGI(TAG, "Commencing Exhaustive Symbol Probe (Master Probe Array)...");
+        LOGI(TAG, "Commencing Pipeline Stage 4: Runtime Binding...");
 
-        auto probe = [&](const char* base_name) -> void* {
-            const char* prefixes[] = {"LlmInferenceEngine_", "LlmInference_", "LlmEngine_", ""};
-            for (const char* pref : prefixes) {
-                std::string full_name = std::string(pref) + base_name;
-                void* sym = dlsym(lib_handle, full_name.c_str());
-                if (sym) return sym;
-                std::string underscore = "_" + full_name;
-                sym = dlsym(lib_handle, underscore.c_str());
-                if (sym) return sym;
-            }
-            return nullptr;
-        };
-
-        f_create_engine = (LlmCreateEngineFunc)probe("CreateEngine");
-        if (!f_create_engine) f_create_engine = (LlmCreateEngineFunc)probe("Create");
-
-        f_create_session = (LlmCreateSessionFunc)probe("CreateSession");
-        f_predict_async = (LlmPredictAsyncFunc)probe("PredictAsync");
-        f_destroy_engine = (LlmDestroyEngineFunc)probe("DestroyEngine");
-        f_destroy_session = (LlmDestroySessionFunc)probe("DestroySession");
+        // Use EXACT symbols found via nm tool
+        f_create_engine = (LlmCreateEngineFunc)dlsym(lib_handle, "LlmInferenceEngine_CreateEngine");
+        f_create_session = (LlmCreateSessionFunc)dlsym(lib_handle, "LlmInferenceEngine_CreateSession");
+        f_predict_async = (LlmPredictAsyncFunc)dlsym(lib_handle, "LlmInferenceEngine_Session_PredictAsync");
+        f_engine_delete = (LlmEngineDeleteFunc)dlsym(lib_handle, "LlmInferenceEngine_Engine_Delete");
+        f_session_delete = (LlmSessionDeleteFunc)dlsym(lib_handle, "LlmInferenceEngine_Session_Delete");
 
         if (f_create_engine && f_create_session && f_predict_async) {
-            LOGI(TAG, "SUCCESS: Stable C API symbols resolved from memory.");
-            LlmModelSettings settings = { .model_path = model_path.c_str(), .cache_dir = base_path.c_str(), .max_num_tokens = context_window, .preferred_backend = 0 };
+            LOGI(TAG, "SUCCESS: Exact C API symbols bound from memory.");
+            
+            LlmModelSettings settings = {
+                .model_path = model_path.c_str(),
+                .cache_dir = base_path.c_str(),
+                .max_num_tokens = context_window,
+                .preferred_backend = 0 // GPU
+            };
+
             char* err_msg = nullptr;
             if (f_create_engine(&settings, &engine_handle, &err_msg) != 0) {
-                LOGE(TAG, "Native Engine Creation failed: %s. Enabling Kotlin Fallback.", err_msg ? err_msg : "Unknown Error");
+                LOGW(TAG, "Native Engine Creation failed: %s. Switching to JNI Fallback.", err_msg ? err_msg : "Unknown");
                 if (err_msg) free(err_msg);
                 m_use_kotlin_fallback = true;
             }
+
             if (!m_use_kotlin_fallback && f_create_session(engine_handle, nullptr, &session_handle, &err_msg) != 0) {
-                LOGE(TAG, "Native Session Creation failed: %s. Enabling Kotlin Fallback.", err_msg ? err_msg : "Unknown Error");
+                LOGW(TAG, "Native Session Creation failed: %s. Switching to JNI Fallback.", err_msg ? err_msg : "Unknown");
                 if (err_msg) free(err_msg);
                 m_use_kotlin_fallback = true;
             }
         } else {
-            LOGW(TAG, "Native C API NOT FOUND. Activating Track 2: JNI Fallback (Kotlin Delegation).");
+            LOGW(TAG, "Stage 4 Failed: Symbols not found in process memory. Activating JNI Fallback.");
             m_use_kotlin_fallback = true;
         }
 
-        LOGI(TAG, "Initializing SHM Spine Bridge at base_path: '%s'", base_path.c_str());
+        // Initialize SHM Highway
         spine_bridge = std::make_unique<HAL::SharedMemoryBridge<HAL::SpineRingBuffer>>("spine_stream");
         if (!spine_bridge->create(base_path, true)) {
-            LOGE(TAG, "Failed to create SHM Spine Bridge at %s", base_path.c_str());
-            // Do not return false, allow fallback to work without streaming if necessary
+            LOGE(TAG, "Highway Error: Failed to create SHM Spine Bridge");
         }
 
-        LOGI(TAG, "Inference Spine Ready (Mode: %s)", m_use_kotlin_fallback ? "Kotlin Fallback" : "Pure Native");
+        LOGI(TAG, "Sentient Staging Complete (Mode: %s | Gemma4: %s)", 
+             m_use_kotlin_fallback ? "Fallback" : "Native",
+             hydration_manager.isGemma4() ? "YES" : "NO");
         return true;
     }
 };
@@ -151,7 +148,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     std::thread([this, input, seq_id]() {
         try {
             PromptFactory::BackendType type = PromptFactory::BackendType::LOCAL_GEMMA_2;
-            if (m_impl->model_path.find("gemma-4") != std::string::npos || m_impl->model_path.find(".litertlm") != std::string::npos) {
+            if (m_impl->model_path.find("gemma-4") != std::string::npos || m_impl->hydration_manager.isGemma4()) {
                 type = PromptFactory::BackendType::LOCAL_GEMMA_4;
             }
             std::string wrapped_input = PromptFactory::wrap(input, type);
@@ -171,7 +168,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
                     }
                 }
             } else {
-                LOGI(TAG, "Executing Stable Native Reasoning [Seq: %u]", seq_id);
+                LOGI(TAG, "Executing Lock-on Native Reasoning [Seq: %u]", seq_id);
                 auto callback = [](void* user_data, const char** partial_results, int count, bool done) {
                     auto* self = static_cast<InferenceEngine*>(user_data);
                     uint32_t current_seq = self->m_impl->sequence_counter.load();
@@ -216,7 +213,7 @@ std::string InferenceEngine::escalateToCloud(const std::string& input, const std
 int InferenceEngine::classifyCoarse(const std::string& input) { return 1; }
 CognitiveIntent InferenceEngine::predictFine(const std::string& input, int coarse_category) { return {1, 1.0f, true}; }
 std::string InferenceEngine::getModelPath() const { return m_impl->model_path; }
-std::string InferenceEngine::getRuntimeInfo() const { return m_impl->m_use_kotlin_fallback ? "Runtime: JNI Fallback" : "Runtime: Native Flat-C API"; }
+std::string InferenceEngine::getRuntimeInfo() const { return m_impl->m_use_kotlin_fallback ? "Runtime: JNI Fallback" : "Runtime: Native Lock-on Fix"; }
 long InferenceEngine::verifyModel() { return 100; }
 void InferenceEngine::setContextWindow(int tokens) { m_impl->context_window = tokens; }
 void InferenceEngine::purgeKVCache() { LOGI(TAG, "Purging Native KV Cache..."); }
