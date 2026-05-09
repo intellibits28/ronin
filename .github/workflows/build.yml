@@ -80,9 +80,12 @@ jobs:
           cache-disabled: true
           arguments: clean assembleDebug
 
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ronin-kernel-debug.apk
+
       - name: Upload Ronin APK
         uses: actions/upload-artifact@v4
         with:
           name: ronin-kernel-app-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ronin-kernel-debug.apk
           retention-days: 5
