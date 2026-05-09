@@ -28,7 +28,6 @@ import java.util.concurrent.TimeUnit
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     // --- LEGACY INFERENCE SERVICE (FALLBACK ONLY) ---
-    /*
     private var inferenceService: IInferenceService? = null
     private var isServiceBound = false
 
@@ -60,7 +59,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             Log.w(TAG, "Inference Service Disconnected.")
         }
     }
-    */
 
     private val scope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
 
@@ -255,15 +253,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "initializeKernel failed: ${e.message}")
             }
-        }
-    }
+            }
+            bindInferenceService()
+            }
 
-    /*
-    private fun bindInferenceService() {
-        val intent = Intent(context, InferenceService::class.java)
-        context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-    }
-    */
+            private fun bindInferenceService() {
+            val intent = Intent(context, InferenceService::class.java)
+            context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+            }
 
     /**
      * Kotlin-Side Model Hydration with Native Delegation.
@@ -364,12 +361,23 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
-     * LEGACY: No longer used by Phase 3 Native Engine as it uses SHM.
+     * Proxied via Binder to :inference_core process.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
-        Log.w(TAG, "DEPRECATED: Hybrid runNeuralReasoning called. Bypassing to SHM flow.")
-        return "Reasoning Started [SHM Active]"
+        Log.d(TAG, ">>> [JNI Fallback] Neural Reasoning Delegation: '$input'")
+        
+        return try {
+            val response = kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeout(30000) { // 30 second timeout
+                    inferenceService?.runReasoning(input)
+                }
+            } ?: "Error: Inference Service unavailable."
+            response
+        } catch (e: Exception) {
+            Log.e(TAG, "Fallback reasoning failed: ${e.message}")
+            "Error: Fallback failure - ${e.message}"
+        }
     }
 
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
