@@ -71,64 +71,82 @@ struct InferenceEngine::Impl {
             return false;
         }
 
-        // Phase 5.5: Dynamic Loading with Explicit Path
-        std::string lib_full_path = "libllm_inference_engine_jni.so";
-        if (!lib_path.empty()) {
-            lib_full_path = lib_path + "/libllm_inference_engine_jni.so";
-            LOGI(TAG, "Attempting dlopen with explicit path: %s", lib_full_path.c_str());
-        }
-
-        lib_handle = dlopen(lib_full_path.c_str(), RTLD_NOW);
+        // Phase 6.0: Memory-based Symbol Discovery (Namespace Safe)
+        // Instead of searching for a specific path, search in all loaded libraries (nullptr)
+        lib_handle = dlopen(nullptr, RTLD_NOW);
         if (!lib_handle) {
-            const char* err = dlerror();
-            LOGE(TAG, "dlopen failed for %s: %s", lib_full_path.c_str(), err ? err : "Unknown Error");
-            // Fallback to library name only
-            lib_handle = dlopen("libllm_inference_engine_jni.so", RTLD_NOW);
-            if (!lib_handle) return false;
+            LOGE(TAG, "dlopen(nullptr) failed: %s", dlerror());
+            return false;
         }
 
-        // Probing Loop for Stable C Symbols
+        LOGI(TAG, "Commencing Exhaustive Symbol Probe (Flat C & Mangled C++)...");
+
+        // Universal Probe for stable C symbols (User discovery: LlmInferenceEngine_ prefix)
         auto probe = [&](const char* base_name) -> void* {
             void* sym = dlsym(lib_handle, base_name);
             if (sym) return sym;
             
-            // Try with leading underscore (common in some NDK/toolchains)
+            // Try with leading underscore
             std::string underscore = "_" + std::string(base_name);
             sym = dlsym(lib_handle, underscore.c_str());
             if (sym) return sym;
 
-            LOGW(TAG, "dlsym failed for %s: %s", base_name, dlerror());
             return nullptr;
         };
 
+        // Try Flat C API first (Highest Stability)
         f_create_engine = (LlmCreateEngineFunc)probe("LlmInferenceEngine_CreateEngine");
         f_create_session = (LlmCreateSessionFunc)probe("LlmInferenceEngine_CreateSession");
         f_predict_async = (LlmPredictAsyncFunc)probe("LlmInferenceEngine_PredictAsync");
         f_destroy_engine = (LlmDestroyEngineFunc)probe("LlmInferenceEngine_DestroyEngine");
         f_destroy_session = (LlmDestroySessionFunc)probe("LlmInferenceEngine_DestroySession");
 
-        if (!f_create_engine || !f_create_session || !f_predict_async) {
-            LOGE(TAG, "FATAL: Could not resolve stable C symbols from libllm_inference_engine_jni.so");
-            return false;
-        }
+        bool c_api_resolved = (f_create_engine && f_create_session && f_predict_async);
 
-        LlmModelSettings settings = {
-            .model_path = model_path.c_str(),
-            .cache_dir = base_path.c_str(),
-            .max_num_tokens = context_window,
-            .preferred_backend = 0 // GPU
-        };
+        if (c_api_resolved) {
+            LOGI(TAG, "SUCCESS: Stable Flat C API symbols resolved from memory.");
+            
+            LlmModelSettings settings = {
+                .model_path = model_path.c_str(),
+                .cache_dir = base_path.c_str(),
+                .max_num_tokens = context_window,
+                .preferred_backend = 0 // GPU
+            };
 
-        char* err_msg = nullptr;
-        if (f_create_engine(&settings, &engine_handle, &err_msg) != 0) {
-            LOGE(TAG, "LlmInferenceEngine_CreateEngine failed: %s", err_msg ? err_msg : "Unknown Error");
-            if (err_msg) free(err_msg);
-            return false;
-        }
+            char* err_msg = nullptr;
+            if (f_create_engine(&settings, &engine_handle, &err_msg) != 0) {
+                LOGE(TAG, "Flat-C Engine Creation failed: %s", err_msg ? err_msg : "Unknown Error");
+                if (err_msg) free(err_msg);
+                return false;
+            }
 
-        if (f_create_session(engine_handle, nullptr, &session_handle, &err_msg) != 0) {
-            LOGE(TAG, "LlmInferenceEngine_CreateSession failed: %s", err_msg ? err_msg : "Unknown Error");
-            if (err_msg) free(err_msg);
+            if (f_create_session(engine_handle, nullptr, &session_handle, &err_msg) != 0) {
+                LOGE(TAG, "Flat-C Session Creation failed: %s", err_msg ? err_msg : "Unknown Error");
+                if (err_msg) free(err_msg);
+                return false;
+            }
+        } else {
+            LOGW(TAG, "Flat C API not found in memory. Probing for legacy C++ mangled symbols...");
+            
+            // Tier 2 Fallback: Legacy C++ Mangled Symbols (Gemma 2, 3, 4 early)
+            const char* legacy_symbols[] = {
+                "_ZN9mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS2_19LlmInferenceOptionsE",
+                "_ZN10mediapipe5tasks3cpp5genai13llm_inference12LlmInference17CreateFromOptionsERKNS3_19LlmInferenceOptionsE",
+                "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference6CreateERKNS1_19LlmInferenceOptionsE",
+                "_ZN9mediapipe5tasks5genai13llm_inference12LlmInference17CreateFromOptionsERKNS1_19LlmInferenceOptionsE"
+            };
+
+            for (const char* sym : legacy_symbols) {
+                void* legacy_func = dlsym(lib_handle, sym);
+                if (legacy_func) {
+                    LOGI(TAG, "RECOVERY: Resolved legacy C++ symbol -> %s. Note: This engine version uses an older internal API.", sym);
+                    // Since the signatures are different (StatusOr vs int), we'd need a different Impl path.
+                    // For now, we log the success to prove connectivity.
+                    break;
+                }
+            }
+            
+            LOGE(TAG, "FATAL: All symbol resolution tiers failed.");
             return false;
         }
 
@@ -139,7 +157,7 @@ struct InferenceEngine::Impl {
             return false;
         }
 
-        LOGI(TAG, "Stable Native Inference Engine Active.");
+        LOGI(TAG, "Native Inference Engine Integrated & Ready.");
         return true;
     }
 };

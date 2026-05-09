@@ -37,18 +37,37 @@ uint64_t HydrationManager::getAvailableRAM() {
 bool HydrationManager::hydrate(const std::string& model_path) {
     dehydrate();
 
+    // Phase 2 Sanitization: Remove whitespace and handle Android symlinks
     std::string sanitized_path = model_path;
-    
-    // Phase 2 Sanitization: Handle Android symlinks (/data/user/0/ -> /data/data/)
-    if (sanitized_path.find("/data/user/0/") == 0) {
-        if (access(sanitized_path.c_str(), F_OK) != 0) {
-            LOGW(TAG, "Path %s not found. Attempting symlink resolution...", sanitized_path.c_str());
-            sanitized_path.replace(0, 13, "/data/data/");
+    sanitized_path.erase(0, sanitized_path.find_first_not_of(" \t\n\r"));
+    sanitized_path.erase(sanitized_path.find_last_not_of(" \t\n\r") + 1);
+
+    auto try_open = [&](const std::string& path) -> bool {
+        m_fd = open(path.c_str(), O_RDONLY);
+        if (m_fd != -1) {
+            LOGI(TAG, "Hydration: Successfully opened model at %s", path.c_str());
+            return true;
         }
+        return false;
+    };
+
+    bool opened = try_open(sanitized_path);
+
+    if (!opened && sanitized_path.find("/data/user/0/") == 0) {
+        std::string fallback = sanitized_path;
+        fallback.replace(0, 13, "/data/data/");
+        LOGW(TAG, "Primary path failed. Trying fallback: %s", fallback.c_str());
+        opened = try_open(fallback);
     }
 
-    m_fd = open(sanitized_path.c_str(), O_RDONLY);
-    if (m_fd == -1) {
+    if (!opened && sanitized_path.find("/data/data/") == 0) {
+        std::string fallback = sanitized_path;
+        fallback.replace(0, 11, "/data/user/0/");
+        LOGW(TAG, "Primary path failed. Trying fallback: %s", fallback.c_str());
+        opened = try_open(fallback);
+    }
+
+    if (!opened) {
         LOGE(TAG, "Hydration Error: Cannot open file %s (errno: %d)", sanitized_path.c_str(), errno);
         return false;
     }
