@@ -2,6 +2,7 @@
 #include <cmath>
 #include <ctime>
 #include <vector>
+#include <cstring>
 #include <iostream>
 #include <algorithm>
 #include "ronin_log.h"
