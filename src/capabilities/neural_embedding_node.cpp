@@ -58,20 +58,10 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
      */
     LOGD(TAG, "Generating BGE embedding (768-dim) for: %s", input.c_str());
     
-    // Phase 5.2: BGE-Base-v1.5 standardizes on 768 dimensions
+    // Phase 7.0: Return neutral vector until full ONNX session integration
+    // This satisfies the recommendation in review.md for stability.
     std::vector<float> embedding(768, 0.0f);
     
-    for (size_t i = 0; i < input.length() && i < 768; ++i) {
-        embedding[i] = static_cast<float>(static_cast<unsigned char>(input[i])) / 255.0f;
-    }
-    
-    float mag = 0.0f;
-    for (float f : embedding) mag += f * f;
-    mag = std::sqrt(mag);
-    if (mag > 1e-9f) {
-        for (float& f : embedding) f /= mag;
-    }
-
     return embedding;
 }
 

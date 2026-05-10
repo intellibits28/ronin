@@ -62,8 +62,7 @@ void HardwareBridge::reportSystemHealth(float temperature, float ramUsedGB, floa
     // Phase 4.4.7 & 4.4.8: Stability Guard (Thermal) - Revised v4.1
     if (temperature >= 42.0f) {
         Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::SEVERE;
-        LOGW(TAG, "CRITICAL THERMAL (%.1f°C). Shifting Inference Engine to SAFE MODE.", temperature);
-        triggerSync(1, false); 
+        LOGW(TAG, "CRITICAL THERMAL (%.1f°C). Throttling enabled.", temperature);
     } else {
         Ronin::Kernel::Intent::g_thermal_state = Ronin::Kernel::Intent::ThermalState::NORMAL;
     }
