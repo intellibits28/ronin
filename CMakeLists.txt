@@ -109,6 +109,7 @@ target_include_directories(ronin_core PUBLIC
     include 
     ${sqlite3_src_SOURCE_DIR} 
     ${onnxruntime_SOURCE_DIR}/include
+    ${onnxruntime_SOURCE_DIR}/headers
     ${flatbuffers_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}
 )
