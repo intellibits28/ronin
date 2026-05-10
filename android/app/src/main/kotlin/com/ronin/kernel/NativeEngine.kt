@@ -92,7 +92,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     // --- JNI API ---
-    private external fun initializeKernel(filesDir: String, libDir: String)
+    private external fun initializeKernel(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun setEngineInstance()
     private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
     private external fun notifyModelLoaded(path: String)
@@ -250,14 +250,13 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             try {
                 setEngineInstance()
                 val libDir = context.applicationInfo.nativeLibraryDir
-                initializeKernel(context.filesDir.absolutePath, libDir)
+                initializeKernel(context.filesDir.absolutePath, libDir, false)
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "initializeKernel failed: ${e.message}")
             }
-            }
-            bindInferenceService()
-            }
-
+        }
+        bindInferenceService()
+    }
             private fun bindInferenceService() {
             val intent = Intent(context, InferenceService::class.java)
             context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
@@ -269,28 +268,49 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
         if (!isLibLoaded) return@withContext false
         
+        // Ensure Inference Service is bound before attempting hydration
+        if (!waitForService(10000)) {
+            Log.e(TAG, "ABORT: Inference Service failed to bind within 10s.")
+            return@withContext false
+        }
+
         setPriority(0) // 0 = CRITICAL
         stopLowPriorityTasks()
-        Log.i(TAG, ">>> [Phase 3 Native] Initializing Native Inference Hydration")
+        Log.i(TAG, ">>> [Phase 8.0 Microkernel] Delegating Hydration to :inference_core")
         
-        val success = try {
-            notifyModelLoaded(path)
-            true 
-        } catch (e: Exception) {
-            Log.e(TAG, "Native loadModel notification failed: ${e.message}")
+        // 1. Load model in the isolated worker process
+        val workerSuccess = try {
+            inferenceService?.loadModel(path) ?: false
+        } catch (e: RemoteException) {
+            Log.e(TAG, "IPC loadModel failed: ${e.message}")
             false
         }
 
-        if (success) {
+        if (!workerSuccess) {
+            Log.e(TAG, "Worker failed to hydrate model at $path")
+            setPriority(3) // LOW
+            return@withContext false
+        }
+
+        // 2. Notify Native Proxy (Stage 4 Runtime Binding)
+        val nativeSuccess = try {
+            notifyModelLoaded(path)
+            true 
+        } catch (e: Exception) {
+            Log.e(TAG, "Native notifyModelLoaded failed: ${e.message}")
+            false
+        }
+
+        if (nativeSuccess) {
             currentModelPath = path
             setPriority(1) // 1 = HIGH
             return@withContext true
         }
+
         setPriority(3) // 3 = LOW
         return@withContext false
     }
 
-    /*
     private suspend fun waitForService(timeoutMs: Long): Boolean {
         val start = System.currentTimeMillis()
         while (inferenceService == null && (System.currentTimeMillis() - start) < timeoutMs) {
@@ -299,7 +319,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
         return inferenceService != null
     }
-    */
 
     fun isLoaded(): Boolean {
         // Simplified for native mode

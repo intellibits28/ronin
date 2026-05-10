@@ -64,19 +64,20 @@ Java_com_ronin_kernel_NativeEngine_setEngineInstance(JNIEnv *env, jobject thiz) 
 }
 
 JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstring lib_dir) {
+Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstring lib_dir, jboolean is_worker) {
     std::string base_path = ConvertJStringToString(env, files_dir);
     std::string native_lib_path = ConvertJStringToString(env, lib_dir);
-    LOGI(TAG, "Initializing Ronin Kernel Core...");
+    LOGI(TAG, "Initializing Ronin Kernel Core (Process: %s)...", is_worker ? "Inference Worker" : "Kernel Core");
 
-    // Store native_lib_path for dlopen in InferenceEngine
-    // We can pass it to the engine instance later or use a global.
-    // For now, let's update InferenceEngine::setBasePath or add setLibPath.
-
-    // Phase 1: Initialize SHM Consumer for UI Streaming
+    // Phase 8.0: Initialize SHM Bridge in correct mode
     g_spine_consumer = std::make_unique<::Ronin::Kernel::HAL::SharedMemoryBridge<::Ronin::Kernel::HAL::SpineRingBuffer>>("spine_stream");
-    if (!g_spine_consumer->create(base_path, false)) {
-        LOGW(TAG, "JNI: Could not connect to SHM Spine Stream. Consumer mode disabled.");
+    if (!g_spine_consumer->create(base_path, is_worker == JNI_TRUE)) {
+        LOGW(TAG, "JNI: Could not connect to SHM Spine Stream. Mode: %s", is_worker ? "Producer" : "Consumer");
+    }
+
+    if (is_worker == JNI_TRUE) {
+        LOGI(TAG, "Worker Process initialized. Skipping Core Engine startup.");
+        return;
     }
 
     // 1. Setup Memory Spines (L1/L2/L3)

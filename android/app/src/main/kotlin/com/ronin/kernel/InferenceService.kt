@@ -18,6 +18,31 @@ class InferenceService : Service() {
     private var currentModelPath: String = ""
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    // JNI Bridge for Worker Process
+    private external fun initializeKernel(filesDir: String, libDir: String, isWorker: Boolean)
+    private external fun pushTokenToSHM(fragment: String, isFinal: Boolean): Boolean
+
+    companion object {
+        init {
+            try {
+                System.loadLibrary("llm_inference_engine_jni")
+                System.loadLibrary("ronin_kernel")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e("InferenceService", "Native linkage failed: ${e.message}")
+            }
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        try {
+            val libDir = applicationInfo.nativeLibraryDir
+            initializeKernel(filesDir.absolutePath, libDir, true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Worker JNI Initialization failed: ${e.message}")
+        }
+    }
+
     private val binder = object : IInferenceService.Stub() {
         override fun loadModel(modelPath: String): Boolean {
             Log.i(TAG, "Loading model: $modelPath")
@@ -74,6 +99,24 @@ class InferenceService : Service() {
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(1024)
+                .setResultListener { result, done ->
+                    // Stage 3.2: PUSH TO SHM HIGHWAY
+                    try {
+                        val cleaned = result
+                            ?.replace("<|turn|>", "")
+                            ?.replace("<turn|>", "")
+                            ?.replace("<|turn>", "")
+                            ?.replace("turn|user", "")
+                            ?.replace("turn|model", "")
+                            ?.replace("<start_of_turn>", "")
+                            ?.replace("<end_of_turn>", "") ?: ""
+                        
+                        pushTokenToSHM(cleaned, done)
+                        if (done) Log.i(TAG, "SHM Stream complete.")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to push token to SHM: ${e.message}")
+                    }
+                }
             
             // Phase 6.7: Hardware Acceleration Audit
             // Attempt GPU delegate if supported in this SDK version
@@ -100,13 +143,6 @@ class InferenceService : Service() {
     private fun executeReasoning(input: String): String {
         val inference = llmInference ?: return "Error: Local reasoning spine not hydrated in service."
         
-        // Memory Audit before generation
-        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        val mi = android.app.ActivityManager.MemoryInfo()
-        am.getMemoryInfo(mi)
-        Log.i(TAG, "Memory state before inference: Avail=${mi.availMem/1024/1024}MB, LowMem=${mi.lowMemory}")
-
-        // Phase 6.6: Refined Template Logic for Gemma 4
         val isLiteRTLM = currentModelPath.endsWith(".litertlm")
         val formattedPrompt = if (isLiteRTLM) {
             "<|turn|>user\n$input<|turn|>model\n"
@@ -114,31 +150,12 @@ class InferenceService : Service() {
             "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
         }
         
-        Log.d(TAG, "Executing Reasoning [Type: ${if(isLiteRTLM) "LiteRT-LM" else "Legacy"}]. Length: ${formattedPrompt.length} chars.")
+        Log.d(TAG, "Executing Async Reasoning via SHM.")
         
         return try {
-            val startTime = System.currentTimeMillis()
-            val response = inference.generateResponse(formattedPrompt)
-            val duration = System.currentTimeMillis() - startTime
-            
-            if (response.isNullOrEmpty()) {
-                Log.w(TAG, "!!! CRITICAL: Gemma 4 returned NULL/EMPTY response after ${duration}ms.")
-                return "Error: Empty response from neural spine. Check logcat for details."
-            }
-
-            // Phase 4.5.8: Post-processing to strip internal artifacts (turn|user, etc.)
-            val cleanedResponse = response
-                .replace("<|turn|>", "")
-                .replace("<turn|>", "")
-                .replace("<|turn>", "")
-                .replace("turn|user", "")
-                .replace("turn|model", "")
-                .replace("<start_of_turn>", "")
-                .replace("<end_of_turn>", "")
-                .trim()
-
-            Log.i(TAG, "Neural Response SUCCESS in ${duration}ms. Tokens generated: ~${cleanedResponse.length / 4}")
-            cleanedResponse
+            // Use Async API for Real-time SHM Streaming
+            inference.generateResponseAsync(formattedPrompt)
+            "Reasoning Started [SHM Active]"
         } catch (e: Exception) {
             Log.e(TAG, "Inference crash in service: ${e.message}")
             "Error: Neural spine failure - ${e.message}"
