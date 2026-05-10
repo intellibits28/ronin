@@ -498,8 +498,9 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
             // Phase 8.0: Stream inference results to UI
             LaunchedEffect(Unit) {
-                nativeEngine.inferenceFlow.collect { packet ->
+                engine.inferenceFlow.collect { packet ->
                     if (packet.isFinal) {
+
                         chatViewModel.messages.add("Ronin: ${packet.fragment}")
                     } else {
                         // Option: Handle partial streaming updates if ViewModel supports it
