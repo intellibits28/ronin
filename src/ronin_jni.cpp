@@ -15,18 +15,17 @@
 #include "capabilities/neural_embedding_node.h"
 #include "capabilities/hardware_nodes.h"
 #include "capabilities/file_scanner.h"
-#include "hal/shared_memory_bridge.h"
 #include "memory_manager.h"
 #include "long_term_memory.h"
 #include "ronin_log.h"
 
 #define TAG "RoninKernel_JNI"
 
-// Phase 4.5: Dual-Process Bridge Implementation
 using namespace Ronin::Kernel::JNI;
 using namespace Ronin::Kernel;
 using namespace Ronin::Kernel::Model;
 
+// Global state
 static JavaVM* g_vm = nullptr;
 static std::unique_ptr<RoninKernel> g_kernel;
 static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
@@ -37,65 +36,37 @@ static std::string g_last_input_str;
 static std::string g_last_skill_output;
 static std::unique_ptr<::Ronin::Kernel::HAL::SharedMemoryBridge<::Ronin::Kernel::HAL::SpineRingBuffer>> g_spine_consumer;
 
-// --- Hybrid Reasoning State ---
 namespace {
-
 struct LlmEngineContext {
     InferenceEngine* engine = nullptr;
     std::string model_path;
     bool initialized = false;
 };
-
 static LlmEngineContext g_llm_context;
-
-} // namespace
-
-extern "C" {
-
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
-    g_vm = vm;
-    LOGI(TAG, "Ronin JNI Spine Hydrated.");
-    return JNI_VERSION_1_6;
 }
 
-JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_setEngineInstance(JNIEnv *env, jobject thiz) {
-    Ronin::Kernel::Capability::HardwareBridge::initialize(g_vm, env->NewGlobalRef(thiz));
-}
+// --- Native Implementations ---
 
-JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstring lib_dir, jboolean is_worker) {
+void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstring lib_dir, jboolean is_worker) {
     std::string base_path = ConvertJStringToString(env, files_dir);
     std::string native_lib_path = ConvertJStringToString(env, lib_dir);
-    LOGI(TAG, "Initializing Ronin Kernel Core (Process: %s)...", is_worker ? "Inference Worker" : "Kernel Core");
+    LOGI(TAG, "Initializing Ronin Kernel (Process: %s)...", is_worker ? "Inference Worker" : "Kernel Core");
 
-    // Phase 8.0: Initialize SHM Bridge in correct mode
     g_spine_consumer = std::make_unique<::Ronin::Kernel::HAL::SharedMemoryBridge<::Ronin::Kernel::HAL::SpineRingBuffer>>("spine_stream");
     if (!g_spine_consumer->create(base_path, is_worker == JNI_TRUE)) {
-        LOGW(TAG, "JNI: Could not connect to SHM Spine Stream. Mode: %s", is_worker ? "Producer" : "Consumer");
+        LOGW(TAG, "JNI: SHM Bridge Error. Mode: %s", is_worker ? "Producer" : "Consumer");
     }
 
-    if (is_worker == JNI_TRUE) {
-        LOGI(TAG, "Worker Process initialized. Skipping Core Engine startup.");
-        return;
-    }
+    if (is_worker == JNI_TRUE) return;
 
-    // 1. Setup Memory Spines (L1/L2/L3)
     g_ltm = std::make_unique<Ronin::Kernel::Memory::LongTermMemory>(base_path + "/ronin_memory.db");
     g_memory_manager = std::make_unique<Ronin::Kernel::Memory::MemoryManager>(2048);
     g_memory_manager->setLongTermMemory(g_ltm.get());
-
-    // 2. Setup Intent Engine
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
     g_intent_engine->setMemoryManager(g_memory_manager.get());
-    
-    // Phase 5.0: Load Dynamic Manifest from synchronized assets
-    std::string manifest_path = base_path + "/assets/capabilities.json";
-    g_intent_engine->loadCapabilities(manifest_path);
+    g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
 
-    // 3. Register Modular Skills with full dependency injection
     using namespace Ronin::Kernel::Capability;
-    
     auto neural_node = std::make_shared<NeuralEmbeddingNode>(base_path + "/assets/models/bge_base.onnx");
     auto search_node = std::make_shared<FileSearchNode>(g_ltm.get(), neural_node.get());
     
@@ -107,18 +78,10 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     g_intent_engine->registerSkill(6, std::make_shared<WifiNode>());
     g_intent_engine->registerSkill(7, std::make_shared<BluetoothNode>());
     
-    // 4. Setup Background File Scanner (On-demand Default Off)
     g_file_scanner = std::make_unique<Ronin::Kernel::Capability::FileScanner>(*g_ltm, neural_node.get());
     g_file_scanner->setDatabaseReady(true);
-    
-    // Link stop signal
-    g_intent_engine->setLowPriorityStopCallback([]() {
-        if (g_file_scanner) {
-            g_file_scanner->stopScan();
-        }
-    });
+    g_intent_engine->setLowPriorityStopCallback([]() { if (g_file_scanner) g_file_scanner->stopScan(); });
 
-    // 5. Initialize Kernel Spine
     static HandlerRegistry registry = {
         [](const Input& in) -> CognitiveIntent {
             if (g_intent_engine) return g_intent_engine->process(std::string(in.data, in.length), "");
@@ -138,251 +101,99 @@ Java_com_ronin_kernel_NativeEngine_initializeKernel(JNIEnv *env, jobject thiz, j
     } cap_manager;
 
     g_kernel = std::make_unique<RoninKernel>(registry, cap_manager);
-    
-    // Ensure inference engine wrapper is ready for hybrid calls and linked to IntentEngine
     auto engine = std::make_unique<InferenceEngine>("hybrid_mode");
     engine->setLibPath(native_lib_path);
-    engine->setBasePath(base_path); // FIX: Set base path immediately
+    engine->setBasePath(base_path);
     g_llm_context.engine = engine.get();
     g_intent_engine->setInferenceEngine(std::move(engine));
     
     LOGI(TAG, "Ronin Kernel Core Active.");
 }
 
-JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
+void native_setEngineInstance(JNIEnv *env, jobject thiz) {
+    Ronin::Kernel::Capability::HardwareBridge::initialize(g_vm, env->NewGlobalRef(thiz));
+}
+
+void native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
     std::string model_path = ConvertJStringToString(env, path);
-    LOGI(TAG, "C++ Kernel Notified: Hybrid Model Ready at %s", model_path.c_str());
     g_llm_context.initialized = true;
     g_llm_context.model_path = model_path;
-    
-    // Sync model path to engine instance for /model command visibility
-    if (g_llm_context.engine) {
-        g_llm_context.engine->loadModel(model_path);
-    }
-
-    // Phase 6.6: Set HIGH priority for reasoning once hydrated
-    if (g_intent_engine) {
-        g_intent_engine->setPriority(Ronin::Kernel::Capability::SkillPriority::HIGH);
-    }
+    if (g_llm_context.engine) g_llm_context.engine->loadModel(model_path);
+    if (g_intent_engine) g_intent_engine->setPriority(Ronin::Kernel::Capability::SkillPriority::HIGH);
 }
 
-JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_stopLowPriorityTasksNative(JNIEnv *env, jobject thiz) {
-    if (g_intent_engine) {
-        g_intent_engine->stopLowPriorityTasks();
-    }
-    if (g_file_scanner) {
-        g_file_scanner->stopScan();
-    }
-}
-
-JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_setPriorityNative(JNIEnv *env, jobject thiz, jint priority) {
-    if (g_intent_engine) {
-        g_intent_engine->setPriority(static_cast<Ronin::Kernel::Capability::SkillPriority>(priority));
-    }
-}
-
-JNIEXPORT jfloat JNICALL
-Java_com_ronin_kernel_NativeEngine_getFreeRamGBNative(JNIEnv *env, jobject thiz) {
-    return Ronin::Kernel::Capability::HardwareBridge::getFreeRamGB();
-}
-
-JNIEXPORT jstring JNICALL
-Java_com_ronin_kernel_NativeEngine_checkFileAccessNative(JNIEnv *env, jobject thiz, jstring path) {
-    std::string path_str = ConvertJStringToString(env, path);
-    FILE* file = fopen(path_str.c_str(), "rb");
-    if (file) {
-        fclose(file);
-        return ConvertStringToJString(env, "SUCCESS: File is readable by Native Kernel.");
-    } else {
-        int err = errno;
-        std::string msg = "FAILURE: errno=" + std::to_string(err) + " (" + strerror(err) + ")";
-        return ConvertStringToJString(env, msg);
-    }
-}
-
-JNIEXPORT jstring JNICALL
-Java_com_ronin_kernel_NativeEngine_processInput(JNIEnv *env, jobject thiz, jstring input) {
+jstring native_processInput(JNIEnv *env, jobject thiz, jstring input) {
     std::string input_str = ConvertJStringToString(env, input);
-    g_last_input_str = input_str; 
-    g_last_skill_output.clear();
-    
-    if (!g_kernel) {
-        return ConvertStringToJString(env, "Error: Ronin Kernel not initialized.");
-    }
+    g_last_input_str = input_str; g_last_skill_output.clear();
+    if (!g_kernel) return ConvertStringToJString(env, "Error: Kernel not initialized.");
 
-    // Phase 4.0: Unified Routing Spine (Rule 1)
     Ronin::Kernel::Input in_data = {};
     std::strncpy(in_data.data, input_str.c_str(), sizeof(in_data.data) - 1);
     in_data.length = std::min(input_str.length(), (size_t)(sizeof(in_data.data) - 1));
-    
     g_kernel->tick(in_data);
     
     auto lastIntent = g_kernel->getLastIntent();
-    
-    // Command fast-path (ID 0)
-    if (input_str.starts_with("/") || lastIntent.id == 0) {
-        return ConvertStringToJString(env, g_last_skill_output.empty() ? "> Command Processed." : g_last_skill_output);
-    }
+    if (input_str.starts_with("/") || lastIntent.id == 0) return ConvertStringToJString(env, g_last_skill_output.empty() ? "> Command Processed." : g_last_skill_output);
+    if (lastIntent.id > 1) return ConvertStringToJString(env, g_last_skill_output);
 
-    // Skill execution fast-path (ID > 1)
-    if (lastIntent.id > 1) {
-        return ConvertStringToJString(env, g_last_skill_output);
-    }
-
-    // Direct Neural Reasoning Path (ID 1 or fallback)
     std::string response = "";
-    if (g_llm_context.initialized && g_llm_context.engine) {
-        response = g_llm_context.engine->runLiteRTReasoning(input_str);
-    }
+    if (g_llm_context.initialized && g_llm_context.engine) response = g_llm_context.engine->runLiteRTReasoning(input_str);
 
-    // Phase 6.6: Explicit Fallback if response is empty OR starts with "Error:"
     if (response.empty() || response.starts_with("Error:")) {
-        if (!response.empty()) {
-            LOGW(TAG, "Local Reasoning Failed: %s. Escalating to Cloud...", response.c_str());
-        }
-        
-        // --- THE LOGIC WALL ---
-        if (g_intent_engine && g_intent_engine->isOfflineMode()) {
-            LOGW(TAG, "Offline Mode Active: Blocking Cloud Fallback.");
-            return ConvertStringToJString(env, "Error: Offline mode is active and local reasoning failed.");
-        }
-
-        std::string provider = "Gemini"; 
-        if (g_intent_engine) {
-            provider = g_intent_engine->getPrimaryCloudProvider();
-        }
-        
+        if (g_intent_engine && g_intent_engine->isOfflineMode()) return ConvertStringToJString(env, "Error: Offline mode active.");
+        std::string provider = g_intent_engine ? g_intent_engine->getPrimaryCloudProvider() : "Gemini";
         std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey(provider);
-
-        if (!apiKey.empty()) {
-            LOGI(TAG, "Attempting Cloud Fallback for Reasoning (Provider: %s)...", provider.c_str());
-            return ConvertStringToJString(env, g_llm_context.engine->escalateToCloud(input_str, apiKey, provider));
-        } else {
-            return ConvertStringToJString(env, "Error: Reasoning spine failed and no Cloud API Key found for " + provider);
-        }
+        if (!apiKey.empty()) return ConvertStringToJString(env, g_llm_context.engine->escalateToCloud(input_str, apiKey, provider));
+        return ConvertStringToJString(env, "Error: Local failed and no Cloud API key.");
     }
-
     return ConvertStringToJString(env, response);
 }
 
-JNIEXPORT jobject JNICALL
-Java_com_ronin_kernel_NativeEngine_pollInferenceStream(JNIEnv *env, jobject thiz) {
+jobject native_pollInferenceStream(JNIEnv *env, jobject thiz) {
     if (!g_spine_consumer) return nullptr;
-
     auto* rb = g_spine_consumer->get();
     if (!rb) return nullptr;
-
     ::Ronin::Kernel::HAL::InferencePacket packet;
     if (rb->pop(packet)) {
-        // Find Kotlin InferencePacket class (Assumed package: com.ronin.kernel)
         jclass cls = env->FindClass("com/ronin/kernel/InferencePacket");
-        if (!cls) {
-            LOGE(TAG, "JNI: com.ronin.kernel.InferencePacket class not found!");
-            return nullptr;
-        }
-
+        if (!cls) return nullptr;
         jmethodID constructor = env->GetMethodID(cls, "<init>", "(ILjava/lang/String;Z)V");
-        if (!constructor) return nullptr;
-
         jstring fragment = ConvertStringToJString(env, packet.fragment);
-        jobject obj = env->NewObject(cls, constructor, (jint)packet.token_id, fragment, (jboolean)packet.is_final);
-        
-        return obj;
+        return env->NewObject(cls, constructor, (jint)packet.token_id, fragment, (jboolean)packet.is_final);
     }
-
-    return nullptr; // Non-blocking: null if buffer empty
+    return nullptr;
 }
 
-JNIEXPORT jboolean JNICALL
-Java_com_ronin_kernel_NativeEngine_pushTokenToSHM(JNIEnv *env, jobject thiz, jstring fragment, jboolean is_final) {
+jboolean native_pushTokenToSHM(JNIEnv *env, jobject thiz, jstring fragment, jboolean is_final) {
     if (!g_spine_consumer) return JNI_FALSE;
-
     auto* rb = g_spine_consumer->get();
     if (!rb) return JNI_FALSE;
-
     std::string text = ConvertJStringToString(env, fragment);
-    
     ::Ronin::Kernel::HAL::InferencePacket packet;
-    packet.sequence_id = 0; 
-    packet.token_id = 0;
-    packet.confidence = 1.0f;
-    packet.is_final = (is_final == JNI_TRUE);
-    
+    packet.sequence_id = 0; packet.token_id = 0; packet.confidence = 1.0f; packet.is_final = (is_final == JNI_TRUE);
     std::strncpy(packet.fragment, text.c_str(), sizeof(packet.fragment) - 1);
     packet.fragment[sizeof(packet.fragment) - 1] = '\0';
-
     return rb->push(packet) ? JNI_TRUE : JNI_FALSE;
 }
 
-JNIEXPORT jboolean JNICALL
-Java_com_ronin_kernel_NativeEngine_isLoaded(JNIEnv *env, jobject thiz) {
-    return g_llm_context.initialized ? JNI_TRUE : JNI_FALSE;
+jboolean native_isLoaded(JNIEnv *env, jobject thiz) { return g_llm_context.initialized ? JNI_TRUE : JNI_FALSE; }
+void native_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
+    if (level >= 20 && g_llm_context.engine) g_llm_context.engine->purgeKVCache();
+    if (g_memory_manager) g_memory_manager->onMemoryPressure();
 }
-
-JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
-    LOGI(TAG, "Memory Trim Requested: Level %d", level);
-    if (level >= 20) { 
-        if (g_llm_context.engine) {
-            g_llm_context.engine->purgeKVCache();
-        }
-    }
-    if (g_memory_manager) {
-        g_memory_manager->onMemoryPressure();
-    }
-}
-
-JNIEXPORT jstring JNICALL
-Java_com_ronin_kernel_NativeEngine_getActiveModelPath(JNIEnv *env, jobject thiz) {
-    return ConvertStringToJString(env, g_llm_context.model_path);
-}
-
-JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) {
-    if (g_kernel) g_kernel->injectLocation(lat, lon);
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_ronin_kernel_NativeEngine_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
-    LOGD(TAG, "System Health: Temp=%.1f, RAM=%.1f/%.1f", temp, used, total);
+jstring native_getActiveModelPath(JNIEnv *env, jobject thiz) { return ConvertStringToJString(env, g_llm_context.model_path); }
+void native_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) { if (g_kernel) g_kernel->injectLocation(lat, lon); }
+jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
     Ronin::Kernel::Capability::HardwareBridge::reportSystemHealth(temp, used, total);
     return JNI_TRUE;
 }
+void native_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) { if (g_intent_engine) g_intent_engine->setOfflineMode(offline == JNI_TRUE); }
+void native_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) { if (g_intent_engine) g_intent_engine->setPrimaryCloudProvider(ConvertJStringToString(env, provider)); }
+jint native_getLMKPressure(JNIEnv *env, jobject thiz) { return g_memory_manager ? g_memory_manager->getPressureScore() : 0; }
+jboolean native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) { return g_intent_engine ? g_intent_engine->updateMetadata(ConvertJStringToString(env, json)) : JNI_FALSE; }
+jboolean native_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) { return JNI_TRUE; }
 
-JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) {
-    if (g_intent_engine) g_intent_engine->setOfflineMode(offline == JNI_TRUE);
-}
-
-JNIEXPORT void JNICALL
-Java_com_ronin_kernel_NativeEngine_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) {
-    if (g_intent_engine) {
-        g_intent_engine->setPrimaryCloudProvider(ConvertJStringToString(env, provider));
-    }
-}
-
-JNIEXPORT jint JNICALL
-Java_com_ronin_kernel_NativeEngine_getLMKPressure(JNIEnv *env, jobject thiz) {
-    if (g_memory_manager) return g_memory_manager->getPressureScore();
-    return 0;
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_ronin_kernel_NativeEngine_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) {
-    if (g_intent_engine) return g_intent_engine->updateMetadata(ConvertJStringToString(env, json));
-    return JNI_FALSE;
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_ronin_kernel_NativeEngine_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) {
-    return JNI_TRUE;
-}
-
-JNIEXPORT jobjectArray JNICALL
-Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
+jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
     jclass stringClass = env->FindClass("java/lang/String");
     if (g_ltm) {
         auto history = g_ltm->getHistory(limit, offset);
@@ -396,4 +207,46 @@ Java_com_ronin_kernel_NativeEngine_getChatHistory(JNIEnv *env, jobject thiz, jin
     return env->NewObjectArray(0, stringClass, nullptr);
 }
 
-} // extern "C"
+// --- JNI Registration ---
+
+static JNINativeMethod g_methods[] = {
+    {"initializeKernel", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
+    {"setEngineInstance", "()V", (void*)native_setEngineInstance},
+    {"notifyModelLoaded", "(Ljava/lang/String;)V", (void*)native_notifyModelLoaded},
+    {"processInput", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
+    {"pollInferenceStream", "()Lcom/ronin/kernel/InferencePacket;", (void*)native_pollInferenceStream},
+    {"pushTokenToSHM", "(Ljava/lang/String;Z)Z", (void*)native_pushTokenToSHM},
+    {"isLoaded", "()Z", (void*)native_isLoaded},
+    {"notifyTrimMemory", "(I)V", (void*)native_notifyTrimMemory},
+    {"getActiveModelPath", "()Ljava/lang/String;", (void*)native_getActiveModelPath},
+    {"injectLocation", "(DD)V", (void*)native_injectLocation},
+    {"updateSystemHealth", "(FFF)Z", (void*)native_updateSystemHealth},
+    {"setOfflineMode", "(Z)V", (void*)native_setOfflineMode},
+    {"setPrimaryCloudProvider", "(Ljava/lang/String;)V", (void*)native_setPrimaryCloudProvider},
+    {"getLMKPressure", "()I", (void*)native_getLMKPressure},
+    {"updateModelRegistry", "(Ljava/lang/String;)B", (void*)native_updateModelRegistry},
+    {"updateCloudProviders", "(Ljava/lang/String;)B", (void*)native_updateCloudProviders},
+    {"getChatHistory", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}
+};
+
+extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    g_vm = vm;
+    JNIEnv* env;
+    if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
+
+    // Register for NativeEngine
+    jclass nativeEngineClass = env->FindClass("com/ronin/kernel/NativeEngine");
+    if (nativeEngineClass) {
+        env->RegisterNatives(nativeEngineClass, g_methods, sizeof(g_methods) / sizeof(g_methods[0]));
+    }
+
+    // Register for InferenceService (Worker process)
+    jclass inferenceServiceClass = env->FindClass("com/ronin/kernel/InferenceService");
+    if (inferenceServiceClass) {
+        // We only need initializeKernel and pushTokenToSHM for the worker
+        env->RegisterNatives(inferenceServiceClass, g_methods, sizeof(g_methods) / sizeof(g_methods[0]));
+    }
+
+    LOGI(TAG, "Ronin Unified JNI Registered.");
+    return JNI_VERSION_1_6;
+}
