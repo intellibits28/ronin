@@ -42,7 +42,8 @@ public:
     void applyDecay(uint64_t current_timestamp);
 
     std::vector<std::string> search(const std::string& query);
-    bool consolidate(const std::string& summary_text);
+    std::vector<std::string> searchSemantic(const std::vector<float>& query_embedding);
+    bool consolidate(const std::string& summary_text, const std::vector<float>& embedding = {});
 
     // Chat History Persistence
     bool storeMessage(const std::string& role, const std::string& content);

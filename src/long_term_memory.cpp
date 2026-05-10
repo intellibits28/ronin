@@ -35,9 +35,15 @@ bool LongTermMemory::initSchema() {
         "  last_accessed INTEGER, "
         "  priority INTEGER DEFAULT 1);"
         
-        "CREATE VIRTUAL TABLE IF NOT EXISTS summaries USING fts5("
+        "CREATE TABLE IF NOT EXISTS summaries ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "  content TEXT, "
+        "  embedding BLOB, "
+        "  timestamp INTEGER);"
+        
+        "CREATE VIRTUAL TABLE IF NOT EXISTS summaries_fts USING fts5("
         "  content, "
-        "  timestamp UNINDEXED"
+        "  content_id UNINDEXED"
         ");"
         
         "CREATE TABLE IF NOT EXISTS chat_history ("
@@ -172,7 +178,9 @@ std::vector<std::string> LongTermMemory::search(const std::string& query) {
     if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
-    const char* sql = "SELECT content FROM summaries WHERE summaries MATCH ? ORDER BY rank;";
+    
+    // Stage 1: FTS5 Keyword Match
+    const char* sql = "SELECT content FROM summaries_fts WHERE summaries_fts MATCH ? ORDER BY rank LIMIT 5;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
@@ -184,20 +192,92 @@ std::vector<std::string> LongTermMemory::search(const std::string& query) {
         }
     }
     sqlite3_finalize(stmt);
+    
     return results;
 }
 
-bool LongTermMemory::consolidate(const std::string& summary_text) {
+std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>& query_embedding) {
+    if (!m_db || query_embedding.empty()) return {};
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    struct ScoredContent { std::string content; float score; };
+    std::vector<ScoredContent> candidates;
+
+    const char* sql = "SELECT content, embedding FROM summaries;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* content = sqlite3_column_text(stmt, 0);
+            const void* blob = sqlite3_column_blob(stmt, 1);
+            int bytes = sqlite3_column_bytes(stmt, 1);
+
+            if (content && blob && bytes > 0) {
+                std::vector<float> vector(bytes / sizeof(float));
+                std::memcpy(vector.data(), blob, bytes);
+                
+                // Manually compute cosine similarity (Simplified)
+                float dot = 0.0f, mag_a = 0.0f, mag_b = 0.0f;
+                for (size_t i = 0; i < std::min(vector.size(), query_embedding.size()); ++i) {
+                    dot += vector[i] * query_embedding[i];
+                    mag_a += vector[i] * vector[i];
+                    mag_b += query_embedding[i] * query_embedding[i];
+                }
+                float score = (mag_a > 0 && mag_b > 0) ? dot / (std::sqrt(mag_a) * std::sqrt(mag_b)) : 0.0f;
+                candidates.push_back({reinterpret_cast<const char*>(content), score});
+            }
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.score > b.score; });
+    
+    std::vector<std::string> results;
+    for (size_t i = 0; i < candidates.size() && i < 5; ++i) {
+        if (candidates[i].score > 0.75f) results.push_back(candidates[i].content);
+    }
+    return results;
+}
+
+bool LongTermMemory::consolidate(const std::string& summary_text, const std::vector<float>& embedding) {
     if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = "INSERT INTO summaries (content, timestamp) VALUES (?, ?);";
+    
+    sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+
+    const char* sql = "INSERT INTO summaries (content, embedding, timestamp) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
     sqlite3_bind_text(stmt, 1, summary_text.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 2, std::time(nullptr));
-    bool success = sqlite3_step(stmt) == SQLITE_DONE;
+    if (!embedding.empty()) {
+        sqlite3_bind_blob(stmt, 2, embedding.data(), static_cast<int>(embedding.size() * sizeof(float)), SQLITE_STATIC);
+    } else {
+        sqlite3_bind_null(stmt, 2);
+    }
+    sqlite3_bind_int64(stmt, 3, std::time(nullptr));
+    
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+    
+    sqlite3_int64 last_id = sqlite3_last_insert_rowid(m_db);
     sqlite3_finalize(stmt);
-    return success;
+
+    const char* fts_sql = "INSERT INTO summaries_fts (content, content_id) VALUES (?, ?);";
+    sqlite3_stmt* fts_stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, fts_sql, -1, &fts_stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(fts_stmt, 1, summary_text.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(fts_stmt, 2, last_id);
+        sqlite3_step(fts_stmt);
+        sqlite3_finalize(fts_stmt);
+    }
+
+    sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
+    return true;
 }
 
 bool LongTermMemory::indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified, const std::vector<float>& embedding) {

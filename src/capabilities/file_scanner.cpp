@@ -35,10 +35,6 @@ void FileScanner::stopScan() {
 }
 
 void FileScanner::scanWorker(const std::string& root_path) {
-    // Phase 6.0: Developer-Level Scanner Override
-    // Hardcode root to external storage and skip internal data folders
-    std::string final_root = "/storage/emulated/0/"; 
-
     LOGI(TAG, "Background scan queued. Waiting for database readiness...");
     
     // Phase 5.3: Block until LTM is hydrated
@@ -48,19 +44,19 @@ void FileScanner::scanWorker(const std::string& root_path) {
 
     if (m_stop_requested.load()) return;
 
-    LOGI(TAG, "Background scan started: %s (Override: /storage/emulated/0/)", final_root.c_str());
+    LOGI(TAG, "Background scan started: %s", root_path.c_str());
     int indexed_count = 0;
 
     try {
-        if (!fs::exists(final_root)) {
-            LOGE(TAG, "Root path does not exist: %s", final_root.c_str());
+        if (!fs::exists(root_path)) {
+            LOGE(TAG, "Root path does not exist: %s", root_path.c_str());
             m_is_running.store(false);
             return;
         }
 
         // Use recursive_directory_iterator for C++20 filesystem traversal
         auto options = fs::directory_options::skip_permission_denied;
-        for (const auto& entry : fs::recursive_directory_iterator(final_root, options)) {
+        for (const auto& entry : fs::recursive_directory_iterator(root_path, options)) {
             if (m_stop_requested.load()) break;
 
             // --- Thermal Awareness ---

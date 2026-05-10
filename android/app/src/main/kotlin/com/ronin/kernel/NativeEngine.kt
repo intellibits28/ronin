@@ -111,6 +111,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun getLMKPressure(): Int
     private external fun pollInferenceStream(): InferencePacket?
     private external fun pushTokenToSHM(fragment: String, isFinal: Boolean): Boolean
+    private external fun scanSpecificPath(path: String): Boolean
 
     /**
      * Phase 4.0 Audit: Verify native side can actually read the model file.
@@ -235,6 +236,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             }
         }
         return 0
+    }
+
+    fun scanSpecificPathSafe(path: String): Boolean {
+        if (isLibLoaded) {
+            return try {
+                scanSpecificPath(path)
+            } catch (e: UnsatisfiedLinkError) {
+                false
+            }
+        }
+        return false
     }
 
     // --- Callbacks for MainActivity ---

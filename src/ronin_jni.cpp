@@ -193,6 +193,15 @@ jint native_getLMKPressure(JNIEnv *env, jobject thiz) { return g_memory_manager 
 jboolean native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) { return g_intent_engine ? g_intent_engine->updateMetadata(ConvertJStringToString(env, json)) : JNI_FALSE; }
 jboolean native_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) { return JNI_TRUE; }
 
+jboolean native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring path) {
+    std::string path_str = ConvertJStringToString(env, path);
+    if (g_file_scanner) {
+        g_file_scanner->startScan(path_str);
+        return JNI_TRUE;
+    }
+    return JNI_FALSE;
+}
+
 jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
     jclass stringClass = env->FindClass("java/lang/String");
     if (g_ltm) {
@@ -226,6 +235,7 @@ static JNINativeMethod g_methods[] = {
     {"getLMKPressure", "()I", (void*)native_getLMKPressure},
     {"updateModelRegistry", "(Ljava/lang/String;)B", (void*)native_updateModelRegistry},
     {"updateCloudProviders", "(Ljava/lang/String;)B", (void*)native_updateCloudProviders},
+    {"scanSpecificPath", "(Ljava/lang/String;)Z", (void*)native_scanSpecificPath},
     {"getChatHistory", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}
 };
 

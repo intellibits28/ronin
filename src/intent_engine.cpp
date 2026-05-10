@@ -579,6 +579,38 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         }
     }
 
+    // Tier 2.5: Semantic Similarity Matcher (Phase 8.0)
+    // If keyword matching fails, use BGE embeddings for fuzzy semantic routing
+    auto neural_skill = m_skill_registry.find(3);
+    if (neural_skill != m_skill_registry.end()) {
+        auto neural_node = std::static_pointer_cast<Ronin::Kernel::Capability::NeuralEmbeddingNode>(neural_skill->second);
+        if (neural_node) {
+            LOGI(TAG, "Tier 2.5: Keywords failed. Attempting semantic match...");
+            auto input_vec = neural_node->generateEmbedding(input_lower);
+            
+            float best_score = 0.0f;
+            uint32_t best_id = 1; // Default to chat
+
+            for (const auto& cap : m_capabilities) {
+                for (const auto& sub : cap.subjects) {
+                    auto sub_vec = neural_node->generateEmbedding(sub);
+                    float score = compute_cosine_similarity_neon(input_vec.data(), sub_vec.data(), 768);
+                    if (score > best_score) {
+                        best_score = score;
+                        best_id = cap.id;
+                    }
+                }
+            }
+
+            if (best_score > 0.85f) { // Threshold for semantic match
+                std::string logMsg = "> Semantic Match: ID " + std::to_string(best_id) + " (Score: " + std::to_string(best_score) + ")";
+                LOGI(TAG, "%s", logMsg.c_str());
+                Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
+                return {best_id, best_score, !isOff};
+            }
+        }
+    }
+
     // Tier 3: NPU-Accelerated Hierarchical Routing (Phase 4.2)
     if (m_inference_engine && m_inference_engine->isLoaded()) {
         // Layer 1: Coarse Classification (ACTION vs INFO)
