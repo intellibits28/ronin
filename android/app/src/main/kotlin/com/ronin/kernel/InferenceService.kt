@@ -99,24 +99,6 @@ class InferenceService : Service() {
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(1024)
-                .setResultListener { result, done ->
-                    // Stage 3.2: PUSH TO SHM HIGHWAY
-                    try {
-                        val cleaned = result
-                            ?.replace("<|turn|>", "")
-                            ?.replace("<turn|>", "")
-                            ?.replace("<|turn>", "")
-                            ?.replace("turn|user", "")
-                            ?.replace("turn|model", "")
-                            ?.replace("<start_of_turn>", "")
-                            ?.replace("<end_of_turn>", "") ?: ""
-                        
-                        pushTokenToSHM(cleaned, done)
-                        if (done) Log.i(TAG, "SHM Stream complete.")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to push token to SHM: ${e.message}")
-                    }
-                }
             
             // Phase 6.7: Hardware Acceleration Audit
             // Attempt GPU delegate if supported in this SDK version
@@ -150,12 +132,27 @@ class InferenceService : Service() {
             "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
         }
         
-        Log.d(TAG, "Executing Async Reasoning via SHM.")
+        Log.d(TAG, "Executing Reasoning via SHM.")
         
         return try {
-            // Use Async API for Real-time SHM Streaming
-            inference.generateResponseAsync(formattedPrompt)
-            "Reasoning Started [SHM Active]"
+            val response = inference.generateResponse(formattedPrompt)
+            if (!response.isNullOrEmpty()) {
+                val cleaned = response
+                    .replace("<|turn|>", "")
+                    .replace("<turn|>", "")
+                    .replace("<|turn>", "")
+                    .replace("turn|user", "")
+                    .replace("turn|model", "")
+                    .replace("<start_of_turn>", "")
+                    .replace("<end_of_turn>", "")
+                    .trim()
+                
+                pushTokenToSHM(cleaned, true)
+                Log.i(TAG, "Neural Response pushed to SHM.")
+                "Reasoning Started [SHM Active]"
+            } else {
+                "Error: Empty response from engine."
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Inference crash in service: ${e.message}")
             "Error: Neural spine failure - ${e.message}"
