@@ -92,26 +92,28 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     // --- JNI API ---
-    private external fun initializeKernel(filesDir: String, libDir: String, isWorker: Boolean)
-    private external fun setEngineInstance()
-    private external fun getChatHistory(limit: Int, offset: Int): Array<String>?
-    private external fun notifyModelLoaded(path: String)
+    private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
+    private external fun setEngineInstanceNative()
+    private external fun getChatHistoryNative(limit: Int, offset: Int): Array<String>?
+    private external fun notifyModelLoadedNative(path: String)
     private external fun stopLowPriorityTasksNative()
     private external fun setPriorityNative(priority: Int)
     private external fun checkFileAccessNative(path: String): String
     private external fun getFreeRamGBNative(): Float
-    private external fun processInput(input: String): String
-    private external fun notifyTrimMemory(level: Int)
-    private external fun injectLocation(lat: Double, lon: Double)
-    private external fun updateSystemHealth(temp: Float, used: Float, total: Float): Boolean
-    private external fun setOfflineMode(offline: Boolean)
-    private external fun setPrimaryCloudProvider(provider: String)
-    private external fun updateModelRegistry(json: String): Boolean
-    private external fun updateCloudProviders(json: String): Boolean
-    private external fun getLMKPressure(): Int
-    private external fun pollInferenceStream(): InferencePacket?
-    private external fun pushTokenToSHM(fragment: String, isFinal: Boolean): Boolean
-    private external fun scanSpecificPath(path: String): Boolean
+    private external fun processInputNative(input: String): String
+    private external fun notifyTrimMemoryNative(level: Int)
+    private external fun injectLocationNative(lat: Double, lon: Double)
+    private external fun updateSystemHealthNative(temp: Float, used: Float, total: Float): Boolean
+    private external fun setOfflineModeNative(offline: Boolean)
+    private external fun setPrimaryCloudProviderNative(provider: String)
+    private external fun updateModelRegistryNative(json: String): Boolean
+    private external fun updateCloudProvidersNative(json: String): Boolean
+    private external fun getLMKPressureNative(): Int
+    private external fun pollInferenceStreamNative(): InferencePacket?
+    private external fun pushTokenToSHMNative(fragment: String, isFinal: Boolean): Boolean
+    private external fun scanSpecificPathNative(path: String): Boolean
+    private external fun isLoadedNative(): Boolean
+    private external fun getActiveModelPathNative(): String
 
     /**
      * Phase 4.0 Audit: Verify native side can actually read the model file.
@@ -632,7 +634,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     override fun onTrimMemory(level: Int) {
         if (isLibLoaded) {
             try {
-                notifyTrimMemory(level)
+                notifyTrimMemoryNative(level)
             } catch (e: UnsatisfiedLinkError) {}
             if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
                 Log.w(TAG, "Aggressive Memory Trim: Halting low-priority background tasks.")
@@ -646,7 +648,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     override fun onLowMemory() {
         if (isLibLoaded) {
             try {
-                notifyTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+                notifyTrimMemoryNative(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
             } catch (e: UnsatisfiedLinkError) {}
             stopLowPriorityTasks()
         }

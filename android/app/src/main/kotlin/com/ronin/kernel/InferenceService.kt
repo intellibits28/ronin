@@ -19,8 +19,8 @@ class InferenceService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     // JNI Bridge for Worker Process
-    private external fun initializeKernel(filesDir: String, libDir: String, isWorker: Boolean)
-    private external fun pushTokenToSHM(fragment: String, isFinal: Boolean): Boolean
+    private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
+    private external fun pushTokenToSHMNative(fragment: String, isFinal: Boolean): Boolean
 
     companion object {
         init {
@@ -37,8 +37,8 @@ class InferenceService : Service() {
         super.onCreate()
         try {
             val libDir = applicationInfo.nativeLibraryDir
-            initializeKernel(filesDir.absolutePath, libDir, true)
-        } catch (e: Exception) {
+            initializeKernelNative(filesDir.absolutePath, libDir, true)
+        } catch (e: Throwable) {
             Log.e(TAG, "Worker JNI Initialization failed: ${e.message}")
         }
     }
@@ -147,7 +147,7 @@ class InferenceService : Service() {
                     .replace("<end_of_turn>", "")
                     .trim()
                 
-                pushTokenToSHM(cleaned, true)
+                pushTokenToSHMNative(cleaned, true)
                 Log.i(TAG, "Neural Response pushed to SHM.")
                 "Reasoning Started [SHM Active]"
             } else {

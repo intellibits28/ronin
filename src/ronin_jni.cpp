@@ -122,6 +122,24 @@ void native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
     if (g_intent_engine) g_intent_engine->setPriority(Ronin::Kernel::Capability::SkillPriority::HIGH);
 }
 
+void native_stopLowPriorityTasks(JNIEnv *env, jobject thiz) {
+    if (g_file_scanner) g_file_scanner->stopScan();
+}
+
+void native_setPriority(JNIEnv *env, jobject thiz, jint priority) {
+    if (g_intent_engine) g_intent_engine->setPriority(static_cast<Ronin::Kernel::Capability::SkillPriority>(priority));
+}
+
+jstring native_checkFileAccess(JNIEnv *env, jobject thiz, jstring path) {
+    std::string p = ConvertJStringToString(env, path);
+    if (access(p.c_str(), R_OK) == 0) return ConvertStringToJString(env, "OK");
+    return ConvertStringToJString(env, "ACCESS DENIED");
+}
+
+jfloat native_getFreeRamGB(JNIEnv *env, jobject thiz) {
+    return Ronin::Kernel::Capability::HardwareBridge::getFreeRamGB();
+}
+
 jstring native_processInput(JNIEnv *env, jobject thiz, jstring input) {
     std::string input_str = ConvertJStringToString(env, input);
     g_last_input_str = input_str; g_last_skill_output.clear();
@@ -190,7 +208,7 @@ jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloa
 void native_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) { if (g_intent_engine) g_intent_engine->setOfflineMode(offline == JNI_TRUE); }
 void native_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) { if (g_intent_engine) g_intent_engine->setPrimaryCloudProvider(ConvertJStringToString(env, provider)); }
 jint native_getLMKPressure(JNIEnv *env, jobject thiz) { return g_memory_manager ? g_memory_manager->getPressureScore() : 0; }
-jboolean native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) { return g_intent_engine ? g_intent_engine->updateMetadata(ConvertJStringToString(env, json)) : JNI_FALSE; }
+jboolean native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) { return g_intent_engine ? (g_intent_engine->updateMetadata(ConvertJStringToString(env, json)) ? JNI_TRUE : JNI_FALSE) : JNI_FALSE; }
 jboolean native_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) { return JNI_TRUE; }
 
 jboolean native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring path) {
@@ -219,24 +237,28 @@ jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint o
 // --- JNI Registration ---
 
 static JNINativeMethod g_methods[] = {
-    {"initializeKernel", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
-    {"setEngineInstance", "()V", (void*)native_setEngineInstance},
-    {"notifyModelLoaded", "(Ljava/lang/String;)V", (void*)native_notifyModelLoaded},
-    {"processInput", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
-    {"pollInferenceStream", "()Lcom/ronin/kernel/InferencePacket;", (void*)native_pollInferenceStream},
-    {"pushTokenToSHM", "(Ljava/lang/String;Z)Z", (void*)native_pushTokenToSHM},
-    {"isLoaded", "()Z", (void*)native_isLoaded},
-    {"notifyTrimMemory", "(I)V", (void*)native_notifyTrimMemory},
-    {"getActiveModelPath", "()Ljava/lang/String;", (void*)native_getActiveModelPath},
-    {"injectLocation", "(DD)V", (void*)native_injectLocation},
-    {"updateSystemHealth", "(FFF)Z", (void*)native_updateSystemHealth},
-    {"setOfflineMode", "(Z)V", (void*)native_setOfflineMode},
-    {"setPrimaryCloudProvider", "(Ljava/lang/String;)V", (void*)native_setPrimaryCloudProvider},
-    {"getLMKPressure", "()I", (void*)native_getLMKPressure},
-    {"updateModelRegistry", "(Ljava/lang/String;)B", (void*)native_updateModelRegistry},
-    {"updateCloudProviders", "(Ljava/lang/String;)B", (void*)native_updateCloudProviders},
-    {"scanSpecificPath", "(Ljava/lang/String;)Z", (void*)native_scanSpecificPath},
-    {"getChatHistory", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}
+    {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
+    {"setEngineInstanceNative", "()V", (void*)native_setEngineInstance},
+    {"notifyModelLoadedNative", "(Ljava/lang/String;)V", (void*)native_notifyModelLoaded},
+    {"stopLowPriorityTasksNative", "()V", (void*)native_stopLowPriorityTasks},
+    {"setPriorityNative", "(I)V", (void*)native_setPriority},
+    {"checkFileAccessNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_checkFileAccess},
+    {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB},
+    {"processInputNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
+    {"pollInferenceStreamNative", "()Lcom/ronin/kernel/InferencePacket;", (void*)native_pollInferenceStream},
+    {"pushTokenToSHMNative", "(Ljava/lang/String;Z)Z", (void*)native_pushTokenToSHM},
+    {"isLoadedNative", "()Z", (void*)native_isLoaded},
+    {"notifyTrimMemoryNative", "(I)V", (void*)native_notifyTrimMemory},
+    {"getActiveModelPathNative", "()Ljava/lang/String;", (void*)native_getActiveModelPath},
+    {"injectLocationNative", "(DD)V", (void*)native_injectLocation},
+    {"updateSystemHealthNative", "(FFF)Z", (void*)native_updateSystemHealth},
+    {"setOfflineModeNative", "(Z)V", (void*)native_setOfflineMode},
+    {"setPrimaryCloudProviderNative", "(Ljava/lang/String;)V", (void*)native_setPrimaryCloudProvider},
+    {"getLMKPressureNative", "()I", (void*)native_getLMKPressure},
+    {"updateModelRegistryNative", "(Ljava/lang/String;)Z", (void*)native_updateModelRegistry},
+    {"updateCloudProvidersNative", "(Ljava/lang/String;)Z", (void*)native_updateCloudProviders},
+    {"scanSpecificPathNative", "(Ljava/lang/String;)Z", (void*)native_scanSpecificPath},
+    {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}
 };
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
@@ -244,19 +266,30 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     JNIEnv* env;
     if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
 
-    // Register for NativeEngine
+    // Nuclear Guardrail: Register for NativeEngine
     jclass nativeEngineClass = env->FindClass("com/ronin/kernel/NativeEngine");
     if (nativeEngineClass) {
-        env->RegisterNatives(nativeEngineClass, g_methods, sizeof(g_methods) / sizeof(g_methods[0]));
+        if (env->RegisterNatives(nativeEngineClass, g_methods, sizeof(g_methods) / sizeof(g_methods[0])) < 0) {
+            LOGE(TAG, "JNI: RegisterNatives failed for NativeEngine");
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
+    } else {
+        LOGE(TAG, "JNI: NativeEngine class not found");
+        if (env->ExceptionCheck()) env->ExceptionClear();
     }
 
-    // Register for InferenceService (Worker process)
+    // Nuclear Guardrail: Register for InferenceService (Worker process)
     jclass inferenceServiceClass = env->FindClass("com/ronin/kernel/InferenceService");
     if (inferenceServiceClass) {
-        // We only need initializeKernel and pushTokenToSHM for the worker
-        env->RegisterNatives(inferenceServiceClass, g_methods, sizeof(g_methods) / sizeof(g_methods[0]));
+        if (env->RegisterNatives(inferenceServiceClass, g_methods, sizeof(g_methods) / sizeof(g_methods[0])) < 0) {
+            LOGE(TAG, "JNI: RegisterNatives failed for InferenceService");
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
+    } else {
+        LOGE(TAG, "JNI: InferenceService class not found");
+        if (env->ExceptionCheck()) env->ExceptionClear();
     }
 
-    LOGI(TAG, "Ronin Unified JNI Registered.");
+    LOGI(TAG, "Ronin Unified JNI Registered with Nuclear Guardrails.");
     return JNI_VERSION_1_6;
 }
