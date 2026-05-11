@@ -44,7 +44,11 @@ class InferenceService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, createNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIFICATION_ID, createNotification())
+        }
 
         try {
             val libDir = applicationInfo.nativeLibraryDir
@@ -180,29 +184,33 @@ class InferenceService : Service() {
                 
                 // Final safety check before native call
                 if (isHydrated()) {
-                    // Phase 8.1: Robust Chunking for SHM (Max 255 bytes per fragment)
+                    // Phase 8.2: UTF-8 Safe Chunking (Burmese Glyphs Protection)
                     val bytes = cleaned.toByteArray(Charsets.UTF_8)
                     var offset = 0
                     while (offset < bytes.size) {
                         val remaining = bytes.size - offset
-                        val chunkSize = Math.min(255, remaining)
+                        val maxChunk = 255
+                        var actualChunkSize = Math.min(maxChunk, remaining)
                         
-                        // Ensure we don't split multi-byte characters
-                        var actualChunkSize = chunkSize
-                        if (actualChunkSize < remaining) {
-                            // UTF-8 lead byte check: 0x80 is 10xxxxxx (continuation byte)
+                        // If we're not at the very end, check the next byte to see if we're splitting a character
+                        if (offset + actualChunkSize < bytes.size) {
+                            // UTF-8 continuation byte check: (byte & 0xC0) == 0x80
+                            // We back up actualChunkSize until we hit a non-continuation byte
                             while (actualChunkSize > 0 && (bytes[offset + actualChunkSize].toInt() and 0xC0) == 0x80) {
                                 actualChunkSize--
                             }
                         }
                         
+                        // Safety fallback: if we backed up to 0, just take the original chunk size
+                        if (actualChunkSize == 0) actualChunkSize = Math.min(maxChunk, remaining)
+
                         val chunk = String(bytes, offset, actualChunkSize, Charsets.UTF_8)
                         val isFinalChunk = (offset + actualChunkSize >= bytes.size)
                         
                         pushTokenToSHMNative(chunk, isFinalChunk)
                         offset += actualChunkSize
                     }
-                    Log.i(TAG, "Neural Response pushed to SHM.")
+                    Log.i(TAG, "Neural Response pushed to SHM highway safely.")
                 }
                 "Reasoning Started [SHM Active]"
             } else {

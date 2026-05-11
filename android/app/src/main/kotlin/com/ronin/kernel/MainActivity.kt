@@ -421,6 +421,7 @@ class MainActivity : ComponentActivity() {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requiredPermissions.add(android.Manifest.permission.NEARBY_WIFI_DEVICES)
+            requiredPermissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
         }
 
         val missingPermissions = requiredPermissions.filter {
