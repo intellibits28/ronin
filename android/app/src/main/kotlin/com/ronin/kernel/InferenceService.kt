@@ -183,7 +183,7 @@ class InferenceService : Service() {
                     .trim()
                 
                 // Final safety check before native call
-                if (isHydrated()) {
+                if (llmInference != null) {
                     // Phase 8.2: UTF-8 Safe Chunking (Burmese Glyphs Protection)
                     val bytes = cleaned.toByteArray(Charsets.UTF_8)
                     var offset = 0
