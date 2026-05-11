@@ -147,8 +147,11 @@ class InferenceService : Service() {
                     .replace("<end_of_turn>", "")
                     .trim()
                 
-                pushTokenToSHMNative(cleaned, true)
-                Log.i(TAG, "Neural Response pushed to SHM.")
+                // Final safety check before native call
+                if (isHydrated()) {
+                    pushTokenToSHMNative(cleaned, true)
+                    Log.i(TAG, "Neural Response pushed to SHM.")
+                }
                 "Reasoning Started [SHM Active]"
             } else {
                 "Error: Empty response from engine."

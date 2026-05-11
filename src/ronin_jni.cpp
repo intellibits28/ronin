@@ -261,6 +261,11 @@ static JNINativeMethod g_methods[] = {
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}
 };
 
+static JNINativeMethod g_worker_methods[] = {
+    {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
+    {"pushTokenToSHMNative", "(Ljava/lang/String;Z)Z", (void*)native_pushTokenToSHM}
+};
+
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_vm = vm;
     JNIEnv* env;
@@ -281,7 +286,7 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     // Nuclear Guardrail: Register for InferenceService (Worker process)
     jclass inferenceServiceClass = env->FindClass("com/ronin/kernel/InferenceService");
     if (inferenceServiceClass) {
-        if (env->RegisterNatives(inferenceServiceClass, g_methods, sizeof(g_methods) / sizeof(g_methods[0])) < 0) {
+        if (env->RegisterNatives(inferenceServiceClass, g_worker_methods, sizeof(g_worker_methods) / sizeof(g_worker_methods[0])) < 0) {
             LOGE(TAG, "JNI: RegisterNatives failed for InferenceService");
             if (env->ExceptionCheck()) env->ExceptionClear();
         }
