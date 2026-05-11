@@ -186,12 +186,28 @@ jboolean native_pushTokenToSHM(JNIEnv *env, jobject thiz, jstring fragment, jboo
     if (!g_spine_consumer) return JNI_FALSE;
     auto* rb = g_spine_consumer->get();
     if (!rb) return JNI_FALSE;
+
     std::string text = ConvertJStringToString(env, fragment);
     ::Ronin::Kernel::HAL::InferencePacket packet;
-    packet.sequence_id = 0; packet.token_id = 0; packet.confidence = 1.0f; packet.is_final = (is_final == JNI_TRUE);
+    packet.sequence_id = 0; 
+    packet.token_id = 0; 
+    packet.confidence = 1.0f; 
+    packet.is_final = (is_final == JNI_TRUE);
     std::strncpy(packet.fragment, text.c_str(), sizeof(packet.fragment) - 1);
     packet.fragment[sizeof(packet.fragment) - 1] = '\0';
-    return rb->push(packet) ? JNI_TRUE : JNI_FALSE;
+
+    // Phase 8.1: Burst Control - Retry with sleep if buffer is full
+    int retries = 50; // Up to 50ms wait
+    while (!rb->push(packet) && retries-- > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    if (retries < 0) {
+        LOGW(TAG, "SHM Push FAILED: Buffer overflow after 50ms wait.");
+        return JNI_FALSE;
+    }
+
+    return JNI_TRUE;
 }
 
 jboolean native_isLoaded(JNIEnv *env, jobject thiz) { return g_llm_context.initialized ? JNI_TRUE : JNI_FALSE; }
