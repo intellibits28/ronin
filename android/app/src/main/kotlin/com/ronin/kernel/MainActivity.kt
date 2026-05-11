@@ -605,10 +605,23 @@ fun SettingsDialog(chatViewModel: ChatViewModel, modelPicker: androidx.activity.
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             Text("Reasoning Brains (Internal)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             chatViewModel.discoveredModels.forEach { path ->
-                val filename = java.io.File(path).name; val isActive = path == chatViewModel.localModelPath && chatViewModel.isKernelHydrated
+                val file = java.io.File(path)
+                val filename = file.name
+                
+                // Requirement 2: Fetch display name from local knowledge if possible
+                // (Simplified mapping for now, production should parse capabilities.json into a Map)
+                val displayName = when {
+                    filename.contains("gemma-4") -> "Gemma 4 (Sentient)"
+                    filename.contains("gemma3-1b") -> "Gemma 3 (Lightweight)"
+                    filename.contains("mobile_actions") -> "Ronin Action Model"
+                    filename.contains("q8") -> "$filename (Quantized)"
+                    else -> filename
+                }
+                
+                val isActive = path == chatViewModel.localModelPath && chatViewModel.isKernelHydrated
                 Row(verticalAlignment = Alignment.CenterVertically) { 
                     RadioButton(selected = path == chatViewModel.localModelPath, onClick = { onSelectModel(path) }, colors = androidx.compose.material.RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6))); 
-                    Text(filename, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White); 
+                    Text(displayName, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White); 
                     IconButton(onClick = { onDeleteModel(path) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray) } 
                 }
             }

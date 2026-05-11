@@ -283,8 +283,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (!isLibLoaded) return@withContext false
         
         // Ensure Inference Service is bound before attempting hydration
-        if (!waitForService(10000)) {
-            Log.e(TAG, "ABORT: Inference Service failed to bind within 10s.")
+        if (!waitForService(30000)) {
+            Log.e(TAG, "ABORT: Inference Service failed to bind within 30s.")
             return@withContext false
         }
 
@@ -370,26 +370,30 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     private fun startInferencePolling() {
-        pollingJob?.cancel()
+        if (pollingJob?.isActive == true) {
+            Log.d(TAG, "SHM Polling already active. Skipping restart.")
+            return
+        }
+        // Requirement 1: Use a context that survives parent cancellation for critical polling
         pollingJob = scope.launch(Dispatchers.IO) {
-            Log.d(TAG, "Starting SHM Inference Polling...")
-            var finalReceived = false
-            while (!finalReceived) {
+            withContext(kotlinx.coroutines.NonCancellable) {
+                Log.d(TAG, "Starting SHM Inference Polling (Non-Cancellable)...")
+                var finalReceived = false
                 try {
-                    val packet = pollInferenceStreamNative()
-                    if (packet != null) {
-                        _inferenceFlow.emit(packet)
-                        if (packet.isFinal) {
-                            finalReceived = true
-                            Log.d(TAG, "SHM Stream Finalized.")
+                    while (!finalReceived) {
+                        val packet = pollInferenceStreamNative()
+                        if (packet != null) {
+                            _inferenceFlow.emit(packet)
+                            if (packet.isFinal) {
+                                finalReceived = true
+                                Log.d(TAG, "SHM Stream Finalized.")
+                            }
+                        } else {
+                            delay(16) 
                         }
-                    } else {
-                        // Battery-optimized delay when buffer is empty
-                        delay(16) // ~60fps sync
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Polling Error: ${e.message}")
-                    break
                 }
             }
         }

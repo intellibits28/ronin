@@ -166,13 +166,18 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input) {
     }
     return ConvertStringToJString(env, response);
 }
-
 jobject native_pollInferenceStream(JNIEnv *env, jobject thiz) {
     if (!g_spine_consumer) return nullptr;
     auto* rb = g_spine_consumer->get();
     if (!rb) return nullptr;
+
     ::Ronin::Kernel::HAL::InferencePacket packet;
     if (rb->pop(packet)) {
+        // Requirement 4: Ensure we are not returning empty strings accidentally
+        if (std::strlen(packet.fragment) == 0 && !packet.is_final) {
+            return nullptr; // Skip empty packets unless it's the final signal
+        }
+
         jclass cls = env->FindClass("com/ronin/kernel/InferencePacket");
         if (!cls) return nullptr;
         jmethodID constructor = env->GetMethodID(cls, "<init>", "(ILjava/lang/String;Z)V");
@@ -181,6 +186,7 @@ jobject native_pollInferenceStream(JNIEnv *env, jobject thiz) {
     }
     return nullptr;
 }
+
 
 jboolean native_pushTokenToSHM(JNIEnv *env, jobject thiz, jstring fragment, jboolean is_final) {
     if (!g_spine_consumer) return JNI_FALSE;
@@ -287,29 +293,25 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     JNIEnv* env;
     if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
 
-    // Nuclear Guardrail: Register for NativeEngine
-    jclass nativeEngineClass = env->FindClass("com/ronin/kernel/NativeEngine");
-    if (nativeEngineClass) {
-        if (env->RegisterNatives(nativeEngineClass, g_methods, sizeof(g_methods) / sizeof(g_methods[0])) < 0) {
-            LOGE(TAG, "JNI: RegisterNatives failed for NativeEngine");
+    auto register_class = [&](const char* class_name, JNINativeMethod* methods, int count) {
+        jclass cls = env->FindClass(class_name);
+        if (cls) {
+            if (env->RegisterNatives(cls, methods, count) < 0) {
+                LOGE(TAG, "JNI: RegisterNatives FAILED for %s. Checking signatures...", class_name);
+                // Nuclear Guardrail: Even if one fails, we clear so the process lives
+                if (env->ExceptionCheck()) env->ExceptionClear();
+            } else {
+                LOGI(TAG, "JNI: Successfully registered %d methods for %s", count, class_name);
+            }
+        } else {
+            // This is expected if the library is loaded by a classloader that doesn't see this class
+            LOGW(TAG, "JNI: Class %s not found in current context.", class_name);
             if (env->ExceptionCheck()) env->ExceptionClear();
         }
-    } else {
-        LOGE(TAG, "JNI: NativeEngine class not found");
-        if (env->ExceptionCheck()) env->ExceptionClear();
-    }
+    };
 
-    // Nuclear Guardrail: Register for InferenceService (Worker process)
-    jclass inferenceServiceClass = env->FindClass("com/ronin/kernel/InferenceService");
-    if (inferenceServiceClass) {
-        if (env->RegisterNatives(inferenceServiceClass, g_worker_methods, sizeof(g_worker_methods) / sizeof(g_worker_methods[0])) < 0) {
-            LOGE(TAG, "JNI: RegisterNatives failed for InferenceService");
-            if (env->ExceptionCheck()) env->ExceptionClear();
-        }
-    } else {
-        LOGE(TAG, "JNI: InferenceService class not found");
-        if (env->ExceptionCheck()) env->ExceptionClear();
-    }
+    register_class("com/ronin/kernel/NativeEngine", g_methods, sizeof(g_methods) / sizeof(g_methods[0]));
+    register_class("com/ronin/kernel/InferenceService", g_worker_methods, sizeof(g_worker_methods) / sizeof(g_worker_methods[0]));
 
     LOGI(TAG, "Ronin Unified JNI Registered with Nuclear Guardrails.");
     return JNI_VERSION_1_6;
