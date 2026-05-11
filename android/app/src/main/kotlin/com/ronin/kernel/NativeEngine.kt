@@ -131,7 +131,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun injectLocationSafe(lat: Double, lon: Double) {
         if (isLibLoaded) {
             try {
-                injectLocation(lat, lon)
+                injectLocationNative(lat, lon)
             } catch (e: UnsatisfiedLinkError) {}
         }
     }
@@ -139,7 +139,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun updateModelRegistrySafe(json: String): Boolean {
         if (isLibLoaded) {
             return try {
-                updateModelRegistry(json)
+                updateModelRegistryNative(json)
             } catch (e: UnsatisfiedLinkError) {
                 false
             }
@@ -180,7 +180,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun setOfflineModeSafe(offline: Boolean) {
         if (isLibLoaded) {
             try {
-                setOfflineMode(offline)
+                setOfflineModeNative(offline)
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "setOfflineMode failed: ${e.message}")
             }
@@ -190,7 +190,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun setPrimaryCloudProviderSafe(provider: String) {
         if (isLibLoaded) {
             try {
-                setPrimaryCloudProvider(provider)
+                setPrimaryCloudProviderNative(provider)
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "setPrimaryCloudProvider failed: ${e.message}")
             }
@@ -220,7 +220,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
         if (isLibLoaded) {
             return try {
-                updateCloudProviders(json)
+                updateCloudProvidersNative(json)
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "updateCloudProviders native call failed: ${e.message}")
                 false
@@ -232,7 +232,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun getLMKPressureSafe(): Int {
         if (isLibLoaded) {
             return try {
-                getLMKPressure()
+                getLMKPressureNative()
             } catch (e: UnsatisfiedLinkError) {
                 0
             }
@@ -243,7 +243,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun scanSpecificPathSafe(path: String): Boolean {
         if (isLibLoaded) {
             return try {
-                scanSpecificPath(path)
+                scanSpecificPathNative(path)
             } catch (e: UnsatisfiedLinkError) {
                 false
             }
@@ -262,9 +262,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (!isLibLoaded) initializeAsync()
         if (isLibLoaded) {
             try {
-                setEngineInstance()
+                setEngineInstanceNative()
                 val libDir = context.applicationInfo.nativeLibraryDir
-                initializeKernel(context.filesDir.absolutePath, libDir, false)
+                initializeKernelNative(context.filesDir.absolutePath, libDir, false)
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "initializeKernel failed: ${e.message}")
             }
@@ -308,7 +308,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
         // 2. Notify Native Proxy (Stage 4 Runtime Binding)
         val nativeSuccess = try {
-            notifyModelLoaded(path)
+            notifyModelLoadedNative(path)
             true 
         } catch (e: Exception) {
             Log.e(TAG, "Native notifyModelLoaded failed: ${e.message}")
@@ -335,18 +335,28 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     fun isLoaded(): Boolean {
-        // Simplified for native mode
+        if (isLibLoaded) {
+            try {
+                return isLoadedNative()
+            } catch (e: UnsatisfiedLinkError) {}
+        }
         return currentModelPath.isNotEmpty()
     }
 
     fun getActiveModelPath(): String {
+        if (isLibLoaded) {
+            try {
+                return getActiveModelPathNative()
+            } catch (e: UnsatisfiedLinkError) {}
+        }
         return currentModelPath
     }
 
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext "Error: Native libraries not loaded."
         try {
-            val result = processInput(input)
+            val result = processInputNative(input)
+
             
             // Phase 3: If reasoning started, trigger the polling coroutine
             if (result.contains("[SHM Active]")) {
@@ -366,7 +376,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             var finalReceived = false
             while (!finalReceived) {
                 try {
-                    val packet = pollInferenceStream()
+                    val packet = pollInferenceStreamNative()
                     if (packet != null) {
                         _inferenceFlow.emit(packet)
                         if (packet.isFinal) {
@@ -414,11 +424,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 } ?: "Error: Inference Service unavailable."
                 
                 // Push final result to SHM so Native Core/UI can consume it
-                pushTokenToSHM(response, true)
+                pushTokenToSHMNative(response, true)
                 Log.i(TAG, "<<< [Microkernel] Reasoning complete and pushed to SHM.")
             } catch (e: Exception) {
                 Log.e(TAG, "Microkernel reasoning failed: ${e.message}")
-                pushTokenToSHM("Error: ${e.message}", true)
+                pushTokenToSHMNative("Error: ${e.message}", true)
             }
         }
         
@@ -428,7 +438,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         if (!isLibLoaded) return@withContext emptyList<Pair<String, String>>()
         try {
-            val raw = getChatHistory(limit, offset) ?: return@withContext emptyList<Pair<String, String>>()
+            val raw = getChatHistoryNative(limit, offset) ?: return@withContext emptyList<Pair<String, String>>()
+
             val result = mutableListOf<Pair<String, String>>()
             for (i in 0 until (raw.size / 2)) {
                 result.add(raw[i * 2] to raw[i * 2 + 1])
@@ -623,7 +634,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun updateSystemHealthSafe(temp: Float, used: Float, total: Float): Boolean {
         if (isLibLoaded) {
             return try {
-                updateSystemHealth(temp, used, total)
+                updateSystemHealthNative(temp, used, total)
             } catch (e: UnsatisfiedLinkError) {
                 false
             }
