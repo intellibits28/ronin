@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.util.Log
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -23,6 +24,7 @@ class InferenceService : Service() {
     private val NOTIFICATION_ID = 1001
 
     private var llmInference: LlmInference? = null
+    private var llmSession: LlmInferenceSession? = null
     private var currentModelPath: String = ""
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -152,7 +154,16 @@ class InferenceService : Service() {
             builder.setPreferredBackend(LlmInference.Backend.GPU)
             Log.i(TAG, "Hardware Acceleration: GPU Backend ENABLED.")
 
-            llmInference = LlmInference.createFromOptions(this, builder.build())
+            val engine = LlmInference.createFromOptions(this, builder.build())
+            llmInference = engine
+
+            // 0.10.35: Create session for sampling parameters (Rule #2)
+            val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                .setTemperature(0.1f) // Burmese Precision Profile
+                .setTopK(40)
+                .build()
+            llmSession = LlmInferenceSession.createFromOptions(engine, sessionOptions)
+
             currentModelPath = path
             Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated in :inference_core process.")
             true
@@ -163,7 +174,7 @@ class InferenceService : Service() {
     }
 
     private fun executeReasoning(input: String): String {
-        val inference = llmInference ?: return "Error: Local reasoning spine not hydrated in service."
+        val session = llmSession ?: return "Error: Local reasoning spine not hydrated in service."
         
         val isLiteRTLM = currentModelPath.endsWith(".litertlm")
         val isGemma = currentModelPath.lowercase().contains("gemma")
@@ -177,15 +188,14 @@ class InferenceService : Service() {
         Log.d(TAG, "Executing Reasoning [SafeMode: $isSafeModeActive].")
         
         return try {
-            // Rule 8: If safe mode is active, we might want to log it or use lower priority
             if (isSafeModeActive) {
                 Log.w(TAG, "Neural Reasoning under Thermal Stress (Safe Mode Active).")
             }
 
-            // Phase 4.5: Async Execution with direct callback (MediaPipe 0.10.35)
-            // Tokens are streamed via ProgressListener directly to SHM
-            inference.generateResponseAsync(formattedPrompt) { result, done ->
-                // result is already the partial text chunk (ProgressListener<String>)
+            // Phase 4.5: Session-based Async Execution (MediaPipe 0.10.35)
+            // Add prompt to session and stream results via ProgressListener
+            session.addQueryChunk(formattedPrompt)
+            session.generateResponseAsync { result, done ->
                 pushTokenToSHMNative(result, done)
             }
             
@@ -198,6 +208,7 @@ class InferenceService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        llmSession?.close()
         llmInference?.close()
         Log.i(TAG, "Service destroyed")
     }
