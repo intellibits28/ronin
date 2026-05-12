@@ -146,8 +146,6 @@ class InferenceService : Service() {
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(1024)
-                .setTemperature(0.1f) // Burmese Precision Profile (Rule #2)
-                .setTopK(40)
             
             // Phase 6.7: Hardware Acceleration Audit
             // Use setPreferredBackend instead of setDelegate for 0.10.35
