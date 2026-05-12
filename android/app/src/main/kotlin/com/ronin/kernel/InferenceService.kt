@@ -144,6 +144,8 @@ class InferenceService : Service() {
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(1024)
+                .setTemperature(0.1f) // Burmese Precision Profile (Rule #2)
+                .setTopK(40)
             
             // Phase 6.7: Hardware Acceleration Audit
             // Use setPreferredBackend instead of setDelegate for 0.10.35
@@ -181,10 +183,10 @@ class InferenceService : Service() {
             }
 
             // Phase 4.5: Async Execution with direct callback (MediaPipe 0.10.35)
-            // Tokens are streamed via ProgressCallback directly to SHM
+            // Tokens are streamed via ProgressListener directly to SHM
             inference.generateResponseAsync(formattedPrompt) { result, done ->
-                val chunk = result.generateResponseText()
-                pushTokenToSHMNative(chunk, done)
+                // result is already the partial text chunk (ProgressListener<String>)
+                pushTokenToSHMNative(result, done)
             }
             
             "Reasoning Started [SHM Active]"
