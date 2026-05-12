@@ -44,14 +44,15 @@ bool HydrationManager::hydrate(const std::string& model_path) {
 
     // Rule #6: Delegate memory management to the worker process engine (MediaPipe)
     // to avoid duplicate mapping and contention.
-    if (access(sanitized_path.c_str(), R_OK) != 0) {
-        LOGE(TAG, "Hydration Error: Cannot access model at %s", sanitized_path.c_str());
+    struct stat st;
+    if (stat(sanitized_path.c_str(), &st) != 0) {
+        LOGE(TAG, "Hydration Error: Cannot access model at %s (errno: %d)", sanitized_path.c_str(), errno);
         return false;
     }
-
+    m_model_size = st.st_size;
     m_model_path = sanitized_path;
 
-    // Phase 7.0: Pipeline Validation
+    // Phase 7.0: Pipeline Validation (Lightweight)
     if (!verifyChecksum()) return false;
     if (!parseMetadata()) return false;
 
@@ -59,27 +60,23 @@ bool HydrationManager::hydrate(const std::string& model_path) {
 }
 
 bool HydrationManager::verifyChecksum() {
-    // Stage 2: Fast Checksum (Simple size + magic byte check for now)
+    // Stage 2: Fast Checksum (Simple size check for now)
     if (m_model_size < 1024) return false;
     
-    // Generate a simple fingerprint
+    // Generate a simple fingerprint based on size
     m_checksum = "CRC-" + std::to_string(m_model_size % 1000000);
     LOGI(TAG, "Integrity: Model fingerprint verified (%s)", m_checksum.c_str());
     return true;
 }
 
 bool HydrationManager::parseMetadata() {
-    // Stage 3: Tensor Metadata Parse
-    unsigned char* ptr = static_cast<unsigned char*>(m_model_ptr);
+    // Stage 3: Tensor Metadata Parse (Lightweight size-based detection)
+    // We no longer access m_model_ptr here as persistent mapping is removed per Rule #6.
     
-    // Check for Gemma 4 LiteRT-LM signatures (placeholder logic)
-    // Production: Parse FlatBuffer header here
     m_is_gemma4 = false;
     if (m_model_size > 2000000000ULL) { // > 2GB is likely Gemma 4 2B
         m_is_gemma4 = true;
-        LOGI(TAG, "Metadata: Gemma 4 detected (Size: %.2f GB). Enabling PLE reasoning.", m_model_size / (1024.0 * 1024.0 * 1024.0));
-    } else {
-        LOGI(TAG, "Metadata: Legacy/Small model detected.");
+        LOGI(TAG, "Metadata: Gemma 4 detected (Size: %.2f GB).", m_model_size / (1024.0 * 1024.0 * 1024.0));
     }
     
     return true;

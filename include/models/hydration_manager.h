@@ -59,6 +59,7 @@ private:
     size_t m_model_size = 0;
     int m_fd = -1;
     bool m_is_locked = false;
+    std::string m_model_path;
 
     // Phase 7.0 state
     std::string m_checksum;

@@ -70,21 +70,18 @@ TEST_F(InferenceModuleTest, SHMBridgeConnectivity) {
     EXPECT_EQ(out.token_id, 201);
 }
 
-// Test 3: HydrationManager mmap & Pointer Integrity
-TEST_F(InferenceModuleTest, HydrationManagerMmap) {
+// Test 3: HydrationManager Validation & Metadata
+TEST_F(InferenceModuleTest, HydrationManagerValidation) {
     HydrationManager hm;
     EXPECT_TRUE(hm.hydrate(dummy_model_path));
     
-    EXPECT_NE(hm.getModelPtr(), (void*)-1);
+    // Rule #6: Persistent mapping removed on native side
+    EXPECT_EQ(hm.getModelPtr(), (void*)-1);
     EXPECT_EQ(hm.getModelSize(), 1024 * 1024);
-
-    // Verify content (0x42 we wrote in SetUp)
-    unsigned char* ptr = static_cast<unsigned char*>(hm.getModelPtr());
-    EXPECT_EQ(ptr[0], 0x42);
-    EXPECT_EQ(ptr[hm.getModelSize() - 1], 0x42);
+    EXPECT_FALSE(hm.getModelFingerprint().empty());
 
     hm.dehydrate();
-    EXPECT_EQ(hm.getModelPtr(), (void*)-1);
+    EXPECT_EQ(hm.getModelSize(), 0);
 }
 
 // Test 4: RAM Monitor Logic
