@@ -146,13 +146,15 @@ class InferenceService : Service() {
                 .setMaxTokens(1024)
                 .setTemperature(0.1f) // Burmese Precision Profile (Rule #2)
                 .setTopK(40)
-                .setResultListener { partialResult, done ->
-                    if (partialResult != null) {
-                        // Phase 8.2: UTF-8 Safe Streaming via SHM
-                        pushTokenToSHMNative(partialResult, done)
-                    } else if (done) {
-                        pushTokenToSHMNative("", true) // Signal finality
-                    }
+                .setResultListener { partialResult: String?, done: Boolean ->
+                    val chunk = partialResult ?: ""
+                    // Phase 8.2: UTF-8 Safe Streaming via SHM
+                    pushTokenToSHMNative(chunk, done)
+                    Unit
+                }
+                .setErrorListener { error: Throwable ->
+                    Log.e(TAG, "LlmInference Error: ${error.message}")
+                    Unit
                 }
             
             // Phase 6.7: Hardware Acceleration Audit
