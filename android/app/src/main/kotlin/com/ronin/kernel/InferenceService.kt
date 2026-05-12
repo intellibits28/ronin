@@ -29,6 +29,7 @@ class InferenceService : Service() {
     // JNI Bridge for Worker Process
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun pushTokenToSHMNative(fragment: String, isFinal: Boolean): Boolean
+    private external fun getFreeRamGBNative(): Float
 
     companion object {
         init {
@@ -125,6 +126,15 @@ class InferenceService : Service() {
             Log.e(TAG, "FATAL: Model file NOT FOUND in :inference_core process at $path")
             return false
         }
+        
+        // Rule 5: RAM Guard before hydration
+        val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f } // Fallback to safe guess
+        val minRam = 1.5f // 1.5GB threshold for Gemma 4
+        if (freeRam < minRam) {
+            Log.e(TAG, "ABORT: Insufficient RAM for Hydration. Available: ${freeRam}GB, Required: ${minRam}GB")
+            return false
+        }
+
         if (!modelFile.canRead()) {
             Log.e(TAG, "FATAL: Model file NOT READABLE in :inference_core process.")
             return false
@@ -136,22 +146,20 @@ class InferenceService : Service() {
                 .setMaxTokens(1024)
             
             // Phase 6.7: Hardware Acceleration Audit
-            // Attempt GPU delegate if supported in this SDK version
+            // Enable GPU delegate for Snapdragon 778G+ optimization
             try {
-                // In some versions of MediaPipe GenAI, the Delegate enum is under LlmInferenceOptions
-                // We use reflection or catch the unresolved reference if we can't be sure of the exact nested path
-                // But for now, let's try the common path.
-                // builder.setDelegate(LlmInference.LlmInferenceOptions.Delegate.GPU) 
-                Log.i(TAG, "Hardware Acceleration: GPU Delegate requested (skipping explicit call due to API mismatch).")
+                // MediaPipe GenAI 0.10.x uses the following path for GPU delegate
+                builder.setDelegate(com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions.Delegate.GPU)
+                Log.i(TAG, "Hardware Acceleration: GPU Delegate ENABLED.")
             } catch (e: Exception) {
-                Log.w(TAG, "GPU Delegate setup failed: ${e.message}")
+                Log.w(TAG, "GPU Delegate setup failed: ${e.message}. Falling back to CPU.")
             }
 
             llmInference = LlmInference.createFromOptions(this, builder.build())
             currentModelPath = path
             Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated in :inference_core process.")
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Hydration failed in service: ${e.message}")
             false
         }
@@ -161,15 +169,24 @@ class InferenceService : Service() {
         val inference = llmInference ?: return "Error: Local reasoning spine not hydrated in service."
         
         val isLiteRTLM = currentModelPath.endsWith(".litertlm")
-        val formattedPrompt = if (isLiteRTLM) {
-            "<|turn|>user\n$input<|turn|>model\n"
-        } else {
-            "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
+        val isGemma = currentModelPath.lowercase().contains("gemma")
+        
+        val formattedPrompt = when {
+            isLiteRTLM -> "<|turn|>user\n$input<|turn|>model\n"
+            isGemma -> "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
+            else -> input // Fallback for raw models
         }
         
-        Log.d(TAG, "Executing Reasoning via SHM.")
+        Log.d(TAG, "Executing Reasoning [SafeMode: $isSafeModeActive].")
         
         return try {
+            // Rule 8: If safe mode is active, we might want to log it or use lower priority
+            // But generateResponse is sync and doesn't take priority. 
+            // We just log it for now.
+            if (isSafeModeActive) {
+                Log.w(TAG, "Neural Reasoning under Thermal Stress (Safe Mode Active).")
+            }
+
             val response = inference.generateResponse(formattedPrompt)
             if (!response.isNullOrEmpty()) {
                 val cleaned = response

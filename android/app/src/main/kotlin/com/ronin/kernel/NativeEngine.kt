@@ -51,6 +51,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             } catch (e: RemoteException) {
                 Log.e(TAG, "Failed to link to death: ${e.message}")
             }
+
+            // Phase 4.5.10: Auto Re-hydration on Reconnect
+            if (currentModelPath.isNotEmpty()) {
+                scope.launch {
+                    Log.i(TAG, "Re-hydrating previous model: $currentModelPath")
+                    loadModel(currentModelPath)
+                }
+            }
         }
 
         override fun onServiceDisconnected(name: android.content.ComponentName?) {
@@ -431,8 +439,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 pushTokenToSHMNative(response, true)
                 Log.i(TAG, "<<< [Microkernel] Reasoning complete and pushed to SHM.")
             } catch (e: Exception) {
-                Log.e(TAG, "Microkernel reasoning failed: ${e.message}")
-                pushTokenToSHMNative("Error: ${e.message}", true)
+                val errorMsg = "Error: Neural spine failure - ${e.javaClass.simpleName}: ${e.message ?: "Unknown crash"}"
+                Log.e(TAG, "Microkernel reasoning failed: $errorMsg")
+                pushTokenToSHMNative(errorMsg, true)
             }
         }
         

@@ -285,7 +285,8 @@ static JNINativeMethod g_methods[] = {
 
 static JNINativeMethod g_worker_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
-    {"pushTokenToSHMNative", "(Ljava/lang/String;Z)Z", (void*)native_pushTokenToSHM}
+    {"pushTokenToSHMNative", "(Ljava/lang/String;Z)Z", (void*)native_pushTokenToSHM},
+    {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB}
 };
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
