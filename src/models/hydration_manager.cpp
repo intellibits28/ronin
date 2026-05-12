@@ -42,72 +42,14 @@ bool HydrationManager::hydrate(const std::string& model_path) {
     sanitized_path.erase(0, sanitized_path.find_first_not_of(" \t\n\r"));
     sanitized_path.erase(sanitized_path.find_last_not_of(" \t\n\r") + 1);
 
-    auto try_open = [&](const std::string& path) -> bool {
-        m_fd = open(path.c_str(), O_RDONLY);
-        if (m_fd != -1) {
-            LOGI(TAG, "Hydration: Successfully opened model at %s", path.c_str());
-            return true;
-        }
-        return false;
-    };
-
-    bool opened = try_open(sanitized_path);
-
-    if (!opened && sanitized_path.find("/data/user/0/") == 0) {
-        std::string fallback = sanitized_path;
-        fallback.replace(0, 13, "/data/data/");
-        LOGW(TAG, "Primary path failed. Trying fallback: %s", fallback.c_str());
-        opened = try_open(fallback);
-    }
-
-    if (!opened && sanitized_path.find("/data/data/") == 0) {
-        std::string fallback = sanitized_path;
-        fallback.replace(0, 11, "/data/user/0/");
-        LOGW(TAG, "Primary path failed. Trying fallback: %s", fallback.c_str());
-        opened = try_open(fallback);
-    }
-
-    if (!opened) {
-        LOGE(TAG, "Hydration Error: Cannot open file %s (errno: %d)", sanitized_path.c_str(), errno);
+    // Rule #6: Delegate memory management to the worker process engine (MediaPipe)
+    // to avoid duplicate mapping and contention.
+    if (access(sanitized_path.c_str(), R_OK) != 0) {
+        LOGE(TAG, "Hydration Error: Cannot access model at %s", sanitized_path.c_str());
         return false;
     }
 
-    struct stat st;
-    if (fstat(m_fd, &st) == -1) {
-        close(m_fd);
-        m_fd = -1;
-        return false;
-    }
-    m_model_size = st.st_size;
-
-    // Phase 2: mmap with MAP_PRIVATE (Optimized for Mobile/Demand Paging)
-    m_model_ptr = mmap(0, m_model_size, PROT_READ, MAP_PRIVATE, m_fd, 0);
-    if (m_model_ptr == (void*)-1) {
-        LOGE(TAG, "Hydration Error: mmap failed (errno: %d)", errno);
-        close(m_fd);
-        m_fd = -1;
-        return false;
-    }
-
-    // Phase 2 Logic: Threshold Guard (1GB)
-    uint64_t available = getAvailableRAM();
-    LOGI(TAG, "Hydration: Available RAM is %llu MB", (unsigned long long)(available / (1024 * 1024)));
-
-    if (available > 1024ULL * 1024ULL * 1024ULL) {
-        LOGI(TAG, "Hydration: Attempting mlock for ultra-low latency.");
-        if (mlock(m_model_ptr, m_model_size) == 0) {
-            m_is_locked = true;
-            LOGI(TAG, "Hydration: Model locked in physical RAM.");
-        } else {
-            LOGW(TAG, "Hydration: mlock failed (errno: %d). This is expected in some CI/Sandbox environments.", errno);
-            // Continue without locking - disk paging will handle it.
-        }
-    } else {
-        LOGW(TAG, "Hydration: Low RAM detected. Using demand-paging (mmap only) to ensure stability.");
-    }
-
-    // Advise kernel to expect random access patterns (LLM weights)
-    madvise(m_model_ptr, m_model_size, MADV_RANDOM);
+    m_model_path = sanitized_path;
 
     // Phase 7.0: Pipeline Validation
     if (!verifyChecksum()) return false;
@@ -144,18 +86,7 @@ bool HydrationManager::parseMetadata() {
 }
 
 void HydrationManager::dehydrate() {
-    if (m_model_ptr != (void*)-1) {
-        if (m_is_locked) {
-            munlock(m_model_ptr, m_model_size);
-            m_is_locked = false;
-        }
-        munmap(m_model_ptr, m_model_size);
-        m_model_ptr = (void*)-1;
-    }
-    if (m_fd != -1) {
-        close(m_fd);
-        m_fd = -1;
-    }
+    // No manual unmapping required.
     m_model_size = 0;
 }
 

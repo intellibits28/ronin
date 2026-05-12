@@ -144,6 +144,16 @@ class InferenceService : Service() {
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(1024)
+                .setTemperature(0.1f) // Burmese Precision Profile (Rule #2)
+                .setTopK(40)
+                .setResultListener { partialResult, done ->
+                    if (partialResult != null) {
+                        // Phase 8.2: UTF-8 Safe Streaming via SHM
+                        pushTokenToSHMNative(partialResult, done)
+                    } else if (done) {
+                        pushTokenToSHMNative("", true) // Signal finality
+                    }
+                }
             
             // Phase 6.7: Hardware Acceleration Audit
             // Enable GPU delegate for Snapdragon 778G+ optimization
@@ -181,58 +191,15 @@ class InferenceService : Service() {
         
         return try {
             // Rule 8: If safe mode is active, we might want to log it or use lower priority
-            // But generateResponse is sync and doesn't take priority. 
-            // We just log it for now.
             if (isSafeModeActive) {
                 Log.w(TAG, "Neural Reasoning under Thermal Stress (Safe Mode Active).")
             }
 
-            val response = inference.generateResponse(formattedPrompt)
-            if (!response.isNullOrEmpty()) {
-                val cleaned = response
-                    .replace("<|turn|>", "")
-                    .replace("<turn|>", "")
-                    .replace("<|turn>", "")
-                    .replace("turn|user", "")
-                    .replace("turn|model", "")
-                    .replace("<start_of_turn>", "")
-                    .replace("<end_of_turn>", "")
-                    .trim()
-                
-                // Final safety check before native call
-                if (llmInference != null) {
-                    // Phase 8.2: UTF-8 Safe Chunking (Burmese Glyphs Protection)
-                    val bytes = cleaned.toByteArray(Charsets.UTF_8)
-                    var offset = 0
-                    while (offset < bytes.size) {
-                        val remaining = bytes.size - offset
-                        val maxChunk = 255
-                        var actualChunkSize = Math.min(maxChunk, remaining)
-                        
-                        // If we're not at the very end, check the next byte to see if we're splitting a character
-                        if (offset + actualChunkSize < bytes.size) {
-                            // UTF-8 continuation byte check: (byte & 0xC0) == 0x80
-                            // We back up actualChunkSize until we hit a non-continuation byte
-                            while (actualChunkSize > 0 && (bytes[offset + actualChunkSize].toInt() and 0xC0) == 0x80) {
-                                actualChunkSize--
-                            }
-                        }
-                        
-                        // Safety fallback: if we backed up to 0, just take the original chunk size
-                        if (actualChunkSize == 0) actualChunkSize = Math.min(maxChunk, remaining)
-
-                        val chunk = String(bytes, offset, actualChunkSize, Charsets.UTF_8)
-                        val isFinalChunk = (offset + actualChunkSize >= bytes.size)
-                        
-                        pushTokenToSHMNative(chunk, isFinalChunk)
-                        offset += actualChunkSize
-                    }
-                    Log.i(TAG, "Neural Response pushed to SHM highway safely.")
-                }
-                "Reasoning Started [SHM Active]"
-            } else {
-                "Error: Empty response from engine."
-            }
+            // Phase 4.5: Async Execution to prevent Binder IPC Timeout
+            // Tokens are now streamed via setResultListener directly to SHM
+            inference.generateResponseAsync(formattedPrompt)
+            
+            "Reasoning Started [SHM Active]"
         } catch (e: Exception) {
             Log.e(TAG, "Inference crash in service: ${e.message}")
             "Error: Neural spine failure - ${e.message}"
