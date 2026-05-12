@@ -144,16 +144,6 @@ class InferenceService : Service() {
             val builder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(1024)
-                .setResultListener { partialResult: String?, done: Boolean ->
-                    val chunk = partialResult ?: ""
-                    // Phase 8.2: UTF-8 Safe Streaming via SHM
-                    pushTokenToSHMNative(chunk, done)
-                    Unit
-                }
-                .setErrorListener { error: Throwable ->
-                    Log.e(TAG, "LlmInference Error: ${error.message}")
-                    Unit
-                }
             
             // Phase 6.7: Hardware Acceleration Audit
             // Use setPreferredBackend instead of setDelegate for 0.10.35
@@ -190,9 +180,12 @@ class InferenceService : Service() {
                 Log.w(TAG, "Neural Reasoning under Thermal Stress (Safe Mode Active).")
             }
 
-            // Phase 4.5: Async Execution to prevent Binder IPC Timeout
-            // Tokens are now streamed via setResultListener directly to SHM
-            inference.generateResponseAsync(formattedPrompt)
+            // Phase 4.5: Async Execution with direct callback (MediaPipe 0.10.35)
+            // Tokens are streamed via ProgressCallback directly to SHM
+            inference.generateResponseAsync(formattedPrompt) { result, done ->
+                val chunk = result.generateResponseText()
+                pushTokenToSHMNative(chunk, done)
+            }
             
             "Reasoning Started [SHM Active]"
         } catch (e: Exception) {
