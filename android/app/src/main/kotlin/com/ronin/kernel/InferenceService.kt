@@ -148,8 +148,8 @@ class InferenceService : Service() {
             // Phase 6.7: Hardware Acceleration Audit
             // Enable GPU delegate for Snapdragon 778G+ optimization
             try {
-                // MediaPipe GenAI 0.10.x uses the following path for GPU delegate
-                builder.setDelegate(com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions.Delegate.GPU)
+                // MediaPipe GenAI uses the following path for GPU delegate
+                builder.setDelegate(LlmInference.LlmInferenceOptions.Delegate.GPU)
                 Log.i(TAG, "Hardware Acceleration: GPU Delegate ENABLED.")
             } catch (e: Exception) {
                 Log.w(TAG, "GPU Delegate setup failed: ${e.message}. Falling back to CPU.")
