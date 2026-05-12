@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.util.Log
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceOptions
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -141,11 +142,9 @@ class InferenceService : Service() {
         }
 
         return try {
-            val builder = LlmInference.LlmInferenceOptions.builder()
+            val builder = LlmInferenceOptions.builder()
                 .setModelPath(path)
                 .setMaxTokens(1024)
-                .setTemperature(0.1f) // Burmese Precision Profile (Rule #2)
-                .setTopK(40)
                 .setResultListener { partialResult: String?, done: Boolean ->
                     val chunk = partialResult ?: ""
                     // Phase 8.2: UTF-8 Safe Streaming via SHM
@@ -158,14 +157,9 @@ class InferenceService : Service() {
                 }
             
             // Phase 6.7: Hardware Acceleration Audit
-            // Enable GPU delegate for Snapdragon 778G+ optimization
-            try {
-                // MediaPipe GenAI uses the following path for GPU delegate
-                builder.setDelegate(LlmInference.LlmInferenceOptions.Delegate.GPU)
-                Log.i(TAG, "Hardware Acceleration: GPU Delegate ENABLED.")
-            } catch (e: Exception) {
-                Log.w(TAG, "GPU Delegate setup failed: ${e.message}. Falling back to CPU.")
-            }
+            // Use setPreferredBackend instead of setDelegate for 0.10.35
+            builder.setPreferredBackend(LlmInference.Backend.GPU)
+            Log.i(TAG, "Hardware Acceleration: GPU Backend ENABLED.")
 
             llmInference = LlmInference.createFromOptions(this, builder.build())
             currentModelPath = path
