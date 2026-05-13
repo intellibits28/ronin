@@ -9,6 +9,7 @@
 #include "ronin_kernel.hpp"
 #include "intent_engine.h"
 #include "models/inference_engine.h"
+#include "models/hydration_manager.h"
 #include "capabilities/hardware_bridge.h"
 #include "capabilities/chat_skill.h"
 #include "capabilities/file_search_node.h"
