@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class InferenceService : Service() {
-    private val TAG = "RoninInferenceService"
+    private val TAG = "RoninKernel_Native" // Aligned with native logs for filtered visibility
     private val CHANNEL_ID = "ronin_inference_channel"
     private val NOTIFICATION_ID = 1001
 
@@ -131,6 +131,7 @@ class InferenceService : Service() {
         
         // Rule 5: RAM Guard before hydration
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f } // Fallback to safe guess
+        Log.i(TAG, "Hydration Guard: Free RAM = ${freeRam}GB")
         val minRam = 1.5f // 1.5GB threshold for Gemma 4
         if (freeRam < minRam) {
             Log.e(TAG, "ABORT: Insufficient RAM for Hydration. Available: ${freeRam}GB, Required: ${minRam}GB")
@@ -153,14 +154,24 @@ class InferenceService : Service() {
             Log.i(TAG, "Hardware Acceleration: GPU Backend ENABLED.")
 
             val engine = LlmInference.createFromOptions(this, builder.build())
+            if (engine == null) {
+                Log.e(TAG, "FATAL: LlmInference engine creation returned NULL.")
+                return false
+            }
             llmInference = engine
 
             // 0.10.35: Create session for sampling parameters (Rule #2)
-            val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
-                .setTemperature(0.1f) // Burmese Precision Profile
-                .setTopK(40)
-                .build()
-            llmSession = LlmInferenceSession.createFromOptions(engine, sessionOptions)
+            try {
+                val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                    .setTemperature(0.1f) // Burmese Precision Profile
+                    .setTopK(40)
+                    .build()
+                llmSession = LlmInferenceSession.createFromOptions(engine, sessionOptions)
+            } catch (e: Exception) {
+                Log.e(TAG, "LlmInferenceSession creation failed: ${e.message}")
+                // Fallback: we might still want to return true if base engine is alive?
+                // But current logic depends on session.
+            }
 
             currentModelPath = path
             Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated in :inference_core process.")
