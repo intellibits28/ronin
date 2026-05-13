@@ -161,18 +161,24 @@ class InferenceService : Service() {
             llmInference = engine
 
             // 0.10.35: Create session for sampling parameters (Rule #2)
-            try {
+            val session = try {
                 val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
                     .setTemperature(0.1f) // Burmese Precision Profile
                     .setTopK(40)
                     .build()
-                llmSession = LlmInferenceSession.createFromOptions(engine, sessionOptions)
+                LlmInferenceSession.createFromOptions(engine, sessionOptions)
             } catch (e: Exception) {
                 Log.e(TAG, "LlmInferenceSession creation failed: ${e.message}")
-                // Fallback: we might still want to return true if base engine is alive?
-                // But current logic depends on session.
+                null
             }
 
+            if (session == null) {
+                Log.e(TAG, "FATAL: LlmInferenceSession creation failed. Aborting hydration.")
+                llmInference = null // Cleanup engine if session failed
+                return false
+            }
+            
+            llmSession = session
             currentModelPath = path
             Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated in :inference_core process.")
             true
