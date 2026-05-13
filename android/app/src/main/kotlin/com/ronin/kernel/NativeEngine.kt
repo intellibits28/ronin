@@ -435,9 +435,16 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     inferenceService?.runReasoning(input)
                 } ?: "Error: Inference Service unavailable."
                 
-                // Push final result to SHM so Native Core/UI can consume it
-                pushTokenToSHMNative(response, true)
-                Log.i(TAG, "<<< [Microkernel] Reasoning complete and pushed to SHM.")
+                // Phase 4.5.1: Response Routing logic
+                // If the response is a status indicator, we don't push it to SHM.
+                // The actual tokens are streamed from the worker process directly.
+                if (response.startsWith("Reasoning Started") || response.startsWith("Processing")) {
+                    Log.i(TAG, "<<< [Microkernel] Async stream active in worker. Native polling engaged.")
+                } else {
+                    // It's likely an error or a short sync response
+                    pushTokenToSHMNative(response, true)
+                    Log.i(TAG, "<<< [Microkernel] Reasoning complete (sync/error) and pushed to SHM.")
+                }
             } catch (e: Exception) {
                 val errorMsg = "Error: Neural spine failure - ${e.javaClass.simpleName}: ${e.message ?: "Unknown crash"}"
                 Log.e(TAG, "Microkernel reasoning failed: $errorMsg")

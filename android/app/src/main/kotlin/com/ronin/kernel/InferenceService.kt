@@ -149,11 +149,24 @@ class InferenceService : Service() {
                 .setMaxTokens(1024)
             
             // Phase 6.7: Hardware Acceleration Audit
-            // Use setPreferredBackend instead of setDelegate for 0.10.35
-            builder.setPreferredBackend(LlmInference.Backend.GPU)
-            Log.i(TAG, "Hardware Acceleration: GPU Backend ENABLED.")
+            // Attempt GPU backend first, fallback to CPU on compilation error
+            try {
+                builder.setPreferredBackend(LlmInference.Backend.GPU)
+                Log.i(TAG, "Hardware Acceleration: Attempting GPU Backend...")
+            } catch (e: Exception) {
+                Log.w(TAG, "GPU Backend configuration failed: ${e.message}")
+            }
 
-            val engine = LlmInference.createFromOptions(this, builder.build())
+            var engine: LlmInference? = null
+            try {
+                engine = LlmInference.createFromOptions(this, builder.build())
+            } catch (e: Exception) {
+                Log.w(TAG, "GPU Engine initialization failed: ${e.message}. Retrying with CPU...")
+                // Fallback to CPU
+                builder.setPreferredBackend(LlmInference.Backend.CPU)
+                engine = LlmInference.createFromOptions(this, builder.build())
+            }
+
             if (engine == null) {
                 Log.e(TAG, "FATAL: LlmInference engine creation returned NULL.")
                 return false
