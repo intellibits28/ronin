@@ -1,6 +1,8 @@
 # Ronin Kernel Task Backlog
 
 ## Priority 1: Phase 4.5 (Dual-Process & Command Intelligence)
+- [ ] **Jinja Template Integration:** Alignment of PromptFactory with official Gemma 4 specifications.
+- [ ] **SHM MAP_SHARED Audit:** Verify cross-process pointer consistency for zero-copy streaming.
 - [ ] **Process Isolation:** Implement `:inference_core` process split via Android Service.
 - [ ] **Binder IPC:** Create AIDL/Binder interface for cross-process reasoning requests.
 - [ ] **mmap Hydration:** Replace standard File IO with `mmap` (MAP_PRIVATE) for LiteRT-LM.

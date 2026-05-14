@@ -2,31 +2,29 @@
 
 ## 1. Project Overview
 **Name:** Ronin Kernel (Phase 4.5 Evolution)
-**Current Version:** v4.1.1-AUDIT-ALIGNED
-**Active Branch:** feature/hydration-fix (Transitioning to feature/dual-process)
-**Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G+, utilizing Dual-Process isolation (Local Inference-as-a-Service) and mmap-optimized LiteRT-LM hydration.
+**Current Version:** v4.2.0-LITERT-ALIGNED
+**Active Branch:** feature/hydration-fix (Finalizing LiteRT 0.11.0 Migration)
+**Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G+, utilizing Dual-Process isolation and LiteRT-LM v0.11.0 for optimized MoE and Gemma 4 inference.
 
 ---
 
 ## 2. Stable Features (v4.0 Finalized)
+*   **1B Inference (Gemma 3):** ✅ SUCCESS - Real-time streaming active via LiteRT-LM.
 *   **File Search (v5.15):** High-precision semantic search with background indexing and interactive pagination (/more).
-*   **Hybrid Bridge:** Thread-safe JNI with ScopedJniEnv and Named Threads for improved debuggability.
+*   **Hybrid Bridge:** Thread-safe JNI with ScopedJniEnv and Named Threads.
 *   **Optimized Staging:** 1MB High-Speed Buffer for model internal storage migration.
-*   **Thermal Guard:** Active NPU workload throttling (Safe Mode at 42°C).
 
 ---
 
 ## 3. Current Status: Phase 4.5 (Dual-Process Isolation)
 - **Status:** Transitioning from Monolithic Bridge to **Service-Oriented Architecture**.
-- **Diagnostic Audit (Phase 4.0):**
-    - [x] **JNI Audit:** Fixed 0.00GB Health Data bug by linking updateSystemHealth to HardwareBridge.
-    - [x] **File Access Probe:** Implemented checkFileAccessNative to verify Scoped Storage constraints.
-    - [x] **Obfuscation Guard:** Added ProGuard rules to protect JNI symbols.
 - **In-Progress:**
-    - [ ] **Process Split:** Isolating Inference Engine into `:inference_core` process via Foreground Service.
-    - [ ] **Binder IPC:** Implementing AIDL bridge for cross-process reasoning requests.
-    - [ ] **mmap Hydration:** Replacing FileStream hydration with memory-mapped I/O (Rule 4.1).
-    - [ ] **Command Intelligence:** Implementing UI Suggester Popup and Auto-completion.
+    - [x] **LiteRT Migration:** Upgraded to v0.11.0 for native Gemma 4 support.
+    - [ ] **E2B Inference (Gemma 4):** ❌ BLOCKED - Facing engine limitations with GPU delegate compilation on SD778G.
+    - [x] **Jinja Templating:** PromptFactory aligned with official specification.
+    - [ ] **Process Split:** Isolating Inference Engine into `:inference_core` process.
+- **Diagnostic Audit:**
+    - [x] **RAM Guard:** Direct `/proc/meminfo` sampling implemented for cross-process accuracy.
 
 ---
 

@@ -11,13 +11,13 @@
 
 ## 📖 Description
 
-Ronin Kernel solves the "Latency vs. Privacy" trade-off by implementing a **Local Inference-as-a-Service** architecture. By separating the UI from the reasoning spine into distinct processes, it ensures zero UI-lag during heavy LLM (Gemma 4) inference.
+Ronin Kernel solves the "Latency vs. Privacy" trade-off by implementing a **Local Inference-as-a-Service** architecture. By separating the UI from the reasoning spine into distinct processes, it ensures zero UI-lag during heavy LLM (Gemma 4) inference using the **LiteRT-LM v0.11.0** engine.
 
 ### Key Features
 *   **Dual-Process Isolation:** UI/Indexing and Inference Engine run in separate processes linked via Binder IPC.
 *   **Command Intelligence:** Real-time Suggester Popup and Auto-completion for `/` terminal commands.
-*   **Tiered Intent Routing:** NPU-accelerated semantic classification with 1.0 confidence hardware bypass.
-*   **mmap Hydration:** Memory-mapped I/O for near-instant model loading and reduced RAM footprint (No FileStreams).
+*   **LiteRT-LM Hydration:** Memory-mapped I/O for near-instant model loading and reduced RAM footprint (No FileStreams).
+*   **Jinja Template Integration:** Strictly follows official Gemma 4 templates for accurate multi-turn reasoning.
 *   **High-Speed Staging:** 1MB transfer buffers for large model migration from User to Internal storage.
 *   **System Guards:** Active Thermal Throttling (**Safe Mode at 42°C**) and LMK-aware memory pruning.
 
@@ -27,7 +27,7 @@ Ronin Kernel solves the "Latency vs. Privacy" trade-off by implementing a **Loca
 
 Ronin Kernel utilizes a **Service-Oriented Process Model**:
 *   **Kernel Core:** Manages the UI, File Indexing, and JNI Bridge.
-*   **Inference Spine (`:inference_core`):** A dedicated foreground service (`FOREGROUND_SERVICE_TYPE_SPECIAL_USE`) running the LiteRT-LM (Gemma 4) engine.
+*   **Inference Spine (`:inference_core`):** A dedicated foreground service (`FOREGROUND_SERVICE_TYPE_SPECIAL_USE`) running the **LiteRT-LM v0.11.0** (Gemma 4) engine.
 *   **Memory Layer:** Tri-anchor pruning (L1-RAM, L2-Cache, L3-SQLite) with `mmap` persistence.
 
 ---
@@ -39,7 +39,7 @@ Ronin Kernel utilizes a **Service-Oriented Process Model**:
 | :--- | :--- | :--- |
 | `initializeAsync()` | Loads native libraries and hydrates the spine on a worker thread. | `Unit` |
 | `processInput(input)` | Executes tiered reasoning (Hardware -> Local LM -> Cloud). | `String` |
-| `loadModel(path)` | Maps neural weights into memory via `mmap` for NPU usage. | `Boolean` |
+| `loadModel(path)` | Maps neural weights into memory via `mmap` for LiteRT-LM. | `Boolean` |
 | `checkFileAccess(path)` | Diagnostic probe to verify native-side file readability. | `String` |
 | `notifyTrimMemory(level)` | Manages RAM pressure by stopping low-priority tasks. | `Unit` |
 
@@ -68,4 +68,4 @@ Ronin Kernel is released under the **MIT License**. See [LICENSE](LICENSE) for d
 
 ## 👥 Authors & Acknowledgments
 *   **Main Contributor:** Gemini CLI / IntelliBits
-*   **Inspiration:** MediaPipe LLM Inference API, Qualcomm AI Stack.
+*   **Inspiration:** Google AI Edge (LiteRT-LM), Qualcomm AI Stack.

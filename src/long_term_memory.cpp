@@ -197,7 +197,7 @@ std::vector<std::string> LongTermMemory::search(const std::string& query) {
     return results;
 }
 
-bool LongTermMemory::searchSemantic(const std::vector<float>& query_embedding) {
+std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>& query_embedding) {
     if (!m_db || query_embedding.empty()) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     
