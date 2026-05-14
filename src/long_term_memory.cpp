@@ -5,6 +5,7 @@
 #include <cstring>
 #include <iostream>
 #include <algorithm>
+#include <cstdint>
 #include "ronin_log.h"
 
 #define TAG "RoninLongTermMemory"
@@ -262,7 +263,7 @@ bool LongTermMemory::consolidate(const std::string& summary_text, const std::vec
         // Phase 2.1: Quantize to INT8
         std::vector<int8_t> quantized(embedding.size());
         for (size_t i = 0; i < embedding.size(); ++i) {
-            quantized[i] = static_cast<int8_t>(std::clamp(std::round(embedding[i] * 127.0f), -128.0, 127.0));
+            quantized[i] = static_cast<int8_t>(std::clamp(std::round(embedding[i] * 127.0f), -128.0f, 127.0f));
         }
         sqlite3_bind_blob(stmt, 2, quantized.data(), static_cast<int>(quantized.size()), SQLITE_STATIC);
     } else {
@@ -309,7 +310,7 @@ bool LongTermMemory::indexFile(const std::string& name, const std::string& path,
         // Phase 2.1: INT8 Quantization
         std::vector<int8_t> quantized(embedding.size());
         for (size_t i = 0; i < embedding.size(); ++i) {
-            quantized[i] = static_cast<int8_t>(std::clamp(std::round(embedding[i] * 127.0f), -128.0, 127.0));
+            quantized[i] = static_cast<int8_t>(std::clamp(std::round(embedding[i] * 127.0f), -128.0f, 127.0f));
         }
         sqlite3_bind_blob(stmt, 5, quantized.data(), static_cast<int>(quantized.size()), SQLITE_STATIC);
     } else {
