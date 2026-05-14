@@ -446,7 +446,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     Log.i(TAG, "<<< [Microkernel] Reasoning complete (sync/error) and pushed to SHM.")
                 }
             } catch (e: Exception) {
-                val errorMsg = "Error: Neural spine failure - ${e.javaClass.simpleName}: ${e.message ?: "Unknown crash"}"
+                val errorMsg = "Error: Neural spine failure - ${e::class.java.simpleName}: ${e.message ?: "Unknown crash"}"
                 Log.e(TAG, "Microkernel reasoning failed: $errorMsg")
                 pushTokenToSHMNative(errorMsg, true)
             }
