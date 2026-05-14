@@ -142,7 +142,7 @@ class InferenceService : Service() {
             val config = EngineConfig(
                 modelPath = path,
                 backend = Backend.GPU(),
-                maxTokens = 1024
+                maxNumTokens = 1024
             )
 
             val engine = Engine(config)
