@@ -160,16 +160,19 @@ class InferenceService : Service() {
 
     private fun executeReasoning(input: String): String {
         val conversation = litertConversation ?: return "Error: Local reasoning spine not hydrated in service."
-        
+
         Log.d(TAG, "Executing Reasoning [SafeMode: $isSafeModeActive].")
-        
+
         return try {
-            // LiteRT 0.11.0: Using sendMessageAsync which returns a Flow<String>
+            // LiteRT 0.11.0: Using sendMessageAsync which emits Flow<Message>
             // We collect tokens and push them to SHM from a dedicated scope
             serviceScope.launch(Dispatchers.IO) {
                 try {
-                    conversation.sendMessageAsync(input).collect { partialToken ->
-                        pushTokenToSHMNative(partialToken, false)
+                    val userMessage = Message.of(input)
+                    conversation.sendMessageAsync(userMessage).collect { partialMessage ->
+                        // Extract text from the Message object
+                        val token = partialMessage.text
+                        pushTokenToSHMNative(token, false)
                     }
                     // Signal completion
                     pushTokenToSHMNative("", true)
