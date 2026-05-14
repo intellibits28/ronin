@@ -140,7 +140,7 @@ jstring native_checkFileAccess(JNIEnv *env, jobject thiz, jstring path) {
 jfloat native_getFreeRamGB(JNIEnv *env, jobject thiz) {
     // Phase 4.5 Audit: HardwareBridge might not be synced in worker process.
     // Use HydrationManager's direct /proc/meminfo reading for reliable RAM Guard.
-    uint64_t availableBytes = Ronin::Kernel::Model::HydrationManager::getAvailableRAM();
+    uint64_t availableBytes = ::Ronin::Kernel::Model::HydrationManager::getAvailableRAM();
     return static_cast<jfloat>(availableBytes) / (1024.0f * 1024.0f * 1024.0f);
 }
 
