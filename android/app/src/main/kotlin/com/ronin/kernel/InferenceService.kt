@@ -170,8 +170,8 @@ class InferenceService : Service() {
                 try {
                     val userMessage = Message.of(input)
                     conversation.sendMessageAsync(userMessage).collect { partialMessage ->
-                        // Extract text from the Message object
-                        val token = partialMessage.text
+                        // LiteRT-LM 0.11.0: Message.toString() returns the aggregated text content
+                        val token = partialMessage.toString()
                         pushTokenToSHMNative(token, false)
                     }
                     // Signal completion
