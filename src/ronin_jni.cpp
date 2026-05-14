@@ -68,7 +68,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
 
     using namespace Ronin::Kernel::Capability;
-    auto neural_node = std::make_shared<NeuralEmbeddingNode>(base_path + "/assets/models/bge_base.onnx");
+    auto neural_node = std::make_shared<NeuralEmbeddingNode>(base_path + "/assets/models/bge_small.onnx");
     auto search_node = std::make_shared<FileSearchNode>(g_ltm.get(), neural_node.get());
     
     g_intent_engine->registerSkill(1, std::make_shared<ChatSkill>());

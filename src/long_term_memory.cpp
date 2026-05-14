@@ -197,7 +197,7 @@ std::vector<std::string> LongTermMemory::search(const std::string& query) {
     return results;
 }
 
-std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>& query_embedding) {
+bool LongTermMemory::searchSemantic(const std::vector<float>& query_embedding) {
     if (!m_db || query_embedding.empty()) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     
@@ -213,10 +213,15 @@ std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>
             int bytes = sqlite3_column_bytes(stmt, 1);
 
             if (content && blob && bytes > 0) {
-                std::vector<float> vector(bytes / sizeof(float));
-                std::memcpy(vector.data(), blob, bytes);
+                // Phase 2.1: De-quantize INT8 to float for similarity calculation
+                const int8_t* int8_vec = static_cast<const int8_t*>(blob);
+                size_t dim = bytes; 
+                std::vector<float> vector(dim);
+                for (size_t i = 0; i < dim; ++i) {
+                    vector[i] = static_cast<float>(int8_vec[i]) / 127.0f;
+                }
                 
-                // Manually compute cosine similarity (Simplified)
+                // Manually compute cosine similarity
                 float dot = 0.0f, mag_a = 0.0f, mag_b = 0.0f;
                 for (size_t i = 0; i < std::min(vector.size(), query_embedding.size()); ++i) {
                     dot += vector[i] * query_embedding[i];
@@ -252,8 +257,14 @@ bool LongTermMemory::consolidate(const std::string& summary_text, const std::vec
         return false;
     }
     sqlite3_bind_text(stmt, 1, summary_text.c_str(), -1, SQLITE_STATIC);
+    
     if (!embedding.empty()) {
-        sqlite3_bind_blob(stmt, 2, embedding.data(), static_cast<int>(embedding.size() * sizeof(float)), SQLITE_STATIC);
+        // Phase 2.1: Quantize to INT8
+        std::vector<int8_t> quantized(embedding.size());
+        for (size_t i = 0; i < embedding.size(); ++i) {
+            quantized[i] = static_cast<int8_t>(std::clamp(std::round(embedding[i] * 127.0f), -128.0, 127.0));
+        }
+        sqlite3_bind_blob(stmt, 2, quantized.data(), static_cast<int>(quantized.size()), SQLITE_STATIC);
     } else {
         sqlite3_bind_null(stmt, 2);
     }
@@ -295,12 +306,17 @@ bool LongTermMemory::indexFile(const std::string& name, const std::string& path,
     sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(modified));
 
     if (!embedding.empty()) {
-        sqlite3_bind_blob(stmt, 5, embedding.data(), static_cast<int>(embedding.size() * sizeof(float)), SQLITE_STATIC);
+        // Phase 2.1: INT8 Quantization
+        std::vector<int8_t> quantized(embedding.size());
+        for (size_t i = 0; i < embedding.size(); ++i) {
+            quantized[i] = static_cast<int8_t>(std::clamp(std::round(embedding[i] * 127.0f), -128.0, 127.0));
+        }
+        sqlite3_bind_blob(stmt, 5, quantized.data(), static_cast<int>(quantized.size()), SQLITE_STATIC);
     } else {
         sqlite3_bind_null(stmt, 5);
     }
 
-    bool success = sqlite3_step(stmt) == SQLITE_DONE; // Wait, it's SQLITE_DONE
+    bool success = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
     return success;
 }
@@ -324,7 +340,14 @@ std::vector<LongTermMemory::FileEmbedding> LongTermMemory::getAllFileEmbeddings(
                 FileEmbedding fe;
                 fe.name = reinterpret_cast<const char*>(name);
                 fe.path = reinterpret_cast<const char*>(path);
-                fe.vector.assign(static_cast<const float*>(blob), static_cast<const float*>(blob) + (bytes / sizeof(float)));
+                
+                // De-quantize INT8 to float
+                const int8_t* int8_vec = static_cast<const int8_t*>(blob);
+                size_t dim = bytes;
+                fe.vector.resize(dim);
+                for (size_t i = 0; i < dim; ++i) {
+                    fe.vector[i] = static_cast<float>(int8_vec[i]) / 127.0f;
+                }
                 results.push_back(fe);
             }
         }

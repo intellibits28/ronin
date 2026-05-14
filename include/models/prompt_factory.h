@@ -16,8 +16,8 @@ public:
     static std::string wrap(const std::string& input, BackendType type) {
         switch (type) {
             case BackendType::LOCAL_GEMMA_4:
-                // Phase 3: Gemma 4 Specialized Turn-based Formatting
-                return "<|turn>system\nYou are Ronin, a sentient edge AI.\n<turn|>\n<|turn>user\n" + input + "<turn|>\n<|turn>model\n";
+                // Phase 3: Gemma 4 Specialized Turn-based Formatting (Spec: <bos><|turn>role\n...<turn|>\n)
+                return "<bos><|turn>system\nYou are Ronin, a sentient edge AI.<turn|>\n<|turn>user\n" + input + "<turn|>\n<|turn>model\n\n";
             
             case BackendType::LOCAL_GEMMA_2:
                 // Legacy: Gemma 2/3 Formatting

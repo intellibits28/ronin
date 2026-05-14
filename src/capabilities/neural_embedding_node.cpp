@@ -75,12 +75,15 @@ bool NeuralEmbeddingNode::load() {
     }
 
     try {
-        LOGI(TAG, "Lazy Loading BGE-Base model: %s", m_impl->model_path.c_str());
+        LOGI(TAG, "Lazy Loading BGE-Small model (mmap enabled): %s", m_impl->model_path.c_str());
         m_impl->env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "RoninORT");
         
         Ort::SessionOptions session_options;
-        session_options.SetIntraOpNumThreads(2); // Optimized for SD778G efficiency
+        session_options.SetIntraOpNumThreads(2);
         session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        
+        // Phase 2.1: Enable mmap for ONNX Runtime to reduce RAM pressure
+        session_options.AddConfigEntry("session.use_mmap", "1");
 
         m_impl->session = std::make_unique<Ort::Session>(*m_impl->env, m_impl->model_path.c_str(), session_options);
         m_impl->loaded = true;
@@ -93,9 +96,8 @@ bool NeuralEmbeddingNode::load() {
 }
 
 void NeuralEmbeddingNode::unload() {
-    // Note: Called under lock by load() or timer, but needs internal safety
     if (m_impl && m_impl->loaded) {
-        LOGI(TAG, "Unloading Neural model to free RAM.");
+        LOGI(TAG, "Unloading BGE-Small model to free RAM.");
         m_impl->session.reset();
         m_impl->env.reset();
         m_impl->loaded = false;
@@ -107,7 +109,9 @@ bool NeuralEmbeddingNode::isLoaded() const {
 }
 
 std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& input) {
-    if (!load()) return std::vector<float>(768, 0.0f);
+    // Phase 2.1: BGE-Small uses 384 dimensions
+    const int kDim = 384;
+    if (!load()) return std::vector<float>(kDim, 0.0f);
 
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     m_impl->last_used = std::chrono::steady_clock::now();
@@ -130,10 +134,10 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
         
         float* float_ptr = output_tensors.front().GetTensorMutableData<float>();
         
-        // Mean pooling for 768 dimensions
-        std::vector<float> embedding(768, 0.0f);
-        for (int i = 0; i < 768; ++i) {
-            embedding[i] = float_ptr[i]; // Simplified pooling (taking first token or first 768 values)
+        // Mean pooling for 384 dimensions
+        std::vector<float> embedding(kDim, 0.0f);
+        for (int i = 0; i < kDim; ++i) {
+            embedding[i] = float_ptr[i];
         }
 
         // Normalize
@@ -147,13 +151,13 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
         return embedding;
     } catch (const std::exception& e) {
         LOGE(TAG, "Inference error: %s", e.what());
-        return std::vector<float>(768, 0.0f);
+        return std::vector<float>(kDim, 0.0f);
     }
 }
 
 std::string NeuralEmbeddingNode::execute(const std::string& param) {
     auto vec = generateEmbedding(param);
-    return "BGE-Base: Semantic vector (768-dim) generated and normalized.";
+    return "BGE-Small: Semantic vector (384-dim) generated and normalized.";
 }
 
 } // namespace Ronin::Kernel::Capability

@@ -5,8 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
-import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.Conversation
+import com.google.ai.edge.litertlm.Backend
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -17,14 +19,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collect
 
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Native" // Aligned with native logs for filtered visibility
     private val CHANNEL_ID = "ronin_inference_channel"
     private val NOTIFICATION_ID = 1001
 
-    private var llmInference: LlmInference? = null
-    private var llmSession: LlmInferenceSession? = null
+    private var litertEngine: Engine? = null
+    private var litertConversation: Conversation? = null
     private var currentModelPath: String = ""
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -93,7 +96,7 @@ class InferenceService : Service() {
         }
 
         override fun isHydrated(): Boolean {
-            return llmInference != null
+            return litertEngine != null
         }
 
         override fun getActiveModelPath(): String {
@@ -102,10 +105,6 @@ class InferenceService : Service() {
 
         override fun notifyTrimMemory(level: Int) {
             Log.i(TAG, "Memory trim notification: $level")
-            if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
-                // In a more complex scenario, we might release the engine here
-                // For now, we rely on the system killing the process if needed
-            }
         }
 
         override fun setSafeMode(enabled: Boolean) {
@@ -130,70 +129,31 @@ class InferenceService : Service() {
         }
         
         // Rule 5: RAM Guard before hydration
-        val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f } // Fallback to safe guess
+        val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
         Log.i(TAG, "Hydration Guard: Free RAM = ${freeRam}GB")
-        val minRam = 1.5f // 1.5GB threshold for Gemma 4
+        val minRam = 1.5f
         if (freeRam < minRam) {
             Log.e(TAG, "ABORT: Insufficient RAM for Hydration. Available: ${freeRam}GB, Required: ${minRam}GB")
             return false
         }
 
-        if (!modelFile.canRead()) {
-            Log.e(TAG, "FATAL: Model file NOT READABLE in :inference_core process.")
-            return false
-        }
-
         return try {
-            val builder = LlmInference.LlmInferenceOptions.builder()
-                .setModelPath(path)
-                .setMaxTokens(1024)
-            
-            // Phase 6.7: Hardware Acceleration Audit
-            // Attempt GPU backend first, fallback to CPU on compilation error
-            try {
-                builder.setPreferredBackend(LlmInference.Backend.GPU)
-                Log.i(TAG, "Hardware Acceleration: Attempting GPU Backend...")
-            } catch (e: Exception) {
-                Log.w(TAG, "GPU Backend configuration failed: ${e.message}")
-            }
+            // LiteRT 0.11.0: Using EngineConfig with Backend.GPU()
+            val config = EngineConfig(
+                modelPath = path,
+                backend = Backend.GPU(),
+                maxTokens = 1024
+            )
 
-            var engine: LlmInference? = null
-            try {
-                engine = LlmInference.createFromOptions(this, builder.build())
-            } catch (e: Exception) {
-                Log.w(TAG, "GPU Engine initialization failed: ${e.message}. Retrying with CPU...")
-                // Fallback to CPU
-                builder.setPreferredBackend(LlmInference.Backend.CPU)
-                engine = LlmInference.createFromOptions(this, builder.build())
-            }
+            val engine = Engine(config)
+            engine.initialize()
+            litertEngine = engine
 
-            if (engine == null) {
-                Log.e(TAG, "FATAL: LlmInference engine creation returned NULL.")
-                return false
-            }
-            llmInference = engine
+            // 0.11.0: Create conversation for session management
+            litertConversation = engine.createConversation()
 
-            // 0.10.35: Create session for sampling parameters (Rule #2)
-            val session = try {
-                val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
-                    .setTemperature(0.1f) // Burmese Precision Profile
-                    .setTopK(40)
-                    .build()
-                LlmInferenceSession.createFromOptions(engine, sessionOptions)
-            } catch (e: Exception) {
-                Log.e(TAG, "LlmInferenceSession creation failed: ${e.message}")
-                null
-            }
-
-            if (session == null) {
-                Log.e(TAG, "FATAL: LlmInferenceSession creation failed. Aborting hydration.")
-                llmInference = null // Cleanup engine if session failed
-                return false
-            }
-            
-            llmSession = session
             currentModelPath = path
-            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated in :inference_core process.")
+            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated (LiteRT 0.11.0) in :inference_core process.")
             true
         } catch (e: Throwable) {
             Log.e(TAG, "Hydration failed in service: ${e.message}")
@@ -202,29 +162,25 @@ class InferenceService : Service() {
     }
 
     private fun executeReasoning(input: String): String {
-        val session = llmSession ?: return "Error: Local reasoning spine not hydrated in service."
-        
-        val isLiteRTLM = currentModelPath.endsWith(".litertlm")
-        val isGemma = currentModelPath.lowercase().contains("gemma")
-        
-        val formattedPrompt = when {
-            isLiteRTLM -> "<|turn|>user\n$input<|turn|>model\n"
-            isGemma -> "<start_of_turn>user\n$input<end_of_turn>\n<start_of_turn>model\n"
-            else -> input // Fallback for raw models
-        }
+        val conversation = litertConversation ?: return "Error: Local reasoning spine not hydrated in service."
         
         Log.d(TAG, "Executing Reasoning [SafeMode: $isSafeModeActive].")
         
         return try {
-            if (isSafeModeActive) {
-                Log.w(TAG, "Neural Reasoning under Thermal Stress (Safe Mode Active).")
-            }
-
-            // Phase 4.5: Session-based Async Execution (MediaPipe 0.10.35)
-            // Add prompt to session and stream results via ProgressListener
-            session.addQueryChunk(formattedPrompt)
-            session.generateResponseAsync { result, done ->
-                pushTokenToSHMNative(result, done)
+            // LiteRT 0.11.0: Using sendMessageAsync which returns a Flow<String>
+            // We collect tokens and push them to SHM from a dedicated scope
+            serviceScope.launch(Dispatchers.IO) {
+                try {
+                    conversation.sendMessageAsync(input).collect { partialToken ->
+                        pushTokenToSHMNative(partialToken, false)
+                    }
+                    // Signal completion
+                    pushTokenToSHMNative("", true)
+                    Log.i(TAG, "LiteRT Streaming Complete.")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Streaming failure: ${e.message}")
+                    pushTokenToSHMNative("Error: ${e.message}", true)
+                }
             }
             
             "Reasoning Started [SHM Active]"
@@ -236,8 +192,8 @@ class InferenceService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        llmSession?.close()
-        llmInference?.close()
+        litertConversation = null
+        litertEngine = null
         Log.i(TAG, "Service destroyed")
     }
 }

@@ -86,8 +86,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     std::string wrapped_input = PromptFactory::wrap(input, type);
 
     // Microkernel Action: Trigger Kotlin Worker via JNI Proxy
-    // We reuse HardwareBridge to communicate back to NativeEngine.kt
-    LOGI(TAG, "Microkernel: Requesting Worker Inference [Seq: %u]", seq_id);
+    LOGI(TAG, "Microkernel: Requesting Worker Inference [Seq: %u] [Length: %zu]", seq_id, wrapped_input.length());
     
     // This is an asynchronous request. Kotlin will spawn the worker and start pushing to SHM.
     std::thread([this, wrapped_input]() {

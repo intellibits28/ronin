@@ -74,8 +74,8 @@ android {
 }
 
 dependencies {
-    // MediaPipe GenAI Production Runtime (Upgraded for Gemma 4 .litertlm support)
-    implementation 'com.google.mediapipe:tasks-genai:0.10.35'
+    // LiteRT LM Android SDK (Upgraded for Gemma 4 .litertlm support)
+    implementation 'com.google.ai.edge.litertlm:litertlm-android:0.11.0'
     
     // Core Android & Compose
     implementation 'androidx.core:core-ktx:1.12.0'
