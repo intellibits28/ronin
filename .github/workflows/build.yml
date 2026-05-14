@@ -76,7 +76,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           build-root-directory: android
-          gradle-version: 8.2
+          gradle-version: 8.9
           cache-disabled: true
           arguments: clean assembleDebug
 
