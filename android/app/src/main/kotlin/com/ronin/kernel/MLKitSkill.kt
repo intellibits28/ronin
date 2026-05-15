@@ -7,6 +7,8 @@ import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Phase 2.1: Burmese-English Bridge (ML Kit Translate)
@@ -16,8 +18,9 @@ class MLKitSkill {
     private val TAG = "Ronin_MLKit"
     
     // Burmese to English options
+    // Note: Using "my" directly as BURMESE might be missing in some SDK versions
     private val options = TranslatorOptions.Builder()
-        .setSourceLanguage(TranslateLanguage.BURMESE)
+        .setSourceLanguage("my")
         .setTargetLanguage(TranslateLanguage.ENGLISH)
         .build()
         
