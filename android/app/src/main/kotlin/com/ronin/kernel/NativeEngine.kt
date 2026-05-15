@@ -109,9 +109,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     // --- JNI API ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun setEngineInstanceNative()
-    private external fun getChatHistoryNative(limit: Int, offset: Int): Array<String>?
+    private external fun getChatHistoryNative(limit: Int, offset: Int): Array<String>
     private external fun notifyModelLoadedNative(path: String)
     private external fun stopLowPriorityTasksNative()
+    private external fun setSafeModeNative(enabled: Boolean)
     private external fun setPriorityNative(priority: Int)
     private external fun checkFileAccessNative(path: String): String
     private external fun getFreeRamGBNative(): Float

@@ -114,7 +114,7 @@ class InferenceService : Service() {
         }
 
         override fun isLowPerformanceMode(): Boolean {
-            return isLowPerformanceMode
+            return this@InferenceService.isLowPerformanceMode
         }
     }
 
