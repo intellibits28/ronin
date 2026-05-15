@@ -61,11 +61,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             put(COLUMN_STATE, 0) // ACTIVE
 
             vector?.let {
-                // Store as BLOB (Float32 for now, or quantized if needed)
-                val byteBuffer = java.nio.ByteBuffer.allocate(it.size * 4)
-                byteBuffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                for (f in it) byteBuffer.putFloat(f)
-                put(COLUMN_EMBEDDING, byteBuffer.array())
+                // Phase 2.1: INT8 Quantization for Episodic Bulk
+                // Maps [-1.0, 1.0] to [-128, 127] to save space (1 byte per dim)
+                val quantized = ByteArray(it.size)
+                for (i in it.indices) {
+                    quantized[i] = (it[i].coerceIn(-1.0f, 1.0f) * 127f).toInt().toByte()
+                }
+                put(COLUMN_EMBEDDING, quantized)
             }
         }
         db.insert(TABLE_MEMORIES, null, values)

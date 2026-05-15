@@ -10,6 +10,44 @@
 
 #define TAG "RoninLongTermMemory"
 
+namespace {
+// Phase 2.1: IEEE 754 Half-Precision (Float16) Helpers for Semantic Memory
+uint16_t floatToHalf(float f) {
+    uint32_t i = *(uint32_t*)&f;
+    uint32_t s = (i >> 16) & 0x00008000;
+    uint32_t e = ((i >> 23) & 0x000000ff) - (127 - 15);
+    uint32_t m = i & 0x007fffff;
+    if (e <= 0) {
+        if (e < -10) return s;
+        m = (m | 0x00800000) >> (1 - e);
+        return s | (m >> 13);
+    } else if (e == 0xff - (127 - 15)) {
+        if (m == 0) return s | 0x7c00;
+        return s | 0x7c00 | (m >> 13) | (m == 0 ? 0 : 1);
+    } else {
+        if (e > 30) return s | 0x7c00;
+        return s | (e << 10) | (m >> 13);
+    }
+}
+
+float halfToFloat(uint16_t h) {
+    uint32_t s = (h & 0x8000) << 16;
+    uint32_t e = (h & 0x7c00) >> 10;
+    uint32_t m = (h & 0x03ff) << 13;
+    if (e == 0) {
+        if (m == 0) return *(float*)&s;
+        while ((m & 0x00800000) == 0) { m <<= 1; e--; }
+        e++; m &= ~0x00800000;
+    } else if (e == 31) {
+        uint32_t res = s | 0x7f800000 | m;
+        return *(float*)&res;
+    }
+    e = e + (127 - 15);
+    uint32_t res = s | (e << 23) | m;
+    return *(float*)&res;
+}
+} // namespace
+
 namespace Ronin::Kernel::Memory {
 
 LongTermMemory::LongTermMemory(const std::string& db_path) {
@@ -214,12 +252,12 @@ std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>
             int bytes = sqlite3_column_bytes(stmt, 1);
 
             if (content && blob && bytes > 0) {
-                // Phase 2.1: De-quantize INT8 to float for similarity calculation
-                const int8_t* int8_vec = static_cast<const int8_t*>(blob);
-                size_t dim = bytes; 
+                // Phase 2.1: De-quantize Float16 to Float32
+                const uint16_t* f16_vec = static_cast<const uint16_t*>(blob);
+                size_t dim = bytes / 2; 
                 std::vector<float> vector(dim);
                 for (size_t i = 0; i < dim; ++i) {
-                    vector[i] = static_cast<float>(int8_vec[i]) / 127.0f;
+                    vector[i] = halfToFloat(f16_vec[i]);
                 }
                 
                 // Manually compute cosine similarity
@@ -260,12 +298,12 @@ bool LongTermMemory::consolidate(const std::string& summary_text, const std::vec
     sqlite3_bind_text(stmt, 1, summary_text.c_str(), -1, SQLITE_STATIC);
     
     if (!embedding.empty()) {
-        // Phase 2.1: Quantize to INT8
-        std::vector<int8_t> quantized(embedding.size());
+        // Phase 2.1: Semantic Memory uses Float16 (2 bytes per dim)
+        std::vector<uint16_t> f16_vector(embedding.size());
         for (size_t i = 0; i < embedding.size(); ++i) {
-            quantized[i] = static_cast<int8_t>(std::clamp(std::round(embedding[i] * 127.0f), -128.0f, 127.0f));
+            f16_vector[i] = floatToHalf(embedding[i]);
         }
-        sqlite3_bind_blob(stmt, 2, quantized.data(), static_cast<int>(quantized.size()), SQLITE_STATIC);
+        sqlite3_bind_blob(stmt, 2, f16_vector.data(), static_cast<int>(f16_vector.size() * 2), SQLITE_STATIC);
     } else {
         sqlite3_bind_null(stmt, 2);
     }
@@ -307,12 +345,12 @@ bool LongTermMemory::indexFile(const std::string& name, const std::string& path,
     sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(modified));
 
     if (!embedding.empty()) {
-        // Phase 2.1: INT8 Quantization
-        std::vector<int8_t> quantized(embedding.size());
+        // Phase 2.1: Semantic Indexing uses Float16
+        std::vector<uint16_t> f16_vector(embedding.size());
         for (size_t i = 0; i < embedding.size(); ++i) {
-            quantized[i] = static_cast<int8_t>(std::clamp(std::round(embedding[i] * 127.0f), -128.0f, 127.0f));
+            f16_vector[i] = floatToHalf(embedding[i]);
         }
-        sqlite3_bind_blob(stmt, 5, quantized.data(), static_cast<int>(quantized.size()), SQLITE_STATIC);
+        sqlite3_bind_blob(stmt, 5, f16_vector.data(), static_cast<int>(f16_vector.size() * 2), SQLITE_STATIC);
     } else {
         sqlite3_bind_null(stmt, 5);
     }
@@ -342,12 +380,12 @@ std::vector<LongTermMemory::FileEmbedding> LongTermMemory::getAllFileEmbeddings(
                 fe.name = reinterpret_cast<const char*>(name);
                 fe.path = reinterpret_cast<const char*>(path);
                 
-                // De-quantize INT8 to float
-                const int8_t* int8_vec = static_cast<const int8_t*>(blob);
-                size_t dim = bytes;
+                // De-quantize Float16 to Float32
+                const uint16_t* f16_vec = static_cast<const uint16_t*>(blob);
+                size_t dim = bytes / 2;
                 fe.vector.resize(dim);
                 for (size_t i = 0; i < dim; ++i) {
-                    fe.vector[i] = static_cast<float>(int8_vec[i]) / 127.0f;
+                    fe.vector[i] = halfToFloat(f16_vec[i]);
                 }
                 results.push_back(fe);
             }

@@ -26,6 +26,7 @@
     - [ ] **Process Split:** Isolating Inference Engine into `:inference_core` process.
 - **Diagnostic Audit:**
     - [x] **RAM Guard:** Direct `/proc/meminfo` sampling implemented for cross-process accuracy.
+    - [x] **Hybrid Precision:** Implemented Float16 for Semantic Memory and INT8 for Episodic Bulk (Rule v2.1).
 
 ---
 
