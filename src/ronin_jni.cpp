@@ -246,6 +246,21 @@ jboolean native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring path) {
     return JNI_FALSE;
 }
 
+jfloatArray native_generateEmbedding(JNIEnv *env, jobject thiz, jstring text) {
+    std::string input = ConvertJStringToString(env, text);
+    // Find NeuralEmbeddingNode (Skill ID 3)
+    auto skill = g_intent_engine ? g_intent_engine->getSkill(3) : nullptr;
+    auto* neural_node = dynamic_cast<Ronin::Kernel::Capability::NeuralEmbeddingNode*>(skill.get());
+    
+    if (neural_node) {
+        auto vec = neural_node->generateEmbedding(input);
+        jfloatArray result = env->NewFloatArray(vec.size());
+        env->SetFloatArrayRegion(result, 0, vec.size(), vec.data());
+        return result;
+    }
+    return nullptr;
+}
+
 jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
     jclass stringClass = env->FindClass("java/lang/String");
     if (g_ltm) {
@@ -284,6 +299,7 @@ static JNINativeMethod g_methods[] = {
     {"updateModelRegistryNative", "(Ljava/lang/String;)Z", (void*)native_updateModelRegistry},
     {"updateCloudProvidersNative", "(Ljava/lang/String;)Z", (void*)native_updateCloudProviders},
     {"scanSpecificPathNative", "(Ljava/lang/String;)Z", (void*)native_scanSpecificPath},
+    {"generateEmbeddingNative", "(Ljava/lang/String;)[F", (void*)native_generateEmbedding},
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}
 };
 

@@ -27,6 +27,9 @@ import java.util.concurrent.TimeUnit
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
+    private val dbHelper = DatabaseHelper(context)
+    private val mlKit = MLKitSkill()
+
     // --- LEGACY INFERENCE SERVICE (FALLBACK ONLY) ---
     private var inferenceService: IInferenceService? = null
     private var isServiceBound = false
@@ -126,6 +129,21 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun scanSpecificPathNative(path: String): Boolean
     private external fun isLoadedNative(): Boolean
     private external fun getActiveModelPathNative(): String
+    private external fun generateEmbeddingNative(text: String): FloatArray?
+
+    /**
+     * Phase 2.1: Generate semantic embedding for Memory v2.1 bridge.
+     */
+    fun generateEmbedding(text: String): FloatArray? {
+        if (isLibLoaded) {
+            return try {
+                generateEmbeddingNative(text)
+            } catch (e: UnsatisfiedLinkError) {
+                null
+            }
+        }
+        return null
+    }
 
     /**
      * Phase 4.0 Audit: Verify native side can actually read the model file.
@@ -186,6 +204,25 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     fun isNativeLibraryLoaded(): Boolean = isLibLoaded
+
+    /**
+     * Phase 2.1: Memory Model Evolution
+     * Translates MM to EN, generates 384-dim embedding, and saves to persistent storage.
+     */
+    suspend fun storeCognitiveMemory(mmText: String, importance: Float = 1.0f) {
+        val enText = mlKit.translate(mmText) ?: return
+        Log.i(TAG, "Memory Bridge: Translated '$mmText' -> '$enText'")
+        
+        val vector = generateEmbedding(enText)
+        if (vector != null) {
+            Log.i(TAG, "Memory Bridge: Generated ${vector.size}-dim embedding.")
+            withContext(Dispatchers.IO) {
+                dbHelper.storeMemory(mmText, enText, vector, importance)
+            }
+        } else {
+            Log.e(TAG, "Memory Bridge: Failed to generate embedding.")
+        }
+    }
 
     // --- External Call Wrappers ---
 
@@ -277,6 +314,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 setEngineInstanceNative()
                 val libDir = context.applicationInfo.nativeLibraryDir
                 initializeKernelNative(context.filesDir.absolutePath, libDir, false)
+                
+                // Phase 2.1: Proactive model download for translation bridge
+                scope.launch {
+                    mlKit.ensureModelDownloaded()
+                }
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "initializeKernel failed: ${e.message}")
             }
@@ -371,6 +413,13 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         try {
             val result = processInputNative(input)
 
+            // Phase 2.1: Memory Model v2.1 Integration
+            // If it's a normal conversation (not a command), store it in cognitive memory.
+            if (!input.startsWith("/") && !result.startsWith("Error:")) {
+                scope.launch {
+                    storeCognitiveMemory(input)
+                }
+            }
             
             // Phase 3: If reasoning started, trigger the polling coroutine
             if (result.contains("[SHM Active]")) {
