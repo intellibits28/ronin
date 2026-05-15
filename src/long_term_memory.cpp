@@ -142,11 +142,12 @@ int LongTermMemory::runMaintenance(bool is_charging) {
     }
 
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Natural Forgetting: Scanning L3 Deep-store for stale memories...");
+    LOGI(TAG, "Memory Model v2.1: Executing State-Based Lifecycle Maintenance...");
 
-    uint64_t current_time = std::time(nullptr);
-    int pruned_count = 0;
+    uint64_t now = std::time(nullptr);
+    int modified_count = 0;
 
+    // 1. Facts Maintenance (Legacy stability-based pruning)
     const char* select_sql = "SELECT key, stability, last_accessed FROM facts WHERE priority = 0;";
     sqlite3_stmt* stmt = nullptr;
     std::vector<std::string> keys_to_prune;
@@ -155,47 +156,83 @@ int LongTermMemory::runMaintenance(bool is_charging) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* key_ptr = sqlite3_column_text(stmt, 0);
             if (!key_ptr) continue;
-
-            std::string key = reinterpret_cast<const char*>(key_ptr);
             double initial_stability = sqlite3_column_double(stmt, 1);
             uint64_t last_accessed = sqlite3_column_int64(stmt, 2);
 
-            double current_stability;
-            if (current_time > last_accessed) {
-                double delta_t = static_cast<double>(current_time - last_accessed);
-                current_stability = initial_stability * std::exp(-m_lambda * delta_t);
-            } else {
-                current_stability = initial_stability;
-            }
+            double current_stability = (now > last_accessed) ? 
+                initial_stability * std::exp(-m_lambda * (now - last_accessed)) : initial_stability;
 
-            if (current_stability < 0.1) {
-                keys_to_prune.push_back(key);
-            }
+            if (current_stability < 0.1) keys_to_prune.push_back(reinterpret_cast<const char*>(key_ptr));
         }
     }
     sqlite3_finalize(stmt);
 
     if (!keys_to_prune.empty()) {
-        const char* delete_sql = "DELETE FROM facts WHERE key = ?;";
+        sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+        const char* del_sql = "DELETE FROM facts WHERE key = ?;";
         sqlite3_stmt* del_stmt = nullptr;
-        if (sqlite3_prepare_v2(m_db, delete_sql, -1, &del_stmt, nullptr) == SQLITE_OK) {
-            sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+        if (sqlite3_prepare_v2(m_db, del_sql, -1, &del_stmt, nullptr) == SQLITE_OK) {
             for (const auto& key : keys_to_prune) {
                 sqlite3_bind_text(del_stmt, 1, key.c_str(), -1, SQLITE_STATIC);
-                if (sqlite3_step(del_stmt) == SQLITE_DONE) {
-                    pruned_count++;
-                }
+                sqlite3_step(del_stmt);
                 sqlite3_reset(del_stmt);
+                modified_count++;
             }
-            sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
         }
         sqlite3_finalize(del_stmt);
+        sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
     }
 
-    if (pruned_count > 0) {
-        LOGI(TAG, "Natural Forgetting complete: %d items cleared from Deep-store.", pruned_count);
+    // 2. Summaries Maintenance (Rule v2.1: Active -> Cold -> Forgotten)
+    // Phase 6.1: Chunked Scan (100 items per tick)
+    const char* summ_sql = "SELECT id, last_accessed, state_enum, recall_count FROM summaries WHERE state_enum < 4 LIMIT 100;";
+    if (sqlite3_prepare_v2(m_db, summ_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        struct StateUpdate { int id; int new_state; };
+        std::vector<StateUpdate> updates;
+
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            int id = sqlite3_column_int(stmt, 0);
+            uint64_t last_acc = sqlite3_column_int64(stmt, 1);
+            int state = sqlite3_column_int(stmt, 2);
+            int recall = sqlite3_column_int(stmt, 3);
+
+            uint64_t idle = now - last_acc;
+            int next_state = state;
+
+            if (state == 0 && idle > 86400 * 3) next_state = 1; // Active -> Cold (3 days)
+            else if (state == 1 && idle > 86400 * 7 && recall < 2) next_state = 3; // Cold -> Forgotten (7 days, low recall)
+            else if (state == 1 && idle > 86400 * 30) next_state = 2; // Cold -> Archived (30 days)
+
+            if (next_state != state) updates.push_back({id, next_state});
+        }
+        sqlite3_finalize(stmt);
+
+        if (!updates.empty()) {
+            sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+            const char* up_sql = "UPDATE summaries SET state_enum = ? WHERE id = ?;";
+            sqlite3_stmt* up_stmt = nullptr;
+            if (sqlite3_prepare_v2(m_db, up_sql, -1, &up_stmt, nullptr) == SQLITE_OK) {
+                for (const auto& u : updates) {
+                    sqlite3_bind_int(up_stmt, 1, u.new_state);
+                    sqlite3_bind_int(up_stmt, 2, u.id);
+                    sqlite3_step(up_stmt);
+                    sqlite3_reset(up_stmt);
+                    modified_count++;
+                }
+            }
+            sqlite3_finalize(up_stmt);
+            sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
+        }
     }
-    return pruned_count;
+
+    // 3. Cleanup Tombstoned (state 4)
+    sqlite3_exec(m_db, "DELETE FROM summaries WHERE state_enum = 4;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "DELETE FROM vectorized_interactions WHERE state_enum = 4;", nullptr, nullptr, nullptr);
+
+    if (modified_count > 0) {
+        LOGI(TAG, "Lifecycle Maintenance complete: %d items transitioned or cleared.", modified_count);
+    }
+    return modified_count;
 }
 
 std::string LongTermMemory::retrieveFact(const std::string& key) {
