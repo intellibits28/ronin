@@ -2,14 +2,15 @@
 
 ## 1. Project Overview
 **Name:** Ronin Kernel (Phase 4.5 Evolution)
-**Current Version:** v4.2.0-LITERT-ALIGNED
-**Active Branch:** feature/hydration-fix (Finalizing LiteRT 0.11.0 Migration)
+**Current Version:** v4.5.0-MEMORY-EVOLUTION
+**Active Branch:** feature/hydration-fix (Integrating Cognitive Memory v2.1)
 **Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G+, utilizing Dual-Process isolation and LiteRT-LM v0.11.0 for optimized MoE and Gemma 4 inference.
 
 ---
 
 ## 2. Stable Features (v4.0 Finalized)
 *   **1B Inference (Gemma 3):** ✅ SUCCESS - Real-time streaming active via LiteRT-LM.
+*   **LiteRT-LM 0.11.0 Migration:** ✅ SUCCESS - Native Gemma 4 support and MoE compatibility.
 *   **File Search (v5.15):** High-precision semantic search with background indexing and interactive pagination (/more).
 *   **Hybrid Bridge:** Thread-safe JNI with ScopedJniEnv and Named Threads.
 *   **Optimized Staging:** 1MB High-Speed Buffer for model internal storage migration.
@@ -19,7 +20,7 @@
 ## 3. Current Status: Phase 4.5 (Dual-Process Isolation)
 - **Status:** Transitioning from Monolithic Bridge to **Service-Oriented Architecture**.
 - **In-Progress:**
-    - [x] **LiteRT Migration:** Upgraded to v0.11.0 for native Gemma 4 support.
+    - [x] **Memory Model v2.1:** Implemented MM->EN translation bridge and BGE-Small embeddings.
     - [ ] **E2B Inference (Gemma 4):** ❌ BLOCKED - Facing engine limitations with GPU delegate compilation on SD778G.
     - [x] **Jinja Templating:** PromptFactory aligned with official specification.
     - [ ] **Process Split:** Isolating Inference Engine into `:inference_core` process.

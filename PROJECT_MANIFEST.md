@@ -10,11 +10,11 @@ Build a shippable, fault-tolerant Mobile AI runtime kernel optimized for Android
 - **Build System:** CMake, GitHub Actions (CI/CD)
 
 ## Key Components to Implement
-1. **LiteRT 0.11.0 Migration:** Mandatory upgrade for Mixture of Experts (MoE) support and optimized Gemma 4 inference.
+1. **Memory Model v2.1:** Semantic long-term storage with Burmese-to-English translation bridge and 384-dim BGE embeddings.
 2. **Adaptive Checkpoint Engine:** LMK-aware survival using shadow buffers (C++20).
 3. **Capability Graph:** Dynamic routing with Thompson Sampling (O(1) LUT) (C++20).
-4. **Memory Manager:** Tri-anchor KV-cache pruning (C++20).
-5. **JNI Bridge:** Zero-copy DirectByteBuffer mapping (Kotlin/C++20).
+4. **JNI Bridge:** Zero-copy DirectByteBuffer mapping (Kotlin/C++20).
+5. **Multi-Modal Hub:** Integration of Vision/Audio nodes via LiteRT-LM.
 
 ## CI/CD Strategy
 - **Compiler:** Android NDK (Clang)

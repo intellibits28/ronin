@@ -15,10 +15,10 @@ Ronin Kernel solves the "Latency vs. Privacy" trade-off by implementing a **Loca
 
 ### Key Features
 *   **Dual-Process Isolation:** UI/Indexing and Inference Engine run in separate processes linked via Binder IPC.
+*   **Cognitive Memory v2.1:** Semantic long-term storage using **ML Kit Translate** (MM->EN) and **BGE-Small** (384-dim) embeddings.
 *   **Command Intelligence:** Real-time Suggester Popup and Auto-completion for `/` terminal commands.
 *   **LiteRT-LM Hydration:** Memory-mapped I/O for near-instant model loading and reduced RAM footprint (No FileStreams).
 *   **Jinja Template Integration:** Strictly follows official Gemma 4 templates for accurate multi-turn reasoning.
-*   **High-Speed Staging:** 1MB transfer buffers for large model migration from User to Internal storage.
 *   **System Guards:** Active Thermal Throttling (**Safe Mode at 42°C**) and LMK-aware memory pruning.
 
 ---
