@@ -101,6 +101,7 @@ class ChatViewModel : ViewModel() {
     var isKernelReady by mutableStateOf(false)
     var isImporting by mutableStateOf(false)
     var isLowPerformanceMode by mutableStateOf(false)
+    var mlKitStatus by mutableStateOf("Ready")
 }
 
 class MainActivity : ComponentActivity() {
@@ -212,6 +213,7 @@ class MainActivity : ComponentActivity() {
                 while(true) {
                     val loaded = nativeEngine.isLoaded()
                     chatViewModel.isLowPerformanceMode = nativeEngine.isLowPerformanceMode()
+                    chatViewModel.mlKitStatus = nativeEngine.getMLKitStatus()
                     
                     if (chatViewModel.isKernelHydrated != loaded) {
                         chatViewModel.isKernelHydrated = loaded
@@ -256,10 +258,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            val embeddingFile = java.io.File(assetsModelsDir, "bge_base.onnx")
-            if (!embeddingFile.exists()) {
-                assets.open("models/model.onnx").use { input ->
-                    java.io.FileOutputStream(embeddingFile).use { output -> input.copyTo(output) }
+            val bgeModelFile = java.io.File(assetsModelsDir, "bge_small.onnx")
+            if (!bgeModelFile.exists()) {
+                Log.i("MainActivity", "Bootstrapping BGE-Small model from assets...")
+                assets.open("models/bge_small.onnx").use { input ->
+                    java.io.FileOutputStream(bgeModelFile).use { output -> input.copyTo(output) }
                 }
             }
         } catch (e: Exception) { Log.e("RoninBoot", "Asset copy failed: ${e.message}") }
@@ -547,6 +550,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
                             Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Low Performance Mode: Running on CPU Fallback.", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // ML Kit Translation Bridge Status
+                if (chatViewModel.mlKitStatus != "Ready") {
+                    Surface(
+                        color = Color.Cyan.copy(alpha = 0.8f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Bridge: ${chatViewModel.mlKitStatus}", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

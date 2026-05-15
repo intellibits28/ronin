@@ -435,6 +435,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
+    fun getMLKitStatus(): String = mlKit.getStatusLabel()
+
     fun getActiveModelPath(): String {
         if (isLibLoaded) {
             try {

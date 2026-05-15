@@ -17,6 +17,9 @@ import kotlinx.coroutines.withContext
 class MLKitSkill {
     private val TAG = "Ronin_MLKit"
     
+    var status: String = "Ready"
+        private set
+
     // Burmese to English options
     // Note: Using "my" directly as BURMESE might be missing in some SDK versions
     private val options = TranslatorOptions.Builder()
@@ -35,7 +38,10 @@ class MLKitSkill {
     }
 
     suspend fun ensureModelDownloaded(): Boolean {
-        if (isModelDownloaded) return true
+        if (isModelDownloaded) {
+            status = "Ready"
+            return true
+        }
         
         return try {
             val conditions = DownloadConditions.Builder()
@@ -43,11 +49,14 @@ class MLKitSkill {
                 .build()
             
             Log.i(TAG, "Downloading Burmese-English translation models...")
+            status = "Downloading translation models (WiFi recommended)..."
             translator.downloadModelIfNeeded(conditions).await()
             isModelDownloaded = true
+            status = "Ready"
             Log.i(TAG, "Translation models ready.")
             true
         } catch (e: Exception) {
+            status = "Download failed: ${e.message}"
             Log.e(TAG, "Model download failed: ${e.message}")
             false
         }
@@ -64,6 +73,8 @@ class MLKitSkill {
         }
     }
     
+    fun getStatusLabel(): String = status
+
     fun close() {
         translator.close()
     }
