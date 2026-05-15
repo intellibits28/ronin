@@ -96,6 +96,14 @@ public:
     }
 
     /**
+     * @return The registered skill for the given ID, or nullptr if not found.
+     */
+    std::shared_ptr<Ronin::Kernel::Capability::BaseSkill> getSkill(uint32_t id) const {
+        auto it = m_skill_registry.find(id);
+        return (it != m_skill_registry.end()) ? it->second : nullptr;
+    }
+
+    /**
      * Registers an externally managed skill (e.g. FileSearchNode).
      */
     void registerSkill(uint32_t id, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill> skill) {

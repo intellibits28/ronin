@@ -167,7 +167,7 @@ class InferenceService : Service() {
             // We collect tokens and push them to SHM from a dedicated scope
             serviceScope.launch(Dispatchers.IO) {
                 try {
-                    val userMessage = Message.of(input)
+                    val userMessage = Message.user(input)
                     conversation.sendMessageAsync(userMessage).collect { partialMessage ->
                         // LiteRT-LM 0.11.0: Message.toString() returns the aggregated text content
                         val token = partialMessage.toString()
