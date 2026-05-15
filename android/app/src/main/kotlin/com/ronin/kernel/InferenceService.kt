@@ -212,8 +212,8 @@ class InferenceService : Service() {
             
         if (status != STATUS_STABILITY_ISSUE) {
             try {
-                // MediaPipe 0.10.x GPU Delegate
-                options.setDelegate(LlmInference.LlmInferenceOptions.Delegate.GPU)
+                // MediaPipe 0.10.35 uses setPreferredBackend for hardware acceleration
+                options.setPreferredBackend(LlmInference.Backend.GPU)
             } catch (e: Exception) {
                 Log.w(TAG, "Legacy GPU failed: ${e.message}")
             }
