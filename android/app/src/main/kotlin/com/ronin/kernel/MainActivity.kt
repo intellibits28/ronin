@@ -175,6 +175,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.Main) {
             chatViewModel.kernelStatus = "Booting Engine..."
             NativeEngine.initializeAsync()
+            if (!nativeEngine.isNativeLibraryLoaded()) {
+                chatViewModel.kernelStatus = "FATAL: Lib Load Failed"
+                Toast.makeText(this@MainActivity, "CRITICAL: Native libraries failed to load. Check Logcat.", Toast.LENGTH_LONG).show()
+            }
             nativeEngine.initialize()
             registerComponentCallbacks(nativeEngine)
             setupHardwareCallbacks()

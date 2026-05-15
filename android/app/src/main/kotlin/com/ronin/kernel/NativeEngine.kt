@@ -82,6 +82,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     companion object {
         private const val TAG = "RoninKernel_Native"
         private var isLibLoaded = false
+        private var lastLoadError: String? = null
 
         /**
          * Safe initialization to prevent Main Thread blocking during startup.
@@ -89,12 +90,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         suspend fun initializeAsync() = withContext(Dispatchers.IO) {
             if (isLibLoaded) return@withContext
             try {
-                System.loadLibrary("llm_inference_engine_jni")
                 System.loadLibrary("ronin_kernel")
                 isLibLoaded = true
                 Log.i(TAG, "SUCCESS: Ronin Kernel Bridge Hydrated on Worker Thread.")
             } catch (e: UnsatisfiedLinkError) {
+                lastLoadError = e.message
                 Log.e(TAG, "FATAL: Native linkage failed: ${e.message}")
+            } catch (e: Exception) {
+                lastLoadError = e.message
+                Log.e(TAG, "FATAL: Unexpected library load error: ${e.message}")
             }
         }
     }
@@ -361,7 +365,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
-        if (!isLibLoaded) return@withContext "Error: Native libraries not loaded."
+        if (!isLibLoaded) {
+            return@withContext "Error: Native libraries not loaded. ${lastLoadError ?: "Initialization pending or failed silently."}"
+        }
         try {
             val result = processInputNative(input)
 

@@ -36,7 +36,6 @@ class InferenceService : Service() {
     companion object {
         init {
             try {
-                System.loadLibrary("llm_inference_engine_jni")
                 System.loadLibrary("ronin_kernel")
             } catch (e: UnsatisfiedLinkError) {
                 Log.e("InferenceService", "Native linkage failed: ${e.message}")
