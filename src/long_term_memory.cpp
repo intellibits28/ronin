@@ -79,6 +79,9 @@ bool LongTermMemory::initSchema() {
         "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
         "  content TEXT, "
         "  embedding BLOB, "
+        "  recall_count INTEGER DEFAULT 0, "
+        "  last_accessed INTEGER, "
+        "  state_enum INTEGER DEFAULT 0, " // 0=Active, 1=Cold, 2=Archived, 3=Forgotten, 4=Tombstoned
         "  timestamp INTEGER);"
         
         "CREATE VIRTUAL TABLE IF NOT EXISTS summaries_fts USING fts5("
@@ -96,6 +99,7 @@ bool LongTermMemory::initSchema() {
         "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
         "  content TEXT, "
         "  embedding BLOB, "
+        "  state_enum INTEGER DEFAULT 0, "
         "  timestamp INTEGER);"
         
         "CREATE VIRTUAL TABLE IF NOT EXISTS file_index USING fts5("
@@ -236,31 +240,35 @@ std::vector<std::string> LongTermMemory::search(const std::string& query) {
     return results;
 }
 
-std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>& query_embedding) {
+std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>& query_embedding, RecallMode mode) {
     if (!m_db || query_embedding.empty()) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     
-    struct ScoredContent { std::string content; float score; };
+    struct ScoredContent { std::string content; float score; int state; int id; };
     std::vector<ScoredContent> candidates;
 
-    const char* sql = "SELECT content, embedding FROM summaries;";
+    // Phase 2.1: State-based Filtering
+    // FAST: state 0,1 | DEEP: state 0,1,2,3 (partial) | EXPLICIT: state 0,1,2,3
+    const char* sql = "SELECT content, embedding, state_enum, id FROM summaries WHERE state_enum < 4;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* content = sqlite3_column_text(stmt, 0);
             const void* blob = sqlite3_column_blob(stmt, 1);
             int bytes = sqlite3_column_bytes(stmt, 1);
+            int state = sqlite3_column_int(stmt, 2);
+            int id = sqlite3_column_int(stmt, 3);
+
+            // Scope logic
+            if (mode == RecallMode::FAST && state > 1) continue;
+            // DEEP and EXPLICIT can access Forgotten (3)
 
             if (content && blob && bytes > 0) {
-                // Phase 2.1: De-quantize Float16 to Float32
                 const uint16_t* f16_vec = static_cast<const uint16_t*>(blob);
                 size_t dim = bytes / 2; 
                 std::vector<float> vector(dim);
-                for (size_t i = 0; i < dim; ++i) {
-                    vector[i] = halfToFloat(f16_vec[i]);
-                }
+                for (size_t i = 0; i < dim; ++i) vector[i] = halfToFloat(f16_vec[i]);
                 
-                // Manually compute cosine similarity
                 float dot = 0.0f, mag_a = 0.0f, mag_b = 0.0f;
                 for (size_t i = 0; i < std::min(vector.size(), query_embedding.size()); ++i) {
                     dot += vector[i] * query_embedding[i];
@@ -268,7 +276,11 @@ std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>
                     mag_b += query_embedding[i] * query_embedding[i];
                 }
                 float score = (mag_a > 0 && mag_b > 0) ? dot / (std::sqrt(mag_a) * std::sqrt(mag_b)) : 0.0f;
-                candidates.push_back({reinterpret_cast<const char*>(content), score});
+                
+                // Suppression logic: Forgotten memory needs much higher confidence in Deep mode
+                if (state == 3 && mode == RecallMode::DEEP && score < 0.9f) continue;
+
+                candidates.push_back({reinterpret_cast<const char*>(content), score, state, id});
             }
         }
     }
@@ -277,8 +289,23 @@ std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>
     std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.score > b.score; });
     
     std::vector<std::string> results;
+    uint64_t now = std::time(nullptr);
     for (size_t i = 0; i < candidates.size() && i < 5; ++i) {
-        if (candidates[i].score > 0.75f) results.push_back(candidates[i].content);
+        if (candidates[i].score > 0.75f) {
+            results.push_back(candidates[i].content);
+            
+            // Phase 5.3: Temporary Resurrection & Promotion
+            const char* update_sql = "UPDATE summaries SET recall_count = recall_count + 1, last_accessed = ?, "
+                                     "state_enum = CASE WHEN recall_count >= 5 AND state_enum > 1 THEN 1 ELSE state_enum END "
+                                     "WHERE id = ?;";
+            sqlite3_stmt* up_stmt = nullptr;
+            if (sqlite3_prepare_v2(m_db, update_sql, -1, &up_stmt, nullptr) == SQLITE_OK) {
+                sqlite3_bind_int64(up_stmt, 1, now);
+                sqlite3_bind_int(up_stmt, 2, candidates[i].id);
+                sqlite3_step(up_stmt);
+                sqlite3_finalize(up_stmt);
+            }
+        }
     }
     return results;
 }

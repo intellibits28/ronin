@@ -41,8 +41,14 @@ public:
     // Apply Temporal Decay: S(t) = e^(-lambda * t)
     void applyDecay(uint64_t current_timestamp);
 
+    enum class RecallMode : int {
+        FAST = 0,    // Active + Cold
+        DEEP = 1,    // Partial Forgotten
+        EXPLICIT = 2 // Full Forgotten
+    };
+
     std::vector<std::string> search(const std::string& query);
-    std::vector<std::string> searchSemantic(const std::vector<float>& query_embedding);
+    std::vector<std::string> searchSemantic(const std::vector<float>& query_embedding, RecallMode mode = RecallMode::FAST);
     bool consolidate(const std::string& summary_text, const std::vector<float>& embedding = {});
 
     // Chat History Persistence

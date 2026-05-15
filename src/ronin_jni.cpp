@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <cstring>
+#include <fstream>
 #include <algorithm>
 #include "ronin_jni.h"
 #include "jni_utils.h"
