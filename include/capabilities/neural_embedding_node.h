@@ -23,7 +23,7 @@ public:
      * Manually manage memory by loading model only when needed.
      */
     bool load();
-    void unload();
+    void unload() override;
 
     /**
      * Runs inference on the input text to produce a 768-dim semantic embedding (BGE-Base).

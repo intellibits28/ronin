@@ -47,6 +47,12 @@ public:
      * Defaults to 0 (No specific LoRA required).
      */
     virtual uint32_t getLoraId() const { return 0; }
+
+    /**
+     * Phase 5.2: Memory Management
+     * Unloads model weights or resources to free up RAM.
+     */
+    virtual void unload() {}
 };
 
 } // namespace Ronin::Kernel::Capability
