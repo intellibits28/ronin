@@ -225,8 +225,24 @@ jboolean native_isLoaded(JNIEnv *env, jobject thiz) { return g_llm_context.initi
 void native_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
     if (level >= 20 && g_llm_context.engine) g_llm_context.engine->purgeKVCache();
     if (g_memory_manager) g_memory_manager->onMemoryPressure();
+
+    // Phase 2.1: Urgent unload of embedding model on TRIM_MEMORY_COMPLETE
+    if (level >= 80) { // ComponentCallbacks2.TRIM_MEMORY_COMPLETE
+        auto skill = g_intent_engine ? g_intent_engine->getSkill(3) : nullptr;
+        if (skill) skill->unload();
+    }
 }
-jstring native_getActiveModelPath(JNIEnv *env, jobject thiz) { return ConvertStringToJString(env, g_llm_context.model_path); }
+
+void native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {
+    if (g_intent_engine) {
+        g_intent_engine->setPriority(enabled ? Ronin::Kernel::Capability::SkillPriority::CRITICAL : 
+                                              Ronin::Kernel::Capability::SkillPriority::LOW);
+        if (enabled) g_intent_engine->stopLowPriorityTasks();
+    }
+}
+
+jstring native_getActiveModelPath(JNIEnv *env, jobject thiz) {
+ return ConvertStringToJString(env, g_llm_context.model_path); }
 void native_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) { if (g_kernel) g_kernel->injectLocation(lat, lon); }
 jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
     Ronin::Kernel::Capability::HardwareBridge::reportSystemHealth(temp, used, total);
@@ -282,6 +298,16 @@ jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
     return JNI_FALSE;
 }
 
+jboolean native_warmMemoryPipeline(JNIEnv *env, jobject thiz) {
+    // Warm BGE model (Skill ID 3)
+    auto skill = g_intent_engine ? g_intent_engine->getSkill(3) : nullptr;
+    auto* neural_node = dynamic_cast<Ronin::Kernel::Capability::NeuralEmbeddingNode*>(skill.get());
+    if (neural_node) {
+        return neural_node->load() ? JNI_TRUE : JNI_FALSE;
+    }
+    return JNI_FALSE;
+}
+
 jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
     jclass stringClass = env->FindClass("java/lang/String");
     if (g_ltm) {
@@ -303,6 +329,7 @@ static JNINativeMethod g_methods[] = {
     {"setEngineInstanceNative", "()V", (void*)native_setEngineInstance},
     {"notifyModelLoadedNative", "(Ljava/lang/String;)V", (void*)native_notifyModelLoaded},
     {"stopLowPriorityTasksNative", "()V", (void*)native_stopLowPriorityTasks},
+    {"setSafeModeNative", "(Z)V", (void*)native_setSafeMode},
     {"setPriorityNative", "(I)V", (void*)native_setPriority},
     {"checkFileAccessNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_checkFileAccess},
     {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB},
@@ -322,6 +349,7 @@ static JNINativeMethod g_methods[] = {
     {"scanSpecificPathNative", "(Ljava/lang/String;)Z", (void*)native_scanSpecificPath},
     {"generateEmbeddingNative", "(Ljava/lang/String;)[F", (void*)native_generateEmbedding},
     {"isValidModelNative", "(Ljava/lang/String;)Z", (void*)native_isValidModel},
+    {"warmMemoryPipelineNative", "()Z", (void*)native_warmMemoryPipeline},
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}
 };
 

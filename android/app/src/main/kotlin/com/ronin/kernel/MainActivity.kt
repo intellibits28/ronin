@@ -590,7 +590,31 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
 
                 Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
                     Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; chatViewModel.showCommandSuggestions = false; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } } }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
+                        TextField(
+                            value = currentInput, 
+                            onValueChange = { 
+                                currentInput = it
+                                chatViewModel.showCommandSuggestions = it.startsWith("/")
+                                // Mapped-Streaming: Predictive Warming
+                                if (it.isNotEmpty()) engine.warmMemoryPipeline()
+                            }, 
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), 
+                            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), 
+                            trailingIcon = { 
+                                IconButton(onClick = { 
+                                    if (currentInput.isNotBlank()) { 
+                                        val input = currentInput; 
+                                        chatViewModel.messages.add("User: $input"); 
+                                        currentInput = ""; 
+                                        chatViewModel.showCommandSuggestions = false; 
+                                        scope.launch { 
+                                            val res = engine.processInputAsync(input); 
+                                            chatViewModel.messages.add("Ronin: $res") 
+                                        } 
+                                    } 
+                                }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } 
+                            }
+                        )
                     }
                 }
             }

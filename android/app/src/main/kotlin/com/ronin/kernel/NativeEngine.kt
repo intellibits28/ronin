@@ -131,6 +131,23 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun getActiveModelPathNative(): String
     private external fun generateEmbeddingNative(text: String): FloatArray?
     private external fun isValidModelNative(path: String): Boolean
+    private external fun warmMemoryPipelineNative(): Boolean
+
+    /**
+     * Phase 2.1: Predictive Warming for Mapped-Streaming Architecture.
+     */
+    fun warmMemoryPipeline() {
+        scope.launch {
+            // Warm ML Kit (Kotlin)
+            mlKit.warm()
+            // Warm BGE Model (Native mmap)
+            if (isLibLoaded) {
+                try {
+                    warmMemoryPipelineNative()
+                } catch (e: UnsatisfiedLinkError) {}
+            }
+        }
+    }
 
     /**
      * Phase 2.1: Generate semantic embedding for Memory v2.1 bridge.

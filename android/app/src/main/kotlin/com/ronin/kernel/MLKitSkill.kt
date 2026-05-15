@@ -27,6 +27,13 @@ class MLKitSkill {
     private val translator = Translation.getClient(options)
     private var isModelDownloaded = false
 
+    /**
+     * Predictive warming: Prepare models in background.
+     */
+    suspend fun warm() {
+        ensureModelDownloaded()
+    }
+
     suspend fun ensureModelDownloaded(): Boolean {
         if (isModelDownloaded) return true
         
