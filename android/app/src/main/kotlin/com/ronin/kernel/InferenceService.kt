@@ -26,7 +26,12 @@ class InferenceService : Service() {
     private var litertEngine: Engine? = null
     private var litertConversation: Conversation? = null
     private var currentModelPath: String = ""
+    private var isLowPerformanceMode = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    private val PREFS_NAME = "ronin_model_registry"
+    private val STATUS_STABILITY_ISSUE = "STABILITY_ISSUE"
+    private val STATUS_OK = "OK"
 
     // JNI Bridge for Worker Process
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
@@ -107,6 +112,10 @@ class InferenceService : Service() {
             Log.w(TAG, "Safe Mode Toggle: $enabled (Thermal Guard)")
             isSafeModeActive = enabled
         }
+
+        override fun isLowPerformanceMode(): Boolean {
+            return isLowPerformanceMode
+        }
     }
 
     private var isSafeModeActive = false
@@ -114,6 +123,33 @@ class InferenceService : Service() {
     override fun onBind(intent: Intent?): IBinder {
         Log.i(TAG, "Service bound")
         return binder
+    }
+
+    private fun getModelStatus(path: String): String {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(path, STATUS_OK) ?: STATUS_OK
+    }
+
+    private fun setModelStatus(path: String, status: String) {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(path, status).apply()
+    }
+
+    private fun clearOrphanedArtifacts() {
+        try {
+            val cacheDir = java.io.File(filesDir, "models/cache")
+            if (cacheDir.exists()) {
+                val files = cacheDir.listFiles()
+                files?.forEach { 
+                    if (it.name.contains("_")) {
+                        Log.i(TAG, "Cleaning orphaned artifact: ${it.name}")
+                        it.delete()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Artifact cleanup failed: ${e.message}")
+        }
     }
 
     private fun tryHydrate(path: String): Boolean {
@@ -133,26 +169,64 @@ class InferenceService : Service() {
             return false
         }
 
+        // Isolation: Create models/cache directory
+        val cacheDirFile = java.io.File(filesDir, "models/cache")
+        if (!cacheDirFile.exists()) cacheDirFile.mkdirs()
+        
+        clearOrphanedArtifacts()
+
+        val modelStatus = getModelStatus(path)
+        isLowPerformanceMode = false
+
         return try {
-            // LiteRT 0.11.0: Using EngineConfig with Backend.GPU()
-            val config = EngineConfig(
-                modelPath = path,
-                backend = Backend.GPU(),
-                maxNumTokens = 1024
-            )
+            val backends = if (modelStatus == STATUS_STABILITY_ISSUE) {
+                Log.w(TAG, "Model $path marked with stability issues. Forcing CPU Fallback.")
+                listOf(Backend.CPU())
+            } else {
+                // Priority: NPU > GPU > CPU
+                listOf(Backend.NPU(nativeLibraryDir = applicationInfo.nativeLibraryDir), Backend.GPU(), Backend.CPU())
+            }
 
-            val engine = Engine(config)
-            engine.initialize()
+            var engine: Engine? = null
+            var lastError: String? = null
+
+            for (backend in backends) {
+                try {
+                    Log.i(TAG, "Attempting hydration with backend: ${backend.javaClass.simpleName}")
+                    val config = EngineConfig(
+                        modelPath = path,
+                        backend = backend,
+                        maxNumTokens = 1024,
+                        cacheDir = cacheDirFile.absolutePath
+                    )
+                    engine = Engine(config)
+                    engine.initialize()
+                    
+                    if (backend is Backend.CPU) {
+                        isLowPerformanceMode = true
+                        Log.w(TAG, "Backend: CPU Fallback active. Performance degraded.")
+                    }
+                    break
+                } catch (e: Exception) {
+                    lastError = e.message
+                    Log.w(TAG, "Backend ${backend.javaClass.simpleName} failed: $lastError")
+                }
+            }
+
+            if (engine == null) {
+                Log.e(TAG, "FATAL: All backends failed to hydrate model. Last error: $lastError")
+                return false
+            }
+
             litertEngine = engine
-
-            // 0.11.0: Create conversation for session management
             litertConversation = engine.createConversation()
-
             currentModelPath = path
-            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated (LiteRT 0.11.0) in :inference_core process.")
+            
+            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated (LiteRT 0.11.0) in :inference_core process. [Mode: ${if(isLowPerformanceMode) "Low-Perf" else "High-Perf"}]")
             true
         } catch (e: Throwable) {
             Log.e(TAG, "Hydration failed in service: ${e.message}")
+            setModelStatus(path, STATUS_STABILITY_ISSUE)
             false
         }
     }

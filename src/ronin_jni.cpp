@@ -261,6 +261,26 @@ jfloatArray native_generateEmbedding(JNIEnv *env, jobject thiz, jstring text) {
     return nullptr;
 }
 
+jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
+    std::string path_str = ConvertJStringToString(env, path);
+    std::ifstream file(path_str, std::ios::binary);
+    if (!file) return JNI_FALSE;
+
+    // Phase 8.1: Header Audit
+    // FlatBuffers (TFLite) have their file identifier at offset 4 (4 bytes)
+    char buffer[8];
+    if (!file.read(buffer, 8)) return JNI_FALSE;
+
+    // Check for "TFL3" at offset 4
+    if (std::memcmp(buffer + 4, "TFL3", 4) == 0) {
+        LOGI(TAG, "Integrity: Model verified (TFL3 detected).");
+        return JNI_TRUE;
+    }
+
+    LOGW(TAG, "Integrity: Model validation failed (Invalid Magic Bytes).");
+    return JNI_FALSE;
+}
+
 jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
     jclass stringClass = env->FindClass("java/lang/String");
     if (g_ltm) {
@@ -300,6 +320,7 @@ static JNINativeMethod g_methods[] = {
     {"updateCloudProvidersNative", "(Ljava/lang/String;)Z", (void*)native_updateCloudProviders},
     {"scanSpecificPathNative", "(Ljava/lang/String;)Z", (void*)native_scanSpecificPath},
     {"generateEmbeddingNative", "(Ljava/lang/String;)[F", (void*)native_generateEmbedding},
+    {"isValidModelNative", "(Ljava/lang/String;)Z", (void*)native_isValidModel},
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}
 };
 

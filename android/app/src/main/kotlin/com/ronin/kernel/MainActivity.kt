@@ -100,6 +100,7 @@ class ChatViewModel : ViewModel() {
     var kernelStatus by mutableStateOf("Initializing...")
     var isKernelReady by mutableStateOf(false)
     var isImporting by mutableStateOf(false)
+    var isLowPerformanceMode by mutableStateOf(false)
 }
 
 class MainActivity : ComponentActivity() {
@@ -210,6 +211,8 @@ class MainActivity : ComponentActivity() {
                 
                 while(true) {
                     val loaded = nativeEngine.isLoaded()
+                    chatViewModel.isLowPerformanceMode = nativeEngine.isLowPerformanceMode()
+                    
                     if (chatViewModel.isKernelHydrated != loaded) {
                         chatViewModel.isKernelHydrated = loaded
                         chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
@@ -533,6 +536,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
                 }
 
                 if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
+
+                // Low Performance Mode Warning
+                if (chatViewModel.isLowPerformanceMode) {
+                    Surface(
+                        color = Color.Yellow.copy(alpha = 0.9f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Low Performance Mode: Running on CPU Fallback.", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
 
                 Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
                     SelectionContainer {

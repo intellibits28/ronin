@@ -30,4 +30,9 @@ interface IInferenceService {
      * Toggles Safe Mode (Low Precision/Throttled) for thermal protection.
      */
     void setSafeMode(boolean enabled);
+
+    /**
+     * Checks if the engine is running in Low Performance Mode (CPU Fallback).
+     */
+    boolean isLowPerformanceMode();
 }

@@ -130,6 +130,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun isLoadedNative(): Boolean
     private external fun getActiveModelPathNative(): String
     private external fun generateEmbeddingNative(text: String): FloatArray?
+    private external fun isValidModelNative(path: String): Boolean
 
     /**
      * Phase 2.1: Generate semantic embedding for Memory v2.1 bridge.
@@ -344,6 +345,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
         setPriority(0) // 0 = CRITICAL
         stopLowPriorityTasks()
+
+        // Phase 8.1: Magic Byte Check (Native Protection)
+        try {
+            if (!isValidModelNative(path)) {
+                Log.e(TAG, "ABORT: Model file $path failed Magic Byte check. Corrupted or invalid format.")
+                return@withContext false
+            }
+        } catch (e: UnsatisfiedLinkError) {
+            Log.w(TAG, "Native validation skipped: Linkage error.")
+        }
+
         Log.i(TAG, ">>> [Phase 8.0 Microkernel] Delegating Hydration to :inference_core")
         
         // 1. Load model in the isolated worker process
@@ -395,6 +407,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             } catch (e: UnsatisfiedLinkError) {}
         }
         return currentModelPath.isNotEmpty()
+    }
+
+    fun isLowPerformanceMode(): Boolean {
+        return try {
+            inferenceService?.isLowPerformanceMode ?: false
+        } catch (e: Exception) {
+            false
+        }
     }
 
     fun getActiveModelPath(): String {
