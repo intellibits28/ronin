@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.util.Log
 import com.google.ai.edge.litertlm.*
+import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import kotlinx.coroutines.flow.*
 import android.app.Notification
 import android.app.NotificationChannel
@@ -25,6 +26,7 @@ class InferenceService : Service() {
 
     private var litertEngine: Engine? = null
     private var litertConversation: Conversation? = null
+    private var legacyInference: LlmInference? = null
     private var currentModelPath: String = ""
     private var isLowPerformanceMode = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -97,7 +99,7 @@ class InferenceService : Service() {
         }
 
         override fun isHydrated(): Boolean {
-            return litertEngine != null
+            return litertEngine != null || legacyInference != null
         }
 
         override fun getActiveModelPath(): String {
@@ -160,12 +162,20 @@ class InferenceService : Service() {
             return false
         }
         
-        // Rule 5: RAM Guard before hydration
+        // Phase 9.0: Adaptive RAM Guard (Rule v2.1)
+        val fileSize = modelFile.length()
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
-        Log.i(TAG, "Hydration Guard: Free RAM = ${freeRam}GB")
-        val minRam = 1.5f
+        
+        val minRam = when {
+            fileSize < 800 * 1024 * 1024 -> 1.0f // <800MB (1B models)
+            fileSize < 1500 * 1024 * 1024 -> 1.2f // <1.5GB (2B models)
+            else -> 1.5f // Gemma 4
+        }
+        
+        Log.i(TAG, "Hydration Guard: FileSize=${fileSize/(1024*1024)}MB, FreeRAM=${freeRam}GB, Required=${minRam}GB")
+        
         if (freeRam < minRam) {
-            Log.e(TAG, "ABORT: Insufficient RAM for Hydration. Available: ${freeRam}GB, Required: ${minRam}GB")
+            Log.e(TAG, "ABORT: Insufficient RAM. Available: ${freeRam}GB, Required: ${minRam}GB")
             return false
         }
 
@@ -178,52 +188,15 @@ class InferenceService : Service() {
         val modelStatus = getModelStatus(path)
         isLowPerformanceMode = false
 
+        // Determine Backend by Extension
+        val isLegacy = path.endsWith(".bin")
+
         return try {
-            val backends = if (modelStatus == STATUS_STABILITY_ISSUE) {
-                Log.w(TAG, "Model $path marked with stability issues. Forcing CPU Fallback.")
-                listOf(Backend.CPU())
+            if (isLegacy) {
+                hydrateLegacy(path, modelStatus)
             } else {
-                // Priority: NPU > GPU > CPU
-                listOf(Backend.NPU(nativeLibraryDir = applicationInfo.nativeLibraryDir), Backend.GPU(), Backend.CPU())
+                hydrateLiteRT(path, modelStatus, cacheDirFile)
             }
-
-            var engine: Engine? = null
-            var lastError: String? = null
-
-            for (backend in backends) {
-                try {
-                    Log.i(TAG, "Attempting hydration with backend: ${backend.javaClass.simpleName}")
-                    val config = EngineConfig(
-                        modelPath = path,
-                        backend = backend,
-                        maxNumTokens = 1024,
-                        cacheDir = cacheDirFile.absolutePath
-                    )
-                    engine = Engine(config)
-                    engine.initialize()
-                    
-                    if (backend is Backend.CPU) {
-                        isLowPerformanceMode = true
-                        Log.w(TAG, "Backend: CPU Fallback active. Performance degraded.")
-                    }
-                    break
-                } catch (e: Exception) {
-                    lastError = e.message
-                    Log.w(TAG, "Backend ${backend.javaClass.simpleName} failed: $lastError")
-                }
-            }
-
-            if (engine == null) {
-                Log.e(TAG, "FATAL: All backends failed to hydrate model. Last error: $lastError")
-                return false
-            }
-
-            litertEngine = engine
-            litertConversation = engine.createConversation()
-            currentModelPath = path
-            
-            Log.i(TAG, "SUCCESS: Gemma 4 Brain Hydrated (LiteRT 0.11.0) in :inference_core process. [Mode: ${if(isLowPerformanceMode) "Low-Perf" else "High-Perf"}]")
-            true
         } catch (e: Throwable) {
             Log.e(TAG, "Hydration failed in service: ${e.message}")
             setModelStatus(path, STATUS_STABILITY_ISSUE)
@@ -231,28 +204,100 @@ class InferenceService : Service() {
         }
     }
 
+    private fun hydrateLegacy(path: String, status: String): Boolean {
+        Log.i(TAG, "Backing up to Legacy MediaPipe Engine for .bin model.")
+        val options = LlmInference.LlmInferenceOptions.builder()
+            .setModelPath(path)
+            .setMaxTokens(1024)
+            
+        if (status != STATUS_STABILITY_ISSUE) {
+            try {
+                // MediaPipe 0.10.x GPU Delegate
+                options.setDelegate(LlmInference.LlmInferenceOptions.Delegate.GPU)
+            } catch (e: Exception) {
+                Log.w(TAG, "Legacy GPU failed: ${e.message}")
+            }
+        }
+
+        legacyInference = LlmInference.createFromOptions(this, options.build())
+        currentModelPath = path
+        return true
+    }
+
+    private fun hydrateLiteRT(path: String, status: String, cacheDir: java.io.File): Boolean {
+        val backends = if (status == STATUS_STABILITY_ISSUE) {
+            listOf(Backend.CPU())
+        } else {
+            listOf(Backend.NPU(nativeLibraryDir = applicationInfo.nativeLibraryDir), Backend.GPU(), Backend.CPU())
+        }
+
+        var engine: Engine? = null
+        var lastError: String? = null
+
+        for (backend in backends) {
+            try {
+                Log.i(TAG, "Attempting hydration with backend: ${backend.javaClass.simpleName}")
+                val config = EngineConfig(
+                    modelPath = path,
+                    backend = backend,
+                    maxNumTokens = 1024,
+                    cacheDir = cacheDir.absolutePath
+                )
+                engine = Engine(config)
+                engine.initialize()
+                
+                if (backend is Backend.CPU) isLowPerformanceMode = true
+                break
+            } catch (e: Exception) {
+                lastError = e.message
+                Log.w(TAG, "Backend ${backend.javaClass.simpleName} failed: $lastError")
+            }
+        }
+
+        if (engine == null) return false
+        
+        litertEngine = engine
+        litertConversation = engine.createConversation()
+        currentModelPath = path
+        return true
+    }
+
     private fun executeReasoning(input: String): String {
-        val conversation = litertConversation ?: return "Error: Local reasoning spine not hydrated in service."
+        val litert = litertConversation
+        val legacy = legacyInference
+
+        if (litert == null && legacy == null) {
+            return "Error: Local reasoning spine not hydrated in service."
+        }
 
         Log.d(TAG, "Executing Reasoning [SafeMode: $isSafeModeActive].")
 
         return try {
-            // LiteRT 0.11.0: Using sendMessageAsync which emits Flow<Message>
-            // We collect tokens and push them to SHM from a dedicated scope
-            serviceScope.launch(Dispatchers.IO) {
-                try {
-                    val userMessage = Message.user(input)
-                    conversation.sendMessageAsync(userMessage).collect { partialMessage ->
-                        // LiteRT-LM 0.11.0: Message.toString() returns the aggregated text content
-                        val token = partialMessage.toString()
-                        pushTokenToSHMNative(token, false)
+            if (litert != null) {
+                // LiteRT 0.11.0 Flow
+                serviceScope.launch(Dispatchers.IO) {
+                    try {
+                        val userMessage = Message.user(input)
+                        litert.sendMessageAsync(userMessage).collect { partialMessage ->
+                            val token = partialMessage.toString()
+                            pushTokenToSHMNative(token, false)
+                        }
+                        pushTokenToSHMNative("", true)
+                        Log.i(TAG, "LiteRT Streaming Complete.")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "LiteRT Streaming failure: ${e.message}")
+                        pushTokenToSHMNative("Error: ${e.message}", true)
                     }
-                    // Signal completion
-                    pushTokenToSHMNative("", true)
-                    Log.i(TAG, "LiteRT Streaming Complete.")
+                }
+            } else if (legacy != null) {
+                // Legacy MediaPipe 0.10.x Flow
+                try {
+                    legacy.generateResponseAsync(input) { result, done ->
+                        pushTokenToSHMNative(result, done)
+                    }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Streaming failure: ${e.message}")
-                    pushTokenToSHMNative("Error: ${e.message}", true)
+                    Log.e(TAG, "Legacy Streaming failure: ${e.message}")
+                    return "Error: Legacy engine failure - ${e.message}"
                 }
             }
             
@@ -267,6 +312,7 @@ class InferenceService : Service() {
         super.onDestroy()
         litertConversation = null
         litertEngine = null
+        legacyInference?.close()
         Log.i(TAG, "Service destroyed")
     }
 }

@@ -74,6 +74,9 @@ dependencies {
     // LiteRT LM Android SDK (Upgraded for Gemma 4 .litertlm support)
     implementation 'com.google.ai.edge.litertlm:litertlm-android:0.11.0'
     
+    // Legacy MediaPipe GenAI (For .bin models)
+    implementation 'com.google.mediapipe:tasks-genai:0.10.35'
+    
     // Core Android & Compose
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
