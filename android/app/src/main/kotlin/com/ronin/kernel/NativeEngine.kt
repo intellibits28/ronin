@@ -28,7 +28,6 @@ import java.util.concurrent.TimeUnit
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private val dbHelper = DatabaseHelper(context)
-    private val mlKit = MLKitSkill()
 
     // --- LEGACY INFERENCE SERVICE (FALLBACK ONLY) ---
     private var inferenceService: IInferenceService? = null
@@ -130,7 +129,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun scanSpecificPathNative(path: String): Boolean
     private external fun isLoadedNative(): Boolean
     private external fun getActiveModelPathNative(): String
-    private external fun generateEmbeddingNative(text: String): FloatArray?
+    private external fun generateEmbeddingNative(text: String, isQuery: Boolean): FloatArray?
     private external fun isValidModelNative(path: String): Boolean
     private external fun warmMemoryPipelineNative(): Boolean
 
@@ -139,8 +138,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      */
     fun warmMemoryPipeline() {
         scope.launch {
-            // Warm ML Kit (Kotlin)
-            mlKit.warm()
             // Warm BGE Model (Native mmap)
             if (isLibLoaded) {
                 try {
@@ -151,12 +148,19 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     /**
+     * Phase 2.1: Unicode NFKC Normalization for Burmese consistency.
+     */
+    fun normalizeBurmese(text: String): String {
+        return java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
+    }
+
+    /**
      * Phase 2.1: Generate semantic embedding for Memory v2.1 bridge.
      */
-    fun generateEmbedding(text: String): FloatArray? {
+    fun generateEmbedding(text: String, isQuery: Boolean = true): FloatArray? {
         if (isLibLoaded) {
             return try {
-                generateEmbeddingNative(text)
+                generateEmbeddingNative(normalizeBurmese(text), isQuery)
             } catch (e: UnsatisfiedLinkError) {
                 null
             }
@@ -225,18 +229,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun isNativeLibraryLoaded(): Boolean = isLibLoaded
 
     /**
-     * Phase 2.1: Memory Model Evolution
-     * Translates MM to EN, generates 384-dim embedding, and saves to persistent storage.
+     * Phase 2.1: Memory Model Evolution (Native Multilingual)
+     * Generates 384-dim embedding from normalized MM text and saves to persistent storage.
      */
     suspend fun storeCognitiveMemory(mmText: String, importance: Float = 1.0f) {
-        val enText = mlKit.translate(mmText) ?: return
-        Log.i(TAG, "Memory Bridge: Translated '$mmText' -> '$enText'")
-        
-        val vector = generateEmbedding(enText)
+        // E5-Small supports MM natively, no need for translation bridge.
+        val vector = generateEmbedding(mmText, isQuery = false)
         if (vector != null) {
-            Log.i(TAG, "Memory Bridge: Generated ${vector.size}-dim embedding.")
+            Log.i(TAG, "Memory Bridge: Generated ${vector.size}-dim embedding for MM text.")
             withContext(Dispatchers.IO) {
-                dbHelper.storeMemory(mmText, enText, vector, importance)
+                // Pass empty string for EN as it's no longer required for native multilingual search
+                dbHelper.storeMemory(mmText, "", vector, importance)
             }
         } else {
             Log.e(TAG, "Memory Bridge: Failed to generate embedding.")
@@ -333,11 +336,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 setEngineInstanceNative()
                 val libDir = context.applicationInfo.nativeLibraryDir
                 initializeKernelNative(context.filesDir.absolutePath, libDir, false)
-                
-                // Phase 2.1: Proactive model download for translation bridge
-                scope.launch {
-                    mlKit.ensureModelDownloaded()
-                }
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "initializeKernel failed: ${e.message}")
             }
@@ -434,8 +432,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             false
         }
     }
-
-    fun getMLKitStatus(): String = mlKit.getStatusLabel()
 
     fun getActiveModelPath(): String {
         if (isLibLoaded) {

@@ -69,7 +69,11 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
 
     using namespace Ronin::Kernel::Capability;
-    auto neural_node = std::make_shared<NeuralEmbeddingNode>(base_path + "/assets/models/bge_small.onnx");
+    // Phase 2.1: Expert Native Path - Dual-model loading (LiteRT + SentencePiece)
+    auto neural_node = std::make_shared<NeuralEmbeddingNode>(
+        base_path + "/assets/models/multilingual-e5-small.tflite", 
+        base_path + "/assets/sentencepiece.bpe.model"
+    );
     auto search_node = std::make_shared<FileSearchNode>(g_ltm.get(), neural_node.get());
     
     g_intent_engine->registerSkill(1, std::make_shared<ChatSkill>());
@@ -263,14 +267,14 @@ jboolean native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring path) {
     return JNI_FALSE;
 }
 
-jfloatArray native_generateEmbedding(JNIEnv *env, jobject thiz, jstring text) {
+jfloatArray native_generateEmbedding(JNIEnv *env, jobject thiz, jstring text, jboolean is_query) {
     std::string input = ConvertJStringToString(env, text);
     // Find NeuralEmbeddingNode (Skill ID 3)
     auto skill = g_intent_engine ? g_intent_engine->getSkill(3) : nullptr;
     auto* neural_node = dynamic_cast<Ronin::Kernel::Capability::NeuralEmbeddingNode*>(skill.get());
     
     if (neural_node) {
-        auto vec = neural_node->generateEmbedding(input);
+        auto vec = neural_node->generateEmbedding(input, is_query == JNI_TRUE);
         jfloatArray result = env->NewFloatArray(vec.size());
         env->SetFloatArrayRegion(result, 0, vec.size(), vec.data());
         return result;
@@ -348,7 +352,7 @@ static JNINativeMethod g_methods[] = {
     {"updateModelRegistryNative", "(Ljava/lang/String;)Z", (void*)native_updateModelRegistry},
     {"updateCloudProvidersNative", "(Ljava/lang/String;)Z", (void*)native_updateCloudProviders},
     {"scanSpecificPathNative", "(Ljava/lang/String;)Z", (void*)native_scanSpecificPath},
-    {"generateEmbeddingNative", "(Ljava/lang/String;)[F", (void*)native_generateEmbedding},
+    {"generateEmbeddingNative", "(Ljava/lang/String;Z)[F", (void*)native_generateEmbedding},
     {"isValidModelNative", "(Ljava/lang/String;)Z", (void*)native_isValidModel},
     {"warmMemoryPipelineNative", "()Z", (void*)native_warmMemoryPipeline},
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}

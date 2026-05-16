@@ -60,25 +60,37 @@ add_custom_command(
 )
 add_custom_target(generate_fbs DEPENDS ${FBS_OUT})
 
-# --- Requirement: ONNX Runtime ---
+# --- Requirement: SentencePiece ---
+FetchContent_Declare(
+  sentencepiece
+  GIT_REPOSITORY https://github.com/google/sentencepiece.git
+  GIT_TAG v0.1.99
+)
+# Disable SentencePiece tests and executable build to save time
+set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
+set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(sentencepiece)
+
+# --- Requirement: LiteRT (TensorFlow Lite) ---
 if(ANDROID)
+    # We will link against the library provided in the AAR (handled in gradle usually)
+    # But for CMake validation, we define it
+    add_library(tflite_lib SHARED IMPORTED)
+    set_target_properties(tflite_lib PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/android/app/build/intermediates/cmake/debug/obj/${ANDROID_ABI}/libtensorflowlite_jni.so)
+    
     FetchContent_Declare(
-      onnxruntime
-      URL https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.17.1/onnxruntime-android-1.17.1.aar
+      tensorflow_lite
+      URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
     )
-    FetchContent_MakeAvailable(onnxruntime)
-    set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/jni/${ANDROID_ABI}/libonnxruntime.so)
-    add_library(onnxruntime_lib SHARED IMPORTED)
-    set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+    # Only need headers
+    FetchContent_MakeAvailable(tensorflow_lite)
 else()
+    # Host build TFLite
     FetchContent_Declare(
-      onnxruntime
-      URL https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-linux-x64-1.17.1.tgz
+      tensorflow_lite
+      URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
     )
-    FetchContent_MakeAvailable(onnxruntime)
-    set(ORT_LIB_PATH ${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.so)
-    add_library(onnxruntime_lib SHARED IMPORTED)
-    set_target_properties(onnxruntime_lib PROPERTIES IMPORTED_LOCATION ${ORT_LIB_PATH})
+    FetchContent_MakeAvailable(tensorflow_lite)
 endif()
 
 # --- Core Ronin Logic ---
@@ -108,12 +120,17 @@ add_dependencies(ronin_core generate_fbs)
 target_include_directories(ronin_core PUBLIC 
     include 
     ${sqlite3_src_SOURCE_DIR} 
-    ${onnxruntime_SOURCE_DIR}/include
-    ${onnxruntime_SOURCE_DIR}/headers
+    ${tensorflow_lite_SOURCE_DIR}
+    ${sentencepiece_SOURCE_DIR}/src
     ${flatbuffers_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}
 )
-target_link_libraries(ronin_core PUBLIC sqlite3_lib)
+
+if(ANDROID)
+    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tflite_lib)
+else()
+    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
+endif()
 
 # --- JNI Implementation ---
 if(ANDROID)
@@ -126,7 +143,6 @@ if(ANDROID)
     target_link_libraries(ronin_kernel 
         PUBLIC 
         ronin_core 
-        onnxruntime_lib 
         ${log-lib} 
         ${android-lib}
     )
@@ -136,10 +152,8 @@ if(ANDROID)
     endif()
 else()
     # Host build (Linux x64)
-    target_link_libraries(ronin_core PUBLIC onnxruntime_lib)
-
     add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
-    target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib onnxruntime_lib)
+    target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib)
 endif()
 
 # Optional: Host-side Unit Tests

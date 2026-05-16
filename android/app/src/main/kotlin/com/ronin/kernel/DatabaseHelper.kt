@@ -50,11 +50,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         // Upgrade logic for future versions
     }
 
-    fun storeMemory(mm: String, en: String, vector: FloatArray?, importance: Float = 1.0f) {
+    fun storeMemory(mm: String, en: String = "", vector: FloatArray?, importance: Float = 1.0f) {
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COLUMN_TEXT_MM, mm)
-            put(COLUMN_TEXT_EN, en)
+            if (en.isNotEmpty()) put(COLUMN_TEXT_EN, en)
             put(COLUMN_IMPORTANCE, importance)
             put(COLUMN_CREATION_TIME, System.currentTimeMillis() / 1000)
             put(COLUMN_LAST_ACCESSED, System.currentTimeMillis() / 1000)

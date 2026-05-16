@@ -101,7 +101,6 @@ class ChatViewModel : ViewModel() {
     var isKernelReady by mutableStateOf(false)
     var isImporting by mutableStateOf(false)
     var isLowPerformanceMode by mutableStateOf(false)
-    var mlKitStatus by mutableStateOf("Ready")
 }
 
 class MainActivity : ComponentActivity() {
@@ -117,10 +116,44 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val modelPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    private val brainPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importModelFromUri(it) }
     }
 
+    private val embeddingPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { importEmbeddingModelFromUri(it) }
+    }
+
+
+    private fun importEmbeddingModelFromUri(uri: Uri) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        lifecycleScope.launch {
+            chatViewModel.isImporting = true
+            val success = withContext(Dispatchers.IO) {
+                try {
+                    val modelsDir = java.io.File(filesDir, "assets/models")
+                    if (!modelsDir.exists()) modelsDir.mkdirs()
+                    val targetFile = java.io.File(modelsDir, "multilingual-e5-small.tflite")
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        java.io.FileOutputStream(targetFile).use { output ->
+                            input.copyTo(output, bufferSize = 1024 * 1024)
+                        }
+                    }
+                    true
+                } catch (e: Exception) {
+                    Log.e("RoninBoot", "Embedding Import Failed: ${e.message}")
+                    false
+                }
+            }
+            chatViewModel.isImporting = false
+            if (success) {
+                Toast.makeText(this@MainActivity, "Semantic Memory Integrated.", Toast.LENGTH_SHORT).show()
+                // The native engine will find it on next load/warm
+            } else {
+                Toast.makeText(this@MainActivity, "Failed to import embedding model.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     private fun importModelFromUri(uri: Uri) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
@@ -213,7 +246,6 @@ class MainActivity : ComponentActivity() {
                 while(true) {
                     val loaded = nativeEngine.isLoaded()
                     chatViewModel.isLowPerformanceMode = nativeEngine.isLowPerformanceMode()
-                    chatViewModel.mlKitStatus = nativeEngine.getMLKitStatus()
                     
                     if (chatViewModel.isKernelHydrated != loaded) {
                         chatViewModel.isKernelHydrated = loaded
@@ -258,11 +290,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            val bgeModelFile = java.io.File(assetsModelsDir, "bge_small.onnx")
+            val bgeModelFile = java.io.File(assetsModelsDir, "multilingual-e5-small.tflite")
             if (!bgeModelFile.exists()) {
-                Log.i("MainActivity", "Bootstrapping BGE-Small model from assets...")
-                assets.open("models/bge_small.onnx").use { input ->
-                    java.io.FileOutputStream(bgeModelFile).use { output -> input.copyTo(output) }
+                Log.i("MainActivity", "Note: Multilingual E5 model not in assets. User import required.")
+            }
+
+            val spModelFile = java.io.File(assetsDir, "sentencepiece.bpe.model")
+            if (!spModelFile.exists()) {
+                Log.i("MainActivity", "Bootstrapping SentencePiece model from assets...")
+                try {
+                    assets.open("sentencepiece.bpe.model").use { input ->
+                        java.io.FileOutputStream(spModelFile).use { output -> input.copyTo(output) }
+                    }
+                } catch (e: Exception) {
+                    Log.w("MainActivity", "SentencePiece model not found in assets. Manual placement required.")
                 }
             }
         } catch (e: Exception) { Log.e("RoninBoot", "Asset copy failed: ${e.message}") }
@@ -554,20 +595,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
                     }
                 }
 
-                // ML Kit Translation Bridge Status
-                if (chatViewModel.mlKitStatus != "Ready") {
-                    Surface(
-                        color = Color.Cyan.copy(alpha = 0.8f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Info, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Bridge: ${chatViewModel.mlKitStatus}", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-
                 Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
                     SelectionContainer {
                         LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }
@@ -687,7 +714,9 @@ fun SettingsDialog(chatViewModel: ChatViewModel, modelPicker: androidx.activity.
                     IconButton(onClick = { onDeleteModel(path) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray) } 
                 }
             }
-            OutlinedButton(onClick = { modelPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Model") }
+            OutlinedButton(onClick = { brainPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Reasoning Brain (.litertlm/.bin)") }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { embeddingPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Semantic Memory (.tflite)") }
             Spacer(Modifier.height(16.dp)); Divider()
             Row(verticalAlignment = Alignment.CenterVertically) { 
                 Text("Cloud Reasoning Models", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f)); 

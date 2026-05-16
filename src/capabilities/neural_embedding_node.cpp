@@ -6,7 +6,10 @@
 #include <cmath>
 #include <chrono>
 #include <mutex>
-#include <onnxruntime_cxx_api.h>
+#include <tensorflow/lite/interpreter.h>
+#include <tensorflow/lite/kernels/register.h>
+#include <tensorflow/lite/model.h>
+#include <sentencepiece_processor.h>
 
 #define TAG "RoninNeuralEmbedding"
 
@@ -14,25 +17,27 @@ namespace Ronin::Kernel::Capability {
 
 struct NeuralEmbeddingNode::Impl {
     std::string model_path;
+    std::string sp_model_path;
     bool loaded = false;
     
-    // ORT Objects
-    std::unique_ptr<Ort::Env> env;
-    std::unique_ptr<Ort::Session> session;
-    Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    // LiteRT / SentencePiece Objects
+    std::unique_ptr<tflite::FlatBufferModel> model;
+    std::unique_ptr<tflite::Interpreter> interpreter;
+    sentencepiece::SentencePieceProcessor sp_processor;
 
     std::chrono::steady_clock::time_point last_used;
     std::mutex mutex;
     std::thread timer_thread;
     std::atomic<bool> stop_timer{false};
 
-    Impl(const std::string& path) : model_path(path), loaded(false) {}
+    Impl(const std::string& path, const std::string& sp_path) 
+        : model_path(path), sp_model_path(sp_path), loaded(false) {}
 };
 
 NeuralEmbeddingNode::NeuralEmbeddingNode() : m_impl(nullptr) {}
 
-NeuralEmbeddingNode::NeuralEmbeddingNode(const std::string& model_path) {
-    m_impl = std::make_unique<Impl>(model_path);
+NeuralEmbeddingNode::NeuralEmbeddingNode(const std::string& model_path, const std::string& sp_model_path) {
+    m_impl = std::make_unique<Impl>(model_path, sp_model_path);
     
     // Start Auto-Unload Timer
     m_impl->timer_thread = std::thread([this]() {
@@ -69,37 +74,53 @@ bool NeuralEmbeddingNode::load() {
         LOGW(TAG, "Resource Guard: Insufficient RAM (%.2f GB). Deferring indexing task.", freeRam);
         return false;
     }
-    if (Ronin::Kernel::Intent::g_thermal_state == Ronin::Kernel::Intent::ThermalState::SEVERE) {
-        LOGW(TAG, "Resource Guard: Thermal SEVERE. Deferring intensive task.");
-        return false;
-    }
 
     try {
-        LOGI(TAG, "Lazy Loading BGE-Small model (mmap enabled): %s", m_impl->model_path.c_str());
-        m_impl->env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "RoninORT");
+        LOGI(TAG, "Native Path: Loading Multilingual-E5-Small (LiteRT) and SentencePiece.");
         
-        Ort::SessionOptions session_options;
-        session_options.SetIntraOpNumThreads(2);
-        session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-        
-        // Phase 2.1: Enable mmap for ONNX Runtime to reduce RAM pressure
-        session_options.AddConfigEntry("session.use_mmap", "1");
+        // 1. Load SentencePiece Processor
+        auto status = m_impl->sp_processor.Load(m_impl->sp_model_path);
+        if (!status.ok()) {
+            LOGE(TAG, "Failed to load SentencePiece model: %s", status.ToString().c_str());
+            return false;
+        }
 
-        m_impl->session = std::make_unique<Ort::Session>(*m_impl->env, m_impl->model_path.c_str(), session_options);
+        // 2. Load LiteRT Model
+        m_impl->model = tflite::FlatBufferModel::BuildFromFile(m_impl->model_path.c_str());
+        if (!m_impl->model) {
+            LOGE(TAG, "Failed to build LiteRT model from %s", m_impl->model_path.c_str());
+            return false;
+        }
+
+        tflite::ops::builtin::BuiltinOpResolver resolver;
+        tflite::InterpreterBuilder(*m_impl->model, resolver)(&m_impl->interpreter);
+
+        if (!m_impl->interpreter) {
+            LOGE(TAG, "Failed to construct LiteRT interpreter.");
+            return false;
+        }
+
+        // 3. Configure Interpreter
+        m_impl->interpreter->SetNumThreads(2);
+        if (m_impl->interpreter->AllocateTensors() != kTfLiteOk) {
+            LOGE(TAG, "Failed to allocate LiteRT tensors.");
+            return false;
+        }
+
         m_impl->loaded = true;
         m_impl->last_used = std::chrono::steady_clock::now();
         return true;
     } catch (const std::exception& e) {
-        LOGE(TAG, "Failed to initialize ONNX session: %s", e.what());
+        LOGE(TAG, "Inference Engine initialization error: %s", e.what());
         return false;
     }
 }
 
 void NeuralEmbeddingNode::unload() {
     if (m_impl && m_impl->loaded) {
-        LOGI(TAG, "Unloading BGE-Small model to free RAM.");
-        m_impl->session.reset();
-        m_impl->env.reset();
+        LOGI(TAG, "Unloading E5-Small model and SentencePiece to free RAM.");
+        m_impl->interpreter.reset();
+        m_impl->model.reset();
         m_impl->loaded = false;
     }
 }
@@ -108,39 +129,46 @@ bool NeuralEmbeddingNode::isLoaded() const {
     return m_impl && m_impl->loaded;
 }
 
-std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& input) {
-    // Phase 2.1: BGE-Small uses 384 dimensions
-    const int kDim = 384;
+std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& input, bool is_query) {
+    const int kDim = 384; // Multilingual-E5-Small dimension
     if (!load()) return std::vector<float>(kDim, 0.0f);
 
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     m_impl->last_used = std::chrono::steady_clock::now();
 
+    // Rule: Prefix Padding
+    std::string processed_input = (is_query ? "query: " : "passage: ") + input;
+
     try {
-        // Simplified Tokenization: ASCII mapping (Production requires WordPiece/BPE)
-        std::vector<int64_t> input_ids(128, 0);
-        for (size_t i = 0; i < input.length() && i < 128; ++i) {
-            input_ids[i] = static_cast<int64_t>(static_cast<unsigned char>(input[i]));
+        // 1. Tokenize using SentencePiece
+        std::vector<int> ids;
+        m_impl->sp_processor.Encode(processed_input, &ids);
+
+        // Cap or pad to model input size (e.g., 128)
+        const int kMaxSeq = 128;
+        std::vector<int32_t> input_ids(kMaxSeq, 0); 
+        for (size_t i = 0; i < ids.size() && i < kMaxSeq; ++i) {
+            input_ids[i] = static_cast<int32_t>(ids[i]);
         }
 
-        std::vector<int64_t> input_shape = {1, 128};
-        Ort::Value input_tensor = Ort::Value::CreateTensor<int64_t>(
-            m_impl->memory_info, input_ids.data(), input_ids.size(), input_shape.data(), input_shape.size());
+        // 2. Feed to LiteRT
+        int input_tensor_idx = m_impl->interpreter->inputs()[0];
+        int32_t* input_data = m_impl->interpreter->typed_tensor<int32_t>(input_tensor_idx);
+        std::copy(input_ids.begin(), input_ids.end(), input_data);
 
-        const char* input_names[] = {"input_ids"};
-        const char* output_names[] = {"last_hidden_state"};
-
-        auto output_tensors = m_impl->session->Run(Ort::RunOptions{nullptr}, input_names, &input_tensor, 1, output_names, 1);
-        
-        float* float_ptr = output_tensors.front().GetTensorMutableData<float>();
-        
-        // Mean pooling for 384 dimensions
-        std::vector<float> embedding(kDim, 0.0f);
-        for (int i = 0; i < kDim; ++i) {
-            embedding[i] = float_ptr[i];
+        if (m_impl->interpreter->Invoke() != kTfLiteOk) {
+            LOGE(TAG, "Failed to invoke LiteRT interpreter.");
+            return std::vector<float>(kDim, 0.0f);
         }
 
-        // Normalize
+        // 3. Extract Output (assuming first output is the embedding)
+        int output_tensor_idx = m_impl->interpreter->outputs()[0];
+        float* output_data = m_impl->interpreter->typed_tensor<float>(output_tensor_idx);
+
+        std::vector<float> embedding(kDim);
+        std::copy(output_data, output_data + kDim, embedding.begin());
+
+        // L2 Normalization
         float mag = 0.0f;
         for (float f : embedding) mag += f * f;
         mag = std::sqrt(mag);
@@ -150,14 +178,15 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
 
         return embedding;
     } catch (const std::exception& e) {
-        LOGE(TAG, "Inference error: %s", e.what());
+        LOGE(TAG, "Native Inference Error: %s", e.what());
         return std::vector<float>(kDim, 0.0f);
     }
 }
 
 std::string NeuralEmbeddingNode::execute(const std::string& param) {
-    auto vec = generateEmbedding(param);
-    return "BGE-Small: Semantic vector (384-dim) generated and normalized.";
+    // Default to query mode for direct execution
+    auto vec = generateEmbedding(param, true);
+    return "E5-Small: Semantic vector (384-dim) generated natively.";
 }
 
 } // namespace Ronin::Kernel::Capability

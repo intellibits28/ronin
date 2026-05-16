@@ -10,7 +10,7 @@ namespace Ronin::Kernel::Capability {
 class NeuralEmbeddingNode : public BaseSkill {
 public:
     NeuralEmbeddingNode();
-    NeuralEmbeddingNode(const std::string& model_path);
+    NeuralEmbeddingNode(const std::string& model_path, const std::string& sp_model_path);
     ~NeuralEmbeddingNode();
 
     // BaseSkill Implementation
@@ -26,12 +26,13 @@ public:
     void unload() override;
 
     /**
-     * Runs inference on the input text to produce a 768-dim semantic embedding (BGE-Base).
+     * Runs inference to produce a 384-dim semantic embedding (Multilingual-E5-Small).
+     * Prefix padding: "query: " for search, "passage: " for storage.
      */
-    std::vector<float> generateEmbedding(const std::string& input);
+    std::vector<float> generateEmbedding(const std::string& input, bool is_query = false);
 
     /**
-     * Returns true if the ONNX session was successfully initialized.
+     * Returns true if the LiteRT interpreter was successfully initialized.
      */
     bool isLoaded() const;
 
