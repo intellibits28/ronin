@@ -21,7 +21,11 @@ target_include_directories(sqlite3_lib PUBLIC ${sqlite3_src_SOURCE_DIR})
 target_compile_definitions(sqlite3_lib PRIVATE SQLITE_ENABLE_FTS5=1)
 
 # --- Requirement: FlatBuffers ---
-set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "" FORCE)
+if(ANDROID)
+    set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "" FORCE)
+else()
+    set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "" FORCE)
+endif()
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
 
@@ -36,6 +40,7 @@ FetchContent_MakeAvailable(flatbuffers)
 set(FBS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/checkpoint_schema.fbs)
 set(FBS_OUT ${CMAKE_CURRENT_BINARY_DIR}/checkpoint_schema_generated.h)
 
+# Use target flatc if available (host build) or find it in PATH (cross-build)
 if(TARGET flatc)
     set(FLATC_EXE flatc)
 else()

@@ -10,16 +10,17 @@
 ---
 
 ## 📖 Description
-
 Ronin Kernel solves the "Latency vs. Privacy" trade-off by implementing a **Local Inference-as-a-Service** architecture. By separating the UI from the reasoning spine into distinct processes, it ensures zero UI-lag during heavy LLM (Gemma 4) inference using the **LiteRT-LM v0.11.0** engine.
 
 ### Key Features
 *   **Dual-Process Isolation:** UI/Indexing and Inference Engine run in separate processes linked via Binder IPC.
-*   **Cognitive Memory v2.1:** Semantic long-term storage using **ML Kit Translate** (MM->EN) and **BGE-Small** (384-dim) embeddings.
+*   **Expert Native Memory (v2.1):** Zero-copy, high-precision semantic storage using **SentencePiece** and **LiteRT C++** natively for Burmese.
 *   **Command Intelligence:** Real-time Suggester Popup and Auto-completion for `/` terminal commands.
 *   **LiteRT-LM Hydration:** Memory-mapped I/O for near-instant model loading and reduced RAM footprint (No FileStreams).
+*   **Integrity Guard:** Native 4-byte header verification (TFL3) and adaptive RAM thresholds (1.0GB - 1.5GB).
 *   **Jinja Template Integration:** Strictly follows official Gemma 4 templates for accurate multi-turn reasoning.
 *   **System Guards:** Active Thermal Throttling (**Safe Mode at 42°C**) and LMK-aware memory pruning.
+
 
 ---
 

@@ -44,6 +44,16 @@ jobs:
         with:
           ndk-version: r26b
 
+      - name: Build Host Flatc (v23)
+        run: |
+          git clone --branch v23.5.26 --depth 1 https://github.com/google/flatbuffers.git
+          cd flatbuffers
+          mkdir build && cd build
+          cmake -G Ninja -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_BUILD_FLATC=ON ..
+          ninja flatc
+          sudo cp flatc /usr/local/bin/
+          echo "Host flatc v23.5.26 installed."
+
       - name: Deploy Assets
         run: |
           mkdir -p android/app/src/main/assets

@@ -2,31 +2,32 @@
 
 ## 1. Project Overview
 **Name:** Ronin Kernel (Phase 4.5 Evolution)
-**Current Version:** v4.5.0-MEMORY-EVOLUTION
-**Active Branch:** feature/hydration-fix (Integrating Cognitive Memory v2.1)
+**Current Version:** v4.6.0-NATIVE-STABLE
+**Active Branch:** feature/hydration-fix (Expert Native Path Finalized)
 **Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G+, utilizing Dual-Process isolation and LiteRT-LM v0.11.0 for optimized MoE and Gemma 4 inference.
 
 ---
 
-## 2. Stable Features (v4.0 Finalized)
+## 2. Stable Features (v4.5 Finalized)
 *   **1B Inference (Gemma 3):** ✅ SUCCESS - Real-time streaming active via LiteRT-LM.
+*   **E2B Inference (Gemma 4):** ✅ SUCCESS - Operational via CPU Fallback (Low-Perf Mode) on SD778G.
+*   **Expert Native Memory (v2.1):** ✅ SUCCESS - SentencePiece + LiteRT C++ integration for high-fidelity MM->Vector indexing.
 *   **LiteRT-LM 0.11.0 Migration:** ✅ SUCCESS - Native Gemma 4 support and MoE compatibility.
 *   **File Search (v5.15):** High-precision semantic search with background indexing and interactive pagination (/more).
 *   **Hybrid Bridge:** Thread-safe JNI with ScopedJniEnv and Named Threads.
-*   **Optimized Staging:** 1MB High-Speed Buffer for model internal storage migration.
 
 ---
 
 ## 3. Current Status: Phase 4.5 (Dual-Process Isolation)
 - **Status:** Transitioning from Monolithic Bridge to **Service-Oriented Architecture**.
 - **In-Progress:**
-    - [x] **Memory Model v2.1:** Implemented MM->EN translation bridge and BGE-Small embeddings.
-    - [ ] **E2B Inference (Gemma 4):** ❌ BLOCKED - Facing engine limitations with GPU delegate compilation on SD778G.
+    - [x] **Memory Model v2.1:** Implemented native Multilingual E5-Small support.
     - [x] **Jinja Templating:** PromptFactory aligned with official specification.
     - [ ] **Process Split:** Isolating Inference Engine into `:inference_core` process.
 - **Diagnostic Audit:**
-    - [x] **RAM Guard:** Direct `/proc/meminfo` sampling implemented for cross-process accuracy.
+    - [x] **RAM Guard:** Adaptive threshold (1.0GB - 1.5GB) based on model size.
     - [x] **Hybrid Precision:** Implemented Float16 for Semantic Memory and INT8 for Episodic Bulk (Rule v2.1).
+    - [x] **Integrity Guard:** Native 4-byte header check (TFL3) for model safety.
 
 ---
 
