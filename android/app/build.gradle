@@ -54,6 +54,7 @@ android {
     buildFeatures {
         compose true
         aidl true
+        prefab true
     }
 
     packagingOptions {

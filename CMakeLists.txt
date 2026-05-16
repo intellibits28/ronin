@@ -74,8 +74,22 @@ FetchContent_Declare(
   tensorflow_lite
   URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
 )
-# Only need headers for compilation; the runtime library is provided by the AAR in Android
-FetchContent_MakeAvailable(tensorflow_lite)
+# Headers only for Android/Host tests
+FetchContent_GetProperties(tensorflow_lite)
+if(NOT tensorflow_lite_POPULATED)
+    FetchContent_Populate(tensorflow_lite)
+endif()
+
+# On Android, we link against the library provided in the AAR
+if(ANDROID)
+    # Search for common LiteRT library names in Android
+    find_library(TFLITE_JNI_LIB NAMES litertlm_jni tensorflowlite_jni)
+    if(TFLITE_JNI_LIB)
+        message(STATUS "Found LiteRT JNI library: ${TFLITE_JNI_LIB}")
+    else()
+        message(WARNING "LiteRT JNI library not found in search path. Linker errors may occur.")
+    endif()
+endif()
 
 # --- Core Ronin Logic ---
 set(RONIN_CORE_SOURCES
@@ -110,7 +124,11 @@ target_include_directories(ronin_core PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
+if(ANDROID AND TFLITE_JNI_LIB)
+    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static ${TFLITE_JNI_LIB})
+else()
+    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
+endif()
 
 # --- JNI Implementation ---
 if(ANDROID)
