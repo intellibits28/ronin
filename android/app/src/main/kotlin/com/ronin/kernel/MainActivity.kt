@@ -124,7 +124,6 @@ class MainActivity : ComponentActivity() {
         uri?.let { importEmbeddingModelFromUri(it) }
     }
 
-
     private fun importEmbeddingModelFromUri(uri: Uri) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
@@ -148,12 +147,12 @@ class MainActivity : ComponentActivity() {
             chatViewModel.isImporting = false
             if (success) {
                 Toast.makeText(this@MainActivity, "Semantic Memory Integrated.", Toast.LENGTH_SHORT).show()
-                // The native engine will find it on next load/warm
             } else {
                 Toast.makeText(this@MainActivity, "Failed to import embedding model.", Toast.LENGTH_SHORT).show()
             }
         }
     }
+
     private fun importModelFromUri(uri: Uri) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
@@ -359,22 +358,53 @@ class MainActivity : ComponentActivity() {
         saveCloudProvidersToDisk()
     }
 
-    fun updateCloudProvider(name: String, endpoint: String?, modelId: String?) {
-        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        val index = chatViewModel.cloudProviders.indexOfFirst { it.name == name }
-        if (index != -1) {
-            val old = chatViewModel.cloudProviders[index]
-            chatViewModel.cloudProviders[index] = old.copy(endpoint = endpoint ?: old.endpoint, modelId = modelId ?: old.modelId)
-            saveCloudProvidersToDisk()
-        }
-    }
-
-    fun deleteModel(path: String) {
+    fun deleteLocalModel(path: String) {
         val file = java.io.File(path)
         if (file.exists() && file.delete()) {
             Toast.makeText(this, "Model deleted.", Toast.LENGTH_SHORT).show()
             scanLocalModels()
         }
+    }
+
+    fun savePrimaryCloudProvider(name: String) {
+        sharedPreferences.edit().putString("primary_cloud_provider", name).apply()
+        nativeEngine.setPrimaryCloudProviderSafe(name)
+        Log.i("RoninPersistence", "Saved primary_cloud_provider: $name")
+    }
+
+    fun saveApiKey(provider: String, key: String) {
+        sharedPreferences.edit().putString(provider, key).apply()
+        Log.i("RoninPersistence", "Saved API Key for $provider")
+    }
+
+    fun hydrateModel(path: String) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        lifecycleScope.launch {
+            if (nativeEngine.loadModel(path)) {
+                chatViewModel.isKernelHydrated = true
+                sharedPreferences.edit().putString("local_model_path", path).apply()
+                chatViewModel.localModelPath = path
+                Log.i("RoninPersistence", "Saved local_model_path: $path")
+            }
+        }
+    }
+
+    fun saveOfflineMode(offline: Boolean) {
+        sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
+        nativeEngine.setOfflineModeSafe(offline)
+        Log.i("RoninPersistence", "Saved offline_mode: $offline")
+    }
+
+    private fun checkAndRequestPermissions() {
+        val permissions = mutableListOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            android.Manifest.permission.CAMERA
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        requestPermissionLauncher.launch(permissions.toTypedArray())
     }
 
     private fun setupHardwareCallbacks() {
@@ -430,74 +460,6 @@ class MainActivity : ComponentActivity() {
         nativeEngine.onKernelMessage = { msg -> ViewModelProvider(this)[ChatViewModel::class.java].reasoningLogs.add(0, msg) }
     }
 
-    fun hydrateModel(path: String) {
-        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        lifecycleScope.launch {
-            if (nativeEngine.loadModel(path)) {
-                chatViewModel.isKernelHydrated = true
-                sharedPreferences.edit().putString("local_model_path", path).apply()
-                chatViewModel.localModelPath = path
-                Log.i("RoninPersistence", "Saved local_model_path: $path")
-            }
-        }
-    }
-
-    fun saveOfflineMode(offline: Boolean) {
-        sharedPreferences.edit().putBoolean("offline_mode", offline).apply()
-        nativeEngine.setOfflineModeSafe(offline)
-        Log.i("RoninPersistence", "Saved offline_mode: $offline")
-    }
-
-    fun getApiKey(provider: String): String = sharedPreferences.getString(provider, "") ?: ""
-    fun saveApiKey(provider: String, key: String) {
-        sharedPreferences.edit().putString(provider, key).apply()
-        Log.i("RoninPersistence", "Saved API key for $provider")
-    }
-    
-    fun savePrimaryCloudProvider(provider: String) {
-        sharedPreferences.edit().putString("primary_cloud_provider", provider).apply()
-        nativeEngine.setPrimaryCloudProviderSafe(provider)
-        Log.i("RoninPersistence", "Saved primary_cloud_provider: $provider")
-    }
-
-    private fun checkAndRequestPermissions() {
-        val requiredPermissions = mutableListOf(
-            android.Manifest.permission.ACCESS_FINE_LOCATION,
-            android.Manifest.permission.ACCESS_COARSE_LOCATION,
-            android.Manifest.permission.CAMERA
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            requiredPermissions.add(android.Manifest.permission.BLUETOOTH_SCAN)
-            requiredPermissions.add(android.Manifest.permission.BLUETOOTH_CONNECT)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requiredPermissions.add(android.Manifest.permission.NEARBY_WIFI_DEVICES)
-            requiredPermissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-
-        val missingPermissions = requiredPermissions.filter {
-            checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
-
-        if (missingPermissions.isNotEmpty()) {
-            requestPermissionLauncher.launch(missingPermissions.toTypedArray())
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                try {
-                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                        data = Uri.parse("package:$packageName")
-                    }
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    startActivity(intent)
-                }
-            }
-        }
-    }
-
     override fun onResume() {
         super.onResume()
         scanLocalModels()
@@ -537,7 +499,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 title = { 
                     Column {
                         Text("Ronin Kernel", fontWeight = FontWeight.Bold)
-                        Text(chatViewModel.kernelStatus, fontSize = 10.sp, color = if (chatViewModel.isKernelReady) Color.Green else Color.Yellow)
+                        Text(chatViewModel.kernelStatus, fontSize = 10.sp, color = if (chatViewModel.isKernelHydrated) Color.Green else Color.Yellow)
                     }
                 }, 
                 actions = { 
@@ -552,10 +514,9 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             LaunchedEffect(Unit) {
                 engine.inferenceFlow.collect { packet ->
                     if (packet.isFinal) {
-
                         chatViewModel.messages.add("Ronin: ${packet.fragment}")
                     } else {
-                        // Option: Handle partial streaming updates if ViewModel supports it
+                        // Option: Handle partial streaming updates
                     }
                 }
             }
@@ -639,7 +600,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                             onValueChange = { 
                                 currentInput = it
                                 chatViewModel.showCommandSuggestions = it.startsWith("/")
-                                // Mapped-Streaming: Predictive Warming
                                 if (it.isNotEmpty()) engine.warmMemoryPipeline()
                             }, 
                             modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), 
@@ -664,7 +624,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             }
         }
     }
-    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, embeddingPicker, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
+    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, embeddingPicker, onSaveOfflineMode, { (context as MainActivity).deleteLocalModel(it) }, { (context as MainActivity).hydrateModel(it) })
 }
 
 @Composable
@@ -696,9 +656,6 @@ fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: androidx.activity.
             chatViewModel.discoveredModels.forEach { path ->
                 val file = java.io.File(path)
                 val filename = file.name
-                
-                // Requirement 2: Fetch display name from local knowledge if possible
-                // (Simplified mapping for now, production should parse capabilities.json into a Map)
                 val displayName = when {
                     filename.contains("gemma-4") -> "Gemma 4 (Sentient)"
                     filename.contains("gemma3-1b") -> "Gemma 3 (Lightweight)"
@@ -706,10 +663,9 @@ fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: androidx.activity.
                     filename.contains("q8") -> "$filename (Quantized)"
                     else -> filename
                 }
-                
                 val isActive = path == chatViewModel.localModelPath && chatViewModel.isKernelHydrated
                 Row(verticalAlignment = Alignment.CenterVertically) { 
-                    RadioButton(selected = path == chatViewModel.localModelPath, onClick = { onSelectModel(path) }, colors = androidx.compose.material.RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6))); 
+                    RadioButton(selected = path == chatViewModel.localModelPath, onClick = { onSelectModel(path) }, colors = RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6))); 
                     Text(displayName, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White); 
                     IconButton(onClick = { onDeleteModel(path) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray) } 
                 }
@@ -725,7 +681,7 @@ fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: androidx.activity.
             chatViewModel.cloudProviders.forEach { profile ->
                 val isActive = profile.name == chatViewModel.primaryCloudProvider && !chatViewModel.offlineMode
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = profile.name == chatViewModel.primaryCloudProvider, onClick = { (context as MainActivity).savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }, colors = androidx.compose.material.RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)))
+                    RadioButton(selected = profile.name == chatViewModel.primaryCloudProvider, onClick = { (context as MainActivity).savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }, colors = RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)))
                     Column(modifier = Modifier.weight(1f)) { 
                         Text(profile.name, color = if (isActive) Color.Green else Color.White); 
                         Text(profile.modelId, fontSize = 10.sp, color = Color.Gray) 
