@@ -24,7 +24,7 @@ set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
   flatbuffers
   GIT_REPOSITORY https://github.com/google/flatbuffers.git
-  GIT_TAG v2.0.8
+  GIT_TAG v23.5.26
 )
 FetchContent_MakeAvailable(flatbuffers)
 
