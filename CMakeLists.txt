@@ -57,32 +57,20 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/google/sentencepiece.git
   GIT_TAG v0.1.99
 )
-# Disable SentencePiece tests and executable build to save time
+# Disable SentencePiece tests and executable build to save time/resources
 set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
 set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
+set(SPM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SPM_ENABLE_TUNIT OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(sentencepiece)
 
 # --- Requirement: LiteRT (TensorFlow Lite) ---
-if(ANDROID)
-    # We will link against the library provided in the AAR (handled in gradle usually)
-    # But for CMake validation, we define it
-    add_library(tflite_lib SHARED IMPORTED)
-    set_target_properties(tflite_lib PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/android/app/build/intermediates/cmake/debug/obj/${ANDROID_ABI}/libtensorflowlite_jni.so)
-    
-    FetchContent_Declare(
-      tensorflow_lite
-      URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
-    )
-    # Only need headers
-    FetchContent_MakeAvailable(tensorflow_lite)
-else()
-    # Host build TFLite
-    FetchContent_Declare(
-      tensorflow_lite
-      URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
-    )
-    FetchContent_MakeAvailable(tensorflow_lite)
-endif()
+FetchContent_Declare(
+  tensorflow_lite
+  URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
+)
+# Only need headers for compilation; the runtime library is provided by the AAR in Android
+FetchContent_MakeAvailable(tensorflow_lite)
 
 # --- Core Ronin Logic ---
 set(RONIN_CORE_SOURCES
@@ -117,11 +105,7 @@ target_include_directories(ronin_core PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-if(ANDROID)
-    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tflite_lib)
-else()
-    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
-endif()
+target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
 
 # --- JNI Implementation ---
 if(ANDROID)
