@@ -260,7 +260,7 @@ class MainActivity : ComponentActivity() {
                     delay(3000)
                 }
             }
-            RoninChatUI(nativeEngine, chatViewModel, modelPickerLauncher, { saveOfflineMode(it) })
+            RoninChatUI(nativeEngine, chatViewModel, brainPicker, embeddingPicker, { saveOfflineMode(it) })
         }
     }
 
@@ -505,7 +505,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
+fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, embeddingPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
     val context = LocalContext.current; val scope = rememberCoroutineScope()
     var currentInput by remember { mutableStateOf("") }
 
@@ -664,7 +664,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, modelPicker:
             }
         }
     }
-    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, modelPicker, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
+    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, embeddingPicker, onSaveOfflineMode, { (context as MainActivity).deleteModel(it) }, { (context as MainActivity).hydrateModel(it) })
 }
 
 @Composable
@@ -688,7 +688,7 @@ fun ChatBubble(m: String) {
 }
 
 @Composable
-fun SettingsDialog(chatViewModel: ChatViewModel, modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit, onDeleteModel: (String) -> Unit, onSelectModel: (String) -> Unit) {
+fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, embeddingPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit, onDeleteModel: (String) -> Unit, onSelectModel: (String) -> Unit) {
     val context = LocalContext.current
     AlertDialog(onDismissRequest = { chatViewModel.showSettings = false }, title = { Text("Ronin Configuration", fontWeight = FontWeight.Bold) }, text = {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
