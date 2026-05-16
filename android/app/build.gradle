@@ -93,7 +93,8 @@ dependencies {
     implementation 'com.google.android.gms:play-services-location:21.1.0'
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
-    // AI Bridges (ML Kit Translate)
+    // AI Bridges (Standard TFLite for Native C++ Retrieval)
+    implementation 'org.tensorflow:tensorflow-lite:2.16.1'
     implementation 'com.google.mlkit:translate:17.0.1'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3'
 

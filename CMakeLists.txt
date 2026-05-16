@@ -70,24 +70,18 @@ set(SPM_ENABLE_TUNIT OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(sentencepiece)
 
 # --- Requirement: LiteRT (TensorFlow Lite) ---
-FetchContent_Declare(
-  tensorflow_lite
-  URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
-)
-# Headers only for Android/Host tests
-FetchContent_GetProperties(tensorflow_lite)
-if(NOT tensorflow_lite_POPULATED)
-    FetchContent_Populate(tensorflow_lite)
-endif()
-
-# On Android, we link against the library provided in the AAR
 if(ANDROID)
-    # Search for common LiteRT library names in Android
-    find_library(TFLITE_JNI_LIB NAMES litertlm_jni tensorflowlite_jni)
-    if(TFLITE_JNI_LIB)
-        message(STATUS "Found LiteRT JNI library: ${TFLITE_JNI_LIB}")
-    else()
-        message(WARNING "LiteRT JNI library not found in search path. Linker errors may occur.")
+    # Prefab support for standard TFLite
+    find_package(tensorflowlite REQUIRED CONFIG)
+else()
+    # Host build still needs headers
+    FetchContent_Declare(
+      tensorflow_lite
+      URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
+    )
+    FetchContent_GetProperties(tensorflow_lite)
+    if(NOT tensorflow_lite_POPULATED)
+        FetchContent_Populate(tensorflow_lite)
     endif()
 endif()
 
@@ -115,18 +109,26 @@ set(RONIN_CORE_SOURCES
 
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
 add_dependencies(ronin_core generate_fbs)
-target_include_directories(ronin_core PUBLIC 
-    include 
-    ${flatbuffers_SOURCE_DIR}/include
-    ${sqlite3_src_SOURCE_DIR} 
-    ${tensorflow_lite_SOURCE_DIR}
-    ${sentencepiece_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_BINARY_DIR}
-)
 
-if(ANDROID AND TFLITE_JNI_LIB)
-    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static ${TFLITE_JNI_LIB})
+if(ANDROID)
+    target_include_directories(ronin_core PUBLIC 
+        include 
+        ${sqlite3_src_SOURCE_DIR} 
+        ${sentencepiece_SOURCE_DIR}/src
+        ${flatbuffers_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    # tensorflow::tensorflowlite provides its own headers
+    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
 else()
+    target_include_directories(ronin_core PUBLIC 
+        include 
+        ${sqlite3_src_SOURCE_DIR} 
+        ${tensorflow_lite_SOURCE_DIR}
+        ${sentencepiece_SOURCE_DIR}/src
+        ${flatbuffers_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
     target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
 endif()
 
