@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(ronin_kernel)
 
+if(POLICY CMP0135)
+  cmake_policy(SET CMP0135 NEW)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -9,8 +13,7 @@ include(FetchContent)
 # --- Requirement: SQLite ---
 FetchContent_Declare(
   sqlite3_src
-  URL https://www.sqlite.org/2023/sqlite-amalgamation-3410200.zip
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  URL "https://www.sqlite.org/2023/sqlite-amalgamation-3410200.zip"
 )
 FetchContent_MakeAvailable(sqlite3_src)
 add_library(sqlite3_lib STATIC ${sqlite3_src_SOURCE_DIR}/sqlite3.c)
@@ -26,7 +29,6 @@ FetchContent_Declare(
   flatbuffers
   GIT_REPOSITORY https://github.com/google/flatbuffers.git
   GIT_TAG v23.5.26
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(flatbuffers)
 
@@ -54,7 +56,6 @@ FetchContent_Declare(
   sentencepiece
   GIT_REPOSITORY https://github.com/google/sentencepiece.git
   GIT_TAG v0.1.99
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 # Disable SentencePiece tests and executable build to save time
 set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
@@ -71,7 +72,6 @@ if(ANDROID)
     FetchContent_Declare(
       tensorflow_lite
       URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     # Only need headers
     FetchContent_MakeAvailable(tensorflow_lite)
@@ -80,7 +80,6 @@ else()
     FetchContent_Declare(
       tensorflow_lite
       URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(tensorflow_lite)
 endif()
