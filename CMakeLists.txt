@@ -10,6 +10,7 @@ include(FetchContent)
 FetchContent_Declare(
   sqlite3_src
   URL https://www.sqlite.org/2023/sqlite-amalgamation-3410200.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(sqlite3_src)
 add_library(sqlite3_lib STATIC ${sqlite3_src_SOURCE_DIR}/sqlite3.c)
@@ -17,7 +18,7 @@ target_include_directories(sqlite3_lib PUBLIC ${sqlite3_src_SOURCE_DIR})
 target_compile_definitions(sqlite3_lib PRIVATE SQLITE_ENABLE_FTS5=1)
 
 # --- Requirement: FlatBuffers ---
-set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "" FORCE)
+set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "" FORCE)
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
 
@@ -25,6 +26,7 @@ FetchContent_Declare(
   flatbuffers
   GIT_REPOSITORY https://github.com/google/flatbuffers.git
   GIT_TAG v23.5.26
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(flatbuffers)
 
@@ -32,24 +34,10 @@ FetchContent_MakeAvailable(flatbuffers)
 set(FBS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/checkpoint_schema.fbs)
 set(FBS_OUT ${CMAKE_CURRENT_BINARY_DIR}/checkpoint_schema_generated.h)
 
-# Logic to find the correct flatc (Host vs Target)
-if(ANDROID)
-    # On Android cross-build, we MUST use a host flatc
-    find_program(FLATC_EXE flatc)
-    if(NOT FLATC_EXE)
-        message(FATAL_ERROR "flatc not found in PATH. Required for Android cross-build.")
-    endif()
+if(TARGET flatc)
+    set(FLATC_EXE flatc)
 else()
-    # On host build, we can use the target build by FetchContent if available
-    if(TARGET flatc)
-        set(FLATC_EXE flatc)
-    else()
-        find_program(FLATC_EXE flatc)
-    endif()
-endif()
-
-if(NOT FLATC_EXE)
-    set(FLATC_EXE flatbuffers::flatc)
+    find_program(FLATC_EXE flatc REQUIRED)
 endif()
 
 add_custom_command(
@@ -60,11 +48,13 @@ add_custom_command(
 )
 add_custom_target(generate_fbs DEPENDS ${FBS_OUT})
 
+
 # --- Requirement: SentencePiece ---
 FetchContent_Declare(
   sentencepiece
   GIT_REPOSITORY https://github.com/google/sentencepiece.git
   GIT_TAG v0.1.99
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 # Disable SentencePiece tests and executable build to save time
 set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
@@ -81,6 +71,7 @@ if(ANDROID)
     FetchContent_Declare(
       tensorflow_lite
       URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
+      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     # Only need headers
     FetchContent_MakeAvailable(tensorflow_lite)
@@ -89,6 +80,7 @@ else()
     FetchContent_Declare(
       tensorflow_lite
       URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
+      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(tensorflow_lite)
 endif()
@@ -119,10 +111,10 @@ add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
 add_dependencies(ronin_core generate_fbs)
 target_include_directories(ronin_core PUBLIC 
     include 
+    ${flatbuffers_SOURCE_DIR}/include
     ${sqlite3_src_SOURCE_DIR} 
     ${tensorflow_lite_SOURCE_DIR}
     ${sentencepiece_SOURCE_DIR}/src
-    ${flatbuffers_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 

@@ -12,11 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y flatbuffers-compiler valgrind sqlite3 libsqlite3-dev
-      - name: Generate FlatBuffers Headers
-        run: |
-          mkdir -p generated
-          flatc --cpp -o generated/ checkpoint_schema.fbs
+        run: sudo apt-get update && sudo apt-get install -y valgrind sqlite3 libsqlite3-dev
       - name: Build Host Tests
         run: |
           mkdir build_host && cd build_host
@@ -47,14 +43,6 @@ jobs:
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26b
-
-      - name: Install FlatBuffers Compiler
-        run: sudo apt-get update && sudo apt-get install -y flatbuffers-compiler
-
-      - name: Generate FlatBuffers Headers
-        run: |
-          mkdir -p generated
-          flatc --cpp -o generated/ checkpoint_schema.fbs
 
       - name: Deploy Assets
         run: |
