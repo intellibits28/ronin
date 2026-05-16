@@ -60,7 +60,9 @@ android {
     packagingOptions {
         jniLibs {
             pickFirsts += [
-                'lib/arm64-v8a/libonnxruntime.so',
+                'lib/arm64-v8a/liblitert.so',
+                'lib/arm64-v8a/liblitert_jni.so',
+                'lib/arm64-v8a/libtensorflowlite_jni.so',
                 'lib/arm64-v8a/libc++_shared.so'
             ]
         }
@@ -93,8 +95,8 @@ dependencies {
     implementation 'com.google.android.gms:play-services-location:21.1.0'
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
-    // AI Bridges (Standard TFLite for Native C++ Retrieval)
-    implementation 'org.tensorflow:tensorflow-lite:2.16.1'
+    // AI Bridges (LiteRT for Native C++ Retrieval)
+    implementation 'com.google.ai.edge.litert:litert:1.0.1'
     implementation 'com.google.mlkit:translate:17.0.1'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3'
 

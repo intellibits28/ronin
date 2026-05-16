@@ -81,18 +81,22 @@ if(NOT tensorflow_lite_POPULATED)
 endif()
 
 if(ANDROID)
-    message(STATUS "Android build detected. Searching for TFLite Prefab...")
-    # Prefab support for standard TFLite often uses 'tensorflow-lite'
-    find_package(tensorflow-lite CONFIG)
-    if(NOT tensorflow-lite_FOUND)
-        message(WARNING "tensorflow-lite prefab not found. Attempting 'tensorflowlite'...")
+    message(STATUS "Android build detected. Searching for LiteRT/TFLite Prefab...")
+    # New LiteRT package name
+    find_package(litert CONFIG)
+    if(NOT litert_FOUND)
+        # Prefab support for standard TFLite often uses 'tensorflow-lite'
+        find_package(tensorflow-lite CONFIG)
+    endif()
+    if(NOT (litert_FOUND OR tensorflow-lite_FOUND))
+        message(WARNING "LiteRT/TFLite Prefab not found. Attempting 'tensorflowlite'...")
         find_package(tensorflowlite CONFIG)
     endif()
     
-    if(NOT (tensorflow-lite_FOUND OR tensorflowlite_FOUND))
-        message(WARNING "TFLite Prefab not found. Using source headers as fallback.")
+    if(NOT (litert_FOUND OR tensorflow-lite_FOUND OR tensorflowlite_FOUND))
+        message(WARNING "No Prefab found. Using source headers and manual linkage as fallback.")
     else()
-        message(STATUS "TFLite Prefab found.")
+        message(STATUS "LiteRT/TFLite Prefab found.")
     endif()
 endif()
 
@@ -130,16 +134,21 @@ if(ANDROID)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     
-    if(TARGET tensorflow-lite::tensorflow-lite)
+    if(TARGET litert::litert)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static litert::litert)
+    elseif(TARGET litert::litert_cc)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static litert::litert_cc)
+    elseif(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
     elseif(TARGET tensorflow::tensorflowlite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
     else()
-        # Fallback: Use source headers and assume runtime will provide symbols
-        # (Risky, but better than configuration failure)
+        # Fallback: Use source headers and attempt manual linkage
         target_include_directories(ronin_core PUBLIC ${tensorflow_lite_SOURCE_DIR})
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
-        message(WARNING "Linking without TFLite prefab. Undefined symbols may occur.")
+        # Attempt to link against common library names provided by the AARs
+        # liblitert.so is the main library for modern LiteRT
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static litert tensorflowlite_jni)
+        message(WARNING "Linking without Prefab. Attempting manual linkage against 'litert' and 'tensorflowlite_jni'.")
     endif()
 else()
     target_include_directories(ronin_core PUBLIC 
