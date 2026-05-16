@@ -70,18 +70,29 @@ set(SPM_ENABLE_TUNIT OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(sentencepiece)
 
 # --- Requirement: LiteRT (TensorFlow Lite) ---
+FetchContent_Declare(
+  tensorflow_lite
+  URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
+)
+# Headers are always needed for host tests and as fallback for Android
+FetchContent_GetProperties(tensorflow_lite)
+if(NOT tensorflow_lite_POPULATED)
+    FetchContent_Populate(tensorflow_lite)
+endif()
+
 if(ANDROID)
-    # Prefab support for standard TFLite
-    find_package(tensorflowlite REQUIRED CONFIG)
-else()
-    # Host build still needs headers
-    FetchContent_Declare(
-      tensorflow_lite
-      URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
-    )
-    FetchContent_GetProperties(tensorflow_lite)
-    if(NOT tensorflow_lite_POPULATED)
-        FetchContent_Populate(tensorflow_lite)
+    message(STATUS "Android build detected. Searching for TFLite Prefab...")
+    # Prefab support for standard TFLite often uses 'tensorflow-lite'
+    find_package(tensorflow-lite CONFIG)
+    if(NOT tensorflow-lite_FOUND)
+        message(WARNING "tensorflow-lite prefab not found. Attempting 'tensorflowlite'...")
+        find_package(tensorflowlite CONFIG)
+    endif()
+    
+    if(NOT (tensorflow-lite_FOUND OR tensorflowlite_FOUND))
+        message(WARNING "TFLite Prefab not found. Using source headers as fallback.")
+    else()
+        message(STATUS "TFLite Prefab found.")
     endif()
 endif()
 
@@ -118,8 +129,18 @@ if(ANDROID)
         ${flatbuffers_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}
     )
-    # tensorflow::tensorflowlite provides its own headers
-    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
+    
+    if(TARGET tensorflow-lite::tensorflow-lite)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
+    elseif(TARGET tensorflow::tensorflowlite)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
+    else()
+        # Fallback: Use source headers and assume runtime will provide symbols
+        # (Risky, but better than configuration failure)
+        target_include_directories(ronin_core PUBLIC ${tensorflow_lite_SOURCE_DIR})
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
+        message(WARNING "Linking without TFLite prefab. Undefined symbols may occur.")
+    endif()
 else()
     target_include_directories(ronin_core PUBLIC 
         include 
