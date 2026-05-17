@@ -43,6 +43,8 @@ class InferenceService : Service() {
     companion object {
         init {
             try {
+                // Proactively load LiteRT runtime to ensure symbols are available for ronin_kernel
+                System.loadLibrary("litert")
                 System.loadLibrary("ronin_kernel")
             } catch (e: UnsatisfiedLinkError) {
                 Log.e("InferenceService", "Native linkage failed: ${e.message}")
