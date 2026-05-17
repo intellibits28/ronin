@@ -5,6 +5,17 @@ if(POLICY CMP0135)
   cmake_policy(SET CMP0135 NEW)
 endif()
 
+# Global Configuration for Dependencies
+set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
+set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
+set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
+set(SPM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SPM_ENABLE_TUNIT OFF CACHE BOOL "" FORCE)
+set(SPM_ENABLE_CLI OFF CACHE BOOL "" FORCE)
+set(SPM_BUILD_EXECUTABLES OFF CACHE BOOL "" FORCE)
+set(SPM_ENABLE_TRAIN OFF CACHE BOOL "" FORCE)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -26,8 +37,6 @@ if(ANDROID)
 else()
     set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "" FORCE)
 endif()
-set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
   flatbuffers
@@ -62,15 +71,12 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/google/sentencepiece.git
   GIT_TAG v0.1.99
 )
-# Disable SentencePiece tests, executables, and training to save time/resources
-set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
-set(SPM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_TUNIT OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_CLI OFF CACHE BOOL "" FORCE)
-set(SPM_BUILD_EXECUTABLES OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_TRAIN OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(sentencepiece)
+FetchContent_GetProperties(sentencepiece)
+if(NOT sentencepiece_POPULATED)
+    FetchContent_Populate(sentencepiece)
+    # Use EXCLUDE_FROM_ALL to prevent building training/tools by default
+    add_subdirectory(${sentencepiece_SOURCE_DIR} ${sentencepiece_BINARY_DIR} EXCLUDE_FROM_ALL)
+endif()
 
 # --- Requirement: LiteRT (TensorFlow Lite) ---
 FetchContent_Declare(
