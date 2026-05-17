@@ -623,7 +623,7 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: ActivityResul
 
 @Composable
 fun SystemInfoPanel(chatViewModel: ChatViewModel) {
-    Surface(color = Color(0xFF161922), modifier = Modifier.fillMaxWidth().padding(16.dp)) { Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) { InfoItem("Thermal", "${chatViewModel.temperature}°C", if (chatViewModel.temperature > 40) Color.Red else Color.Green); InfoItem("RAM", "${"%.2f".format(chatViewModel.ramUsedGB)}GB", Color.White); InfoItem("LMK", "${chatViewModel.lmkPressure}%", Color.Cyan) } }
+    Surface(color = Color(0xFF161922), modifier = Modifier.fillMaxWidth().padding(16.dp)) { Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) { InfoItem("Thermal", "${chatViewModel.temperature} deg C", if (chatViewModel.temperature > 40) Color.Red else Color.Green); InfoItem("RAM", "${"%.2f".format(chatViewModel.ramUsedGB)}GB", Color.White); InfoItem("LMK", "${chatViewModel.lmkPressure}%", Color.Cyan) } }
 }
 
 @Composable
