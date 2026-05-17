@@ -84,18 +84,16 @@ endif()
 
 if(ANDROID)
     message(STATUS "Android build detected. Searching for LiteRT/TFLite Prefab...")
-    # New LiteRT package name
-    find_package(litert CONFIG)
-    if(NOT litert_FOUND)
-        # Prefab support for standard TFLite often uses 'tensorflow-lite'
+    # Try multiple package names for maximum compatibility
+    find_package(lite-rt CONFIG)
+    if(NOT lite-rt_FOUND)
+        find_package(litert CONFIG)
+    endif()
+    if(NOT (lite-rt_FOUND OR litert_FOUND))
         find_package(tensorflow-lite CONFIG)
     endif()
-    if(NOT (litert_FOUND OR tensorflow-lite_FOUND))
-        message(WARNING "LiteRT/TFLite Prefab not found. Attempting 'tensorflowlite'...")
-        find_package(tensorflowlite CONFIG)
-    endif()
     
-    if(NOT (litert_FOUND OR tensorflow-lite_FOUND OR tensorflowlite_FOUND))
+    if(NOT (lite-rt_FOUND OR litert_FOUND OR tensorflow-lite_FOUND))
         message(WARNING "No Prefab found. Using source headers and manual linkage as fallback.")
     else()
         message(STATUS "LiteRT/TFLite Prefab found.")
@@ -136,7 +134,9 @@ if(ANDROID)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     
-    if(TARGET litert::litert)
+    if(TARGET lite-rt::litert)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static lite-rt::litert)
+    elseif(TARGET litert::litert)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static litert::litert)
     elseif(TARGET litert::litert_cc)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static litert::litert_cc)
@@ -178,6 +178,21 @@ if(ANDROID)
         ${log-lib} 
         ${android-lib}
     )
+
+    # Re-apply TFLite/LiteRT linkage to the shared library for safe symbol resolution
+    if(TARGET lite-rt::litert)
+        target_link_libraries(ronin_kernel PRIVATE lite-rt::litert)
+    elseif(TARGET litert::litert)
+        target_link_libraries(ronin_kernel PRIVATE litert::litert)
+    elseif(TARGET litert::litert_cc)
+        target_link_libraries(ronin_kernel PRIVATE litert::litert_cc)
+    elseif(TARGET tensorflow-lite::tensorflow-lite)
+        target_link_libraries(ronin_kernel PRIVATE tensorflow-lite::tensorflow-lite)
+    elseif(TARGET tensorflow::tensorflowlite)
+        target_link_libraries(ronin_kernel PRIVATE tensorflow::tensorflowlite)
+    else()
+        target_link_libraries(ronin_kernel PRIVATE litert tensorflowlite_jni)
+    endif()
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)

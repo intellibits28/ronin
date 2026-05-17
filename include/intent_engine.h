@@ -181,6 +181,12 @@ public:
         m_stop_callback = callback;
     }
 
+    /**
+     * Phase 9.0: Proactive resource management.
+     * Propagates memory pressure signals to all registered skills.
+     */
+    void notifyTrimMemory(int level);
+
 private:
     std::function<void()> m_stop_callback;
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
@@ -191,6 +197,7 @@ private:
     bool m_offline_mode = false;
     std::string m_primary_cloud_provider = "Gemini";
     Ronin::Kernel::Capability::SkillPriority m_current_priority = Ronin::Kernel::Capability::SkillPriority::LOW;
+    std::string m_last_command_output;
 
     // Phase 4.0: Vtable-based Skill Registry
     std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;

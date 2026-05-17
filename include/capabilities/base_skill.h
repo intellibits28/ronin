@@ -53,6 +53,13 @@ public:
      * Unloads model weights or resources to free up RAM.
      */
     virtual void unload() {}
+
+    /**
+     * Phase 9.0: Proactive LMK Defense
+     * Soft-releases internal buffers without fully unloading the model.
+     * @param level The Android ComponentCallbacks2 level.
+     */
+    virtual void trimMemory(int level) {}
 };
 
 } // namespace Ronin::Kernel::Capability

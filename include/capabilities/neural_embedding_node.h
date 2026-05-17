@@ -24,6 +24,7 @@ public:
      */
     bool load();
     void unload() override;
+    void trimMemory(int level) override;
 
     /**
      * Runs inference to produce a 384-dim semantic embedding (Multilingual-E5-Small).

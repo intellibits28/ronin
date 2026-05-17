@@ -110,6 +110,10 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     auto engine = std::make_unique<InferenceEngine>("hybrid_mode");
     engine->setLibPath(native_lib_path);
     engine->setBasePath(base_path);
+    
+    // Phase 9.0: Register Proxy Node for Gemma 4
+    g_intent_engine->registerSkill(1, std::make_shared<ChatSkill>(engine.get()));
+
     g_llm_context.engine = engine.get();
     g_intent_engine->setInferenceEngine(std::move(engine));
     
@@ -157,23 +161,15 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input) {
     Ronin::Kernel::Input in_data = {};
     std::strncpy(in_data.data, input_str.c_str(), sizeof(in_data.data) - 1);
     in_data.length = std::min(input_str.length(), (size_t)(sizeof(in_data.data) - 1));
+    
+    // Phase 9.0: Tick the kernel. Skill Registry + Proxy Nodes handle routing and execution.
     g_kernel->tick(in_data);
     
-    auto lastIntent = g_kernel->getLastIntent();
-    if (input_str.starts_with("/") || lastIntent.id == 0) return ConvertStringToJString(env, g_last_skill_output.empty() ? "> Command Processed." : g_last_skill_output);
-    if (lastIntent.id > 1) return ConvertStringToJString(env, g_last_skill_output);
-
-    std::string response = "";
-    if (g_llm_context.initialized && g_llm_context.engine) response = g_llm_context.engine->runLiteRTReasoning(input_str);
-
-    if (response.empty() || response.starts_with("Error:")) {
-        if (g_intent_engine && g_intent_engine->isOfflineMode()) return ConvertStringToJString(env, "Error: Offline mode active.");
-        std::string provider = g_intent_engine ? g_intent_engine->getPrimaryCloudProvider() : "Gemini";
-        std::string apiKey = Ronin::Kernel::Capability::HardwareBridge::getCloudApiKey(provider);
-        if (!apiKey.empty()) return ConvertStringToJString(env, g_llm_context.engine->escalateToCloud(input_str, apiKey, provider));
-        return ConvertStringToJString(env, "Error: Local failed and no Cloud API key.");
+    if (g_last_skill_output.empty()) {
+        return ConvertStringToJString(env, "> Task queued.");
     }
-    return ConvertStringToJString(env, response);
+    
+    return ConvertStringToJString(env, g_last_skill_output);
 }
 jobject native_pollInferenceStream(JNIEnv *env, jobject thiz) {
     if (!g_spine_consumer) return nullptr;
@@ -229,12 +225,7 @@ jboolean native_isLoaded(JNIEnv *env, jobject thiz) { return g_llm_context.initi
 void native_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
     if (level >= 20 && g_llm_context.engine) g_llm_context.engine->purgeKVCache();
     if (g_memory_manager) g_memory_manager->onMemoryPressure();
-
-    // Phase 2.1: Urgent unload of embedding model on TRIM_MEMORY_COMPLETE
-    if (level >= 80) { // ComponentCallbacks2.TRIM_MEMORY_COMPLETE
-        auto skill = g_intent_engine ? g_intent_engine->getSkill(3) : nullptr;
-        if (skill) skill->unload();
-    }
+    if (g_intent_engine) g_intent_engine->notifyTrimMemory(level);
 }
 
 void native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {

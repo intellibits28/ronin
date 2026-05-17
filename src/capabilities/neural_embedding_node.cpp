@@ -125,6 +125,22 @@ void NeuralEmbeddingNode::unload() {
     }
 }
 
+void NeuralEmbeddingNode::trimMemory(int level) {
+    if (!m_impl || !m_impl->loaded) return;
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
+
+    // level 80 = TRIM_MEMORY_COMPLETE, level 60 = TRIM_MEMORY_MODERATE
+    if (level >= 80) {
+        LOGW(TAG, "Critical Pressure: Fully unloading embedding engine.");
+        unload();
+    } else if (level >= 40) {
+        LOGI(TAG, "Moderate Pressure: Releasing intermediate LiteRT tensors.");
+        if (m_impl->interpreter) {
+            m_impl->interpreter->ReleaseIntermediateTensors();
+        }
+    }
+}
+
 bool NeuralEmbeddingNode::isLoaded() const {
     return m_impl && m_impl->loaded;
 }

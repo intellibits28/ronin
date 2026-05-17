@@ -161,11 +161,18 @@ void IntentEngine::stopLowPriorityTasks() {
     }
 }
 
+void IntentEngine::notifyTrimMemory(int level) {
+    LOGI(TAG, "Memory Pressure Signal [Level: %d]. Notifying modular skills.", level);
+    for (auto const& [id, skill] : m_skill_registry) {
+        skill->trimMemory(level);
+    }
+}
+
 IntentEngine::IntentEngine() {
     using namespace Ronin::Kernel::Capability;
     
     // Phase 4.0: Vtable-based Skill Registration (Unified Interface)
-    m_skill_registry[1] = std::make_shared<ChatSkill>();
+    // ID 1 (Chat) is now a Proxy Node registered dynamically in JNI
     m_skill_registry[2] = std::make_shared<FileSearchNode>();
     m_skill_registry[3] = std::make_shared<NeuralEmbeddingNode>();
     m_skill_registry[4] = std::make_shared<FlashlightNode>();
@@ -177,7 +184,7 @@ IntentEngine::IntentEngine() {
 }
 
 std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param) {
-    if (nodeId == 0) return ""; // Phase 6.6: Fast-path for Tier 0 commands already handled in process()
+    if (nodeId == 0) return m_last_command_output; // Return the result of handleCommand
 
     auto it = m_skill_registry.find(nodeId);
     if (it != m_skill_registry.end()) {
@@ -418,6 +425,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // Layer 0: Command Interface Interception (O(1) fast-path)
     std::string cmdOutput;
     if (handleCommand(input, cmdOutput)) {
+        m_last_command_output = cmdOutput;
         if (cmdOutput.find("Unknown command") != std::string::npos) {
             // Requirement 3: Cleanup fallback for unknown commands
             Ronin::Kernel::Capability::HardwareBridge::pushMessage("[SYSTEM] " + cmdOutput);
