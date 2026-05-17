@@ -440,10 +440,8 @@ class MainActivity : ComponentActivity() {
             val vm = ViewModelProvider(this)[ChatViewModel::class.java]
             vm.temperature = temp; vm.ramUsedGB = used; vm.ramTotalGB = total
         }
-        nativeEngine.onKernelMessage = { msg -> reasoningLogs.add(0, msg) }
+        nativeEngine.onKernelMessage = { msg -> ViewModelProvider(this)[ChatViewModel::class.java].reasoningLogs.add(0, msg) }
     }
-    
-    val reasoningLogs = mutableStateListOf<String>()
 
     override fun onResume() {
         super.onResume()
@@ -531,7 +529,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
 
                     Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
                         SelectionContainer {
-                            LazyColumn(modifier = Modifier.fillMaxSize()) { items((context as? MainActivity)?.reasoningLogs ?: emptyList<String>()) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }
+                            LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }
                         }
                     }
 
@@ -583,7 +581,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             }
         }
     }
-    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, embeddingPicker, onSaveOfflineMode, { (context as? MainActivity)?.deleteLocalModel(it) }, { (context as? MainActivity)?.hydrateModel(it) })
+    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, embeddingPicker, onSaveOfflineMode, { (context.findActivity() as? MainActivity)?.deleteLocalModel(it) }, { (context.findActivity() as? MainActivity)?.hydrateModel(it) })
 }
 
 @Composable
@@ -598,7 +596,7 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: ActivityResul
         }
 
         Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Icon(Icons.Default.Build, contentDescription = null, tint = Color(0xFF64B5F6), modifier = Modifier.size(64.dp))
+            Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF64B5F6), modifier = Modifier.size(64.dp))
             Spacer(Modifier.height(24.dp))
             Text("Ronin Kernel: Setup Mode", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.height(16.dp))
@@ -611,7 +609,7 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: ActivityResul
             } else {
                 Button(onClick = { embeddingPicker.launch(arrayOf("*/*")) }, colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF64B5F6))) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.FileUpload, null, tint = Color.Black)
+                        Icon(Icons.Default.Refresh, null, tint = Color.Black)
                         Spacer(Modifier.width(8.dp))
                         Text("IMPORT CORE ROUTER", color = Color.Black)
                     }
@@ -667,20 +665,20 @@ fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: ActivityResultLaun
             chatViewModel.cloudProviders.forEach { profile ->
                 val isActive = profile.name == chatViewModel.primaryCloudProvider && !chatViewModel.offlineMode
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = profile.name == chatViewModel.primaryCloudProvider, onClick = { (context as? MainActivity)?.savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }, colors = RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)))
+                    RadioButton(selected = profile.name == chatViewModel.primaryCloudProvider, onClick = { (context.findActivity() as? MainActivity)?.savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }, colors = RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)))
                     Column(modifier = Modifier.weight(1f)) { Text(profile.name, color = if (isActive) Color.Green else Color.White); Text(profile.modelId, fontSize = 10.sp, color = Color.Gray) }
-                    IconButton(onClick = { (context as? MainActivity)?.deleteCloudProvider(profile.name) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray, modifier = Modifier.size(18.dp)) }
+                    IconButton(onClick = { (context.findActivity() as? MainActivity)?.deleteCloudProvider(profile.name) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray, modifier = Modifier.size(18.dp)) }
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) { Text("Offline-Only", modifier = Modifier.weight(1f)); Switch(checked = chatViewModel.offlineMode, onCheckedChange = { chatViewModel.offlineMode = it; onSaveOfflineMode(it) }) }
         }
     }, confirmButton = { TextButton(onClick = { chatViewModel.showSettings = false }) { Text("CLOSE") } })
-    if (chatViewModel.showAddCloudDialog) AddCloudProviderDialog(onDismiss = { chatViewModel.showAddCloudDialog = false }, onAdd = { n, t, e, m, k -> (context as? MainActivity)?.saveApiKey(n, k); (context as? MainActivity)?.addCloudProvider(n, t, e, m); chatViewModel.showAddCloudDialog = false })
+    if (chatViewModel.showAddCloudDialog) AddCloudProviderDialog(onDismiss = { chatViewModel.showAddCloudDialog = false }, onAdd = { n, t, e, m, k -> (context.findActivity() as? MainActivity)?.saveApiKey(n, k); (context.findActivity() as? MainActivity)?.addCloudProvider(n, t, e, m); chatViewModel.showAddCloudDialog = false })
 }
 
 @Composable
 fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String, String) -> Unit) {
-    val context = LocalContext.current; val engine = (context as? MainActivity)?.nativeEngine; val scope = rememberCoroutineScope()
+    val context = LocalContext.current; val engine = (context.findActivity() as? MainActivity)?.nativeEngine; val scope = rememberCoroutineScope()
     var selectedTemplate by remember { mutableStateOf("Gemini") }; var expanded by remember { mutableStateOf(false) }
     var apiKey by remember { mutableStateOf("") }; var isFetching by remember { mutableStateOf(false) }
     var fetchedModels by remember { mutableStateOf<List<JSONObject>>(emptyList()) }; var selectedModelId by remember { mutableStateOf("") }
