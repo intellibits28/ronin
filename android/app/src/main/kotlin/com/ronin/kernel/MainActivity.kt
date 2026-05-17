@@ -494,7 +494,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
-            if (chatViewModel.isE5Missing) {
+            val e5Missing = !java.io.File(context.filesDir, "assets/models/multilingual-e5-small.tflite").exists()
+            if (e5Missing) {
                 BootstrapWizard(chatViewModel, embeddingPicker)
             } else {
                 LaunchedEffect(Unit) {
