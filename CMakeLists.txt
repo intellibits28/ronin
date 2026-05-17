@@ -84,15 +84,16 @@ endif()
 
 if(ANDROID)
     message(STATUS "Android build detected. Searching for LiteRT/TFLite Prefab...")
-    # 1. Try Architect's suggestion
-    find_package(lite-rt CONFIG)
-    # 2. Try Play Services official name
+    # Play Services official name is the most stable for this architecture
     find_package(tensorflowlite_jni_gms_client CONFIG)
-    # 3. Try standard TFLite name
-    find_package(tensorflow-lite CONFIG)
+    if(NOT tensorflowlite_jni_gms_client_FOUND)
+        # Fallback to standard names
+        find_package(lite-rt CONFIG)
+        find_package(tensorflow-lite CONFIG)
+    endif()
     
-    if(NOT (lite-rt_FOUND OR tensorflowlite_jni_gms_client_FOUND OR tensorflow-lite_FOUND))
-        message(WARNING "No Prefab found. Using source headers and manual linkage as fallback.")
+    if(NOT (tensorflowlite_jni_gms_client_FOUND OR lite-rt_FOUND OR tensorflow-lite_FOUND))
+        message(WARNING "No Prefab found. Using source headers as last resort.")
     else()
         message(STATUS "LiteRT/TFLite Prefab found.")
     endif()
@@ -133,16 +134,17 @@ if(ANDROID)
     )
     
     # Standardized Linkage Chain
-    if(TARGET lite-rt::litert)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static lite-rt::litert)
-    elseif(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+    if(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+    elseif(TARGET lite-rt::litert)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static lite-rt::litert)
     elseif(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
     else()
-        # Fallback: Use source headers and attempt manual linkage against libnames
+        # Fallback: Use source headers and pray the symbols are available at runtime
         target_include_directories(ronin_core PUBLIC ${tensorflow_lite_SOURCE_DIR})
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
+        message(WARNING "Linking without TFLite/LiteRT binary. Runtime failures may occur if symbols are missing.")
     endif()
 else()
     target_include_directories(ronin_core PUBLIC 
@@ -172,15 +174,12 @@ if(ANDROID)
     )
 
     # Propagate LiteRT linkage to the shared library for safe symbol resolution
-    if(TARGET lite-rt::litert)
-        target_link_libraries(ronin_kernel PRIVATE lite-rt::litert)
-    elseif(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+    if(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
         target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+    elseif(TARGET lite-rt::litert)
+        target_link_libraries(ronin_kernel PRIVATE lite-rt::litert)
     elseif(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_kernel PRIVATE tensorflow-lite::tensorflow-lite)
-    else()
-        # Ensure linker can find the libraries by name if prefab is missing
-        target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni)
     endif()
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
