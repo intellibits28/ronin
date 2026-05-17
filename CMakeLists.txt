@@ -128,6 +128,7 @@ if(ANDROID)
     target_include_directories(ronin_core PUBLIC 
         include 
         ${sqlite3_src_SOURCE_DIR} 
+        ${tensorflow_lite_SOURCE_DIR}
         ${sentencepiece_SOURCE_DIR}/src
         ${flatbuffers_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}
@@ -141,8 +142,7 @@ if(ANDROID)
     elseif(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
     else()
-        # Fallback: Use source headers and pray the symbols are available at runtime
-        target_include_directories(ronin_core PUBLIC ${tensorflow_lite_SOURCE_DIR})
+        # Fallback: Pray the symbols are available at runtime
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
         message(WARNING "Linking without TFLite/LiteRT binary. Runtime failures may occur if symbols are missing.")
     endif()
