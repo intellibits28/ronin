@@ -18,109 +18,67 @@ namespace Ronin::Kernel::Capability {
 struct NeuralEmbeddingNode::Impl {
     std::string model_path;
     std::string sp_model_path;
-    bool loaded = false;
-    
-    // LiteRT / SentencePiece Objects
     std::unique_ptr<tflite::FlatBufferModel> model;
     std::unique_ptr<tflite::Interpreter> interpreter;
-    sentencepiece::SentencePieceProcessor sp_processor;
-
-    std::chrono::steady_clock::time_point last_used;
+    std::unique_ptr<sentencepiece::SentencePieceProcessor> sp_processor;
+    bool loaded = false;
     std::mutex mutex;
-    std::thread timer_thread;
-    std::atomic<bool> stop_timer{false};
 
-    Impl(const std::string& path, const std::string& sp_path) 
-        : model_path(path), sp_model_path(sp_path), loaded(false) {}
+    Impl(const std::string& m_path, const std::string& s_path) 
+        : model_path(m_path), sp_model_path(s_path) {}
 };
 
-NeuralEmbeddingNode::NeuralEmbeddingNode() : m_impl(nullptr) {}
+NeuralEmbeddingNode::NeuralEmbeddingNode(const std::string& model_path, const std::string& sp_model_path)
+    : m_impl(std::make_unique<Impl>(model_path, sp_model_path)) {}
 
-NeuralEmbeddingNode::NeuralEmbeddingNode(const std::string& model_path, const std::string& sp_model_path) {
-    m_impl = std::make_unique<Impl>(model_path, sp_model_path);
-    
-    // Start Auto-Unload Timer
-    m_impl->timer_thread = std::thread([this]() {
-        while (!m_impl->stop_timer.load()) {
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-            std::lock_guard<std::mutex> lock(m_impl->mutex);
-            if (m_impl->loaded) {
-                auto now = std::chrono::steady_clock::now();
-                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_impl->last_used).count();
-                if (elapsed > 30) {
-                    LOGI(TAG, "Auto-Unload Policy: 30s idle detected. Releasing RAM.");
-                    unload();
-                }
-            }
-        }
-    });
-}
+NeuralEmbeddingNode::~NeuralEmbeddingNode() = default;
 
-NeuralEmbeddingNode::~NeuralEmbeddingNode() {
-    if (m_impl) {
-        m_impl->stop_timer.store(true);
-        if (m_impl->timer_thread.joinable()) m_impl->timer_thread.join();
-        unload();
-    }
-}
+std::string NeuralEmbeddingNode::getName() const { return "NeuralEmbeddingNode"; }
 
 bool NeuralEmbeddingNode::load() {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     if (m_impl->loaded) return true;
 
-    // Requirement 5: Resource Guard
-    float freeRam = HardwareBridge::getFreeRamGB();
-    if (freeRam < 0.5f) {
-        LOGW(TAG, "Resource Guard: Insufficient RAM (%.2f GB). Deferring indexing task.", freeRam);
+    LOGI(TAG, "Loading Multilingual-E5-Small: %s", m_impl->model_path.c_str());
+    
+    m_impl->model = tflite::FlatBufferModel::BuildFromFile(m_impl->model_path.c_str());
+    if (!m_impl->model) {
+        LOGE(TAG, "Failed to load TFLite model.");
         return false;
     }
 
-    try {
-        LOGI(TAG, "Native Path: Loading Multilingual-E5-Small (LiteRT) and SentencePiece.");
-        
-        // 1. Load SentencePiece Processor
-        auto status = m_impl->sp_processor.Load(m_impl->sp_model_path);
-        if (!status.ok()) {
-            LOGE(TAG, "Failed to load SentencePiece model: %s", status.ToString().c_str());
-            return false;
-        }
+    tflite::ops::builtin::BuiltinOpResolver resolver;
+    tflite::InterpreterBuilder(*(m_impl->model), resolver)(&(m_impl->interpreter));
 
-        // 2. Load LiteRT Model
-        m_impl->model = tflite::FlatBufferModel::BuildFromFile(m_impl->model_path.c_str());
-        if (!m_impl->model) {
-            LOGE(TAG, "Failed to build LiteRT model from %s", m_impl->model_path.c_str());
-            return false;
-        }
-
-        tflite::ops::builtin::BuiltinOpResolver resolver;
-        tflite::InterpreterBuilder(*m_impl->model, resolver)(&m_impl->interpreter);
-
-        if (!m_impl->interpreter) {
-            LOGE(TAG, "Failed to construct LiteRT interpreter.");
-            return false;
-        }
-
-        // 3. Configure Interpreter
-        m_impl->interpreter->SetNumThreads(2);
-        if (m_impl->interpreter->AllocateTensors() != kTfLiteOk) {
-            LOGE(TAG, "Failed to allocate LiteRT tensors.");
-            return false;
-        }
-
-        m_impl->loaded = true;
-        m_impl->last_used = std::chrono::steady_clock::now();
-        return true;
-    } catch (const std::exception& e) {
-        LOGE(TAG, "Inference Engine initialization error: %s", e.what());
+    if (!m_impl->interpreter) {
+        LOGE(TAG, "Failed to build TFLite interpreter.");
         return false;
     }
+
+    if (m_impl->interpreter->AllocateTensors() != kTfLiteOk) {
+        LOGE(TAG, "Failed to allocate tensors.");
+        return false;
+    }
+
+    LOGI(TAG, "Loading SentencePiece: %s", m_impl->sp_model_path.c_str());
+    m_impl->sp_processor = std::make_unique<sentencepiece::SentencePieceProcessor>();
+    if (!m_impl->sp_processor->Load(m_impl->sp_model_path).ok()) {
+        LOGE(TAG, "Failed to load SentencePiece model.");
+        return false;
+    }
+
+    m_impl->loaded = true;
+    LOGI(TAG, "Expert Native Path Hydrated Successfully.");
+    return true;
 }
 
 void NeuralEmbeddingNode::unload() {
-    if (m_impl && m_impl->loaded) {
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
+    if (m_impl->loaded) {
         LOGI(TAG, "Unloading E5-Small model and SentencePiece to free RAM.");
         m_impl->interpreter.reset();
         m_impl->model.reset();
+        m_impl->sp_processor.reset();
         m_impl->loaded = false;
     }
 }
@@ -132,11 +90,15 @@ void NeuralEmbeddingNode::trimMemory(int level) {
     // level 80 = TRIM_MEMORY_COMPLETE, level 60 = TRIM_MEMORY_MODERATE
     if (level >= 80) {
         LOGW(TAG, "Critical Pressure: Fully unloading embedding engine.");
-        unload();
+        m_impl->interpreter.reset();
+        m_impl->model.reset();
+        m_impl->sp_processor.reset();
+        m_impl->loaded = false;
     } else if (level >= 40) {
-        LOGI(TAG, "Moderate Pressure: Releasing intermediate LiteRT tensors.");
+        LOGI(TAG, "Moderate Pressure: Releasing non-persistent LiteRT memory.");
 #ifdef __ANDROID__
         if (m_impl->interpreter) {
+            // Standard TFLite 2.16.1 method name
             m_impl->interpreter->ReleaseNonPersistentMemory();
         }
 #endif
@@ -148,57 +110,54 @@ bool NeuralEmbeddingNode::isLoaded() const {
 }
 
 std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& input, bool is_query) {
-    const int kDim = 384; // Multilingual-E5-Small dimension
-    if (!load()) return std::vector<float>(kDim, 0.0f);
+    if (!load()) return {};
 
-    std::lock_guard<std::mutex> lock(m_impl->mutex);
-    m_impl->last_used = std::chrono::steady_clock::now();
-
-    // Rule: Prefix Padding
-    std::string processed_input = (is_query ? "query: " : "passage: ") + input;
-
-    try {
-        // 1. Tokenize using SentencePiece
-        std::vector<int> ids;
-        m_impl->sp_processor.Encode(processed_input, &ids);
-
-        // Cap or pad to model input size (e.g., 128)
-        const int kMaxSeq = 128;
-        std::vector<int32_t> input_ids(kMaxSeq, 0); 
-        for (size_t i = 0; i < ids.size() && i < kMaxSeq; ++i) {
-            input_ids[i] = static_cast<int32_t>(ids[i]);
-        }
-
-        // 2. Feed to LiteRT
-        int input_tensor_idx = m_impl->interpreter->inputs()[0];
-        int32_t* input_data = m_impl->interpreter->typed_tensor<int32_t>(input_tensor_idx);
-        std::copy(input_ids.begin(), input_ids.end(), input_data);
-
-        if (m_impl->interpreter->Invoke() != kTfLiteOk) {
-            LOGE(TAG, "Failed to invoke LiteRT interpreter.");
-            return std::vector<float>(kDim, 0.0f);
-        }
-
-        // 3. Extract Output (assuming first output is the embedding)
-        int output_tensor_idx = m_impl->interpreter->outputs()[0];
-        float* output_data = m_impl->interpreter->typed_tensor<float>(output_tensor_idx);
-
-        std::vector<float> embedding(kDim);
-        std::copy(output_data, output_data + kDim, embedding.begin());
-
-        // L2 Normalization
-        float mag = 0.0f;
-        for (float f : embedding) mag += f * f;
-        mag = std::sqrt(mag);
-        if (mag > 1e-9f) {
-            for (float& f : embedding) f /= mag;
-        }
-
-        return embedding;
-    } catch (const std::exception& e) {
-        LOGE(TAG, "Native Inference Error: %s", e.what());
-        return std::vector<float>(kDim, 0.0f);
+    std::string processed_input = input;
+    // Multi-lingual E5 requirement: prefix with query: or passage:
+    if (is_query) {
+        if (processed_input.find("query: ") != 0) processed_input = "query: " + processed_input;
+    } else {
+        if (processed_input.find("passage: ") != 0) processed_input = "passage: " + processed_input;
     }
+
+    std::vector<int> tokens;
+    if (!m_impl->sp_processor->Encode(processed_input, &tokens).ok()) {
+        LOGE(TAG, "Tokenization failed.");
+        return {};
+    }
+
+    // Prepare input tensor
+    int input_idx = m_impl->interpreter->inputs()[0];
+    TfLiteTensor* input_tensor = m_impl->interpreter->tensor(input_idx);
+    
+    // Resize input for dynamic sequence length (up to 512)
+    int seq_len = std::min((int)tokens.size(), 512);
+    std::vector<int> dims = {1, seq_len};
+    m_impl->interpreter->ResizeInputTensor(input_idx, dims);
+    if (m_impl->interpreter->AllocateTensors() != kTfLiteOk) return {};
+
+    // Copy tokens
+    int32_t* input_data = m_impl->interpreter->typed_tensor<int32_t>(input_idx);
+    for (int i = 0; i < seq_len; ++i) input_data[i] = tokens[i];
+
+    auto start = std::chrono::high_resolution_clock::now();
+    if (m_impl->interpreter->Invoke() != kTfLiteOk) {
+        LOGE(TAG, "Inference failed.");
+        return {};
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    LOGI(TAG, "Inference Latency: %lld ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+
+    // Extract embedding (assuming average pooling or [CLS] token at index 0)
+    int output_idx = m_impl->interpreter->outputs()[0];
+    TfLiteTensor* output_tensor = m_impl->interpreter->tensor(output_idx);
+    float* output_data = m_impl->interpreter->typed_tensor<float>(output_idx);
+    
+    int dim = output_tensor->dims->data[output_tensor->dims->size - 1];
+    std::vector<float> embedding(dim);
+    std::memcpy(embedding.data(), output_data, dim * sizeof(float));
+
+    return embedding;
 }
 
 std::string NeuralEmbeddingNode::execute(const std::string& param) {

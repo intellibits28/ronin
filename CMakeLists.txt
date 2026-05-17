@@ -84,16 +84,14 @@ endif()
 
 if(ANDROID)
     message(STATUS "Android build detected. Searching for LiteRT/TFLite Prefab...")
-    # Try multiple package names for maximum compatibility
+    # 1. Try Architect's suggestion
     find_package(lite-rt CONFIG)
-    if(NOT lite-rt_FOUND)
-        find_package(litert CONFIG)
-    endif()
-    if(NOT (lite-rt_FOUND OR litert_FOUND))
-        find_package(tensorflow-lite CONFIG)
-    endif()
+    # 2. Try Play Services official name
+    find_package(tensorflowlite_jni_gms_client CONFIG)
+    # 3. Try standard TFLite name
+    find_package(tensorflow-lite CONFIG)
     
-    if(NOT (lite-rt_FOUND OR litert_FOUND OR tensorflow-lite_FOUND))
+    if(NOT (lite-rt_FOUND OR tensorflowlite_jni_gms_client_FOUND OR tensorflow-lite_FOUND))
         message(WARNING "No Prefab found. Using source headers and manual linkage as fallback.")
     else()
         message(STATUS "LiteRT/TFLite Prefab found.")
@@ -134,23 +132,17 @@ if(ANDROID)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     
+    # Standardized Linkage Chain
     if(TARGET lite-rt::litert)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static lite-rt::litert)
-    elseif(TARGET litert::litert)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static litert::litert)
-    elseif(TARGET litert::litert_cc)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static litert::litert_cc)
+    elseif(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
     elseif(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
-    elseif(TARGET tensorflow::tensorflowlite)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
     else()
-        # Fallback: Use source headers and attempt manual linkage
+        # Fallback: Use source headers and attempt manual linkage against libnames
         target_include_directories(ronin_core PUBLIC ${tensorflow_lite_SOURCE_DIR})
-        # Attempt to link against common library names provided by the AARs
-        # liblitert.so is the main library for modern LiteRT
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static litert tensorflowlite_jni)
-        message(WARNING "Linking without Prefab. Attempting manual linkage against 'litert' and 'tensorflowlite_jni'.")
     endif()
 else()
     target_include_directories(ronin_core PUBLIC 
@@ -179,18 +171,15 @@ if(ANDROID)
         ${android-lib}
     )
 
-    # Re-apply TFLite/LiteRT linkage to the shared library for safe symbol resolution
+    # Propagate LiteRT linkage to the shared library for safe symbol resolution
     if(TARGET lite-rt::litert)
         target_link_libraries(ronin_kernel PRIVATE lite-rt::litert)
-    elseif(TARGET litert::litert)
-        target_link_libraries(ronin_kernel PRIVATE litert::litert)
-    elseif(TARGET litert::litert_cc)
-        target_link_libraries(ronin_kernel PRIVATE litert::litert_cc)
+    elseif(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+        target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
     elseif(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_kernel PRIVATE tensorflow-lite::tensorflow-lite)
-    elseif(TARGET tensorflow::tensorflowlite)
-        target_link_libraries(ronin_kernel PRIVATE tensorflow::tensorflowlite)
     else()
+        # Ensure linker can find the libraries by name if prefab is missing
         target_link_libraries(ronin_kernel PRIVATE litert tensorflowlite_jni)
     endif()
 
@@ -207,7 +196,7 @@ endif()
 if(NOT ANDROID)
     FetchContent_Declare(
       googletest
-      URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+      URL https://github.com/googletest/googletest/archive/refs/tags/v1.14.0.zip
     )
     FetchContent_MakeAvailable(googletest)
     
