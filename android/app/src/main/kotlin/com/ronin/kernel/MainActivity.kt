@@ -3,6 +3,7 @@ package com.ronin.kernel
 import android.os.Bundle
 import android.widget.Toast
 import android.content.Context
+import android.content.ContextWrapper
 import android.app.ActivityManager
 import android.os.BatteryManager
 import android.content.IntentFilter
@@ -24,6 +25,7 @@ import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
@@ -223,10 +225,10 @@ class MainActivity : ComponentActivity() {
             loadCloudProvidersFromDisk()
             
             val lastProvider = sharedPreferences.getString("primary_cloud_provider", "Gemini-Flash") ?: "Gemini-Flash"
-            nativeEngine.setPrimaryCloudProviderSafe(lastProvider)
+            savePrimaryCloudProvider(lastProvider)
             
             val offline = sharedPreferences.getBoolean("offline_mode", false)
-            nativeEngine.setOfflineModeSafe(offline)
+            saveOfflineMode(offline)
 
             chatViewModel.kernelStatus = "Neural Bridge Active"
             chatViewModel.isKernelReady = true
@@ -452,7 +454,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, embeddingPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
+fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, embeddingPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
     val context = LocalContext.current; val scope = rememberCoroutineScope()
     var currentInput by remember { mutableStateOf("") }
 
@@ -587,7 +589,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
 }
 
 @Composable
-fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>) {
+fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: ActivityResultLauncher<Array<String>>) {
     Column(modifier = Modifier.fillMaxSize()) {
         Surface(color = Color(0xFFE57373).copy(alpha = 0.9f), modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -642,7 +644,7 @@ fun ChatBubble(m: String) {
 }
 
 @Composable
-fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, embeddingPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit, onDeleteModel: (String) -> Unit, onSelectModel: (String) -> Unit) {
+fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, embeddingPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit, onDeleteModel: (String) -> Unit, onSelectModel: (String) -> Unit) {
     val context = LocalContext.current
     AlertDialog(onDismissRequest = { chatViewModel.showSettings = false }, title = { Text("Ronin Configuration", fontWeight = FontWeight.Bold) }, text = {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
@@ -667,20 +669,20 @@ fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: androidx.activity.
             chatViewModel.cloudProviders.forEach { profile ->
                 val isActive = profile.name == chatViewModel.primaryCloudProvider && !chatViewModel.offlineMode
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = profile.name == chatViewModel.primaryCloudProvider, onClick = { (context as MainActivity).savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }, colors = RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)))
+                    RadioButton(selected = profile.name == chatViewModel.primaryCloudProvider, onClick = { (context as? MainActivity)?.savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }, colors = RadioButtonDefaults.colors(selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)))
                     Column(modifier = Modifier.weight(1f)) { Text(profile.name, color = if (isActive) Color.Green else Color.White); Text(profile.modelId, fontSize = 10.sp, color = Color.Gray) }
-                    IconButton(onClick = { (context as MainActivity).deleteCloudProvider(profile.name) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray, modifier = Modifier.size(18.dp)) }
+                    IconButton(onClick = { (context as? MainActivity)?.deleteCloudProvider(profile.name) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray, modifier = Modifier.size(18.dp)) }
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) { Text("Offline-Only", modifier = Modifier.weight(1f)); Switch(checked = chatViewModel.offlineMode, onCheckedChange = { chatViewModel.offlineMode = it; onSaveOfflineMode(it) }) }
         }
     }, confirmButton = { TextButton(onClick = { chatViewModel.showSettings = false }) { Text("CLOSE") } })
-    if (chatViewModel.showAddCloudDialog) AddCloudProviderDialog(onDismiss = { chatViewModel.showAddCloudDialog = false }, onAdd = { n, t, e, m, k -> (context as MainActivity).saveApiKey(n, k); (context as MainActivity).addCloudProvider(n, t, e, m); chatViewModel.showAddCloudDialog = false })
+    if (chatViewModel.showAddCloudDialog) AddCloudProviderDialog(onDismiss = { chatViewModel.showAddCloudDialog = false }, onAdd = { n, t, e, m, k -> (context as? MainActivity)?.saveApiKey(n, k); (context as? MainActivity)?.addCloudProvider(n, t, e, m); chatViewModel.showAddCloudDialog = false })
 }
 
 @Composable
 fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String, String) -> Unit) {
-    val context = LocalContext.current; val engine = (context as MainActivity).nativeEngine; val scope = rememberCoroutineScope()
+    val context = LocalContext.current; val engine = (context as? MainActivity)?.nativeEngine; val scope = rememberCoroutineScope()
     var selectedTemplate by remember { mutableStateOf("Gemini") }; var expanded by remember { mutableStateOf(false) }
     var apiKey by remember { mutableStateOf("") }; var isFetching by remember { mutableStateOf(false) }
     var fetchedModels by remember { mutableStateOf<List<JSONObject>>(emptyList()) }; var selectedModelId by remember { mutableStateOf("") }
@@ -706,7 +708,7 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
                 if (selectedTemplate != "Custom") {
                     IconButton(onClick = { 
                         if (apiKey.isNotBlank()) { 
-                            isFetching = true; fetchError = null; scope.launch { val res = engine.fetchAvailableModels(apiKey, selectedTemplate); fetchedModels = res.models; fetchError = res.error; isFetching = false } 
+                            isFetching = true; fetchError = null; scope.launch { val res = engine?.fetchAvailableModels(apiKey, selectedTemplate); fetchedModels = res?.models ?: emptyList(); fetchError = res?.error; isFetching = false } 
                         } 
                     }) { Icon(Icons.Default.CloudDownload, null, tint = Color(0xFF64B5F6)) }
                 }
@@ -734,3 +736,12 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
 
 @Composable
 fun Divider(color: Color = Color.Gray.copy(alpha = 0.2f), modifier: Modifier = Modifier) { androidx.compose.material.Divider(color = color, modifier = modifier) }
+
+fun Context.findActivity(): ComponentActivity? {
+    var context = this
+    while (context is ContextWrapper) {
+        if (context is ComponentActivity) return context
+        context = context.baseContext
+    }
+    return null
+}
