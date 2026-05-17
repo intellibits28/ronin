@@ -196,7 +196,8 @@ endif()
 if(NOT ANDROID)
     FetchContent_Declare(
       googletest
-      URL https://github.com/googletest/googletest/archive/refs/tags/v1.14.0.zip
+      GIT_REPOSITORY https://github.com/google/googletest.git
+      GIT_TAG v1.15.2
     )
     FetchContent_MakeAvailable(googletest)
     
