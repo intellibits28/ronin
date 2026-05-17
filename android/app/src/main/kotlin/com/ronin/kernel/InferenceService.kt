@@ -7,6 +7,8 @@ import android.os.IBinder
 import android.util.Log
 import com.google.ai.edge.litertlm.*
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.android.gms.tflite.java.TfLite
+import com.google.android.gms.tasks.Tasks
 import kotlinx.coroutines.flow.*
 import android.app.Notification
 import android.app.NotificationChannel
@@ -43,8 +45,6 @@ class InferenceService : Service() {
     companion object {
         init {
             try {
-                // Proactively load LiteRT runtime to ensure symbols are available for ronin_kernel
-                System.loadLibrary("litert")
                 System.loadLibrary("ronin_kernel")
             } catch (e: UnsatisfiedLinkError) {
                 Log.e("InferenceService", "Native linkage failed: ${e.message}")
@@ -61,11 +61,22 @@ class InferenceService : Service() {
             startForeground(NOTIFICATION_ID, createNotification())
         }
 
-        try {
-            val libDir = applicationInfo.nativeLibraryDir
-            initializeKernelNative(filesDir.absolutePath, libDir, true)
-        } catch (e: Throwable) {
-            Log.e(TAG, "Worker JNI Initialization failed: ${e.message}")
+        serviceScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    Tasks.await(TfLite.initialize(this@InferenceService))
+                }
+                Log.i(TAG, "Play Services TFLite Initialized in Worker.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize Play Services TFLite in Worker: ${e.message}")
+            }
+
+            try {
+                val libDir = applicationInfo.nativeLibraryDir
+                initializeKernelNative(filesDir.absolutePath, libDir, true)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Worker JNI Initialization failed: ${e.message}")
+            }
         }
     }
 

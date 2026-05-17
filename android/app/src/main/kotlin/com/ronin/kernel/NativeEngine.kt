@@ -92,12 +92,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         suspend fun initializeAsync() = withContext(Dispatchers.IO) {
             if (isLibLoaded) return@withContext
             try {
-                // Proactively load LiteRT runtime
-                try {
-                    System.loadLibrary("litert")
-                } catch (e: UnsatisfiedLinkError) {
-                    Log.w(TAG, "Optional: liblitert.so not found or already loaded.")
-                }
                 System.loadLibrary("ronin_kernel")
                 isLibLoaded = true
                 Log.i(TAG, "SUCCESS: Ronin Kernel Bridge Hydrated on Worker Thread.")
