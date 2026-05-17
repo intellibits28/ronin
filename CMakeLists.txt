@@ -5,7 +5,7 @@ if(POLICY CMP0135)
   cmake_policy(SET CMP0135 NEW)
 endif()
 
-# Global Configuration for Dependencies
+# Global Configuration for Dependencies (CLI Critical Audit Directive)
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
 set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
@@ -90,31 +90,24 @@ FetchContent_GetProperties(tensorflow_lite)
 if(NOT tensorflow_lite_POPULATED)
     FetchContent_Populate(tensorflow_lite)
 endif()
+
 if(ANDROID)
     message(STATUS "Android build detected. Searching for Play Services TFLite Prefab...")
-    # 1. Try Play Services official name
+    # Standard package name for Play Services TFLite
     find_package(tensorflowlite_jni_gms_client CONFIG)
-    # 2. Try standard TFLite names
     if(NOT tensorflowlite_jni_gms_client_FOUND)
+        # Fallback to standard names
         find_package(tensorflowlite CONFIG)
         find_package(tensorflow-lite CONFIG)
     endif()
-
-    # Architect's Recommendation: Look for the library file with hints
-    # CMAKE_FIND_ROOT_PATH usually points to the Prefab directory in Gradle builds
+    
+    # Look for the library file with hints
     find_library(TFLITE_JNI_LIB 
-        NAMES tensorflowlite tensorflowlite_jni litert_jni litert
+        NAMES tensorflowlite_jni tensorflowlite litert_jni litert
         HINTS ${CMAKE_FIND_ROOT_PATH}
         PATH_SUFFIXES "libs/android.${ANDROID_ABI}" "jni/${ANDROID_ABI}"
     )
-
-    if(tensorflowlite_jni_gms_client_FOUND OR tensorflowlite_FOUND OR TFLITE_JNI_LIB)
-        message(STATUS "TensorFlow Lite binary components found.")
-    else()
-        message(WARNING "TensorFlow Lite binary not found. Linker errors expected.")
-    endif()
 endif()
-
 
 # --- Core Ronin Logic ---
 set(RONIN_CORE_SOURCES
@@ -151,20 +144,16 @@ if(ANDROID)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     
-    # Priority Linkage Chain
+    # Priority Linkage Chain (C API)
     if(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
     elseif(TARGET tensorflow::tensorflowlite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
-    elseif(TARGET tensorflow-lite::tensorflow-lite)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
     elseif(TFLITE_JNI_LIB)
-        # Fallback to safely found library path (Architect's fix)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static ${TFLITE_JNI_LIB})
     else()
-        # No binary found, but we still have headers to compile
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
-        message(WARNING "Linking without TFLite/LiteRT binary. Runtime failures will occur.")
+        message(WARNING "Linking without TFLite/LiteRT binary. Runtime failures expected.")
     endif()
 else()
     target_include_directories(ronin_core PUBLIC 
@@ -193,18 +182,14 @@ if(ANDROID)
         ${android-lib}
     )
 
-    # Propagate TFLite linkage to the shared library
+    # Propagate linkage for symbol resolution
     if(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
         target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
     elseif(TARGET tensorflow::tensorflowlite)
         target_link_libraries(ronin_kernel PRIVATE tensorflow::tensorflowlite)
-    elseif(TARGET tensorflow-lite::tensorflow-lite)
-        target_link_libraries(ronin_kernel PRIVATE tensorflow-lite::tensorflow-lite)
     elseif(TFLITE_JNI_LIB)
         target_link_libraries(ronin_kernel PRIVATE ${TFLITE_JNI_LIB})
     endif()
-
-    target_link_libraries(ronin_kernel PRIVATE ${log-lib} ${android-lib})
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
@@ -226,7 +211,6 @@ if(NOT ANDROID)
     
     enable_testing()
     
-    # Requirement: Link to gtest_main directly
     add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp)
     target_link_libraries(ronin_atomic_test ronin_core gtest_main)
 
