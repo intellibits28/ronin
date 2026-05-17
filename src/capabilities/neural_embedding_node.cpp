@@ -135,9 +135,11 @@ void NeuralEmbeddingNode::trimMemory(int level) {
         unload();
     } else if (level >= 40) {
         LOGI(TAG, "Moderate Pressure: Releasing intermediate LiteRT tensors.");
+#ifdef __ANDROID__
         if (m_impl->interpreter) {
             m_impl->interpreter->ReleaseIntermediateTensors();
         }
+#endif
     }
 }
 
