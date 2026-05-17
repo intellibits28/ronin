@@ -142,7 +142,7 @@ if(ANDROID)
     else()
         # Fallback: Use source headers and attempt manual linkage against libnames
         target_include_directories(ronin_core PUBLIC ${tensorflow_lite_SOURCE_DIR})
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static litert tensorflowlite_jni)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni)
     endif()
 else()
     target_include_directories(ronin_core PUBLIC 
@@ -180,7 +180,7 @@ if(ANDROID)
         target_link_libraries(ronin_kernel PRIVATE tensorflow-lite::tensorflow-lite)
     else()
         # Ensure linker can find the libraries by name if prefab is missing
-        target_link_libraries(ronin_kernel PRIVATE litert tensorflowlite_jni)
+        target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni)
     endif()
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
