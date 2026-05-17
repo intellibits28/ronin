@@ -1,0 +1,229 @@
+{
+  "total_count": 2,
+  "jobs": [
+    {
+      "id": 76376074926,
+      "run_id": 25983350953,
+      "workflow_name": "Ronin Kernel Build & Test",
+      "head_branch": "feature/hydration-fix",
+      "run_url": "https://api.github.com/repos/intellibits28/ronin/actions/runs/25983350953",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOSAaD9c8AAAARyF5qrg",
+      "head_sha": "1b868ee771618519803eddffc8e4ad19cc609823",
+      "url": "https://api.github.com/repos/intellibits28/ronin/actions/jobs/76376074926",
+      "html_url": "https://github.com/intellibits28/ronin/actions/runs/25983350953/job/76376074926",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-05-17T06:20:10Z",
+      "started_at": "2026-05-17T06:20:11Z",
+      "completed_at": "2026-05-17T06:23:36Z",
+      "name": "test-host",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-05-17T06:20:12Z",
+          "completed_at": "2026-05-17T06:20:12Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-05-17T06:20:12Z",
+          "completed_at": "2026-05-17T06:20:14Z"
+        },
+        {
+          "name": "Install Dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-05-17T06:20:14Z",
+          "completed_at": "2026-05-17T06:20:31Z"
+        },
+        {
+          "name": "Build Host Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-05-17T06:20:31Z",
+          "completed_at": "2026-05-17T06:23:34Z"
+        },
+        {
+          "name": "Run Host Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-05-17T06:23:34Z",
+          "completed_at": "2026-05-17T06:23:34Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-05-17T06:23:34Z",
+          "completed_at": "2026-05-17T06:23:34Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-05-17T06:23:34Z",
+          "completed_at": "2026-05-17T06:23:34Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/intellibits28/ronin/check-runs/76376074926",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000001542,
+      "runner_name": "GitHub Actions 1000001542",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 76376247609,
+      "run_id": 25983350953,
+      "workflow_name": "Ronin Kernel Build & Test",
+      "head_branch": "feature/hydration-fix",
+      "run_url": "https://api.github.com/repos/intellibits28/ronin/actions/runs/25983350953",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOSAaD9c8AAAARyGENOQ",
+      "head_sha": "1b868ee771618519803eddffc8e4ad19cc609823",
+      "url": "https://api.github.com/repos/intellibits28/ronin/actions/jobs/76376247609",
+      "html_url": "https://github.com/intellibits28/ronin/actions/runs/25983350953/job/76376247609",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-05-17T06:23:36Z",
+      "started_at": "2026-05-17T06:23:38Z",
+      "completed_at": "2026-05-17T06:28:59Z",
+      "name": "build-apk",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-05-17T06:23:39Z",
+          "completed_at": "2026-05-17T06:23:42Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-05-17T06:23:42Z",
+          "completed_at": "2026-05-17T06:23:44Z"
+        },
+        {
+          "name": "Set up JDK 17",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-05-17T06:23:44Z",
+          "completed_at": "2026-05-17T06:23:50Z"
+        },
+        {
+          "name": "Set up Android NDK r26b",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-05-17T06:23:50Z",
+          "completed_at": "2026-05-17T06:24:21Z"
+        },
+        {
+          "name": "Build Host Flatc (v23)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-05-17T06:24:21Z",
+          "completed_at": "2026-05-17T06:24:46Z"
+        },
+        {
+          "name": "Deploy Assets",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-05-17T06:24:46Z",
+          "completed_at": "2026-05-17T06:24:46Z"
+        },
+        {
+          "name": "Debug: List JNI Libraries and Model Assets",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-05-17T06:24:46Z",
+          "completed_at": "2026-05-17T06:24:46Z"
+        },
+        {
+          "name": "Build Android APK",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 8,
+          "started_at": "2026-05-17T06:24:46Z",
+          "completed_at": "2026-05-17T06:28:55Z"
+        },
+        {
+          "name": "Rename APK",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-05-17T06:28:55Z",
+          "completed_at": "2026-05-17T06:28:55Z"
+        },
+        {
+          "name": "Upload Ronin APK",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-05-17T06:28:55Z",
+          "completed_at": "2026-05-17T06:28:55Z"
+        },
+        {
+          "name": "Post Build Android APK",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-05-17T06:28:55Z",
+          "completed_at": "2026-05-17T06:28:55Z"
+        },
+        {
+          "name": "Post Set up JDK 17",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-05-17T06:28:55Z",
+          "completed_at": "2026-05-17T06:28:55Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-05-17T06:28:55Z",
+          "completed_at": "2026-05-17T06:28:56Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-05-17T06:28:56Z",
+          "completed_at": "2026-05-17T06:28:56Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/intellibits28/ronin/check-runs/76376247609",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000001544,
+      "runner_name": "GitHub Actions 1000001544",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

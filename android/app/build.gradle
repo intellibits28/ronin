@@ -95,8 +95,8 @@ dependencies {
     implementation 'com.google.android.gms:play-services-location:21.1.0'
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
-    // AI Bridges (LiteRT Standalone for Native C++ Retrieval)
-    implementation 'com.google.ai.edge.litert:litert:1.0.1'
+    // AI Bridges (Stable TFLite with verified Prefab support)
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
     implementation 'com.google.mlkit:translate:17.0.1'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3'
 
