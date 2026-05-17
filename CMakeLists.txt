@@ -122,6 +122,8 @@ add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
 add_dependencies(ronin_core generate_fbs)
 
 if(ANDROID)
+    add_compile_definitions(TFLITE_IN_GMSCORE TFLITE_WITH_STABLE_ABI)
+    
     target_include_directories(ronin_core PUBLIC 
         include 
         ${sqlite3_src_SOURCE_DIR} 
