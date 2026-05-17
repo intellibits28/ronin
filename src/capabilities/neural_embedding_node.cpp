@@ -32,6 +32,9 @@ struct NeuralEmbeddingNode::Impl {
     }
 };
 
+NeuralEmbeddingNode::NeuralEmbeddingNode()
+    : m_impl(std::make_unique<Impl>("", "")) {}
+
 NeuralEmbeddingNode::NeuralEmbeddingNode(const std::string& model_path, const std::string& sp_model_path)
     : m_impl(std::make_unique<Impl>(model_path, sp_model_path)) {}
 

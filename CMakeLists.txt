@@ -103,7 +103,7 @@ if(ANDROID)
     # Architect's Recommendation: Look for the library file with hints
     # CMAKE_FIND_ROOT_PATH usually points to the Prefab directory in Gradle builds
     find_library(TFLITE_JNI_LIB 
-        NAMES tensorflowlite_jni litert_jni litert
+        NAMES tensorflowlite tensorflowlite_jni litert_jni litert
         HINTS ${CMAKE_FIND_ROOT_PATH}
         PATH_SUFFIXES "libs/android.${ANDROID_ABI}" "jni/${ANDROID_ABI}"
     )
