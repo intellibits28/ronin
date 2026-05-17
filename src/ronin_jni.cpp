@@ -227,6 +227,28 @@ void native_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
     if (g_intent_engine) g_intent_engine->notifyTrimMemory(level);
 }
 
+jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
+    std::string path_str = ConvertJStringToString(env, path);
+    std::ifstream file(path_str, std::ios::binary);
+    if (!file) {
+        LOGE(TAG, "Integrity: Cannot open model file at %s", path_str.c_str());
+        return JNI_FALSE;
+    }
+
+    // Phase 8.1: Mandatory TFLite Magic Byte Check (TFL3)
+    char magic[4];
+    file.read(magic, 4);
+    if (file.gcount() < 4) return JNI_FALSE;
+
+    bool isValid = (std::memcmp(magic, "TFL3", 4) == 0);
+    if (isValid) {
+        LOGI(TAG, "Integrity: Model verified (TFLite format detected).");
+    } else {
+        LOGW(TAG, "Integrity: Model FAILED magic byte check (expected TFL3).");
+    }
+    return isValid ? JNI_TRUE : JNI_FALSE;
+}
+
 void native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {
     if (g_intent_engine) {
         g_intent_engine->setPriority(enabled ? Ronin::Kernel::Capability::SkillPriority::CRITICAL : 
@@ -270,27 +292,6 @@ jfloatArray native_generateEmbedding(JNIEnv *env, jobject thiz, jstring text, jb
         return result;
     }
     return nullptr;
-}
-
-jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
-    std::string path_str = ConvertJStringToString(env, path);
-    std::ifstream file(path_str, std::ios::binary | std::ios::ate);
-    if (!file) {
-        LOGE(TAG, "Integrity: Cannot open model file at %s", path_str.c_str());
-        return JNI_FALSE;
-    }
-
-    // Phase 8.1: Generic Integrity Check
-    // If file exists and size > 1KB, we assume it's valid to attempt loading.
-    // Explicit Magic Byte check (TFL3) is bypassed to avoid driver/version mismatches.
-    std::streamsize size = file.tellg();
-    if (size > 1024) {
-        LOGI(TAG, "Integrity: Model verified (Size: %lld bytes).", (long long)size);
-        return JNI_TRUE;
-    }
-
-    LOGW(TAG, "Integrity: Model validation failed (File too small or empty).");
-    return JNI_FALSE;
 }
 
 jboolean native_warmMemoryPipeline(JNIEnv *env, jobject thiz) {

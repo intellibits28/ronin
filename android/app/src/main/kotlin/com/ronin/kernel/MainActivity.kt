@@ -98,6 +98,7 @@ class ChatViewModel : ViewModel() {
     var pendingProviderType by mutableStateOf("Gemini")
 
     var kernelStatus by mutableStateOf("Initializing...")
+    var isE5Missing by mutableStateOf(true)
     var isKernelReady by mutableStateOf(false)
     var isImporting by mutableStateOf(false)
     var isLowPerformanceMode by mutableStateOf(false)
@@ -146,6 +147,7 @@ class MainActivity : ComponentActivity() {
             }
             chatViewModel.isImporting = false
             if (success) {
+                scanLocalModels()
                 Toast.makeText(this@MainActivity, "Semantic Memory Integrated.", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this@MainActivity, "Failed to import embedding model.", Toast.LENGTH_SHORT).show()
@@ -189,7 +191,12 @@ class MainActivity : ComponentActivity() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         val modelsDir = java.io.File(filesDir, "models")
         if (!modelsDir.exists()) modelsDir.mkdirs()
-        val models = modelsDir.listFiles { file -> 
+
+        val e5File = java.io.File(filesDir, "assets/models/multilingual-e5-small.tflite")
+        chatViewModel.isE5Missing = !e5File.exists()
+
+        val models = modelsDir.listFiles { file ->
+ 
             file.name != "model.onnx" && !file.isDirectory 
         }?.map { it.absolutePath }?.distinct() ?: emptyList()
         
@@ -510,21 +517,22 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
-            // Phase 8.0: Stream inference results to UI
+
+        if (chatViewModel.isE5Missing) {
+            BootstrapWizard(chatViewModel, embeddingPicker)
+        } else {
+            // Main Chat UI Content
             LaunchedEffect(Unit) {
                 engine.inferenceFlow.collect { packet ->
                     if (packet.isFinal) {
                         chatViewModel.messages.add("Ronin: ${packet.fragment}")
-                    } else {
-                        // Option: Handle partial streaming updates
                     }
                 }
             }
 
             Column(modifier = Modifier.fillMaxSize()) {
-
-                // Import Progress Indicator
                 if (chatViewModel.isImporting) {
+                    // ... (Import Progress Indicator)
                     Surface(
                         color = Color.Black.copy(alpha = 0.8f),
                         modifier = Modifier.fillMaxWidth()
@@ -552,21 +560,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                             Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Low Performance Mode: Running on CPU Fallback.", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-
-                // E5 Model Missing Warning
-                val e5Missing = !java.io.File(filesDir, "assets/models/multilingual-e5-small.tflite").exists()
-                if (e5Missing) {
-                    Surface(
-                        color = Color(0xFFE57373).copy(alpha = 0.9f),
-                        modifier = Modifier.fillMaxWidth().clickable { chatViewModel.showSettings = true }
-                    ) {
-                        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Info, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Setup Required: Semantic Memory Model missing. Tap to import.", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -640,6 +633,62 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
         }
     }
     if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, embeddingPicker, onSaveOfflineMode, { (context as MainActivity).deleteLocalModel(it) }, { (context as MainActivity).hydrateModel(it) })
+}
+
+@Composable
+fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Red Banner at the top
+        Surface(
+            color = Color(0xFFE57373).copy(alpha = 0.9f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Info, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Text("Setup Required: Semantic Memory Model missing.", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+        Icon(Icons.Default.Dns, contentDescription = null, tint = Color(0xFF64B5F6), modifier = Modifier.size(64.dp))
+        Spacer(Modifier.height(24.dp))
+        Text("Ronin Kernel: Setup Mode", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "The Core Router (Multilingual-E5) is required for semantic memory and reasoning. Please import the '.tflite' model file from your storage.",
+            fontSize = 14.sp,
+            color = Color.Gray,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(Modifier.height(32.dp))
+        
+        if (chatViewModel.isImporting) {
+            CircularProgressIndicator(color = Color(0xFF64B5F6))
+            Spacer(Modifier.height(16.dp))
+            Text("Verifying and Hydrating Model...", color = Color.Cyan, fontSize = 12.sp)
+        } else {
+            Button(
+                onClick = { embeddingPicker.launch(arrayOf("*/*")) },
+                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF64B5F6))
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CloudUpload, null, tint = Color.Black)
+                    Spacer(Modifier.width(8.dp))
+                    Text("IMPORT CORE ROUTER", color = Color.Black)
+                }
+            }
+        }
+        
+        Spacer(Modifier.height(16.dp))
+        TextButton(onClick = { /* Help link */ }) {
+            Text("Where can I find the E5 model?", color = Color(0xFF64B5F6), fontSize = 12.sp)
+        }
+    }
 }
 
 @Composable

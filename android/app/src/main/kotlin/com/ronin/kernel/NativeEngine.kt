@@ -753,6 +753,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return false
     }
 
+    fun isValidModel(path: String): Boolean {
+        if (!isLibLoaded) return false
+        return try { isValidModelNative(path) } catch (e: Exception) { false }
+    }
+
     override fun onTrimMemory(level: Int) {
         if (isLibLoaded) {
             try {
