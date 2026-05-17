@@ -88,24 +88,31 @@ FetchContent_GetProperties(tensorflow_lite)
 if(NOT tensorflow_lite_POPULATED)
     FetchContent_Populate(tensorflow_lite)
 endif()
-
 if(ANDROID)
-    message(STATUS "Android build detected. Searching for TensorFlow Lite Prefab...")
-    # Standard package name for TFLite 2.14.0
-    find_package(tensorflowlite CONFIG)
-    if(NOT tensorflowlite_FOUND)
+    message(STATUS "Android build detected. Searching for Play Services TFLite Prefab...")
+    # 1. Try Play Services official name
+    find_package(tensorflowlite_jni_gms_client CONFIG)
+    # 2. Try standard TFLite names
+    if(NOT tensorflowlite_jni_gms_client_FOUND)
+        find_package(tensorflowlite CONFIG)
         find_package(tensorflow-lite CONFIG)
     endif()
-    
-    # Architect's Recommendation: Explicitly look for the library file if Prefab is shaky
-    find_library(TFLITE_JNI_LIB NAMES tensorflowlite_jni litert_jni litert)
-    
-    if(tensorflowlite_FOUND OR tensorflow-lite_FOUND OR TFLITE_JNI_LIB)
+
+    # Architect's Recommendation: Look for the library file with hints
+    # CMAKE_FIND_ROOT_PATH usually points to the Prefab directory in Gradle builds
+    find_library(TFLITE_JNI_LIB 
+        NAMES tensorflowlite_jni litert_jni litert
+        HINTS ${CMAKE_FIND_ROOT_PATH}
+        PATH_SUFFIXES "libs/android.${ANDROID_ABI}" "jni/${ANDROID_ABI}"
+    )
+
+    if(tensorflowlite_jni_gms_client_FOUND OR tensorflowlite_FOUND OR TFLITE_JNI_LIB)
         message(STATUS "TensorFlow Lite binary components found.")
     else()
         message(WARNING "TensorFlow Lite binary not found. Linker errors expected.")
     endif()
 endif()
+
 
 # --- Core Ronin Logic ---
 set(RONIN_CORE_SOURCES
@@ -142,13 +149,15 @@ if(ANDROID)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     
-    # Standard TFLite targets
-    if(TARGET tensorflow::tensorflowlite)
+    # Priority Linkage Chain
+    if(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+    elseif(TARGET tensorflow::tensorflowlite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
     elseif(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
     elseif(TFLITE_JNI_LIB)
-        # Fallback to safely found library path
+        # Fallback to safely found library path (Architect's fix)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static ${TFLITE_JNI_LIB})
     else()
         # No binary found, but we still have headers to compile
@@ -183,7 +192,9 @@ if(ANDROID)
     )
 
     # Propagate TFLite linkage to the shared library
-    if(TARGET tensorflow::tensorflowlite)
+    if(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+        target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+    elseif(TARGET tensorflow::tensorflowlite)
         target_link_libraries(ronin_kernel PRIVATE tensorflow::tensorflowlite)
     elseif(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_kernel PRIVATE tensorflow-lite::tensorflow-lite)
