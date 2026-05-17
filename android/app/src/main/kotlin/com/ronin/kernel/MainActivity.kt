@@ -391,6 +391,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setupHardwareCallbacks() {
+        val vm = ViewModelProvider(this)[ChatViewModel::class.java]
         nativeEngine.getSecureApiKey = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
         nativeEngine.onRequestHardwareData = { nodeId ->
             if (nodeId == 5) {
@@ -437,10 +438,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         nativeEngine.onSystemTiersUpdate = { temp, used, total ->
-            val vm = ViewModelProvider(this)[ChatViewModel::class.java]
             vm.temperature = temp; vm.ramUsedGB = used; vm.ramTotalGB = total
         }
-        nativeEngine.onKernelMessage = { msg -> ViewModelProvider(this)[ChatViewModel::class.java].reasoningLogs.add(0, msg) }
+        nativeEngine.onKernelMessage = { msg -> vm.reasoningLogs.add(0, msg) }
     }
 
     override fun onResume() {
