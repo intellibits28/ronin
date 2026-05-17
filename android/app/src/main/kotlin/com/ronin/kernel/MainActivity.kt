@@ -556,6 +556,21 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     }
                 }
 
+                // E5 Model Missing Warning
+                val e5Missing = !java.io.File(filesDir, "assets/models/multilingual-e5-small.tflite").exists()
+                if (e5Missing) {
+                    Surface(
+                        color = Color(0xFFE57373).copy(alpha = 0.9f),
+                        modifier = Modifier.fillMaxWidth().clickable { chatViewModel.showSettings = true }
+                    ) {
+                        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Setup Required: Semantic Memory Model missing. Tap to import.", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
                 Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
                     SelectionContainer {
                         LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }

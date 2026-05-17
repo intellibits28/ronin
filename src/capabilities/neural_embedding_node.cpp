@@ -166,7 +166,11 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
 }
 
 std::string NeuralEmbeddingNode::execute(const std::string& param) {
+    if (!isLoaded() && !load()) {
+        return "Expert Path: Multilingual-E5 model not found. Please use the Setup Wizard to import '.tflite' from storage.";
+    }
     auto vec = generateEmbedding(param, true);
+    if (vec.empty()) return "Expert Path Error: Inference failed or model corrupted.";
     return "E5-Small: Semantic vector generated natively via LiteRT C API.";
 }
 
