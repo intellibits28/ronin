@@ -61,9 +61,6 @@ import androidx.security.crypto.MasterKey
 import org.json.JSONArray
 import org.json.JSONObject
 
-// Emergency Patch: Icon Import
-import androidx.compose.material.icons.filled.ChatBubble
-
 data class CloudProvider(
     val name: String, 
     val providerType: String,
@@ -138,7 +135,6 @@ class MainActivity : ComponentActivity() {
                             input.copyTo(output, bufferSize = 1024 * 1024)
                         }
                     }
-                    // Phase 9.0: Verify Magic Bytes after import
                     nativeEngine.isValidModel(targetFile.absolutePath)
                 } catch (e: Exception) {
                     Log.e("RoninBoot", "Embedding Import Failed: ${e.message}")
@@ -187,7 +183,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun scanLocalModels() {
+    fun scanLocalModels() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         val modelsDir = java.io.File(filesDir, "models")
         if (!modelsDir.exists()) modelsDir.mkdirs()
@@ -217,7 +213,7 @@ class MainActivity : ComponentActivity() {
             NativeEngine.initializeAsync()
             if (!nativeEngine.isNativeLibraryLoaded()) {
                 chatViewModel.kernelStatus = "FATAL: Lib Load Failed"
-                Toast.makeText(this@MainActivity, "CRITICAL: Native libraries failed to load. Check Logcat.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "CRITICAL: Native libraries failed to load.", Toast.LENGTH_LONG).show()
             }
             nativeEngine.initialize()
             registerComponentCallbacks(nativeEngine)
@@ -444,8 +440,10 @@ class MainActivity : ComponentActivity() {
             val vm = ViewModelProvider(this)[ChatViewModel::class.java]
             vm.temperature = temp; vm.ramUsedGB = used; vm.ramTotalGB = total
         }
-        nativeEngine.onKernelMessage = { msg -> ViewModelProvider(this)[ChatViewModel::class.java].reasoningLogs.add(0, msg) }
+        nativeEngine.onKernelMessage = { msg -> reasoningLogs.add(0, msg) }
     }
+    
+    val reasoningLogs = mutableStateListOf<String>()
 
     override fun onResume() {
         super.onResume()
@@ -489,7 +487,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     }
                 }, 
                 actions = { 
-                    IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.BarChart, null) }
+                    IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.Info, null) }
                     IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, null) } 
                 }
             ) 
@@ -533,7 +531,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
 
                     Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
                         SelectionContainer {
-                            LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }
+                            LazyColumn(modifier = Modifier.fillMaxSize()) { items((context as? MainActivity)?.reasoningLogs ?: emptyList<String>()) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }
                         }
                     }
 
@@ -548,7 +546,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         items(suggestions) { s -> 
                                             TextButton(onClick = { currentInput = if (s.endsWith(" ")) s else "$s "; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { 
                                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                                    Icon(Icons.Default.Terminal, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(16.dp))
+                                                    Icon(Icons.Default.List, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(16.dp))
                                                     Spacer(Modifier.width(8.dp))
                                                     Text(s, color = Color.White, fontSize = 14.sp) 
                                                 }
@@ -585,7 +583,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             }
         }
     }
-    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, embeddingPicker, onSaveOfflineMode, { (context as MainActivity).deleteLocalModel(it) }, { (context as MainActivity).hydrateModel(it) })
+    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, embeddingPicker, onSaveOfflineMode, { (context as? MainActivity)?.deleteLocalModel(it) }, { (context as? MainActivity)?.hydrateModel(it) })
 }
 
 @Composable
@@ -600,7 +598,7 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: ActivityResul
         }
 
         Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Icon(Icons.Default.Dns, contentDescription = null, tint = Color(0xFF64B5F6), modifier = Modifier.size(64.dp))
+            Icon(Icons.Default.Build, contentDescription = null, tint = Color(0xFF64B5F6), modifier = Modifier.size(64.dp))
             Spacer(Modifier.height(24.dp))
             Text("Ronin Kernel: Setup Mode", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.height(16.dp))
@@ -613,7 +611,7 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: ActivityResul
             } else {
                 Button(onClick = { embeddingPicker.launch(arrayOf("*/*")) }, colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF64B5F6))) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.CloudUpload, null, tint = Color.Black)
+                        Icon(Icons.Default.FileUpload, null, tint = Color.Black)
                         Spacer(Modifier.width(8.dp))
                         Text("IMPORT CORE ROUTER", color = Color.Black)
                     }
@@ -710,7 +708,7 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
                         if (apiKey.isNotBlank()) { 
                             isFetching = true; fetchError = null; scope.launch { val res = engine?.fetchAvailableModels(apiKey, selectedTemplate); fetchedModels = res?.models ?: emptyList(); fetchError = res?.error; isFetching = false } 
                         } 
-                    }) { Icon(Icons.Default.CloudDownload, null, tint = Color(0xFF64B5F6)) }
+                    }) { Icon(Icons.Default.Refresh, null, tint = Color(0xFF64B5F6)) }
                 }
             }
             if (isFetching) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
