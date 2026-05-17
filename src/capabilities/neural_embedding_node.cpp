@@ -6,9 +6,8 @@
 #include <cmath>
 #include <chrono>
 #include <mutex>
-#include <tensorflow/lite/interpreter.h>
-#include <tensorflow/lite/kernels/register.h>
-#include <tensorflow/lite/model.h>
+#include <cstring>
+#include <tensorflow/lite/c/c_api.h>
 #include <sentencepiece_processor.h>
 
 #define TAG "RoninNeuralEmbedding"
@@ -18,14 +17,19 @@ namespace Ronin::Kernel::Capability {
 struct NeuralEmbeddingNode::Impl {
     std::string model_path;
     std::string sp_model_path;
-    std::unique_ptr<tflite::FlatBufferModel> model;
-    std::unique_ptr<tflite::Interpreter> interpreter;
+    TfLiteModel* model = nullptr;
+    TfLiteInterpreter* interpreter = nullptr;
     std::unique_ptr<sentencepiece::SentencePieceProcessor> sp_processor;
     bool loaded = false;
     std::mutex mutex;
 
     Impl(const std::string& m_path, const std::string& s_path) 
         : model_path(m_path), sp_model_path(s_path) {}
+
+    ~Impl() {
+        if (interpreter) TfLiteInterpreterDelete(interpreter);
+        if (model) TfLiteModelDelete(model);
+    }
 };
 
 NeuralEmbeddingNode::NeuralEmbeddingNode(const std::string& model_path, const std::string& sp_model_path)
@@ -39,24 +43,28 @@ bool NeuralEmbeddingNode::load() {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     if (m_impl->loaded) return true;
 
-    LOGI(TAG, "Loading Multilingual-E5-Small: %s", m_impl->model_path.c_str());
+    LOGI(TAG, "Loading Multilingual-E5-Small (C API): %s", m_impl->model_path.c_str());
     
-    m_impl->model = tflite::FlatBufferModel::BuildFromFile(m_impl->model_path.c_str());
+    m_impl->model = TfLiteModelCreateFromFile(m_impl->model_path.c_str());
     if (!m_impl->model) {
-        LOGE(TAG, "Failed to load TFLite model.");
+        LOGE(TAG, "Failed to load TFLite model via C API.");
         return false;
     }
 
-    tflite::ops::builtin::BuiltinOpResolver resolver;
-    tflite::InterpreterBuilder(*(m_impl->model), resolver)(&(m_impl->interpreter));
+    TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
+    // Optimized for Snapdragon 778G (4 cores for background task)
+    TfLiteInterpreterOptionsSetNumThreads(options, 4);
+
+    m_impl->interpreter = TfLiteInterpreterCreate(m_impl->model, options);
+    TfLiteInterpreterOptionsDelete(options);
 
     if (!m_impl->interpreter) {
-        LOGE(TAG, "Failed to build TFLite interpreter.");
+        LOGE(TAG, "Failed to create TFLite interpreter via C API.");
         return false;
     }
 
-    if (m_impl->interpreter->AllocateTensors() != kTfLiteOk) {
-        LOGE(TAG, "Failed to allocate tensors.");
+    if (TfLiteInterpreterAllocateTensors(m_impl->interpreter) != kTfLiteOk) {
+        LOGE(TAG, "Failed to allocate tensors via C API.");
         return false;
     }
 
@@ -68,16 +76,22 @@ bool NeuralEmbeddingNode::load() {
     }
 
     m_impl->loaded = true;
-    LOGI(TAG, "Expert Native Path Hydrated Successfully.");
+    LOGI(TAG, "Expert Native Path (C API) Hydrated Successfully.");
     return true;
 }
 
 void NeuralEmbeddingNode::unload() {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     if (m_impl->loaded) {
-        LOGI(TAG, "Unloading E5-Small model and SentencePiece to free RAM.");
-        m_impl->interpreter.reset();
-        m_impl->model.reset();
+        LOGI(TAG, "Unloading E5-Small model (C API) and SentencePiece.");
+        if (m_impl->interpreter) {
+            TfLiteInterpreterDelete(m_impl->interpreter);
+            m_impl->interpreter = nullptr;
+        }
+        if (m_impl->model) {
+            TfLiteModelDelete(m_impl->model);
+            m_impl->model = nullptr;
+        }
         m_impl->sp_processor.reset();
         m_impl->loaded = false;
     }
@@ -87,22 +101,12 @@ void NeuralEmbeddingNode::trimMemory(int level) {
     if (!m_impl || !m_impl->loaded) return;
     std::lock_guard<std::mutex> lock(m_impl->mutex);
 
-    // level 80 = TRIM_MEMORY_COMPLETE, level 60 = TRIM_MEMORY_MODERATE
-    if (level >= 80) {
+    if (level >= 80) { // TRIM_MEMORY_COMPLETE
         LOGW(TAG, "Critical Pressure: Fully unloading embedding engine.");
-        m_impl->interpreter.reset();
-        m_impl->model.reset();
-        m_impl->sp_processor.reset();
-        m_impl->loaded = false;
-    } else if (level >= 40) {
-        LOGI(TAG, "Moderate Pressure: Releasing non-persistent LiteRT memory.");
-#ifdef __ANDROID__
-        if (m_impl->interpreter) {
-            // Standard TFLite 2.16.1 method name
-            m_impl->interpreter->ReleaseNonPersistentMemory();
-        }
-#endif
+        unload();
     }
+    // Note: C API doesn't expose ReleaseNonPersistentMemory directly in standard c_api.h
+    // It's usually handled by the runtime or requires specific extensions.
 }
 
 bool NeuralEmbeddingNode::isLoaded() const {
@@ -113,7 +117,6 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
     if (!load()) return {};
 
     std::string processed_input = input;
-    // Multi-lingual E5 requirement: prefix with query: or passage:
     if (is_query) {
         if (processed_input.find("query: ") != 0) processed_input = "query: " + processed_input;
     } else {
@@ -126,34 +129,36 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
         return {};
     }
 
-    // Prepare input tensor
-    int input_idx = m_impl->interpreter->inputs()[0];
-    TfLiteTensor* input_tensor = m_impl->interpreter->tensor(input_idx);
-    
-    // Resize input for dynamic sequence length (up to 512)
+    // Resize input for dynamic sequence length
     int seq_len = std::min((int)tokens.size(), 512);
-    std::vector<int> dims = {1, seq_len};
-    m_impl->interpreter->ResizeInputTensor(input_idx, dims);
-    if (m_impl->interpreter->AllocateTensors() != kTfLiteOk) return {};
+    int input_dims[] = {1, seq_len};
+    if (TfLiteInterpreterResizeInputTensor(m_impl->interpreter, 0, input_dims, 2) != kTfLiteOk) {
+        LOGE(TAG, "Failed to resize input tensor.");
+        return {};
+    }
+    if (TfLiteInterpreterAllocateTensors(m_impl->interpreter) != kTfLiteOk) return {};
 
     // Copy tokens
-    int32_t* input_data = m_impl->interpreter->typed_tensor<int32_t>(input_idx);
+    TfLiteTensor* input_tensor = TfLiteInterpreterGetInputTensor(m_impl->interpreter, 0);
+    int32_t* input_data = (int32_t*)TfLiteTensorData(input_tensor);
     for (int i = 0; i < seq_len; ++i) input_data[i] = tokens[i];
 
     auto start = std::chrono::high_resolution_clock::now();
-    if (m_impl->interpreter->Invoke() != kTfLiteOk) {
+    if (TfLiteInterpreterInvoke(m_impl->interpreter) != kTfLiteOk) {
         LOGE(TAG, "Inference failed.");
         return {};
     }
     auto end = std::chrono::high_resolution_clock::now();
-    LOGI(TAG, "Inference Latency: %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
 
-    // Extract embedding (assuming average pooling or [CLS] token at index 0)
-    int output_idx = m_impl->interpreter->outputs()[0];
-    TfLiteTensor* output_tensor = m_impl->interpreter->tensor(output_idx);
-    float* output_data = m_impl->interpreter->typed_tensor<float>(output_idx);
+    // Extract embedding
+    const TfLiteTensor* output_tensor = TfLiteInterpreterGetOutputTensor(m_impl->interpreter, 0);
+    const float* output_data = (const float*)TfLiteTensorData(output_tensor);
     
-    int dim = output_tensor->dims->data[output_tensor->dims->size - 1];
+    int dim = 1;
+    for (int i = 0; i < TfLiteTensorNumDims(output_tensor); ++i) {
+        dim *= TfLiteTensorDim(output_tensor, i);
+    }
+    
     std::vector<float> embedding(dim);
     std::memcpy(embedding.data(), output_data, dim * sizeof(float));
 
@@ -161,9 +166,8 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
 }
 
 std::string NeuralEmbeddingNode::execute(const std::string& param) {
-    // Default to query mode for direct execution
     auto vec = generateEmbedding(param, true);
-    return "E5-Small: Semantic vector (384-dim) generated natively.";
+    return "E5-Small: Semantic vector generated natively via LiteRT C API.";
 }
 
 } // namespace Ronin::Kernel::Capability
