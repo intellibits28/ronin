@@ -14,7 +14,7 @@ public:
     ~NeuralEmbeddingNode();
 
     // BaseSkill Implementation
-    std::string getName() const override { return "NeuralEmbeddingNode"; }
+    std::string getName() const override;
     uint32_t getLoraId() const override { return 3; }
     std::string execute(const std::string& param) override;
 

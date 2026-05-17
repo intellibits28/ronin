@@ -146,7 +146,7 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
         return {};
     }
     auto end = std::chrono::high_resolution_clock::now();
-    LOGI(TAG, "Inference Latency: %lld ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+    LOGI(TAG, "Inference Latency: %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
 
     // Extract embedding (assuming average pooling or [CLS] token at index 0)
     int output_idx = m_impl->interpreter->outputs()[0];
