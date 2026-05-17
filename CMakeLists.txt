@@ -90,10 +90,10 @@ if(NOT tensorflow_lite_POPULATED)
 endif()
 
 if(ANDROID)
-    message(STATUS "Android build detected. Searching for Play Services TFLite Prefab...")
-    # This is the standard package name for Play Services TFLite
-    find_package(tensorflowlite_jni_gms_client REQUIRED CONFIG)
-    message(STATUS "Play Services TFLite Prefab found.")
+    message(STATUS "Android build detected. Searching for LiteRT Prefab...")
+    # This is the modern standalone package name
+    find_package(litert REQUIRED CONFIG)
+    message(STATUS "LiteRT Prefab found.")
 endif()
 
 # --- Core Ronin Logic ---
@@ -122,8 +122,6 @@ add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
 add_dependencies(ronin_core generate_fbs)
 
 if(ANDROID)
-    add_compile_definitions(TFLITE_IN_GMSCORE TFLITE_WITH_STABLE_ABI)
-    
     target_include_directories(ronin_core PUBLIC 
         include 
         ${sqlite3_src_SOURCE_DIR} 
@@ -133,8 +131,8 @@ if(ANDROID)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     
-    # Official Play Services target
-    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+    # Modern LiteRT target (provided by com.google.ai.edge.litert:litert)
+    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static litert::litert)
 else()
     target_include_directories(ronin_core PUBLIC 
         include 
@@ -163,7 +161,7 @@ if(ANDROID)
     )
 
     # Propagate LiteRT linkage to the shared library
-    target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
+    target_link_libraries(ronin_kernel PRIVATE litert::litert)
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)

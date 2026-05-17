@@ -15,7 +15,6 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.android.gms.tasks.Tasks
-import com.google.android.gms.tflite.java.TfLite
 import android.os.Environment
 import android.os.Build
 import android.content.Intent
@@ -209,17 +208,6 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launch(Dispatchers.Main) {
             chatViewModel.kernelStatus = "Booting Engine..."
-            
-            // Phase 9.1: Initialize Play Services TFLite
-            try {
-                withContext(Dispatchers.IO) {
-                    Tasks.await(TfLite.initialize(this@MainActivity))
-                }
-                Log.i("RoninBoot", "Play Services TFLite Initialized.")
-            } catch (e: Exception) {
-                Log.e("RoninBoot", "Failed to initialize Play Services TFLite: ${e.message}")
-            }
-
             NativeEngine.initializeAsync()
             if (!nativeEngine.isNativeLibraryLoaded()) {
                 chatViewModel.kernelStatus = "FATAL: Lib Load Failed"
