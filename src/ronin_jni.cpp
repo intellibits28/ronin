@@ -76,7 +76,6 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     );
     auto search_node = std::make_shared<FileSearchNode>(g_ltm.get(), neural_node.get());
     
-    g_intent_engine->registerSkill(1, std::make_shared<ChatSkill>());
     g_intent_engine->registerSkill(2, search_node);
     g_intent_engine->registerSkill(3, neural_node);
     g_intent_engine->registerSkill(4, std::make_shared<FlashlightNode>());
