@@ -62,13 +62,14 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/google/sentencepiece.git
   GIT_TAG v0.1.99
 )
-# Disable SentencePiece tests and executable build to save time/resources
+# Disable SentencePiece tests, executables, and training to save time/resources
 set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
 set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
 set(SPM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SPM_ENABLE_TUNIT OFF CACHE BOOL "" FORCE)
 set(SPM_ENABLE_CLI OFF CACHE BOOL "" FORCE)
 set(SPM_BUILD_EXECUTABLES OFF CACHE BOOL "" FORCE)
+set(SPM_ENABLE_TRAIN OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(sentencepiece)
 
 # --- Requirement: LiteRT (TensorFlow Lite) ---
@@ -83,20 +84,10 @@ if(NOT tensorflow_lite_POPULATED)
 endif()
 
 if(ANDROID)
-    message(STATUS "Android build detected. Searching for LiteRT/TFLite Prefab...")
-    # Play Services official name is the most stable for this architecture
-    find_package(tensorflowlite_jni_gms_client CONFIG)
-    if(NOT tensorflowlite_jni_gms_client_FOUND)
-        # Fallback to standard names
-        find_package(lite-rt CONFIG)
-        find_package(tensorflow-lite CONFIG)
-    endif()
-    
-    if(NOT (tensorflowlite_jni_gms_client_FOUND OR lite-rt_FOUND OR tensorflow-lite_FOUND))
-        message(WARNING "No Prefab found. Using source headers as last resort.")
-    else()
-        message(STATUS "LiteRT/TFLite Prefab found.")
-    endif()
+    message(STATUS "Android build detected. Searching for Play Services TFLite Prefab...")
+    # This is the standard package name for Play Services TFLite
+    find_package(tensorflowlite_jni_gms_client REQUIRED CONFIG)
+    message(STATUS "Play Services TFLite Prefab found.")
 endif()
 
 # --- Core Ronin Logic ---
@@ -134,18 +125,8 @@ if(ANDROID)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     
-    # Standardized Linkage Chain
-    if(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
-    elseif(TARGET lite-rt::litert)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static lite-rt::litert)
-    elseif(TARGET tensorflow-lite::tensorflow-lite)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
-    else()
-        # Fallback: Pray the symbols are available at runtime
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
-        message(WARNING "Linking without TFLite/LiteRT binary. Runtime failures may occur if symbols are missing.")
-    endif()
+    # Official Play Services target
+    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
 else()
     target_include_directories(ronin_core PUBLIC 
         include 
@@ -173,14 +154,8 @@ if(ANDROID)
         ${android-lib}
     )
 
-    # Propagate LiteRT linkage to the shared library for safe symbol resolution
-    if(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
-        target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
-    elseif(TARGET lite-rt::litert)
-        target_link_libraries(ronin_kernel PRIVATE lite-rt::litert)
-    elseif(TARGET tensorflow-lite::tensorflow-lite)
-        target_link_libraries(ronin_kernel PRIVATE tensorflow-lite::tensorflow-lite)
-    endif()
+    # Propagate LiteRT linkage to the shared library
+    target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
