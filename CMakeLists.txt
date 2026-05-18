@@ -92,18 +92,33 @@ if(NOT tensorflow_lite_POPULATED)
 endif()
 
 if(ANDROID)
-    message(STATUS "Android build detected. Resolving TFLite via manual path...")
-    message(STATUS "Prefab search path: ${CMAKE_FIND_ROOT_PATH}")
+    message(STATUS "Android build detected. Resolving TFLite...")
+    message(STATUS "Prefab Root: ${CMAKE_FIND_ROOT_PATH}")
     
-    # Architect's Recommendation: Explicitly set the shared library path
-    # Prefab libraries reside in the find root path provided by Gradle
-    link_directories(${CMAKE_FIND_ROOT_PATH}/lib)
+    # 1. Try standard Prefab packages
+    find_package(tensorflowlite CONFIG)
+    if(NOT tensorflowlite_FOUND)
+        find_package(tensorflow-lite CONFIG)
+    endif()
     
-    # Discovery fallback for complex environments
+    # 2. Aggressive library discovery with precise Prefab suffixes
     find_library(TFLITE_LIB 
-        NAMES tensorflowlite_jni tensorflowlite tensorflow-lite
-        HINTS ${CMAKE_FIND_ROOT_PATH}/lib
+        NAMES tensorflowlite tensorflow-lite tensorflowlite_jni
+        HINTS ${CMAKE_FIND_ROOT_PATH}
+        PATH_SUFFIXES 
+            "lib"
+            "modules/tensorflowlite/libs/android.${ANDROID_ABI}"
+            "modules/tensorflow-lite/libs/android.${ANDROID_ABI}"
+            "jni/${ANDROID_ABI}"
     )
+    
+    if(TFLITE_LIB)
+        message(STATUS "SUCCESS: TFLite library located at: ${TFLITE_LIB}")
+    elseif(tensorflowlite_FOUND OR tensorflow-lite_FOUND)
+        message(STATUS "INFO: TFLite Prefab components detected.")
+    else()
+        message(WARNING "CRITICAL: TFLite binary not found. Symbols will likely remain undefined.")
+    endif()
 endif()
 
 # --- Core Ronin Logic ---
@@ -141,12 +156,18 @@ if(ANDROID)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     
-    # Direct Linkage
-    if(TFLITE_LIB)
+    # Priority Linkage Chain
+    if(TARGET tensorflow-lite::tensorflow-lite)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
+    elseif(TARGET tensorflowlite::tensorflowlite)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite::tensorflowlite)
+    elseif(TARGET tensorflow::tensorflowlite)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
+    elseif(TFLITE_LIB)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static ${TFLITE_LIB})
     else()
-        # Fallback to module name, assuming link_directories handles the path
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni tensorflowlite)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
+        message(WARNING "Linking ronin_core without TFLite binary. Expect undefined symbols.")
     endif()
 else()
     target_include_directories(ronin_core PUBLIC 
@@ -176,10 +197,14 @@ if(ANDROID)
     )
 
     # Propagate TFLite linkage to Shared Library
-    if(TFLITE_LIB)
+    if(TARGET tensorflow-lite::tensorflow-lite)
+        target_link_libraries(ronin_kernel PRIVATE tensorflow-lite::tensorflow-lite)
+    elseif(TARGET tensorflowlite::tensorflowlite)
+        target_link_libraries(ronin_kernel PRIVATE tensorflowlite::tensorflowlite)
+    elseif(TARGET tensorflow::tensorflowlite)
+        target_link_libraries(ronin_kernel PRIVATE tensorflow::tensorflowlite)
+    elseif(TFLITE_LIB)
         target_link_libraries(ronin_kernel PRIVATE ${TFLITE_LIB})
-    else()
-        target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni tensorflowlite)
     endif()
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
