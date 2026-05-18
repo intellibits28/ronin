@@ -83,7 +83,7 @@ endif()
 # --- Requirement: LiteRT (TensorFlow Lite) ---
 FetchContent_Declare(
   tensorflow_lite
-  URL https://github.com/tensorflow/tensorflow/archive/v2.16.1.zip
+  URL https://github.com/tensorflow/tensorflow/archive/v2.14.0.zip
 )
 # Headers are always needed for host tests and as fallback for Android
 FetchContent_GetProperties(tensorflow_lite)
@@ -94,14 +94,13 @@ endif()
 if(ANDROID)
     message(STATUS "Android build detected. Searching for TensorFlow Lite components...")
     
-    # 1. Try standard Prefab names
-    find_package(tensorflowlite CONFIG)
-    if(NOT tensorflowlite_FOUND)
-        find_package(tensorflow-lite CONFIG)
+    # 1. Try standard Prefab names (Priority to hyphenated name)
+    find_package(tensorflow-lite CONFIG)
+    if(NOT tensorflow-lite_FOUND)
+        find_package(tensorflowlite CONFIG)
     endif()
     
     # 2. Architect's safety net: Manual library discovery
-    # We look for common JNI and standalone library names
     find_library(TFLITE_LIB 
         NAMES tensorflowlite tensorflowlite_jni tensorflow-lite
         HINTS ${CMAKE_FIND_ROOT_PATH}
