@@ -69,12 +69,16 @@ data class CloudProvider(
     val authType: String
 )
 
+enum class WizardState { MISSING_CORE, IMPORTING, VERIFYING, ACTIVE }
+
 class ChatViewModel : ViewModel() {
     val messages = mutableStateListOf<String>()
     val reasoningLogs = mutableStateListOf<String>()
     var showSysInfo by mutableStateOf(false)
     var lmkPressure by mutableStateOf(0)
     var stability by mutableStateOf(1.0f)
+    
+    var wizardState by mutableStateOf(WizardState.MISSING_CORE)
     
     var showCommandSuggestions by mutableStateOf(false)
     val commandSuggestions = mutableStateListOf<String>()
@@ -95,9 +99,7 @@ class ChatViewModel : ViewModel() {
     var showAddCloudDialog by mutableStateOf(false)
 
     var kernelStatus by mutableStateOf("Initializing...")
-    var isE5Missing by mutableStateOf(true)
     var isKernelReady by mutableStateOf(false)
-    var isImporting by mutableStateOf(false)
     var isLowPerformanceMode by mutableStateOf(false)
 }
 
@@ -124,7 +126,7 @@ class MainActivity : ComponentActivity() {
     private fun importEmbeddingModelFromUri(uri: Uri) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
-            chatViewModel.isImporting = true
+            chatViewModel.wizardState = WizardState.IMPORTING
             val success = withContext(Dispatchers.IO) {
                 try {
                     val modelsDir = java.io.File(filesDir, "assets/models")
@@ -135,17 +137,19 @@ class MainActivity : ComponentActivity() {
                             input.copyTo(output, bufferSize = 1024 * 1024)
                         }
                     }
+                    chatViewModel.wizardState = WizardState.VERIFYING
                     nativeEngine.isValidModel(targetFile.absolutePath)
                 } catch (e: Exception) {
                     Log.e("RoninBoot", "Embedding Import Failed: ${e.message}")
                     false
                 }
             }
-            chatViewModel.isImporting = false
             if (success) {
+                chatViewModel.wizardState = WizardState.ACTIVE
                 scanLocalModels()
                 Toast.makeText(this@MainActivity, "Semantic Memory Integrated.", Toast.LENGTH_SHORT).show()
             } else {
+                chatViewModel.wizardState = WizardState.MISSING_CORE
                 Toast.makeText(this@MainActivity, "Failed to import embedding model.", Toast.LENGTH_SHORT).show()
             }
         }
@@ -154,7 +158,6 @@ class MainActivity : ComponentActivity() {
     private fun importModelFromUri(uri: Uri) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
-            chatViewModel.isImporting = true
             val success = withContext(Dispatchers.IO) {
                 try {
                     val inputStream = contentResolver.openInputStream(uri)
@@ -173,7 +176,6 @@ class MainActivity : ComponentActivity() {
                     false
                 }
             }
-            chatViewModel.isImporting = false
             if (success) {
                 scanLocalModels()
                 Toast.makeText(this@MainActivity, "Brain Imported Successfully", Toast.LENGTH_SHORT).show()
@@ -189,7 +191,7 @@ class MainActivity : ComponentActivity() {
         if (!modelsDir.exists()) modelsDir.mkdirs()
 
         val e5File = java.io.File(filesDir, "assets/models/multilingual-e5-small.tflite")
-        chatViewModel.isE5Missing = !e5File.exists()
+        chatViewModel.wizardState = if (e5File.exists()) WizardState.ACTIVE else WizardState.MISSING_CORE
 
         val models = modelsDir.listFiles { file ->
             file.name != "model.onnx" && !file.isDirectory 
@@ -492,8 +494,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
-            val e5Missing = !java.io.File(context.filesDir, "assets/models/multilingual-e5-small.tflite").exists()
-            if (e5Missing) {
+            if (chatViewModel.wizardState != WizardState.ACTIVE) {
                 BootstrapWizard(chatViewModel, embeddingPicker)
             } else {
                 LaunchedEffect(Unit) {
@@ -505,16 +506,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 }
 
                 Column(modifier = Modifier.fillMaxSize()) {
-                    if (chatViewModel.isImporting) {
-                        Surface(color = Color.Black.copy(alpha = 0.8f), modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Importing... Please wait", color = Color.Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.height(8.dp))
-                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color.Cyan)
-                            }
-                        }
-                    }
-
                     if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
 
                     if (chatViewModel.isLowPerformanceMode) {
@@ -602,19 +593,29 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: ActivityResul
             Spacer(Modifier.height(16.dp))
             Text("The Core Router (Multilingual-E5) is required for semantic memory and reasoning. Please import the '.tflite' model file from your storage.", fontSize = 14.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             Spacer(Modifier.height(32.dp))
-            if (chatViewModel.isImporting) {
-                CircularProgressIndicator(color = Color(0xFF64B5F6))
-                Spacer(Modifier.height(16.dp))
-                Text("Verifying and Hydrating Model...", color = Color.Cyan, fontSize = 12.sp)
-            } else {
-                Button(onClick = { embeddingPicker.launch(arrayOf("*/*")) }, colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF64B5F6))) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Refresh, null, tint = Color.Black)
-                        Spacer(Modifier.width(8.dp))
-                        Text("IMPORT CORE ROUTER", color = Color.Black)
+            
+            when (chatViewModel.wizardState) {
+                WizardState.IMPORTING -> {
+                    CircularProgressIndicator(color = Color(0xFF64B5F6))
+                    Spacer(Modifier.height(16.dp))
+                    Text("Copying Model to Secure Storage...", color = Color.Cyan, fontSize = 12.sp)
+                }
+                WizardState.VERIFYING -> {
+                    CircularProgressIndicator(color = Color.Green)
+                    Spacer(Modifier.height(16.dp))
+                    Text("Verifying Integrity (TFL3 Magic Check)...", color = Color.Green, fontSize = 12.sp)
+                }
+                else -> {
+                    Button(onClick = { embeddingPicker.launch(arrayOf("*/*")) }, colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF64B5F6))) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Refresh, null, tint = Color.Black)
+                            Spacer(Modifier.width(8.dp))
+                            Text("IMPORT CORE ROUTER", color = Color.Black)
+                        }
                     }
                 }
             }
+            
             Spacer(Modifier.height(16.dp))
             TextButton(onClick = { /* Help link */ }) { Text("Where can I find the E5 model?", color = Color(0xFF64B5F6), fontSize = 12.sp) }
         }
