@@ -28,8 +28,13 @@ if(ANDROID)
     
     # Standard Prefab packages
     find_package(tensorflowlite CONFIG)
-    if(NOT tensorflowlite_FOUND)
+    if(tensorflowlite_FOUND)
+        message(STATUS "Found Prefab package: tensorflowlite")
+    else()
         find_package(tensorflow-lite CONFIG)
+        if(tensorflow-lite_FOUND)
+            message(STATUS "Found Prefab package: tensorflow-lite")
+        endif()
     endif()
 
     if(NOT (tensorflowlite_FOUND OR tensorflow-lite_FOUND))
@@ -38,6 +43,17 @@ if(ANDROID)
             "Add 'implementation org.tensorflow:tensorflow-lite:2.14.0' to build.gradle "
             "and ensure buildFeatures { prefab true } is set."
         )
+    endif()
+    
+    # Check for targets
+    if(TARGET tensorflowlite::tensorflowlite)
+        message(STATUS "Detected target: tensorflowlite::tensorflowlite")
+    endif()
+    if(TARGET tensorflow-lite::tensorflow-lite)
+        message(STATUS "Detected target: tensorflow-lite::tensorflow-lite")
+    endif()
+    if(TARGET tensorflowlite::tensorflowlite_jni)
+        message(STATUS "Detected target: tensorflowlite::tensorflowlite_jni")
     endif()
 endif()
 
@@ -146,11 +162,16 @@ if(ANDROID)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     
-    # Direct Prefage Linkage
+    # Priority Linkage Chain
     if(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
-    else()
+    elseif(TARGET tensorflowlite::tensorflowlite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite::tensorflowlite)
+    elseif(TARGET tensorflowlite::tensorflowlite_jni)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite::tensorflowlite_jni)
+    else()
+        # This shouldn't be reached if FATAL_ERROR above is triggered
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
     endif()
 else()
     target_include_directories(ronin_core PUBLIC 
@@ -182,8 +203,10 @@ if(ANDROID)
     # Propagate TFLite linkage to Shared Library
     if(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_kernel PRIVATE tensorflow-lite::tensorflow-lite)
-    else()
+    elseif(TARGET tensorflowlite::tensorflowlite)
         target_link_libraries(ronin_kernel PRIVATE tensorflowlite::tensorflowlite)
+    elseif(TARGET tensorflowlite::tensorflowlite_jni)
+        target_link_libraries(ronin_kernel PRIVATE tensorflowlite::tensorflowlite_jni)
     endif()
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
