@@ -61,6 +61,16 @@ jobs:
           cp assets/sentencepiece.bpe.model android/app/src/main/assets/
           echo "Assets deployed to APK folder."
 
+      - name: Download TFLite C API for Android
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          # Download TFLite AAR and extract .so
+          wget -q "https://repo1.maven.org/maven2/org/tensorflow/tensorflow-lite/2.14.0/tensorflow-lite-2.14.0.aar" -O /tmp/tflite.aar
+          cd /tmp && unzip -q tflite.aar
+          cp /tmp/jni/arm64-v8a/libtensorflowlite_jni.so ${GITHUB_WORKSPACE}/android/app/src/main/jniLibs/arm64-v8a/libtensorflowlite.so
+          echo "TFLite .so deployed to jniLibs/arm64-v8a"
+          ls -lh ${GITHUB_WORKSPACE}/android/app/src/main/jniLibs/arm64-v8a/
+
       - name: "Debug: List JNI Libraries and Model Assets"
         run: |
           echo "--- Assets models ---"
