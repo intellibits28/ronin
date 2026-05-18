@@ -94,21 +94,26 @@ endif()
 if(ANDROID)
     message(STATUS "Android build detected. Searching for TensorFlow Lite components...")
     
-    # 1. Try standard Prefab names (Priority to hyphenated name)
-    find_package(tensorflow-lite CONFIG)
-    if(NOT tensorflow-lite_FOUND)
-        find_package(tensorflowlite CONFIG)
+    # 1. Try standard Prefab names
+    find_package(tensorflowlite CONFIG)
+    if(NOT tensorflowlite_FOUND)
+        find_package(tensorflow-lite CONFIG)
     endif()
     
-    # 2. Architect's safety net: Manual library discovery
+    # 2. Architect's safety net: Manual library discovery in Prefab output
+    # AGP extracts prefab libraries here
+    set(PREFAB_LIB_DIR "${CMAKE_CURRENT_BINARY_DIR}/../prefab/arm64-v8a/prefab/lib")
+    
     find_library(TFLITE_LIB 
-        NAMES tensorflowlite tensorflowlite_jni tensorflow-lite
-        HINTS ${CMAKE_FIND_ROOT_PATH}
-        PATH_SUFFIXES "libs/android.${ANDROID_ABI}" "jni/${ANDROID_ABI}"
+        NAMES tensorflowlite_jni tensorflowlite tensorflow-lite
+        HINTS ${PREFAB_LIB_DIR} ${CMAKE_FIND_ROOT_PATH}
+        PATH_SUFFIXES "tensorflowlite" "tensorflow-lite" "libs/android.${ANDROID_ABI}" "jni/${ANDROID_ABI}"
     )
     
-    if(tensorflowlite_FOUND OR tensorflow-lite_FOUND OR TFLITE_LIB)
-        message(STATUS "TensorFlow Lite binary components located.")
+    if(TFLITE_LIB)
+        message(STATUS "TensorFlow Lite binary located at: ${TFLITE_LIB}")
+    elseif(tensorflowlite_FOUND OR tensorflow-lite_FOUND)
+        message(STATUS "TensorFlow Lite Prefab components found.")
     else()
         message(WARNING "TensorFlow Lite binary not found. Linker errors highly likely.")
     endif()
@@ -150,10 +155,12 @@ if(ANDROID)
     )
     
     # Priority Linkage Chain
-    if(TARGET tensorflow::tensorflowlite)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
-    elseif(TARGET tensorflow-lite::tensorflow-lite)
+    if(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow-lite::tensorflow-lite)
+    elseif(TARGET tensorflowlite::tensorflowlite)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite::tensorflowlite)
+    elseif(TARGET tensorflow::tensorflowlite)
+        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
     elseif(TFLITE_LIB)
         target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static ${TFLITE_LIB})
     else()
@@ -188,10 +195,12 @@ if(ANDROID)
     )
 
     # Propagate TFLite linkage
-    if(TARGET tensorflow::tensorflowlite)
-        target_link_libraries(ronin_kernel PRIVATE tensorflow::tensorflowlite)
-    elseif(TARGET tensorflow-lite::tensorflow-lite)
+    if(TARGET tensorflow-lite::tensorflow-lite)
         target_link_libraries(ronin_kernel PRIVATE tensorflow-lite::tensorflow-lite)
+    elseif(TARGET tensorflowlite::tensorflowlite)
+        target_link_libraries(ronin_kernel PRIVATE tensorflowlite::tensorflowlite)
+    elseif(TARGET tensorflow::tensorflowlite)
+        target_link_libraries(ronin_kernel PRIVATE tensorflow::tensorflowlite)
     elseif(TFLITE_LIB)
         target_link_libraries(ronin_kernel PRIVATE ${TFLITE_LIB})
     endif()
