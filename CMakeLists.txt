@@ -92,21 +92,10 @@ if(NOT tensorflow_lite_POPULATED)
 endif()
 
 if(ANDROID)
-    message(STATUS "Android build detected. Searching for Play Services TFLite Prefab...")
-    # Standard package name for Play Services TFLite
-    find_package(tensorflowlite_jni_gms_client CONFIG)
-    if(NOT tensorflowlite_jni_gms_client_FOUND)
-        # Fallback to standard names
-        find_package(tensorflowlite CONFIG)
-        find_package(tensorflow-lite CONFIG)
-    endif()
-    
-    # Look for the library file with hints
-    find_library(TFLITE_JNI_LIB 
-        NAMES tensorflowlite_jni tensorflowlite litert_jni litert
-        HINTS ${CMAKE_FIND_ROOT_PATH}
-        PATH_SUFFIXES "libs/android.${ANDROID_ABI}" "jni/${ANDROID_ABI}"
-    )
+    message(STATUS "Android build detected. Searching for TensorFlow Lite Prefab...")
+    # Standard package name for TFLite 2.14.0
+    find_package(tensorflowlite REQUIRED CONFIG)
+    message(STATUS "TensorFlow Lite Prefab found.")
 endif()
 
 # --- Core Ronin Logic ---
@@ -144,17 +133,8 @@ if(ANDROID)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     
-    # Priority Linkage Chain (C API)
-    if(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
-    elseif(TARGET tensorflow::tensorflowlite)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
-    elseif(TFLITE_JNI_LIB)
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static ${TFLITE_JNI_LIB})
-    else()
-        target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
-        message(WARNING "Linking without TFLite/LiteRT binary. Runtime failures expected.")
-    endif()
+    # Priority Linkage (C API)
+    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflow::tensorflowlite)
 else()
     target_include_directories(ronin_core PUBLIC 
         include 
@@ -180,16 +160,8 @@ if(ANDROID)
         ronin_core 
         ${log-lib} 
         ${android-lib}
+        tensorflow::tensorflowlite
     )
-
-    # Propagate linkage for symbol resolution
-    if(TARGET tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
-        target_link_libraries(ronin_kernel PRIVATE tensorflowlite_jni_gms_client::tensorflowlite_jni_gms_client)
-    elseif(TARGET tensorflow::tensorflowlite)
-        target_link_libraries(ronin_kernel PRIVATE tensorflow::tensorflowlite)
-    elseif(TFLITE_JNI_LIB)
-        target_link_libraries(ronin_kernel PRIVATE ${TFLITE_JNI_LIB})
-    endif()
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
