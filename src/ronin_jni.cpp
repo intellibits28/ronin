@@ -236,6 +236,8 @@ jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
     }
 
     // Phase 8.1: Mandatory TFLite Magic Byte Check (TFL3)
+    // The identifier is located at offset 4, not offset 0.
+    file.seekg(4);
     char magic[4];
     file.read(magic, 4);
     if (file.gcount() < 4) return JNI_FALSE;
