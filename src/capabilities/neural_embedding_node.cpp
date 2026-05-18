@@ -132,19 +132,29 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
         return {};
     }
 
-    // Resize input for dynamic sequence length
-    int seq_len = std::min((int)tokens.size(), 512);
-    int input_dims[] = {1, seq_len};
+    // Phase 9.1: Fixed Metadata Optimization
+    // The specific E5 model has a [1, 1] metadata shape and requires explicit resize to [1, 128].
+    const int target_seq_len = 128;
+    int input_dims[] = {1, target_seq_len};
     if (TfLiteInterpreterResizeInputTensor(m_impl->interpreter, 0, input_dims, 2) != kTfLiteOk) {
-        LOGE(TAG, "Failed to resize input tensor.");
+        LOGE(TAG, "Failed to resize input tensor to [1, 128].");
         return {};
     }
-    if (TfLiteInterpreterAllocateTensors(m_impl->interpreter) != kTfLiteOk) return {};
+    if (TfLiteInterpreterAllocateTensors(m_impl->interpreter) != kTfLiteOk) {
+        LOGE(TAG, "Failed to re-allocate tensors after resize.");
+        return {};
+    }
 
-    // Copy tokens
+    // Copy tokens with truncation and padding (0)
     TfLiteTensor* input_tensor = TfLiteInterpreterGetInputTensor(m_impl->interpreter, 0);
     int32_t* input_data = (int32_t*)TfLiteTensorData(input_tensor);
-    for (int i = 0; i < seq_len; ++i) input_data[i] = tokens[i];
+    for (int i = 0; i < target_seq_len; ++i) {
+        if (i < tokens.size()) {
+            input_data[i] = tokens[i];
+        } else {
+            input_data[i] = 0; // Standard padding token for E5/BERT
+        }
+    }
 
     auto start = std::chrono::high_resolution_clock::now();
     if (TfLiteInterpreterInvoke(m_impl->interpreter) != kTfLiteOk) {
