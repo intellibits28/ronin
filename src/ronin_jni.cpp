@@ -98,6 +98,16 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
                 return {true, 0};
             }
             return {false, -1};
+        },
+        []() {
+            LOGI(TAG, "Native Bridge: Releasing all engine resources.");
+            if (g_intent_engine) {
+                // Fully unload all skills (munmap happens here)
+                for (uint32_t i = 1; i <= 10; ++i) {
+                    auto skill = g_intent_engine->getSkill(i);
+                    if (skill) skill->unload();
+                }
+            }
         }
     };
     
@@ -356,10 +366,17 @@ static JNINativeMethod g_methods[] = {
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}
 };
 
+void native_shutdownKernel(JNIEnv *env, jobject thiz) {
+    if (g_kernel) {
+        g_kernel->shutdown();
+    }
+}
+
 static JNINativeMethod g_worker_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
     {"pushTokenToSHMNative", "(Ljava/lang/String;Z)Z", (void*)native_pushTokenToSHM},
-    {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB}
+    {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB},
+    {"shutdownKernelNative", "()V", (void*)native_shutdownKernel}
 };
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {

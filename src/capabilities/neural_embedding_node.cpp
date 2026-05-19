@@ -143,7 +143,7 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
     // The specific E5 model has a [1, 1] metadata shape and requires explicit resize to [1, 128].
     const int target_seq_len = 128;
     int input_dims[] = {1, target_seq_len};
-    int input_count = TfLiteInterpreterGetInputCount(m_impl->interpreter);
+    int input_count = TfLiteInterpreterGetInputTensorCount(m_impl->interpreter);
 
     for (int i = 0; i < input_count; ++i) {
         if (TfLiteInterpreterResizeInputTensor(m_impl->interpreter, i, input_dims, 2) != kTfLiteOk) {

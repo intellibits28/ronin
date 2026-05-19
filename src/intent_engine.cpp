@@ -417,6 +417,13 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
     std::string_view sv_input = input;
     
+    // Sovereign Control Mode: FORCE_EXECUTE Override
+    bool forceExecute = (input.find("FORCE_EXECUTE") != std::string::npos);
+    if (forceExecute) {
+        LOGW(TAG, "Sovereign Override: FORCE_EXECUTE detected. Bypassing all safety filters.");
+        if (m_ltm) m_ltm->storeAuditLog("OVERRIDE", "FORCE_EXECUTE triggered for input: " + input);
+    }
+
     // Phase 4.5.5: Create lowercased version for case-insensitive deterministic matching
     std::string input_lower = input;
     std::transform(input_lower.begin(), input_lower.end(), input_lower.begin(), ::tolower);
@@ -610,11 +617,13 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                 }
             }
 
-            if (best_score > 0.88f) { // Threshold for semantic match
+            if (best_score > 0.88f || forceExecute) { // Threshold for semantic match
+                float confidence = forceExecute ? 1.0f : best_score;
                 std::string logMsg = "> Semantic Match: ID " + std::to_string(best_id) + " (Score: " + std::to_string(best_score) + ")";
+                if (forceExecute) logMsg += " [FORCED]";
                 LOGI(TAG, "%s", logMsg.c_str());
                 Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
-                return {best_id, best_score, !isOff};
+                return {best_id, confidence, !isOff};
             }
         }
     }
@@ -627,9 +636,11 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         // Layer 2: Fine-grained Prediction on NPU
         auto intent = m_inference_engine->predictFine(input, coarse_cat);
         
-        if (intent.id > 1) {
+        if (intent.id > 1 || forceExecute) {
+            if (forceExecute) intent.confidence = 1.0f;
             std::string matchMsg = "> NPU Match (Tier 3): Confirmed ID " + std::to_string(intent.id) + 
                                    " with confidence " + std::to_string(intent.confidence);
+            if (forceExecute) matchMsg += " [FORCED]";
             LOGI(TAG, "%s", matchMsg.c_str());
             Ronin::Kernel::Capability::HardwareBridge::pushMessage(matchMsg);
             intent.intent_param = !isOff;
@@ -638,8 +649,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
         // Phase 5.4: Agentic Dynamic Routing for Chat (ID 1)
         if (intent.id == 1) {
-            // Requirement 4: Strict Offline Enforcement
-            if (m_offline_mode) {
+            // Requirement 4: Strict Offline Enforcement (Bypassed by FORCE_EXECUTE)
+            if (m_offline_mode && !forceExecute) {
                 LOGW(TAG, "OFFLINE_ONLY: Aborting Cloud Fallback for Reasoning.");
                 Ronin::Kernel::Capability::HardwareBridge::pushMessage("> Kernel: Offline Guard Active. Aborting fallback.");
                 intent.confidence = 0.0f; // Neutralize intent to stop execution

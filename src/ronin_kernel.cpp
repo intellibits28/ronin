@@ -127,4 +127,13 @@ void RoninKernel::injectLocation(double lat, double lon) {
     setSuggestedSubject(buffer);
 }
 
+void RoninKernel::shutdown() {
+    LOGI(TAG, "Sovereign Control Mode: Initiating Atomic Shutdown Sequence.");
+    if (registry_.shutdownProcessor) {
+        registry_.shutdownProcessor();
+    }
+    contextStore_.clear();
+    LOGI(TAG, "Kernel Shutdown Complete. Resources released.");
+}
+
 } // namespace Ronin::Kernel

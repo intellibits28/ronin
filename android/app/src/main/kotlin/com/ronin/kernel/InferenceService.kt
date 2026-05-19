@@ -39,6 +39,7 @@ class InferenceService : Service() {
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun pushTokenToSHMNative(fragment: String, isFinal: Boolean): Boolean
     private external fun getFreeRamGBNative(): Float
+    private external fun shutdownKernelNative()
 
     companion object {
         init {
@@ -313,6 +314,9 @@ class InferenceService : Service() {
         litertConversation = null
         litertEngine = null
         legacyInference?.close()
+        try {
+            shutdownKernelNative()
+        } catch (e: Exception) {}
         Log.i(TAG, "Service destroyed")
     }
 }

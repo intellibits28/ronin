@@ -18,12 +18,18 @@ using IntentHandler = CognitiveIntent (*)(const Input &);
 using ExecHandler = Result (*)(uint32_t nodeId, const CognitiveState &);
 
 /**
+ * Functional interface for system shutdown.
+ */
+using ShutdownHandler = void (*)();
+
+/**
  * Static registry for kernel dispatch.
  * Initialized at compile-time to minimize runtime overhead.
  */
 struct HandlerRegistry {
   IntentHandler intentProcessor;
   ExecHandler execProcessor;
+  ShutdownHandler shutdownProcessor;
 };
 
 } // namespace Ronin::Kernel

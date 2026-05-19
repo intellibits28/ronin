@@ -69,6 +69,9 @@ public:
     std::vector<std::string> searchFiles(const std::string& query);
     std::vector<FileEmbedding> getAllFileEmbeddings();
 
+    // Sovereign Audit Store
+    bool storeAuditLog(const std::string& action, const std::string& details);
+
 private:
     sqlite3* m_db = nullptr;
     std::mutex m_mutex;

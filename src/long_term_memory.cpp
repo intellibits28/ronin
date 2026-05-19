@@ -108,7 +108,13 @@ bool LongTermMemory::initSchema() {
         "  extension, "
         "  last_modified UNINDEXED, "
         "  embedding_vector UNINDEXED"
-        ");";
+        ");"
+        
+        "CREATE TABLE IF NOT EXISTS audit ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "  action TEXT, "
+        "  details TEXT, "
+        "  timestamp INTEGER);";
 
     if (sqlite3_exec(m_db, schema, nullptr, nullptr, nullptr) != SQLITE_OK) {
         LOGE(TAG, "Failed to create SQLite schema: %s", sqlite3_errmsg(m_db));
@@ -585,6 +591,20 @@ std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int 
     }
     sqlite3_finalize(stmt);
     return history;
+}
+
+bool LongTermMemory::storeAuditLog(const std::string& action, const std::string& details) {
+    if (!m_db) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "INSERT INTO audit (action, details, timestamp) VALUES (?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_text(stmt, 1, action.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, details.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 3, std::time(nullptr));
+    bool success = sqlite3_step(stmt) == SQLITE_DONE;
+    sqlite3_finalize(stmt);
+    return success;
 }
 
 } // namespace Ronin::Kernel::Memory

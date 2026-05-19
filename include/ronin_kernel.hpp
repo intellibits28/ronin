@@ -44,6 +44,12 @@ public:
   // Physical Context Injection
   void injectLocation(double lat, double lon);
 
+  /**
+   * Sovereign Control Mode: Immediate resource cleanup.
+   * Flushes memory and terminates active sessions.
+   */
+  void shutdown();
+
 private:
   const HandlerRegistry &registry_;
   CapabilityManager &capManager_;
