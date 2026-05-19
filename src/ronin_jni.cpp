@@ -1,4 +1,4 @@
-#include <jni.h>
+#include "ronin_jni.h"
 #include <memory>
 #include <string>
 #include <cstring>
@@ -27,6 +27,7 @@ using namespace Ronin::Kernel::JNI;
 using namespace Ronin::Kernel;
 using namespace Ronin::Kernel::Model;
 
+#ifdef __ANDROID__
 // Global state
 static JavaVM* g_vm = nullptr;
 static std::unique_ptr<RoninKernel> g_kernel;
@@ -407,3 +408,4 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     LOGI(TAG, "Ronin Unified JNI Registered with Nuclear Guardrails.");
     return JNI_VERSION_1_6;
 }
+#endif // __ANDROID__
