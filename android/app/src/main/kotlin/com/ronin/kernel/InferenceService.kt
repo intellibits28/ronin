@@ -9,7 +9,10 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Conversation
+import com.google.ai.edge.litertlm.Message
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceOptions
+import com.google.mediapipe.tasks.core.OutputHandler.ProgressListener
 import kotlinx.coroutines.flow.*
 import android.app.Notification
 import android.app.NotificationChannel
@@ -207,7 +210,7 @@ class InferenceService : Service() {
 
     private fun hydrateLegacy(path: String, status: String): Boolean {
         Log.i(TAG, "Backing up to Legacy MediaPipe Engine for .bin model.")
-        val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
+        val optionsBuilder = LlmInferenceOptions.builder()
             .setModelPath(path)
             .setMaxTokens(1024)
             .setResultListener { result: String, done: Boolean ->
@@ -279,8 +282,9 @@ class InferenceService : Service() {
             if (litert != null) {
                 serviceScope.launch(Dispatchers.IO) {
                     try {
-                        litert.sendMessageAsync(input).collect { partialMessage ->
-                            pushTokenToSHMNative(partialMessage, false)
+                        val userMsg = Message.user(input)
+                        litert.sendMessageAsync(userMsg).collect { partialMessage ->
+                            pushTokenToSHMNative(partialMessage.text, false)
                         }
                         pushTokenToSHMNative("", true)
                         Log.i(TAG, "LiteRT Streaming Complete.")
