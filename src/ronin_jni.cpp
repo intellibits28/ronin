@@ -235,20 +235,25 @@ jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
         return JNI_FALSE;
     }
 
-    // Phase 8.1: Mandatory TFLite Magic Byte Check (TFL3)
-    // The identifier is located at offset 4, not offset 0.
-    file.seekg(4);
-    char magic[4];
-    file.read(magic, 4);
-    if (file.gcount() < 4) return JNI_FALSE;
+    // Phase 8.1: Mandatory TFLite Magic Byte Check (TFL3) for .tflite only
+    // .litertlm (Gemma Bundle) and .bin (Legacy) do not use standard FlatBuffers headers
+    if (path_str.length() > 7 && path_str.substr(path_str.length() - 7) == ".tflite") {
+        file.seekg(4);
+        char magic[4];
+        file.read(magic, 4);
+        if (file.gcount() < 4) return JNI_FALSE;
 
-    bool isValid = (std::memcmp(magic, "TFL3", 4) == 0);
-    if (isValid) {
-        LOGI(TAG, "Integrity: Model verified (TFLite format detected).");
-    } else {
-        LOGW(TAG, "Integrity: Model FAILED magic byte check (expected TFL3).");
+        bool isValid = (std::memcmp(magic, "TFL3", 4) == 0);
+        if (isValid) {
+            LOGI(TAG, "Integrity: Model verified (TFLite format detected).");
+        } else {
+            LOGW(TAG, "Integrity: Model FAILED magic byte check (expected TFL3).");
+        }
+        return isValid ? JNI_TRUE : JNI_FALSE;
     }
-    return isValid ? JNI_TRUE : JNI_FALSE;
+
+    LOGI(TAG, "Integrity: Bypassing magic byte check for non-tflite extension.");
+    return JNI_TRUE;
 }
 
 void native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {

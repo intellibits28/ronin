@@ -58,6 +58,7 @@ jobs:
         run: |
           mkdir -p android/app/src/main/assets/models
           cp assets/capabilities.json android/app/src/main/assets/
+          cp assets/providers.json android/app/src/main/assets/
           cp assets/sentencepiece.bpe.model android/app/src/main/assets/
           echo "Assets deployed to APK folder."
 

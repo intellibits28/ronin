@@ -136,23 +136,35 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
     // The specific E5 model has a [1, 1] metadata shape and requires explicit resize to [1, 128].
     const int target_seq_len = 128;
     int input_dims[] = {1, target_seq_len};
-    if (TfLiteInterpreterResizeInputTensor(m_impl->interpreter, 0, input_dims, 2) != kTfLiteOk) {
-        LOGE(TAG, "Failed to resize input tensor to [1, 128].");
-        return {};
+    int input_count = TfLiteInterpreterGetInputCount(m_impl->interpreter);
+
+    for (int i = 0; i < input_count; ++i) {
+        if (TfLiteInterpreterResizeInputTensor(m_impl->interpreter, i, input_dims, 2) != kTfLiteOk) {
+            LOGE(TAG, "Failed to resize input tensor %d to [1, 128].", i);
+            return {};
+        }
     }
+
     if (TfLiteInterpreterAllocateTensors(m_impl->interpreter) != kTfLiteOk) {
         LOGE(TAG, "Failed to re-allocate tensors after resize.");
         return {};
     }
 
-    // Copy tokens with truncation and padding (0)
-    TfLiteTensor* input_tensor = TfLiteInterpreterGetInputTensor(m_impl->interpreter, 0);
-    int32_t* input_data = (int32_t*)TfLiteTensorData(input_tensor);
-    for (int i = 0; i < target_seq_len; ++i) {
-        if (i < tokens.size()) {
-            input_data[i] = tokens[i];
-        } else {
-            input_data[i] = 0; // Standard padding token for E5/BERT
+    // Populate Input Tensors
+    for (int i = 0; i < input_count; ++i) {
+        TfLiteTensor* tensor = TfLiteInterpreterGetInputTensor(m_impl->interpreter, i);
+        int32_t* data = (int32_t*)TfLiteTensorData(tensor);
+        
+        // Use tensor name or index to determine content
+        // 0: input_ids, 1: attention_mask, 2: token_type_ids (standard BERT order)
+        for (int j = 0; j < target_seq_len; ++j) {
+            if (i == 0) { // input_ids
+                data[j] = (j < tokens.size()) ? tokens[j] : 0;
+            } else if (i == 1) { // attention_mask
+                data[j] = (j < tokens.size()) ? 1 : 0;
+            } else { // token_type_ids or others
+                data[j] = 0;
+            }
         }
     }
 
