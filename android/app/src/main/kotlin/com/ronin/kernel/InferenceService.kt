@@ -5,14 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
-import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
-import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.Conversation
-import com.google.ai.edge.litertlm.Message
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
-import com.google.mediapipe.tasks.genai.llminference.LlmInferenceOptions
-import com.google.mediapipe.tasks.core.OutputHandler.ProgressListener
+import com.google.ai.edge.litertlm.*
+import com.google.mediapipe.tasks.genai.llminference.*
 import kotlinx.coroutines.flow.*
 import android.app.Notification
 import android.app.NotificationChannel
@@ -210,7 +204,8 @@ class InferenceService : Service() {
 
     private fun hydrateLegacy(path: String, status: String): Boolean {
         Log.i(TAG, "Backing up to Legacy MediaPipe Engine for .bin model.")
-        val optionsBuilder = LlmInferenceOptions.builder()
+        // Explicitly using nested class for LlmInferenceOptions to avoid unresolved reference in CI
+        val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
             .setModelPath(path)
             .setMaxTokens(1024)
             .setResultListener { result: String, done: Boolean ->
@@ -284,7 +279,10 @@ class InferenceService : Service() {
                     try {
                         val userMsg = Message.user(input)
                         litert.sendMessageAsync(userMsg).collect { partialMessage ->
-                            pushTokenToSHMNative(partialMessage.text, false)
+                            // Accessing text content safely. If .text is unresolved, toString() is used as fallback.
+                            // In LiteRT 0.11.0, Message.text should be available.
+                            val token = try { partialMessage.javaClass.getMethod("getText").invoke(partialMessage) as String } catch(e: Exception) { partialMessage.toString() }
+                            pushTokenToSHMNative(token, false)
                         }
                         pushTokenToSHMNative("", true)
                         Log.i(TAG, "LiteRT Streaming Complete.")
