@@ -5,7 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
-import com.google.ai.edge.litertlm.*
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Conversation
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import kotlinx.coroutines.flow.*
 import android.app.Notification
@@ -24,7 +27,8 @@ class InferenceService : Service() {
     private val CHANNEL_ID = "ronin_inference_channel"
     private val NOTIFICATION_ID = 1001
 
-    private var litertEngine: LlmEngine? = null
+    private var litertEngine: Engine? = null
+    private var litertConversation: Conversation? = null
     private var legacyInference: LlmInference? = null
     private var currentModelPath: String = ""
     private var isLowPerformanceMode = false
@@ -206,7 +210,7 @@ class InferenceService : Service() {
         val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
             .setModelPath(path)
             .setMaxTokens(1024)
-            .setResultListener { result, done ->
+            .setResultListener { result: String, done: Boolean ->
                 pushTokenToSHMNative(result, done)
             }
             
@@ -225,26 +229,27 @@ class InferenceService : Service() {
 
     private fun hydrateLiteRT(path: String, status: String, cacheDir: java.io.File): Boolean {
         val backends = if (status == STATUS_STABILITY_ISSUE) {
-            listOf(LlmEngine.Backend.CPU)
+            listOf(Backend.CPU())
         } else {
-            listOf(LlmEngine.Backend.GPU, LlmEngine.Backend.CPU)
+            listOf(Backend.GPU(), Backend.CPU())
         }
 
-        var engine: LlmEngine? = null
+        var engine: Engine? = null
         var lastError: String? = null
 
         for (backend in backends) {
             try {
                 Log.i(TAG, "Attempting hydration with backend: $backend")
-                val config = LlmEngine.Config.builder()
-                    .setModelPath(path)
-                    .setBackend(backend)
-                    .setMaxNumTokens(1024)
-                    .build()
+                val config = EngineConfig(
+                    modelPath = path,
+                    backend = backend,
+                    maxNumTokens = 1024
+                )
                 
-                engine = LlmEngine.create(this, config)
+                engine = Engine(config)
+                engine.initialize()
                 
-                if (backend == LlmEngine.Backend.CPU) isLowPerformanceMode = true
+                if (backend is Backend.CPU) isLowPerformanceMode = true
                 break
             } catch (e: Exception) {
                 lastError = e.message
@@ -255,12 +260,13 @@ class InferenceService : Service() {
         if (engine == null) return false
         
         litertEngine = engine
+        litertConversation = engine.createConversation()
         currentModelPath = path
         return true
     }
 
     private fun executeReasoning(input: String): String {
-        val litert = litertEngine
+        val litert = litertConversation
         val legacy = legacyInference
 
         if (litert == null && legacy == null) {
@@ -273,7 +279,7 @@ class InferenceService : Service() {
             if (litert != null) {
                 serviceScope.launch(Dispatchers.IO) {
                     try {
-                        litert.generateResponse(input).collect { partialMessage ->
+                        litert.sendMessageAsync(input).collect { partialMessage ->
                             pushTokenToSHMNative(partialMessage, false)
                         }
                         pushTokenToSHMNative("", true)
@@ -301,6 +307,7 @@ class InferenceService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        litertConversation = null
         litertEngine = null
         legacyInference?.close()
         try {
