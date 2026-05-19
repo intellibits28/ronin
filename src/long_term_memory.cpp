@@ -328,7 +328,7 @@ std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>
     std::vector<std::string> results;
     uint64_t now = std::time(nullptr);
     for (size_t i = 0; i < candidates.size() && i < 5; ++i) {
-        if (candidates[i].score > 0.75f) {
+        if (candidates[i].score > 0.82f) {
             results.push_back(candidates[i].content);
             
             // Phase 5.3: Temporary Resurrection & Promotion

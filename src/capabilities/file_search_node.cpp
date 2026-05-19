@@ -87,18 +87,19 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
 
             // Phase 6.3: Strict Similarity Threshold (Requirement 1)
             // Increased from 0.70 to 0.75 to prevent semantic drift (.py appearing for 'movie')
-            if (ext_match || sim >= 0.75f) {
+            if (ext_match || sim >= 0.82f) {
                 // If it's a media query and it's not a media file, penalize it heavily
-                bool is_media_query = (lower_query.find("movie") != std::string::npos || 
+                bool is_media_query = (lower_query.find("movie") != std::string::npos ||
                                      lower_query.find("video") != std::string::npos ||
                                      lower_query.find("music") != std::string::npos ||
                                      lower_query.find("audio") != std::string::npos);
-                
+
                 if (is_media_query && !ext_match) {
                     sim -= 0.3f; // Heavy penalty for non-extension matches on explicit media queries
                 }
 
-                if (sim >= 0.75f || ext_match) {
+                if (sim >= 0.82f || ext_match) {
+
                     candidates.push_back({fe.path, sim});
                 }
             }

@@ -610,7 +610,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                 }
             }
 
-            if (best_score > 0.85f) { // Threshold for semantic match
+            if (best_score > 0.88f) { // Threshold for semantic match
                 std::string logMsg = "> Semantic Match: ID " + std::to_string(best_id) + " (Score: " + std::to_string(best_score) + ")";
                 LOGI(TAG, "%s", logMsg.c_str());
                 Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
