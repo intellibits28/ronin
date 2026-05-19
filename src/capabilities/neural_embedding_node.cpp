@@ -46,6 +46,7 @@ bool NeuralEmbeddingNode::load() {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     if (m_impl->loaded) return true;
 
+#ifdef ANDROID
     LOGI(TAG, "Loading Multilingual-E5-Small (C API): %s", m_impl->model_path.c_str());
     
     m_impl->model = TfLiteModelCreateFromFile(m_impl->model_path.c_str());
@@ -77,6 +78,9 @@ bool NeuralEmbeddingNode::load() {
         LOGE(TAG, "Failed to load SentencePiece model.");
         return false;
     }
+#else
+    LOGI(TAG, "Host Build: Using Mock Embedding Engine.");
+#endif
 
     m_impl->loaded = true;
     LOGI(TAG, "Expert Native Path (C API) Hydrated Successfully.");
@@ -87,6 +91,7 @@ void NeuralEmbeddingNode::unload() {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     if (m_impl->loaded) {
         LOGI(TAG, "Unloading E5-Small model (C API) and SentencePiece.");
+#ifdef ANDROID
         if (m_impl->interpreter) {
             TfLiteInterpreterDelete(m_impl->interpreter);
             m_impl->interpreter = nullptr;
@@ -96,6 +101,7 @@ void NeuralEmbeddingNode::unload() {
             m_impl->model = nullptr;
         }
         m_impl->sp_processor.reset();
+#endif
         m_impl->loaded = false;
     }
 }
@@ -119,6 +125,7 @@ bool NeuralEmbeddingNode::isLoaded() const {
 std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& input, bool is_query) {
     if (!load()) return {};
 
+#ifdef ANDROID
     std::string processed_input = input;
     if (is_query) {
         if (processed_input.find("query: ") != 0) processed_input = "query: " + processed_input;
@@ -188,6 +195,10 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
     std::memcpy(embedding.data(), output_data, dim * sizeof(float));
 
     return embedding;
+#else
+    // Host build: Return a deterministic mock vector
+    return std::vector<float>(384, 0.0f);
+#endif
 }
 
 std::string NeuralEmbeddingNode::execute(const std::string& param) {
