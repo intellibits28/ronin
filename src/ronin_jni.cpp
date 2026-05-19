@@ -65,7 +65,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     g_ltm = std::make_unique<Ronin::Kernel::Memory::LongTermMemory>(base_path + "/ronin_memory.db");
     g_memory_manager = std::make_unique<Ronin::Kernel::Memory::MemoryManager>(2048);
     g_memory_manager->setLongTermMemory(g_ltm.get());
-    g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>();
+    g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>(g_ltm.get());
     g_intent_engine->setMemoryManager(g_memory_manager.get());
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
 

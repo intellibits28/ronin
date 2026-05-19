@@ -12,6 +12,7 @@
 #include "checkpoint_manager.h"
 #include "lora_engine.h"
 #include "memory_manager.h"
+#include "long_term_memory.h"
 
 namespace Ronin::Kernel::Intent {
 
@@ -38,7 +39,7 @@ float compute_cosine_similarity_neon(const float* a, const float* b, size_t leng
 
 class IntentEngine {
 public:
-    IntentEngine();
+    IntentEngine(Memory::LongTermMemory* ltm = nullptr);
 
     /**
      * Loads capability manifest from a JSON-like formatted file.
@@ -188,6 +189,7 @@ public:
     void notifyTrimMemory(int level);
 
 private:
+    Memory::LongTermMemory* m_ltm = nullptr;
     std::function<void()> m_stop_callback;
     std::vector<Ronin::Kernel::CapabilityEntry> m_capabilities;
     std::unique_ptr<Model::InferenceEngine> m_inference_engine;

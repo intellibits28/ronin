@@ -168,7 +168,7 @@ void IntentEngine::notifyTrimMemory(int level) {
     }
 }
 
-IntentEngine::IntentEngine() {
+IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     using namespace Ronin::Kernel::Capability;
     
     // Phase 4.0: Vtable-based Skill Registration (Unified Interface)
@@ -420,8 +420,13 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // Sovereign Control Mode: FORCE_EXECUTE Override
     bool forceExecute = (input.find("FORCE_EXECUTE") != std::string::npos);
     if (forceExecute) {
-        LOGW(TAG, "Sovereign Override: FORCE_EXECUTE detected. Bypassing all safety filters.");
-        if (m_ltm) m_ltm->storeAuditLog("OVERRIDE", "FORCE_EXECUTE triggered for input: " + input);
+        if (m_ltm) {
+            LOGW(TAG, "Sovereign Override: FORCE_EXECUTE detected. Bypassing all safety filters.");
+            m_ltm->storeAuditLog("OVERRIDE", "FORCE_EXECUTE triggered for input: " + input);
+        } else {
+            LOGE(TAG, "Sovereign Override REJECTED: Audit Log (LTM) unavailable.");
+            forceExecute = false; // Disable override if we can't audit it
+        }
     }
 
     // Phase 4.5.5: Create lowercased version for case-insensitive deterministic matching
