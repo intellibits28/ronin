@@ -204,13 +204,23 @@ class InferenceService : Service() {
 
     private fun hydrateLegacy(path: String, status: String): Boolean {
         Log.i(TAG, "Backing up to Legacy MediaPipe Engine for .bin model.")
-        // Explicitly using nested class for LlmInferenceOptions to avoid unresolved reference in CI
+        // Phase 8.5: Reflection Fallback for CI/CD Linkage Conflicts
         val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
             .setModelPath(path)
             .setMaxTokens(1024)
-            .setResultListener { result: String, done: Boolean ->
-                pushTokenToSHMNative(result, done)
+            
+        try {
+            val setResultListenerMethod = optionsBuilder.javaClass.methods.find { it.name == "setResultListener" }
+            if (setResultListenerMethod != null) {
+                setResultListenerMethod.invoke(optionsBuilder, LlmInference.ResultListener { result, done ->
+                    pushTokenToSHMNative(result, done)
+                })
+            } else {
+                Log.e(TAG, "FATAL: setResultListener method NOT FOUND in LlmInferenceOptions.Builder via reflection.")
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Legacy ResultListener reflection failed: ${e.message}")
+        }
             
         if (status != STATUS_STABILITY_ISSUE) {
             try {
