@@ -39,10 +39,18 @@ Core Philosophy: A sentient, self-improving hardware-aware agent.
     *   1.2GB for < 1.5GB free.
     *   1.5GB for Gemma 4.
 
+## Memory Persistence & Routing Architecture
+* **Core Strategy:** Zero-VSS, Ultra-Low RAM Hybrid Search.
+* **Implementation:** Combined Text Matching via FTS5 and Semantic Vector Space via Multilingual-E5-small (384-dimensions).
+* **Source of Truth:** For full SQLite table structures, schemas, triggers, and native C++ linear search loops, strictly refer to the dedicated artifact:
+    👉 **`[Ronin_Memory_Model_v2_1.md](./Ronin_Memory_Model_v2_1.md)`**
+* **CLI Constraint:** Never inline the complete schema here. Always modify the dedicated memory model file for any data-tier alterations.
+
 ## Audit & Verification Protocol
 1.  **Linker Check:** Verify `TFLITE_JNI_LIB` resolves to Play Services TFLite binary.
 2.  **Constructor Audit:** `NeuralEmbeddingNode` must have a default constructor for `IntentEngine` compatibility.
 3.  **UI Scope:** Use `LocalContext.current` for `filesDir` access in Composables.
+4.  **Schema Alignment:** Verify SQLite logic against `Ronin_Memory_Model_v2_1.md`.
 
 ### 7. Security Posture: Sovereign Control Mode
 *   **Sandboxing (Privilege Isolation):** 

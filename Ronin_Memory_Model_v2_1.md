@@ -6,18 +6,20 @@ Ronin ၏ Memory စနစ်သည် **"Derive More, Store Less"** နှင�
 ---
 
 ## ၂။ Memory Schema (SQLite Structure)
+*Multilingual-E5 Strategy: Native Burmese support enabled. Translation tier removed.*
+
 ```sql
 CREATE TABLE memories (
     id INTEGER PRIMARY KEY,
-    original_text_mm TEXT,        -- မူရင်း မြန်မာစာသား (Ground Truth)
-    segmented_text_mm TEXT,       -- Segmentation လုပ်ထားသော စာသား (FTS5 အတွက်)
-    translated_text_en TEXT,      -- BGE အတွက် ဘာသာပြန်ထားသော စာသား
-    embedding_vector BLOB,        -- Hybrid Quantized Vector (Float16/INT8)
-    importance_score REAL,        -- အခြေခံ အရေးကြီးမှု
+    original_text_mm TEXT,        -- မူရင်း မြန်မာစာသား (Ground Truth / NFKC Normalized)
+    segmented_text_mm TEXT,       -- FTS5 Search အတွက် Tokenized လုပ်ထားသော စာသား
+    embedding_vector BLOB,        -- 384-dim Float32 Vector (Multilingual-E5-Small)
+    embedding_provider TEXT,      -- "e5-small-v1" (Model versioning for re-indexing)
+    importance_score REAL,        -- အခြေခံ အရေးကြီးမှု (0.0 - 1.0)
     recall_count INTEGER DEFAULT 0,
     creation_time INTEGER,        -- Unix Timestamp
     last_accessed_time INTEGER,   -- နောက်ဆုံး အမှတ်ရခဲ့သည့်အချိန်
-    state_enum INTEGER            -- Memory State (0-4)
+    state_enum INTEGER            -- Memory State (0-4: Active to Tombstoned)
 );
 ```
 
@@ -58,13 +60,13 @@ Memory တစ်ခုချင်းစီ၏ "ရှာဖွေနိုင�
 ---
 
 ## ၆။ Hardware & Thermal Optimization
-Mi 11 Lite ကဲ့သို့ Mobile hardware များအတွက် Guard-rails များ ထည့်သွင်းထားသည်။
+Mi 11 Lite နှင့် Snapdragon 778G+ Hardware များအတွက် Guard-rails များ ထည့်သွင်းထားသည်။
 
 - **Low Priority Chunked Scan:** `Forgotten` scan ဖတ်ရာတွင် CPU ဝန်မပိစေရန် thread priority ကို လျှော့ချပြီး data များကို chunk အလိုက် ခွဲဖတ်မည်။
 - **Cancellable Worker:** User က အကြောင်းအရာ ပြောင်းသွားပါက background scan ကို ချက်ချင်း ရပ်ဆိုင်းမည်။
-- **Hybrid Precision:** Semantic memory အတွက် Float16 ကို သုံးပြီး Episodic bulk အတွက် INT8 ကို သုံးမည်။
+- **Vector Quantization:** 384-dimensions အား Memory footprint လျှော့ချရန်အတွက် Storage ထဲတွင် Float16 ဖြင့် သိမ်းဆည်းရန် စဉ်းစားနိုင်သည်။
 
 ---
 
 **Ronin Kernel Development Team**
-*Version: 2.1 (Behavioral & Retrieval Update)*
+*Version: 2.1 (E5-Small & Multilingual Update)*

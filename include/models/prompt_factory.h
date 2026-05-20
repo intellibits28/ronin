@@ -16,9 +16,10 @@ public:
     static std::string wrap(const std::string& input, BackendType type) {
         switch (type) {
             case BackendType::LOCAL_GEMMA_4:
-                // Phase 4.5.2: Stop C++ wrapping to avoid double-tagging. 
-                // LiteRT-LM conversation.sendMessageAsync() handles formatting internally.
-                return input;
+                // Phase 4.6.8: Gemma 4 / LiteRT-LM Prompt Formatting.
+                // Even with SDK-side tagging, adding explicit headers ensures response hydration
+                // for models converted from Llama-3 or Gemma-3/4 base weights.
+                return "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n" + input + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
             
             case BackendType::LOCAL_GEMMA_2:
                 // Gemma 2/3 Spec: <bos><start_of_turn>user\n[input]<end_of_turn>\n<start_of_turn>model\n

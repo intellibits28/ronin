@@ -614,7 +614,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             for (const auto& cap : m_capabilities) {
                 for (const auto& sub : cap.subjects) {
                     auto sub_vec = neural_node->generateEmbedding(sub);
-                    float score = compute_cosine_similarity_neon(input_vec.data(), sub_vec.data(), 768);
+                    // FIX: E5-Small is 384 dimensions, not 768. 
+                    // Using dynamic size from the vector to prevent OOB crash.
+                    float score = compute_cosine_similarity_neon(input_vec.data(), sub_vec.data(), input_vec.size());
                     if (score > best_score) {
                         best_score = score;
                         best_id = cap.id;
