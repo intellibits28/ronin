@@ -204,23 +204,12 @@ class InferenceService : Service() {
 
     private fun hydrateLegacy(path: String, status: String): Boolean {
         Log.i(TAG, "Backing up to Legacy MediaPipe Engine for .bin model.")
-        // Phase 8.5: Reflection Fallback for CI/CD Linkage Conflicts
         val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
             .setModelPath(path)
             .setMaxTokens(1024)
             
-        try {
-            val setResultListenerMethod = optionsBuilder.javaClass.methods.find { it.name == "setResultListener" }
-            if (setResultListenerMethod != null) {
-                setResultListenerMethod.invoke(optionsBuilder, LlmInference.ResultListener { result, done ->
-                    pushTokenToSHMNative(result, done)
-                })
-            } else {
-                Log.e(TAG, "FATAL: setResultListener method NOT FOUND in LlmInferenceOptions.Builder via reflection.")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Legacy ResultListener reflection failed: ${e.message}")
-        }
+        // Phase 8.6: Removed setResultListener to resolve CI linkage errors.
+        // Legacy models will use synchronous generateResponse() in executeReasoning().
             
         if (status != STATUS_STABILITY_ISSUE) {
             try {
@@ -303,10 +292,16 @@ class InferenceService : Service() {
                 }
             } else if (legacy != null) {
                 try {
-                    legacy.generateResponseAsync(input)
+                    // Phase 8.6: Synchronous fallback for legacy models
+                    val response = legacy.generateResponse(input)
+                    if (!response.isNullOrEmpty()) {
+                        pushTokenToSHMNative(response, true)
+                        Log.i(TAG, "Legacy reasoning complete and pushed to SHM.")
+                    }
+                    "Reasoning Started [Legacy Active]"
                 } catch (e: Exception) {
-                    Log.e(TAG, "Legacy Streaming failure: ${e.message}")
-                    return "Error: Legacy engine failure - ${e.message}"
+                    Log.e(TAG, "Legacy reasoning failure: ${e.message}")
+                    "Error: Legacy engine failure - ${e.message}"
                 }
             }
             
