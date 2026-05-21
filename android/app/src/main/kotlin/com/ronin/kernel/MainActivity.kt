@@ -90,6 +90,7 @@ class ChatViewModel : ViewModel() {
     var showSettings by mutableStateOf(false)
     var offlineMode by mutableStateOf(false)
     var isKernelHydrated by mutableStateOf(false)
+    var isThinkingEnabled by mutableStateOf(false)
     var localModelPath by mutableStateOf("")
     var primaryCloudProvider by mutableStateOf("Gemini-Flash")
     val cloudProviders = mutableStateListOf<CloudProvider>()
@@ -503,20 +504,49 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             } else {
                 LaunchedEffect(Unit) {
                     var currentRoninMsgIndex = -1
+                    var isInsideThoughtBlock = false
+                    
                     engine.inferenceFlow.collect { packet ->
-                        // Phase 8.7: Real-time Streaming UI (Append fragments as they arrive)
-                        if (currentRoninMsgIndex == -1 || currentRoninMsgIndex >= chatViewModel.messages.size || !chatViewModel.messages[currentRoninMsgIndex].startsWith("Ronin: ")) {
-                            // Start a new message bubble
-                            chatViewModel.messages.add("Ronin: ${packet.fragment}")
-                            currentRoninMsgIndex = chatViewModel.messages.size - 1
+                        var fragment = packet.fragment
+                        
+                        // Phase 9.1: Detect Reasoning Spine Tags
+                        if (fragment.contains("<|channel|>thought")) {
+                            isInsideThoughtBlock = true
+                            fragment = fragment.replace("<|channel|>thought", "")
+                            chatViewModel.reasoningLogs.add("--- Quantum Reasoning Start ---")
+                        }
+                        
+                        if (fragment.contains("<channel|>")) {
+                            isInsideThoughtBlock = false
+                            fragment = fragment.replace("<channel|>", "")
+                            currentRoninMsgIndex = -1 // Force new bubble for final answer
+                        }
+
+                        if (isInsideThoughtBlock) {
+                            if (fragment.isNotBlank()) {
+                                if (chatViewModel.reasoningLogs.isEmpty()) {
+                                    chatViewModel.reasoningLogs.add(fragment)
+                                } else {
+                                    val lastIdx = chatViewModel.reasoningLogs.size - 1
+                                    chatViewModel.reasoningLogs[lastIdx] = chatViewModel.reasoningLogs[lastIdx] + fragment
+                                }
+                            }
                         } else {
-                            // Update existing bubble
-                            val existing = chatViewModel.messages[currentRoninMsgIndex]
-                            chatViewModel.messages[currentRoninMsgIndex] = existing + packet.fragment
+                            // Phase 8.7: Real-time Streaming UI (Append fragments to answer)
+                            if (currentRoninMsgIndex == -1 || currentRoninMsgIndex >= chatViewModel.messages.size || !chatViewModel.messages[currentRoninMsgIndex].startsWith("Ronin: ")) {
+                                if (fragment.isNotBlank() || packet.isFinal) {
+                                    chatViewModel.messages.add("Ronin: ${fragment}")
+                                    currentRoninMsgIndex = chatViewModel.messages.size - 1
+                                }
+                            } else {
+                                val existing = chatViewModel.messages[currentRoninMsgIndex]
+                                chatViewModel.messages[currentRoninMsgIndex] = existing + fragment
+                            }
                         }
 
                         if (packet.isFinal) {
-                            currentRoninMsgIndex = -1 // Reset for next inference session
+                            currentRoninMsgIndex = -1 
+                            isInsideThoughtBlock = false
                         }
                     }
                 }
@@ -565,6 +595,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
 
                     Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
                         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            // Phase 9.0: Thinking Mode Toggle UI
+                            Icon(
+                                imageVector = Icons.Default.Psychology, 
+                                contentDescription = "Thinking Mode",
+                                tint = if (chatViewModel.isThinkingEnabled) Color.Green else Color.Gray,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clickable { 
+                                        chatViewModel.isThinkingEnabled = !chatViewModel.isThinkingEnabled
+                                        Toast.makeText(this@MainActivity, "Quantum Reasoning: ${if (chatViewModel.isThinkingEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(end = 8.dp)
+                            )
+
                             TextField(
                                 value = currentInput, 
                                 onValueChange = { 
@@ -577,13 +621,28 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                 trailingIcon = { 
                                     IconButton(onClick = { 
                                         if (currentInput.isNotBlank()) { 
-                                            val input = currentInput; chatViewModel.messages.add("User: $input"); currentInput = ""; chatViewModel.showCommandSuggestions = false; scope.launch { val res = engine.processInputAsync(input); chatViewModel.messages.add("Ronin: $res") } 
+                                            val rawInput = currentInput
+                                            chatViewModel.messages.add("User: $rawInput")
+                                            currentInput = ""
+                                            chatViewModel.showCommandSuggestions = false
+
+                                            // Phase 9.1: Prompt Injection Trigger
+                                            val inputToProcess = if (chatViewModel.isThinkingEnabled) "[THINK]$rawInput" else rawInput
+
+                                            scope.launch { 
+                                                chatViewModel.reasoningLogs.clear()
+                                                val res = engine.processInputAsync(inputToProcess)
+                                                if (!res.contains("[SHM Active]")) {
+                                                  chatViewModel.messages.add("Ronin: $res") 
+                                                }
+                                            } 
                                         } 
                                     }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } 
                                 }
                             )
                         }
                     }
+
                 }
             }
         }

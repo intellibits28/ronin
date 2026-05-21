@@ -270,35 +270,49 @@ class InferenceService : Service() {
             return "Error: Local reasoning spine not hydrated in service."
         }
 
-        Log.d(TAG, "Executing Reasoning [SafeMode: $isSafeModeActive].")
+        // Phase 9.1: Detect Thinking Mode Trigger
+        val isThinkingRequest = input.startsWith("[THINK]")
+        val actualInput = if (isThinkingRequest) input.removePrefix("[THINK]") else input
+
+        Log.d(TAG, "Executing Reasoning [Thinking: $isThinkingRequest].")
 
         return try {
             if (litert != null) {
                 serviceScope.launch(Dispatchers.IO) {
                     try {
-                        val userMsg = Message.user(input)
-                        litert.sendMessageAsync(userMsg).collect { partialMessage ->
-                            // Accessing text content safely. If .text is unresolved, toString() is used as fallback.
-                            // In LiteRT 0.11.0, Message.text should be available.
-                            val token = try { partialMessage.javaClass.getMethod("getText").invoke(partialMessage) as String } catch(e: Exception) { partialMessage.toString() }
-                            pushTokenToSHMNative(token, false)
+                        // For Gemma 4, we need to construct the prompt manually for CoT injection
+                        val isGemma4 = currentModelPath.contains("gemma-4")
+                        
+                        if (isThinkingRequest && isGemma4) {
+                            val cotPrompt = "<|turn|>system\n<|think|>You are Ronin Kernel Core. Before giving the final answer, you MUST think step-by-step. Break down the entities, relations, and logic inside <|channel|>thought tags, then provide the precise response.<turn|><|turn|>user\n$actualInput<turn|><|turn|>model\n<|channel|>thought\n"
+                            // Using raw prompt for LiteRT if conversation API is too restrictive for raw tags
+                            // Fallback: Use direct engine generateResponse for raw prompts
+                            litertEngine?.generateResponse(cotPrompt)?.let { response ->
+                                // Note: For better UX, we could stream this too, but for CoT, 
+                                // we'll push the whole block or implement a manual streamer
+                                pushTokenToSHMNative(response, true)
+                            }
+                        } else {
+                            val userMsg = Message.user(actualInput)
+                            litert.sendMessageAsync(userMsg).collect { partialMessage ->
+                                val token = try { partialMessage.javaClass.getMethod("getText").invoke(partialMessage) as String } catch(e: Exception) { partialMessage.toString() }
+                                pushTokenToSHMNative(token, false)
+                            }
+                            pushTokenToSHMNative("", true)
                         }
-                        pushTokenToSHMNative("", true)
-                        Log.i(TAG, "LiteRT Streaming Complete.")
+                        Log.i(TAG, "Inference Stream Complete.")
                     } catch (e: Exception) {
-                        Log.e(TAG, "LiteRT Streaming failure: ${e.message}")
+                        Log.e(TAG, "Inference failure: ${e.message}")
                         pushTokenToSHMNative("Error: ${e.message}", true)
                     }
                 }
             } else if (legacy != null) {
                 try {
-                    // Phase 8.6: Synchronous fallback for legacy models
-                    val response = legacy.generateResponse(input)
+                    val response = legacy.generateResponse(actualInput)
                     if (!response.isNullOrEmpty()) {
                         pushTokenToSHMNative(response, true)
                         Log.i(TAG, "Legacy reasoning complete and pushed to SHM.")
                     }
-                    "Reasoning Started [Legacy Active]"
                 } catch (e: Exception) {
                     Log.e(TAG, "Legacy reasoning failure: ${e.message}")
                     "Error: Legacy engine failure - ${e.message}"
