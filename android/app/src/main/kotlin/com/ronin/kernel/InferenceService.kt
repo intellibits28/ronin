@@ -119,6 +119,17 @@ class InferenceService : Service() {
         override fun isLowPerformanceMode(): Boolean {
             return this@InferenceService.isLowPerformanceMode
         }
+
+        override fun resetConversation() {
+            Log.i(TAG, "Manual Neural Reset: Clearing KV Cache Context.")
+            try {
+                litertEngine?.let { engine ->
+                    litertConversation = engine.createConversation()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to reset conversation: ${e.message}")
+            }
+        }
     }
 
     private var isSafeModeActive = false

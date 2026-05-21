@@ -102,6 +102,7 @@ class ChatViewModel : ViewModel() {
     var kernelStatus by mutableStateOf("Initializing...")
     var isKernelReady by mutableStateOf(false)
     var isLowPerformanceMode by mutableStateOf(false)
+    var isGenerating by mutableStateOf(false)
 }
 
 class MainActivity : ComponentActivity() {
@@ -198,11 +199,13 @@ class MainActivity : ComponentActivity() {
             file.name != "model.onnx" && !file.isDirectory 
         }?.map { it.absolutePath }?.distinct()?.sorted() ?: emptyList()
         
-        // Requirement 2: Only update if the list has changed to prevent UI duplication artifacts
-        if (chatViewModel.discoveredModels.toList() != models) {
+        // Phase 9.3: Robust Deduplication via Filename and Path
+        val uniqueModels = models.distinctBy { java.io.File(it).name }
+
+        if (chatViewModel.discoveredModels.toList() != uniqueModels) {
             chatViewModel.discoveredModels.clear()
-            chatViewModel.discoveredModels.addAll(models)
-            Log.d("Ronin_UI", "Model list updated: ${models.size} brains discovered.")
+            chatViewModel.discoveredModels.addAll(uniqueModels)
+            Log.d("Ronin_UI", "Model list updated: ${uniqueModels.size} unique brains discovered.")
         }
     }
 
@@ -547,6 +550,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         if (packet.isFinal) {
                             currentRoninMsgIndex = -1 
                             isInsideThoughtBlock = false
+                            chatViewModel.isGenerating = false
                         }
                     }
                 }
@@ -620,11 +624,28 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                 colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), 
                                 trailingIcon = { 
                                     IconButton(onClick = { 
+                                        if (chatViewModel.isGenerating) {
+                                            engine.stopInference()
+                                            chatViewModel.isGenerating = false
+                                            chatViewModel.messages.add("System: Inference Halted.")
+                                            return@IconButton
+                                        }
+
                                         if (currentInput.isNotBlank()) { 
                                             val rawInput = currentInput
+                                            if (rawInput.startsWith("/reset")) {
+                                                engine.stopInference()
+                                                chatViewModel.messages.clear()
+                                                chatViewModel.reasoningLogs.clear()
+                                                chatViewModel.messages.add("System: Neural context reset.")
+                                                currentInput = ""
+                                                return@IconButton
+                                            }
+
                                             chatViewModel.messages.add("User: $rawInput")
                                             currentInput = ""
                                             chatViewModel.showCommandSuggestions = false
+                                            chatViewModel.isGenerating = true
 
                                             // Phase 9.1: Prompt Injection Trigger
                                             val inputToProcess = if (chatViewModel.isThinkingEnabled) "[THINK]$rawInput" else rawInput
@@ -634,10 +655,17 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 val res = engine.processInputAsync(inputToProcess)
                                                 if (!res.contains("[SHM Active]")) {
                                                   chatViewModel.messages.add("Ronin: $res") 
+                                                  chatViewModel.isGenerating = false
                                                 }
                                             } 
                                         } 
-                                    }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } 
+                                    }) { 
+                                        Icon(
+                                            imageVector = if (chatViewModel.isGenerating) Icons.Default.Stop else Icons.Default.Send, 
+                                            contentDescription = null, 
+                                            tint = if (chatViewModel.isGenerating) Color.Red else Color(0xFF64B5F6)
+                                        ) 
+                                    } 
                                 }
                             )
                         }

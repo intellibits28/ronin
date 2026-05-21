@@ -32,7 +32,7 @@ interface IInferenceService {
     void setSafeMode(boolean enabled);
 
     /**
-     * Checks if the engine is running in Low Performance Mode (CPU Fallback).
+     * Resets the conversation context (Clears KV Cache).
      */
-    boolean isLowPerformanceMode();
+    void resetConversation();
 }

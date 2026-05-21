@@ -5,9 +5,11 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.content.ContentValues
 
+import android.util.Half
+
 /**
  * Phase 2.1: SQLite Evolution (Cognitive Memory Model)
- * Handles the persistent 'memories' table with EN translation and BGE embeddings.
+ * Handles the persistent 'memories' table with E5-Small Float16 embeddings.
  */
 class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
@@ -64,10 +66,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             put(COLUMN_STATE, 0) // ACTIVE
 
             vector?.let {
-                // Phase 2.1: Semantic Memory uses Float32 for high-precision E5 Small
-                val buffer = java.nio.ByteBuffer.allocate(it.size * 4)
+                // Phase 2.1: Semantic Memory uses Float16 (2 bytes per dim) as per E5-Small spec
+                val buffer = java.nio.ByteBuffer.allocate(it.size * 2)
                 buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                for (f in it) buffer.putFloat(f)
+                for (f in it) {
+                    buffer.putShort(Half.toHalf(f))
+                }
                 put(COLUMN_EMBEDDING, buffer.array())
             }
         }

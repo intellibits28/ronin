@@ -506,6 +506,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } else 0f
     }
 
+    fun stopInference() {
+        Log.i(TAG, "Manual Stop Triggered.")
+        pollingJob?.cancel()
+        // Signal worker to reset context to avoid corrupted KV cache on next turn
+        try {
+            inferenceService?.resetConversation()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to reset worker context: ${e.message}")
+        }
+    }
+
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
      * Proxied via Binder to :inference_core process.

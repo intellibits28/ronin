@@ -309,10 +309,11 @@ std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>
             // DEEP and EXPLICIT can access Forgotten (3)
 
             if (content && blob && bytes > 0) {
-                // Phase 2.1: Semantic Memory uses Float32 (4 bytes per dim)
-                size_t dim = bytes / 4; 
-                const float* vector_ptr = static_cast<const float*>(blob);
-                std::vector<float> vector(vector_ptr, vector_ptr + dim);
+                // Phase 2.1: Semantic Memory uses Float16 (2 bytes per dim)
+                size_t dim = bytes / 2; 
+                const uint16_t* f16_vec = static_cast<const uint16_t*>(blob);
+                std::vector<float> vector(dim);
+                for (size_t i = 0; i < dim; ++i) vector[i] = halfToFloat(f16_vec[i]);
                 
                 float dot = 0.0f, mag_a = 0.0f, mag_b = 0.0f;
                 for (size_t i = 0; i < std::min(vector.size(), query_embedding.size()); ++i) {
@@ -372,8 +373,12 @@ bool LongTermMemory::consolidate(const std::string& summary_text, const std::vec
     sqlite3_bind_text(stmt, 1, summary_text.c_str(), -1, SQLITE_STATIC);
     
     if (!embedding.empty()) {
-        // Phase 2.1: Semantic Memory uses Float32 (4 bytes per dim)
-        sqlite3_bind_blob(stmt, 2, embedding.data(), static_cast<int>(embedding.size() * sizeof(float)), SQLITE_STATIC);
+        // Phase 2.1: Semantic Memory uses Float16 (2 bytes per dim)
+        std::vector<uint16_t> f16_vector(embedding.size());
+        for (size_t i = 0; i < embedding.size(); ++i) {
+            f16_vector[i] = floatToHalf(embedding[i]);
+        }
+        sqlite3_bind_blob(stmt, 2, f16_vector.data(), static_cast<int>(f16_vector.size() * 2), SQLITE_STATIC);
     } else {
         sqlite3_bind_null(stmt, 2);
     }
@@ -416,7 +421,12 @@ bool LongTermMemory::indexFile(const std::string& name, const std::string& path,
     sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(modified));
 
     if (!embedding.empty()) {
-        sqlite3_bind_blob(stmt, 5, embedding.data(), static_cast<int>(embedding.size() * sizeof(float)), SQLITE_STATIC);
+        // Phase 2.1: Semantic Indexing uses Float16
+        std::vector<uint16_t> f16_vector(embedding.size());
+        for (size_t i = 0; i < embedding.size(); ++i) {
+            f16_vector[i] = floatToHalf(embedding[i]);
+        }
+        sqlite3_bind_blob(stmt, 5, f16_vector.data(), static_cast<int>(f16_vector.size() * 2), SQLITE_STATIC);
     } else {
         sqlite3_bind_null(stmt, 5);
     }
@@ -446,10 +456,13 @@ std::vector<LongTermMemory::FileEmbedding> LongTermMemory::getAllFileEmbeddings(
                 fe.name = reinterpret_cast<const char*>(name);
                 fe.path = reinterpret_cast<const char*>(path);
                 
-                // Phase 2.1: Semantic Indexing uses Float32
-                size_t dim = bytes / 4;
-                const float* vector_ptr = static_cast<const float*>(blob);
-                fe.vector.assign(vector_ptr, vector_ptr + dim);
+                // Phase 2.1: Semantic Indexing uses Float16
+                size_t dim = bytes / 2;
+                const uint16_t* f16_vec = static_cast<const uint16_t*>(blob);
+                fe.vector.resize(dim);
+                for (size_t i = 0; i < dim; ++i) {
+                    fe.vector[i] = halfToFloat(f16_vec[i]);
+                }
                 results.push_back(fe);
             }
         }
