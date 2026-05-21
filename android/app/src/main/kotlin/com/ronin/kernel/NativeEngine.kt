@@ -427,7 +427,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     fun isLowPerformanceMode(): Boolean {
         return try {
-            inferenceService?.isLowPerformanceMode ?: false
+            inferenceService?.isLowPerformanceMode() ?: false
         } catch (e: Exception) {
             false
         }

@@ -222,9 +222,6 @@ class InferenceService : Service() {
             .setModelPath(path)
             .setMaxTokens(1024)
             
-        // Phase 8.6: Removed setResultListener to resolve CI linkage errors.
-        // Legacy models will use synchronous generateResponse() in executeReasoning().
-            
         if (status != STATUS_STABILITY_ISSUE) {
             try {
                 optionsBuilder.setPreferredBackend(LlmInference.Backend.GPU)
@@ -246,7 +243,6 @@ class InferenceService : Service() {
         }
 
         var engine: Engine? = null
-        var lastError: String? = null
 
         for (backend in backends) {
             try {
@@ -263,8 +259,7 @@ class InferenceService : Service() {
                 if (backend is Backend.CPU) isLowPerformanceMode = true
                 break
             } catch (e: Exception) {
-                lastError = e.message
-                Log.w(TAG, "Backend $backend failed: $lastError")
+                Log.w(TAG, "Backend $backend failed: ${e.message}")
             }
         }
 
@@ -272,12 +267,11 @@ class InferenceService : Service() {
         
         litertEngine = engine
         litertConversation = engine.createConversation()
-        override fun resetConversation() {
-            Log.i(TAG, "Manual Neural Reset: Clearing KV Cache Context.")
-            currentInferenceJob?.cancel()
-            try {
-        ...
-        private fun executeReasoning(input: String): String {
+        currentModelPath = path
+        return true
+    }
+
+    private fun executeReasoning(input: String): String {
         val litert = litertConversation
         val legacy = legacyInference
 
@@ -285,7 +279,6 @@ class InferenceService : Service() {
             return "Error: Local reasoning spine not hydrated in service."
         }
 
-        // Phase 9.1: Detect Thinking Mode Trigger
         val isThinkingRequest = input.startsWith("[THINK]")
         val actualInput = if (isThinkingRequest) input.removePrefix("[THINK]") else input
 
@@ -296,12 +289,9 @@ class InferenceService : Service() {
                 currentInferenceJob?.cancel()
                 currentInferenceJob = serviceScope.launch(Dispatchers.IO) {
                     try {
-                        // For Gemma 4, we need to construct the prompt manually for CoT injection
                         val isGemma4 = currentModelPath.contains("gemma-4")
-
                         
                         if (isThinkingRequest && isGemma4) {
-                            // Phase 9.2: Refined CoT Prompting (User-requested logic)
                             val cotInstructions = "You are Ronin Kernel Core. Before giving the final answer, you MUST think step-by-step. Break down the entities, relations, and logic inside <thinking> tags, then provide the precise response."
                             val cotInput = "$cotInstructions\n\n$actualInput"
                             val userMsg = Message.user(cotInput)
@@ -345,6 +335,7 @@ class InferenceService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        currentInferenceJob?.cancel()
         litertConversation = null
         litertEngine = null
         legacyInference?.close()

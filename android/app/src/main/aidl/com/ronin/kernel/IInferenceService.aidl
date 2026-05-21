@@ -35,4 +35,9 @@ interface IInferenceService {
      * Resets the conversation context (Clears KV Cache).
      */
     void resetConversation();
+
+    /**
+     * Checks if the engine is running in Low Performance Mode (CPU Fallback).
+     */
+    boolean isLowPerformanceMode();
 }
