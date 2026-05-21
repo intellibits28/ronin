@@ -209,6 +209,12 @@ jboolean native_pushTokenToSHM(JNIEnv *env, jobject thiz, jstring fragment, jboo
     if (!rb) return JNI_FALSE;
 
     std::string text = ConvertJStringToString(env, fragment);
+
+    // Requirement: Raw Output Tracker for adb logcat debugging
+    // Model ဆီက space တွေ၊ special characters တွေ ပါမကျန် သိရအောင် [ ] ကြားညှပ်ထုတ်မည်
+    __android_log_print(ANDROID_LOG_DEBUG, "RONIN_RAW", "Token: [%s] (final: %s)", 
+                        text.c_str(), (is_final == JNI_TRUE ? "true" : "false"));
+
     ::Ronin::Kernel::HAL::InferencePacket packet;
     packet.sequence_id = 0; 
     packet.token_id = 0; 
