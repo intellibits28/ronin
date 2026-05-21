@@ -608,14 +608,25 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             LOGI(TAG, "Tier 2.5: Keywords failed. Attempting semantic match...");
             auto input_vec = neural_node->generateEmbedding(input_lower);
             
+            // Phase 9.4: Proactive Long-term Memory Recall
+            if (m_ltm && !input_vec.empty()) {
+                auto recalls = m_ltm->searchSemantic(input_vec, Memory::RecallMode::FAST);
+                if (!recalls.empty()) {
+                    std::string recall_msg = "[LTM] Cognitive Recall: " + recalls[0];
+                    LOGI(TAG, "Memory Spine: %s", recall_msg.c_str());
+                    Ronin::Kernel::Capability::HardwareBridge::pushMessage(recall_msg);
+                    // For now we just log it to Reasoning Log, in future we inject to context
+                }
+            }
+
             float best_score = 0.0f;
             uint32_t best_id = 1; // Default to chat
 
             for (const auto& cap : m_capabilities) {
                 for (const auto& sub : cap.subjects) {
                     auto sub_vec = neural_node->generateEmbedding(sub);
-                    // FIX: E5-Small is 384 dimensions, not 768. 
-                    // Using dynamic size from the vector to prevent OOB crash.
+                    if (sub_vec.empty()) continue;
+                    
                     float score = compute_cosine_similarity_neon(input_vec.data(), sub_vec.data(), input_vec.size());
                     if (score > best_score) {
                         best_score = score;

@@ -184,15 +184,36 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
 
     // Extract embedding
     const TfLiteTensor* output_tensor = TfLiteInterpreterGetOutputTensor(m_impl->interpreter, 0);
-    const float* output_data = (const float*)TfLiteTensorData(output_tensor);
     
     int dim = 1;
     for (int i = 0; i < TfLiteTensorNumDims(output_tensor); ++i) {
         dim *= TfLiteTensorDim(output_tensor, i);
     }
-    
+
     std::vector<float> embedding(dim);
-    std::memcpy(embedding.data(), output_data, dim * sizeof(float));
+
+    if (output_tensor->type == kTfLiteFloat16) {
+        const uint16_t* output_data = (const uint16_t*)TfLiteTensorData(output_tensor);
+        for (int i = 0; i < dim; ++i) {
+            // Internal float16 to float32 conversion
+            uint16_t h = output_data[i];
+            uint32_t s = (h & 0x8000) << 16;
+            uint32_t e = (h & 0x7c00) >> 10;
+            uint32_t m = (h & 0x03ff) << 13;
+            if (e == 0) {
+                if (m != 0) {
+                    while ((m & 0x00800000) == 0) { m <<= 1; e--; }
+                    e++; m &= ~0x00800000;
+                }
+            } else if (e == 31) { e = 0xff; }
+            else { e = e + (127 - 15); }
+            uint32_t res = s | (e << 23) | m;
+            embedding[i] = *(float*)&res;
+        }
+    } else {
+        const float* output_data = (const float*)TfLiteTensorData(output_tensor);
+        std::memcpy(embedding.data(), output_data, dim * sizeof(float));
+    }
 
     return embedding;
 #else

@@ -195,17 +195,17 @@ class MainActivity : ComponentActivity() {
         val e5File = java.io.File(filesDir, "assets/models/multilingual-e5-small.tflite")
         chatViewModel.wizardState = if (e5File.exists()) WizardState.ACTIVE else WizardState.MISSING_CORE
 
-        val models = modelsDir.listFiles { file ->
-            file.name != "model.onnx" && !file.isDirectory 
-        }?.map { it.absolutePath }?.distinct()?.sorted() ?: emptyList()
+        // Phase 9.3: Robust Deduplication via Canonical Path and File size guard
+        val modelFiles = modelsDir.listFiles { file -> 
+            file.name != "model.onnx" && !file.isDirectory && file.length() > 1024 
+        } ?: emptyArray()
         
-        // Phase 9.3: Robust Deduplication via Filename and Path
-        val uniqueModels = models.distinctBy { java.io.File(it).name }
+        val uniquePaths = modelFiles.map { it.canonicalPath }.distinct().sorted()
 
-        if (chatViewModel.discoveredModels.toList() != uniqueModels) {
+        if (chatViewModel.discoveredModels.toList() != uniquePaths) {
             chatViewModel.discoveredModels.clear()
-            chatViewModel.discoveredModels.addAll(uniqueModels)
-            Log.d("Ronin_UI", "Model list updated: ${uniqueModels.size} unique brains discovered.")
+            chatViewModel.discoveredModels.addAll(uniquePaths)
+            Log.d("Ronin_UI", "Model list synced: ${uniquePaths.size} unique brains found.")
         }
     }
 
@@ -512,17 +512,22 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     engine.inferenceFlow.collect { packet ->
                         var fragment = packet.fragment
                         
-                        // Phase 9.1: Detect Reasoning Spine Tags
-                        if (fragment.contains("<|channel|>thought")) {
+                        // Phase 9.1: Detect Reasoning Spine Tags (Native and User-requested)
+                        if (fragment.contains("<|channel|>thought") || fragment.contains("<thinking>")) {
                             isInsideThoughtBlock = true
-                            fragment = fragment.replace("<|channel|>thought", "")
-                            chatViewModel.reasoningLogs.add("--- Quantum Reasoning Start ---")
+                            fragment = fragment.replace("<|channel|>thought", "").replace("<thinking>", "")
+                            if (chatViewModel.reasoningLogs.isEmpty()) chatViewModel.reasoningLogs.add("--- Quantum Reasoning Start ---")
                         }
                         
-                        if (fragment.contains("<channel|>")) {
+                        if (fragment.contains("<channel|>") || fragment.contains("</thinking>")) {
                             isInsideThoughtBlock = false
-                            fragment = fragment.replace("<channel|>", "")
+                            fragment = fragment.replace("<channel|>", "").replace("</thinking>", "")
                             currentRoninMsgIndex = -1 // Force new bubble for final answer
+                        }
+
+                        // Filtering common Gemma 4 noise at turn boundaries
+                        if (fragment.trim() in listOf("*", "[", "3", "laptop")) {
+                            return@collect
                         }
 
                         if (isInsideThoughtBlock) {

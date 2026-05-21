@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
 
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Native"
@@ -27,6 +28,7 @@ class InferenceService : Service() {
     private var litertEngine: Engine? = null
     private var litertConversation: Conversation? = null
     private var legacyInference: LlmInference? = null
+    private var currentInferenceJob: Job? = null
     private var currentModelPath: String = ""
     private var isLowPerformanceMode = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -122,6 +124,7 @@ class InferenceService : Service() {
 
         override fun resetConversation() {
             Log.i(TAG, "Manual Neural Reset: Clearing KV Cache Context.")
+            currentInferenceJob?.cancel()
             try {
                 litertEngine?.let { engine ->
                     litertConversation = engine.createConversation()
@@ -269,11 +272,12 @@ class InferenceService : Service() {
         
         litertEngine = engine
         litertConversation = engine.createConversation()
-        currentModelPath = path
-        return true
-    }
-
-    private fun executeReasoning(input: String): String {
+        override fun resetConversation() {
+            Log.i(TAG, "Manual Neural Reset: Clearing KV Cache Context.")
+            currentInferenceJob?.cancel()
+            try {
+        ...
+        private fun executeReasoning(input: String): String {
         val litert = litertConversation
         val legacy = legacyInference
 
@@ -289,14 +293,17 @@ class InferenceService : Service() {
 
         return try {
             if (litert != null) {
-                serviceScope.launch(Dispatchers.IO) {
+                currentInferenceJob?.cancel()
+                currentInferenceJob = serviceScope.launch(Dispatchers.IO) {
                     try {
                         // For Gemma 4, we need to construct the prompt manually for CoT injection
                         val isGemma4 = currentModelPath.contains("gemma-4")
+
                         
                         if (isThinkingRequest && isGemma4) {
-                            // Phase 9.2: Integrated CoT Prompting via Conversation API
-                            val cotInput = "<|think|>You are Ronin Kernel Core. Before giving the final answer, you MUST think step-by-step. Break down the entities, relations, and logic inside <|channel|>thought tags, then provide the precise response.\n\n$actualInput"
+                            // Phase 9.2: Refined CoT Prompting (User-requested logic)
+                            val cotInstructions = "You are Ronin Kernel Core. Before giving the final answer, you MUST think step-by-step. Break down the entities, relations, and logic inside <thinking> tags, then provide the precise response."
+                            val cotInput = "$cotInstructions\n\n$actualInput"
                             val userMsg = Message.user(cotInput)
                             litert.sendMessageAsync(userMsg).collect { partialMessage ->
                                 val token = try { partialMessage.javaClass.getMethod("getText").invoke(partialMessage) as String } catch(e: Exception) { partialMessage.toString() }
