@@ -610,7 +610,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             
             // Phase 9.4: Proactive Long-term Memory Recall
             if (m_ltm && !input_vec.empty()) {
-                auto recalls = m_ltm->searchSemantic(input_vec, Memory::RecallMode::FAST);
+                auto recalls = m_ltm->searchSemantic(input_vec, Memory::LongTermMemory::RecallMode::FAST);
                 if (!recalls.empty()) {
                     std::string recall_msg = "[LTM] Cognitive Recall: " + recalls[0];
                     LOGI(TAG, "Memory Spine: %s", recall_msg.c_str());
