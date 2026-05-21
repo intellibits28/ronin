@@ -195,10 +195,14 @@ class MainActivity : ComponentActivity() {
 
         val models = modelsDir.listFiles { file ->
             file.name != "model.onnx" && !file.isDirectory 
-        }?.map { it.absolutePath }?.distinct() ?: emptyList()
+        }?.map { it.absolutePath }?.distinct()?.sorted() ?: emptyList()
         
-        chatViewModel.discoveredModels.clear()
-        chatViewModel.discoveredModels.addAll(models)
+        // Requirement 2: Only update if the list has changed to prevent UI duplication artifacts
+        if (chatViewModel.discoveredModels.toList() != models) {
+            chatViewModel.discoveredModels.clear()
+            chatViewModel.discoveredModels.addAll(models)
+            Log.d("Ronin_UI", "Model list updated: ${models.size} brains discovered.")
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -498,9 +502,21 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 BootstrapWizard(chatViewModel, embeddingPicker)
             } else {
                 LaunchedEffect(Unit) {
+                    var currentRoninMsgIndex = -1
                     engine.inferenceFlow.collect { packet ->
-                        if (packet.isFinal) {
+                        // Phase 8.7: Real-time Streaming UI (Append fragments as they arrive)
+                        if (currentRoninMsgIndex == -1 || currentRoninMsgIndex >= chatViewModel.messages.size || !chatViewModel.messages[currentRoninMsgIndex].startsWith("Ronin: ")) {
+                            // Start a new message bubble
                             chatViewModel.messages.add("Ronin: ${packet.fragment}")
+                            currentRoninMsgIndex = chatViewModel.messages.size - 1
+                        } else {
+                            // Update existing bubble
+                            val existing = chatViewModel.messages[currentRoninMsgIndex]
+                            chatViewModel.messages[currentRoninMsgIndex] = existing + packet.fragment
+                        }
+
+                        if (packet.isFinal) {
+                            currentRoninMsgIndex = -1 // Reset for next inference session
                         }
                     }
                 }
