@@ -192,7 +192,7 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
 
     std::vector<float> embedding(dim);
 
-    if (output_tensor->type == kTfLiteFloat16) {
+    if (TfLiteTensorType(output_tensor) == kTfLiteFloat16) {
         const uint16_t* output_data = (const uint16_t*)TfLiteTensorData(output_tensor);
         for (int i = 0; i < dim; ++i) {
             // Internal float16 to float32 conversion
