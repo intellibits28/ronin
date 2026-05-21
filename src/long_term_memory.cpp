@@ -75,17 +75,20 @@ bool LongTermMemory::initSchema() {
         "  last_accessed INTEGER, "
         "  priority INTEGER DEFAULT 1);"
         
-        "CREATE TABLE IF NOT EXISTS summaries ("
+        "CREATE TABLE IF NOT EXISTS memories ("
         "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "  content TEXT, "
-        "  embedding BLOB, "
+        "  original_text_mm TEXT, "
+        "  segmented_text_mm TEXT, "
+        "  embedding_vector BLOB, "
+        "  embedding_provider TEXT DEFAULT 'e5-small-v1', "
+        "  importance_score REAL DEFAULT 1.0, "
         "  recall_count INTEGER DEFAULT 0, "
-        "  last_accessed INTEGER, "
-        "  state_enum INTEGER DEFAULT 0, " // 0=Active, 1=Cold, 2=Archived, 3=Forgotten, 4=Tombstoned
-        "  timestamp INTEGER);"
+        "  last_accessed_time INTEGER, "
+        "  creation_time INTEGER, "
+        "  state_enum INTEGER DEFAULT 0);" // 0=Active, 1=Cold, 2=Archived, 3=Forgotten, 4=Tombstoned
         
-        "CREATE VIRTUAL TABLE IF NOT EXISTS summaries_fts USING fts5("
-        "  content, "
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5("
+        "  original_text_mm, "
         "  content_id UNINDEXED"
         ");"
         
@@ -189,9 +192,8 @@ int LongTermMemory::runMaintenance(bool is_charging) {
         sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
     }
 
-    // 2. Summaries Maintenance (Rule v2.1: Active -> Cold -> Forgotten)
-    // Phase 6.1: Chunked Scan (100 items per tick)
-    const char* summ_sql = "SELECT id, last_accessed, state_enum, recall_count FROM summaries WHERE state_enum < 4 LIMIT 100;";
+    // 2. Memories Maintenance (Rule v2.1: Active -> Cold -> Forgotten)
+    const char* summ_sql = "SELECT id, last_accessed_time, state_enum, recall_count FROM memories WHERE state_enum < 4 LIMIT 100;";
     if (sqlite3_prepare_v2(m_db, summ_sql, -1, &stmt, nullptr) == SQLITE_OK) {
         struct StateUpdate { int id; int new_state; };
         std::vector<StateUpdate> updates;
@@ -215,7 +217,7 @@ int LongTermMemory::runMaintenance(bool is_charging) {
 
         if (!updates.empty()) {
             sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-            const char* up_sql = "UPDATE summaries SET state_enum = ? WHERE id = ?;";
+            const char* up_sql = "UPDATE memories SET state_enum = ? WHERE id = ?;";
             sqlite3_stmt* up_stmt = nullptr;
             if (sqlite3_prepare_v2(m_db, up_sql, -1, &up_stmt, nullptr) == SQLITE_OK) {
                 for (const auto& u : updates) {
@@ -232,7 +234,7 @@ int LongTermMemory::runMaintenance(bool is_charging) {
     }
 
     // 3. Cleanup Tombstoned (state 4)
-    sqlite3_exec(m_db, "DELETE FROM summaries WHERE state_enum = 4;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "DELETE FROM memories WHERE state_enum = 4;", nullptr, nullptr, nullptr);
     sqlite3_exec(m_db, "DELETE FROM vectorized_interactions WHERE state_enum = 4;", nullptr, nullptr, nullptr);
 
     if (modified_count > 0) {
@@ -267,7 +269,7 @@ std::vector<std::string> LongTermMemory::search(const std::string& query) {
     std::vector<std::string> results;
     
     // Stage 1: FTS5 Keyword Match
-    const char* sql = "SELECT content FROM summaries_fts WHERE summaries_fts MATCH ? ORDER BY rank LIMIT 5;";
+    const char* sql = "SELECT original_text_mm FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank LIMIT 5;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
@@ -292,7 +294,7 @@ std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>
 
     // Phase 2.1: State-based Filtering
     // FAST: state 0,1 | DEEP: state 0,1,2,3 (partial) | EXPLICIT: state 0,1,2,3
-    const char* sql = "SELECT content, embedding, state_enum, id FROM summaries WHERE state_enum < 4;";
+    const char* sql = "SELECT original_text_mm, embedding_vector, state_enum, id FROM memories WHERE state_enum < 4;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -307,10 +309,10 @@ std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>
             // DEEP and EXPLICIT can access Forgotten (3)
 
             if (content && blob && bytes > 0) {
-                const uint16_t* f16_vec = static_cast<const uint16_t*>(blob);
-                size_t dim = bytes / 2; 
-                std::vector<float> vector(dim);
-                for (size_t i = 0; i < dim; ++i) vector[i] = halfToFloat(f16_vec[i]);
+                // Phase 2.1: Semantic Memory uses Float32 (4 bytes per dim)
+                size_t dim = bytes / 4; 
+                const float* vector_ptr = static_cast<const float*>(blob);
+                std::vector<float> vector(vector_ptr, vector_ptr + dim);
                 
                 float dot = 0.0f, mag_a = 0.0f, mag_b = 0.0f;
                 for (size_t i = 0; i < std::min(vector.size(), query_embedding.size()); ++i) {
@@ -338,7 +340,7 @@ std::vector<std::string> LongTermMemory::searchSemantic(const std::vector<float>
             results.push_back(candidates[i].content);
             
             // Phase 5.3: Temporary Resurrection & Promotion
-            const char* update_sql = "UPDATE summaries SET recall_count = recall_count + 1, last_accessed = ?, "
+            const char* update_sql = "UPDATE memories SET recall_count = recall_count + 1, last_accessed_time = ?, "
                                      "state_enum = CASE WHEN recall_count >= 5 AND state_enum > 1 THEN 1 ELSE state_enum END "
                                      "WHERE id = ?;";
             sqlite3_stmt* up_stmt = nullptr;
@@ -359,8 +361,10 @@ bool LongTermMemory::consolidate(const std::string& summary_text, const std::vec
     
     sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
 
-    const char* sql = "INSERT INTO summaries (content, embedding, timestamp) VALUES (?, ?, ?);";
+    const char* sql = "INSERT INTO memories (original_text_mm, embedding_vector, creation_time, last_accessed_time) VALUES (?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
+    uint64_t now = std::time(nullptr);
+
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
         return false;
@@ -368,16 +372,13 @@ bool LongTermMemory::consolidate(const std::string& summary_text, const std::vec
     sqlite3_bind_text(stmt, 1, summary_text.c_str(), -1, SQLITE_STATIC);
     
     if (!embedding.empty()) {
-        // Phase 2.1: Semantic Memory uses Float16 (2 bytes per dim)
-        std::vector<uint16_t> f16_vector(embedding.size());
-        for (size_t i = 0; i < embedding.size(); ++i) {
-            f16_vector[i] = floatToHalf(embedding[i]);
-        }
-        sqlite3_bind_blob(stmt, 2, f16_vector.data(), static_cast<int>(f16_vector.size() * 2), SQLITE_STATIC);
+        // Phase 2.1: Semantic Memory uses Float32 (4 bytes per dim)
+        sqlite3_bind_blob(stmt, 2, embedding.data(), static_cast<int>(embedding.size() * sizeof(float)), SQLITE_STATIC);
     } else {
         sqlite3_bind_null(stmt, 2);
     }
-    sqlite3_bind_int64(stmt, 3, std::time(nullptr));
+    sqlite3_bind_int64(stmt, 3, now);
+    sqlite3_bind_int64(stmt, 4, now);
     
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         sqlite3_finalize(stmt);
@@ -388,7 +389,7 @@ bool LongTermMemory::consolidate(const std::string& summary_text, const std::vec
     sqlite3_int64 last_id = sqlite3_last_insert_rowid(m_db);
     sqlite3_finalize(stmt);
 
-    const char* fts_sql = "INSERT INTO summaries_fts (content, content_id) VALUES (?, ?);";
+    const char* fts_sql = "INSERT INTO memories_fts (original_text_mm, content_id) VALUES (?, ?);";
     sqlite3_stmt* fts_stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, fts_sql, -1, &fts_stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(fts_stmt, 1, summary_text.c_str(), -1, SQLITE_STATIC);
@@ -415,12 +416,7 @@ bool LongTermMemory::indexFile(const std::string& name, const std::string& path,
     sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(modified));
 
     if (!embedding.empty()) {
-        // Phase 2.1: Semantic Indexing uses Float16
-        std::vector<uint16_t> f16_vector(embedding.size());
-        for (size_t i = 0; i < embedding.size(); ++i) {
-            f16_vector[i] = floatToHalf(embedding[i]);
-        }
-        sqlite3_bind_blob(stmt, 5, f16_vector.data(), static_cast<int>(f16_vector.size() * 2), SQLITE_STATIC);
+        sqlite3_bind_blob(stmt, 5, embedding.data(), static_cast<int>(embedding.size() * sizeof(float)), SQLITE_STATIC);
     } else {
         sqlite3_bind_null(stmt, 5);
     }
@@ -450,13 +446,10 @@ std::vector<LongTermMemory::FileEmbedding> LongTermMemory::getAllFileEmbeddings(
                 fe.name = reinterpret_cast<const char*>(name);
                 fe.path = reinterpret_cast<const char*>(path);
                 
-                // De-quantize Float16 to Float32
-                const uint16_t* f16_vec = static_cast<const uint16_t*>(blob);
-                size_t dim = bytes / 2;
-                fe.vector.resize(dim);
-                for (size_t i = 0; i < dim; ++i) {
-                    fe.vector[i] = halfToFloat(f16_vec[i]);
-                }
+                // Phase 2.1: Semantic Indexing uses Float32
+                size_t dim = bytes / 4;
+                const float* vector_ptr = static_cast<const float*>(blob);
+                fe.vector.assign(vector_ptr, vector_ptr + dim);
                 results.push_back(fe);
             }
         }

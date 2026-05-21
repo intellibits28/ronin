@@ -284,13 +284,12 @@ class InferenceService : Service() {
                         val isGemma4 = currentModelPath.contains("gemma-4")
                         
                         if (isThinkingRequest && isGemma4) {
-                            val cotPrompt = "<|turn|>system\n<|think|>You are Ronin Kernel Core. Before giving the final answer, you MUST think step-by-step. Break down the entities, relations, and logic inside <|channel|>thought tags, then provide the precise response.<turn|><|turn|>user\n$actualInput<turn|><|turn|>model\n<|channel|>thought\n"
-                            // Using raw prompt for LiteRT if conversation API is too restrictive for raw tags
-                            // Fallback: Use direct engine generateResponse for raw prompts
-                            litertEngine?.generateResponse(cotPrompt)?.let { response ->
-                                // Note: For better UX, we could stream this too, but for CoT, 
-                                // we'll push the whole block or implement a manual streamer
-                                pushTokenToSHMNative(response, true)
+                            // Phase 9.2: Integrated CoT Prompting via Conversation API
+                            val cotInput = "<|think|>You are Ronin Kernel Core. Before giving the final answer, you MUST think step-by-step. Break down the entities, relations, and logic inside <|channel|>thought tags, then provide the precise response.\n\n$actualInput"
+                            val userMsg = Message.user(cotInput)
+                            litert.sendMessageAsync(userMsg).collect { partialMessage ->
+                                val token = try { partialMessage.javaClass.getMethod("getText").invoke(partialMessage) as String } catch(e: Exception) { partialMessage.toString() }
+                                pushTokenToSHMNative(token, false)
                             }
                         } else {
                             val userMsg = Message.user(actualInput)
@@ -298,8 +297,8 @@ class InferenceService : Service() {
                                 val token = try { partialMessage.javaClass.getMethod("getText").invoke(partialMessage) as String } catch(e: Exception) { partialMessage.toString() }
                                 pushTokenToSHMNative(token, false)
                             }
-                            pushTokenToSHMNative("", true)
                         }
+                        pushTokenToSHMNative("", true)
                         Log.i(TAG, "Inference Stream Complete.")
                     } catch (e: Exception) {
                         Log.e(TAG, "Inference failure: ${e.message}")

@@ -19,8 +19,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         const val COLUMN_ID = "id"
         const val COLUMN_TEXT_MM = "original_text_mm"
         const val COLUMN_SEGMENTED_MM = "segmented_text_mm"
-        const val COLUMN_TEXT_EN = "translated_text_en"
         const val COLUMN_EMBEDDING = "embedding_vector"
+        const val COLUMN_PROVIDER = "embedding_provider"
         const val COLUMN_IMPORTANCE = "importance_score"
         const val COLUMN_RECALL_COUNT = "recall_count"
         const val COLUMN_CREATION_TIME = "creation_time"
@@ -34,8 +34,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COLUMN_TEXT_MM TEXT,
                 $COLUMN_SEGMENTED_MM TEXT,
-                $COLUMN_TEXT_EN TEXT,
                 $COLUMN_EMBEDDING BLOB,
+                $COLUMN_PROVIDER TEXT,
                 $COLUMN_IMPORTANCE REAL,
                 $COLUMN_RECALL_COUNT INTEGER DEFAULT 0,
                 $COLUMN_CREATION_TIME INTEGER,
@@ -47,27 +47,28 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
 
     override fun onUpgrade(db: SQLiteDatabase?, oldVersion: Int, newVersion: Int) {
-        // Upgrade logic for future versions
+        // Simple upgrade: drop and recreate for Phase 2.1 development
+        db?.execSQL("DROP TABLE IF EXISTS $TABLE_MEMORIES")
+        onCreate(db)
     }
 
-    fun storeMemory(mm: String, en: String = "", vector: FloatArray?, importance: Float = 1.0f) {
+    fun storeMemory(mm: String, segmented: String = "", vector: FloatArray?, provider: String = "e5-small-v1", importance: Float = 1.0f) {
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COLUMN_TEXT_MM, mm)
-            if (en.isNotEmpty()) put(COLUMN_TEXT_EN, en)
+            put(COLUMN_SEGMENTED_MM, segmented)
+            put(COLUMN_PROVIDER, provider)
             put(COLUMN_IMPORTANCE, importance)
             put(COLUMN_CREATION_TIME, System.currentTimeMillis() / 1000)
             put(COLUMN_LAST_ACCESSED, System.currentTimeMillis() / 1000)
             put(COLUMN_STATE, 0) // ACTIVE
 
             vector?.let {
-                // Phase 2.1: INT8 Quantization for Episodic Bulk
-                // Maps [-1.0, 1.0] to [-128, 127] to save space (1 byte per dim)
-                val quantized = ByteArray(it.size)
-                for (i in it.indices) {
-                    quantized[i] = (it[i].coerceIn(-1.0f, 1.0f) * 127f).toInt().toByte()
-                }
-                put(COLUMN_EMBEDDING, quantized)
+                // Phase 2.1: Semantic Memory uses Float32 for high-precision E5 Small
+                val buffer = java.nio.ByteBuffer.allocate(it.size * 4)
+                buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                for (f in it) buffer.putFloat(f)
+                put(COLUMN_EMBEDDING, buffer.array())
             }
         }
         db.insert(TABLE_MEMORIES, null, values)

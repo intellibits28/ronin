@@ -239,7 +239,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             Log.i(TAG, "Memory Bridge: Generated ${vector.size}-dim embedding for MM text.")
             withContext(Dispatchers.IO) {
                 // Pass empty string for EN as it's no longer required for native multilingual search
-                dbHelper.storeMemory(mmText, "", vector, importance)
+                dbHelper.storeMemory(mmText, "", vector, importance = importance)
             }
         } else {
             Log.e(TAG, "Memory Bridge: Failed to generate embedding.")

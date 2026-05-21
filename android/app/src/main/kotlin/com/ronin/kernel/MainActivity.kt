@@ -604,7 +604,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                     .size(32.dp)
                                     .clickable { 
                                         chatViewModel.isThinkingEnabled = !chatViewModel.isThinkingEnabled
-                                        Toast.makeText(this@MainActivity, "Quantum Reasoning: ${if (chatViewModel.isThinkingEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Quantum Reasoning: ${if (chatViewModel.isThinkingEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
                                     }
                                     .padding(end = 8.dp)
                             )
