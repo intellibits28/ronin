@@ -271,6 +271,9 @@ class InferenceService : Service() {
         return true
     }
 
+    private var turnCount = 0
+    private val MAX_TURNS_BEFORE_ROTATION = 5
+
     private fun executeReasoning(input: String): String {
         val litert = litertConversation
         val legacy = legacyInference
@@ -286,25 +289,45 @@ class InferenceService : Service() {
 
         return try {
             if (litert != null) {
+                // Phase 9.5: Manual Sliding Window (Rotation)
+                turnCount++
+                if (turnCount >= MAX_TURNS_BEFORE_ROTATION) {
+                    Log.i(TAG, "Context Limit Approaching: Rotating Conversation.")
+                    litertConversation = litertEngine?.createConversation()
+                    turnCount = 0
+                }
+
                 currentInferenceJob?.cancel()
                 currentInferenceJob = serviceScope.launch(Dispatchers.IO) {
                     try {
                         val isGemma4 = currentModelPath.contains("gemma-4")
                         
-                        if (isThinkingRequest && isGemma4) {
-                            val cotInstructions = "You are Ronin Kernel Core. Before giving the final answer, you MUST think step-by-step. Break down the entities, relations, and logic inside <thinking> tags, then provide the precise response."
-                            val cotInput = "$cotInstructions\n\n$actualInput"
-                            val userMsg = Message.user(cotInput)
-                            litert.sendMessageAsync(userMsg).collect { partialMessage ->
-                                val token = try { partialMessage.javaClass.getMethod("getText").invoke(partialMessage) as String } catch(e: Exception) { partialMessage.toString() }
-                                pushTokenToSHMNative(token, false)
+                        val finalInput = if (isThinkingRequest && isGemma4) {
+                            "You are Ronin Kernel Core. Before giving the final answer, you MUST think step-by-step. Break down the entities, relations, and logic inside <thinking> tags, then provide the precise response.\n\n$actualInput"
+                        } else actualInput
+
+                        val userMsg = Message.user(finalInput)
+                        var stopTriggered = false
+
+                        litertConversation?.sendMessageAsync(userMsg)?.collect { partialMessage ->
+                            if (stopTriggered) return@collect
+                            
+                            val token = try { 
+                                partialMessage.javaClass.getMethod("getText").invoke(partialMessage) as String 
+                            } catch(e: Exception) { 
+                                partialMessage.toString() 
                             }
-                        } else {
-                            val userMsg = Message.user(actualInput)
-                            litert.sendMessageAsync(userMsg).collect { partialMessage ->
-                                val token = try { partialMessage.javaClass.getMethod("getText").invoke(partialMessage) as String } catch(e: Exception) { partialMessage.toString() }
-                                pushTokenToSHMNative(token, false)
+
+                            // Phase 9.6: Strict Stop Token Masking (Native Boundary Guard)
+                            val stopTokens = listOf("<|eot_id|>", "<|im_end|>", "\nuser:", "\nassistant:", "assistant\n")
+                            if (stopTokens.any { token.contains(it) }) {
+                                Log.i(TAG, "Stop Token Detected: Masking and Terminating.")
+                                stopTriggered = true
+                                currentInferenceJob?.cancel()
+                                return@collect
                             }
+
+                            pushTokenToSHMNative(token, false)
                         }
                         pushTokenToSHMNative("", true)
                         Log.i(TAG, "Inference Stream Complete.")

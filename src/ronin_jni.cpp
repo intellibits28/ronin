@@ -370,8 +370,21 @@ static JNINativeMethod g_methods[] = {
     {"generateEmbeddingNative", "(Ljava/lang/String;Z)[F", (void*)native_generateEmbedding},
     {"isValidModelNative", "(Ljava/lang/String;)Z", (void*)native_isValidModel},
     {"warmMemoryPipelineNative", "()Z", (void*)native_warmMemoryPipeline},
-    {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory}
+    {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory},
+    {"nativeResetContext", "()V", (void*)native_resetContext}
 };
+
+void native_resetContext(JNIEnv *env, jobject thiz) {
+    LOGW(TAG, "JNI: Neural State Purge Requested (P1 Recovery).");
+    if (g_intent_engine) {
+        // Clear Memory Manager's active context anchors
+        if (g_memory_manager) g_memory_manager->clearContext();
+        
+        // Notify Engine to purge internal KV Cache (if native) or signal worker
+        auto engine = g_intent_engine->getInferenceEngine();
+        if (engine) engine->purgeKVCache();
+    }
+}
 
 void native_shutdownKernel(JNIEnv *env, jobject thiz) {
     if (g_kernel) {

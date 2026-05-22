@@ -132,6 +132,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun generateEmbeddingNative(text: String, isQuery: Boolean): FloatArray?
     private external fun isValidModelNative(path: String): Boolean
     private external fun warmMemoryPipelineNative(): Boolean
+    private external fun nativeResetContext()
 
     /**
      * Phase 2.1: Predictive Warming for Mapped-Streaming Architecture.
@@ -509,6 +510,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun stopInference() {
         Log.i(TAG, "Manual Stop Triggered.")
         pollingJob?.cancel()
+        
+        // Phase 9.7: Neural State Purge (JNI Bridge)
+        if (isLibLoaded) {
+            try {
+                nativeResetContext()
+            } catch (e: UnsatisfiedLinkError) {}
+        }
+
         // Signal worker to reset context to avoid corrupted KV cache on next turn
         try {
             inferenceService?.resetConversation()
