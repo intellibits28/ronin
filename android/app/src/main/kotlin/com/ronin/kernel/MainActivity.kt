@@ -196,8 +196,12 @@ class MainActivity : ComponentActivity() {
         chatViewModel.wizardState = if (e5File.exists()) WizardState.ACTIVE else WizardState.MISSING_CORE
 
         // Phase 9.3: Robust Deduplication via Canonical Path and File size guard
+        // Also blacklist E5 model from reasoning list
         val modelFiles = modelsDir.listFiles { file -> 
-            file.name != "model.onnx" && !file.isDirectory && file.length() > 1024 
+            file.name != "model.onnx" && 
+            file.name != "multilingual-e5-small.tflite" &&
+            !file.isDirectory && 
+            file.length() > 1024 
         } ?: emptyArray()
         
         val uniquePaths = modelFiles.map { it.canonicalPath }.distinct().sorted()
@@ -525,9 +529,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                             currentRoninMsgIndex = -1 // Force new bubble for final answer
                         }
 
-                        // Filtering common Gemma 4 noise at turn boundaries
-                        if (fragment.trim() in listOf("*", "[", "3", "laptop")) {
-                            return@collect
+                        // Requirement 5: Conservative Noise Filtering
+                        // Only filter tokens like *, [, laptop if we are at the start of a response 
+                        // and they are likely leaked prompt artifacts. 
+                        if (currentRoninMsgIndex == -1 && !isInsideThoughtBlock) {
+                            if (fragment.trim() in listOf("*", "[", "laptop")) {
+                                return@collect
+                            }
                         }
 
                         if (isInsideThoughtBlock) {

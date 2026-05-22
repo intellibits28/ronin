@@ -123,12 +123,12 @@ class InferenceService : Service() {
         }
 
         override fun resetConversation() {
-            Log.i(TAG, "Manual Neural Reset: Clearing KV Cache Context.")
+            Log.i(TAG, "Manual Neural Reset: Purging KV Cache Context.")
             currentInferenceJob?.cancel()
+            turnCount = 0
             try {
-                litertEngine?.let { engine ->
-                    litertConversation = engine.createConversation()
-                }
+                litertConversation?.close()
+                litertConversation = litertEngine?.createConversation()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to reset conversation: ${e.message}")
             }
