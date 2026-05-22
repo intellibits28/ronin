@@ -160,17 +160,28 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
     // Populate Input Tensors
     for (int i = 0; i < input_count; ++i) {
         TfLiteTensor* tensor = TfLiteInterpreterGetInputTensor(m_impl->interpreter, i);
-        int32_t* data = (int32_t*)TfLiteTensorData(tensor);
+        const char* tensor_name = TfLiteTensorName(tensor);
+        TfLiteType tensor_type = TfLiteTensorType(tensor);
         
-        // Use tensor name or index to determine content
-        // 0: input_ids, 1: attention_mask, 2: token_type_ids (standard BERT order)
+        LOGD(TAG, "Populating input tensor %d: %s (Type: %d)", i, tensor_name, tensor_type);
+
+        void* raw_data = TfLiteTensorData(tensor);
+        
         for (int j = 0; j < target_seq_len; ++j) {
-            if (i == 0) { // input_ids
-                data[j] = (j < tokens.size()) ? tokens[j] : 0;
-            } else if (i == 1) { // attention_mask
-                data[j] = (j < tokens.size()) ? 1 : 0;
-            } else { // token_type_ids or others
-                data[j] = 0;
+            int32_t val = 0;
+            if (std::strstr(tensor_name, "input_ids")) {
+                val = (j < tokens.size()) ? tokens[j] : 0;
+                if (j < 5) LOGD(TAG, "Token[%d]: %d", j, val);
+            } else if (std::strstr(tensor_name, "attention_mask")) {
+                val = (j < tokens.size()) ? 1 : 0;
+            } else if (std::strstr(tensor_name, "token_type_ids") || std::strstr(tensor_name, "segment_ids")) {
+                val = 0;
+            }
+
+            if (tensor_type == kTfLiteInt32) {
+                ((int32_t*)raw_data)[j] = val;
+            } else if (tensor_type == kTfLiteInt64) {
+                ((int64_t*)raw_data)[j] = (int64_t)val;
             }
         }
     }
@@ -195,17 +206,12 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
     if (TfLiteTensorType(output_tensor) == kTfLiteFloat16) {
         const uint16_t* output_data = (const uint16_t*)TfLiteTensorData(output_tensor);
         for (int i = 0; i < dim; ++i) {
-            // Internal float16 to float32 conversion
             uint16_t h = output_data[i];
             uint32_t s = (h & 0x8000) << 16;
             uint32_t e = (h & 0x7c00) >> 10;
             uint32_t m = (h & 0x03ff) << 13;
-            if (e == 0) {
-                if (m != 0) {
-                    while ((m & 0x00800000) == 0) { m <<= 1; e--; }
-                    e++; m &= ~0x00800000;
-                }
-            } else if (e == 31) { e = 0xff; }
+            if (e == 0) { if (m != 0) { while ((m & 0x00800000) == 0) { m <<= 1; e--; } e++; m &= ~0x00800000; } }
+            else if (e == 31) { e = 0xff; }
             else { e = e + (127 - 15); }
             uint32_t res = s | (e << 23) | m;
             embedding[i] = *(float*)&res;
@@ -213,6 +219,14 @@ std::vector<float> NeuralEmbeddingNode::generateEmbedding(const std::string& inp
     } else {
         const float* output_data = (const float*)TfLiteTensorData(output_tensor);
         std::memcpy(embedding.data(), output_data, dim * sizeof(float));
+    }
+
+    // Phase 9.2: L2 Normalization (Mandatory for E5-Small)
+    float norm = 0.0f;
+    for (float v : embedding) norm += v * v;
+    norm = std::sqrt(norm);
+    if (norm > 1e-9f) {
+        for (float& v : embedding) v /= norm;
     }
 
     return embedding;
