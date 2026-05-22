@@ -4,6 +4,8 @@
 #include <cstring>
 #include <fstream>
 #include <algorithm>
+#include <thread>
+#include <chrono>
 #include "ronin_jni.h"
 #include "jni_utils.h"
 #include "hal/shared_memory_bridge.h"
@@ -28,6 +30,8 @@ using namespace Ronin::Kernel;
 using namespace Ronin::Kernel::Model;
 
 #ifdef __ANDROID__
+#include <android/log.h>
+
 // Global state
 static JavaVM* g_vm = nullptr;
 static std::unique_ptr<RoninKernel> g_kernel;
@@ -62,7 +66,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
 
     if (is_worker == JNI_TRUE) return;
 
-    g_ltm = std::make_unique<Ronin::Kernel::Memory::LongTermMemory>(base_path + "/ronin_memory.db");
+    g_ltm = std::make_unique<Ronin::Kernel::Memory::LongTermMemory>(base_path + "/ronin_cognitive.db");
     g_memory_manager = std::make_unique<Ronin::Kernel::Memory::MemoryManager>(2048);
     g_memory_manager->setLongTermMemory(g_ltm.get());
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>(g_ltm.get());
@@ -70,7 +74,6 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
 
     using namespace Ronin::Kernel::Capability;
-    // Phase 2.1: Expert Native Path - Dual-model loading (LiteRT + SentencePiece)
     auto neural_node = std::make_shared<NeuralEmbeddingNode>(
         base_path + "/assets/models/multilingual-e5-small.tflite", 
         base_path + "/assets/sentencepiece.bpe.model"
@@ -103,7 +106,6 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
         []() {
             LOGI(TAG, "Native Bridge: Releasing all engine resources.");
             if (g_intent_engine) {
-                // Fully unload all skills (munmap happens here)
                 for (uint32_t i = 1; i <= 10; ++i) {
                     auto skill = g_intent_engine->getSkill(i);
                     if (skill) skill->unload();
@@ -121,7 +123,6 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     engine->setLibPath(native_lib_path);
     engine->setBasePath(base_path);
     
-    // Phase 9.0: Register Proxy Node for Gemma 4
     g_intent_engine->registerSkill(1, std::make_shared<ChatSkill>(engine.get()));
 
     g_llm_context.engine = engine.get();
@@ -157,8 +158,6 @@ jstring native_checkFileAccess(JNIEnv *env, jobject thiz, jstring path) {
 }
 
 jfloat native_getFreeRamGB(JNIEnv *env, jobject thiz) {
-    // Phase 4.5 Audit: HardwareBridge might not be synced in worker process.
-    // Use HydrationManager's direct /proc/meminfo reading for reliable RAM Guard.
     uint64_t availableBytes = ::Ronin::Kernel::Model::HydrationManager::getAvailableRAM();
     return static_cast<jfloat>(availableBytes) / (1024.0f * 1024.0f * 1024.0f);
 }
@@ -172,7 +171,6 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input) {
     std::strncpy(in_data.data, input_str.c_str(), sizeof(in_data.data) - 1);
     in_data.length = std::min(input_str.length(), (size_t)(sizeof(in_data.data) - 1));
     
-    // Phase 9.0: Tick the kernel. Skill Registry + Proxy Nodes handle routing and execution.
     g_kernel->tick(in_data);
     
     if (g_last_skill_output.empty()) {
@@ -181,6 +179,7 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input) {
     
     return ConvertStringToJString(env, g_last_skill_output);
 }
+
 jobject native_pollInferenceStream(JNIEnv *env, jobject thiz) {
     if (!g_spine_consumer) return nullptr;
     auto* rb = g_spine_consumer->get();
@@ -188,9 +187,8 @@ jobject native_pollInferenceStream(JNIEnv *env, jobject thiz) {
 
     ::Ronin::Kernel::HAL::InferencePacket packet;
     if (rb->pop(packet)) {
-        // Requirement 4: Ensure we are not returning empty strings accidentally
         if (std::strlen(packet.fragment) == 0 && !packet.is_final) {
-            return nullptr; // Skip empty packets unless it's the final signal
+            return nullptr;
         }
 
         jclass cls = env->FindClass("com/ronin/kernel/InferencePacket");
@@ -202,7 +200,6 @@ jobject native_pollInferenceStream(JNIEnv *env, jobject thiz) {
     return nullptr;
 }
 
-
 jboolean native_pushTokenToSHM(JNIEnv *env, jobject thiz, jstring fragment, jboolean is_final) {
     if (!g_spine_consumer) return JNI_FALSE;
     auto* rb = g_spine_consumer->get();
@@ -210,8 +207,6 @@ jboolean native_pushTokenToSHM(JNIEnv *env, jobject thiz, jstring fragment, jboo
 
     std::string text = ConvertJStringToString(env, fragment);
 
-    // Requirement: Raw Output Tracker for adb logcat debugging
-    // Model ဆီက space တွေ၊ special characters တွေ ပါမကျန် သိရအောင် [ ] ကြားညှပ်ထုတ်မည်
     __android_log_print(ANDROID_LOG_DEBUG, "RONIN_RAW", "Token: [%s] (final: %s)", 
                         text.c_str(), (is_final == JNI_TRUE ? "true" : "false"));
 
@@ -223,8 +218,7 @@ jboolean native_pushTokenToSHM(JNIEnv *env, jobject thiz, jstring fragment, jboo
     std::strncpy(packet.fragment, text.c_str(), sizeof(packet.fragment) - 1);
     packet.fragment[sizeof(packet.fragment) - 1] = '\0';
 
-    // Phase 8.1: Burst Control - Retry with sleep if buffer is full
-    int retries = 50; // Up to 50ms wait
+    int retries = 50; 
     while (!rb->push(packet) && retries-- > 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -238,6 +232,7 @@ jboolean native_pushTokenToSHM(JNIEnv *env, jobject thiz, jstring fragment, jboo
 }
 
 jboolean native_isLoaded(JNIEnv *env, jobject thiz) { return g_llm_context.initialized ? JNI_TRUE : JNI_FALSE; }
+
 void native_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
     if (level >= 20 && g_llm_context.engine) g_llm_context.engine->purgeKVCache();
     if (g_memory_manager) g_memory_manager->onMemoryPressure();
@@ -252,8 +247,6 @@ jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
         return JNI_FALSE;
     }
 
-    // Phase 8.1: Mandatory TFLite Magic Byte Check (TFL3) for .tflite only
-    // .litertlm (Gemma Bundle) and .bin (Legacy) do not use standard FlatBuffers headers
     if (path_str.length() > 7 && path_str.substr(path_str.length() - 7) == ".tflite") {
         file.seekg(4);
         char magic[4];
@@ -282,16 +275,24 @@ void native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {
 }
 
 jstring native_getActiveModelPath(JNIEnv *env, jobject thiz) {
- return ConvertStringToJString(env, g_llm_context.model_path); }
+    return ConvertStringToJString(env, g_llm_context.model_path); 
+}
+
 void native_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) { if (g_kernel) g_kernel->injectLocation(lat, lon); }
+
 jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
     Ronin::Kernel::Capability::HardwareBridge::reportSystemHealth(temp, used, total);
     return JNI_TRUE;
 }
+
 void native_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) { if (g_intent_engine) g_intent_engine->setOfflineMode(offline == JNI_TRUE); }
+
 void native_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) { if (g_intent_engine) g_intent_engine->setPrimaryCloudProvider(ConvertJStringToString(env, provider)); }
+
 jint native_getLMKPressure(JNIEnv *env, jobject thiz) { return g_memory_manager ? g_memory_manager->getPressureScore() : 0; }
+
 jboolean native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) { return g_intent_engine ? (g_intent_engine->updateMetadata(ConvertJStringToString(env, json)) ? JNI_TRUE : JNI_FALSE) : JNI_FALSE; }
+
 jboolean native_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) { return JNI_TRUE; }
 
 jboolean native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring path) {
@@ -305,7 +306,6 @@ jboolean native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring path) {
 
 jfloatArray native_generateEmbedding(JNIEnv *env, jobject thiz, jstring text, jboolean is_query) {
     std::string input = ConvertJStringToString(env, text);
-    // Find NeuralEmbeddingNode (Skill ID 3)
     auto skill = g_intent_engine ? g_intent_engine->getSkill(3) : nullptr;
     auto* neural_node = dynamic_cast<Ronin::Kernel::Capability::NeuralEmbeddingNode*>(skill.get());
     
@@ -319,7 +319,6 @@ jfloatArray native_generateEmbedding(JNIEnv *env, jobject thiz, jstring text, jb
 }
 
 jboolean native_warmMemoryPipeline(JNIEnv *env, jobject thiz) {
-    // Warm BGE model (Skill ID 3)
     auto skill = g_intent_engine ? g_intent_engine->getSkill(3) : nullptr;
     auto* neural_node = dynamic_cast<Ronin::Kernel::Capability::NeuralEmbeddingNode*>(skill.get());
     if (neural_node) {
@@ -340,6 +339,21 @@ jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint o
         return array;
     }
     return env->NewObjectArray(0, stringClass, nullptr);
+}
+
+void native_resetContext(JNIEnv *env, jobject thiz) {
+    LOGW(TAG, "JNI: Neural State Purge Requested (P1 Recovery).");
+    if (g_intent_engine) {
+        if (g_memory_manager) g_memory_manager->clearContext();
+        auto engine = g_intent_engine->getInferenceEngine();
+        if (engine) engine->purgeKVCache();
+    }
+}
+
+void native_shutdownKernel(JNIEnv *env, jobject thiz) {
+    if (g_kernel) {
+        g_kernel->shutdown();
+    }
 }
 
 // --- JNI Registration ---
@@ -374,24 +388,6 @@ static JNINativeMethod g_methods[] = {
     {"nativeResetContext", "()V", (void*)native_resetContext}
 };
 
-void native_resetContext(JNIEnv *env, jobject thiz) {
-    LOGW(TAG, "JNI: Neural State Purge Requested (P1 Recovery).");
-    if (g_intent_engine) {
-        // Clear Memory Manager's active context anchors
-        if (g_memory_manager) g_memory_manager->clearContext();
-        
-        // Notify Engine to purge internal KV Cache (if native) or signal worker
-        auto engine = g_intent_engine->getInferenceEngine();
-        if (engine) engine->purgeKVCache();
-    }
-}
-
-void native_shutdownKernel(JNIEnv *env, jobject thiz) {
-    if (g_kernel) {
-        g_kernel->shutdown();
-    }
-}
-
 static JNINativeMethod g_worker_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
     {"pushTokenToSHMNative", "(Ljava/lang/String;Z)Z", (void*)native_pushTokenToSHM},
@@ -409,13 +405,11 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
         if (cls) {
             if (env->RegisterNatives(cls, methods, count) < 0) {
                 LOGE(TAG, "JNI: RegisterNatives FAILED for %s. Checking signatures...", class_name);
-                // Nuclear Guardrail: Even if one fails, we clear so the process lives
                 if (env->ExceptionCheck()) env->ExceptionClear();
             } else {
                 LOGI(TAG, "JNI: Successfully registered %d methods for %s", count, class_name);
             }
         } else {
-            // This is expected if the library is loaded by a classloader that doesn't see this class
             LOGW(TAG, "JNI: Class %s not found in current context.", class_name);
             if (env->ExceptionCheck()) env->ExceptionClear();
         }

@@ -650,8 +650,24 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             chatViewModel.messages.add("User: $rawInput")
                                             currentInput = ""
                                             chatViewModel.showCommandSuggestions = false
-                                            chatViewModel.isGenerating = true
+                                            // Phase 10.0: Sovereign Cloud Switch
+                                            if (!chatViewModel.isKernelHydrated) {
+                                                chatViewModel.reasoningLogs.add("> [SYSTEM] Local Brain missing. Escalating to Sovereign Cloud Switch.")
+                                                scope.launch {
+                                                    try {
+                                                        val apiKey = engine.getSecureApiKey(chatViewModel.primaryCloudProvider)
+                                                        val res = engine.performCloudInference(rawInput, chatViewModel.primaryCloudProvider, apiKey)
+                                                        chatViewModel.messages.add("Ronin: $res")
+                                                    } catch (e: Exception) {
+                                                        chatViewModel.messages.add("Ronin: Cloud fallback failed - ${e.message}")
+                                                    } finally {
+                                                        chatViewModel.isGenerating = false
+                                                    }
+                                                }
+                                                return@IconButton
+                                            }
 
+                                            chatViewModel.isGenerating = true
                                             // Phase 9.1: Prompt Injection Trigger
                                             val inputToProcess = if (chatViewModel.isThinkingEnabled) "[THINK]$rawInput" else rawInput
 
