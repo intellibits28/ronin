@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <atomic>
 #include "ronin_types.hpp"
 
 namespace Ronin::Kernel::Model {
