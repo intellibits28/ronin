@@ -16,7 +16,6 @@
 #include "capabilities/hardware_bridge.h"
 #include "capabilities/chat_skill.h"
 #include "capabilities/file_search_node.h"
-#include "capabilities/neural_embedding_node.h"
 #include "capabilities/hardware_nodes.h"
 #include "capabilities/file_scanner.h"
 #include "memory_manager.h"
@@ -79,16 +78,11 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     g_intent_engine->loadCapabilities(base_path + "/assets/capabilities.json");
 
     using namespace Ronin::Kernel::Capability;
-    auto neural_node = std::make_shared<NeuralEmbeddingNode>(
-        base_path + "/assets/models/multilingual-e5-small.tflite", 
-        base_path + "/assets/sentencepiece.bpe.model"
-    );
-    auto search_node = std::make_shared<FileSearchNode>(g_ltm.get(), neural_node.get());
+    auto search_node = std::make_shared<FileSearchNode>(g_ltm.get());
     auto memory_search_skill = std::make_shared<MemorySearchSkill>(g_memory_db.get());
     auto memory_archive_skill = std::make_shared<ArchiveMemorySkill>(g_memory_db.get());
     
     g_intent_engine->registerSkill(2, search_node);
-    g_intent_engine->registerSkill(3, neural_node);
     g_intent_engine->registerSkill(4, std::make_shared<FlashlightNode>());
     g_intent_engine->registerSkill(5, std::make_shared<LocationNode>());
     g_intent_engine->registerSkill(6, std::make_shared<WifiNode>());
@@ -96,7 +90,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     g_intent_engine->registerSkill(8, memory_search_skill);
     g_intent_engine->registerSkill(9, memory_archive_skill);
     
-    g_file_scanner = std::make_unique<Ronin::Kernel::Capability::FileScanner>(*g_ltm, neural_node.get());
+    g_file_scanner = std::make_unique<Ronin::Kernel::Capability::FileScanner>(*g_ltm);
     g_file_scanner->setDatabaseReady(true);
     g_intent_engine->setLowPriorityStopCallback([]() { if (g_file_scanner) g_file_scanner->stopScan(); });
 
@@ -313,29 +307,6 @@ jboolean native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring path) {
     return JNI_FALSE;
 }
 
-jfloatArray native_generateEmbedding(JNIEnv *env, jobject thiz, jstring text, jboolean is_query) {
-    std::string input = ConvertJStringToString(env, text);
-    auto skill = g_intent_engine ? g_intent_engine->getSkill(3) : nullptr;
-    auto* neural_node = dynamic_cast<Ronin::Kernel::Capability::NeuralEmbeddingNode*>(skill.get());
-    
-    if (neural_node) {
-        auto vec = neural_node->generateEmbedding(input, is_query == JNI_TRUE);
-        jfloatArray result = env->NewFloatArray(vec.size());
-        env->SetFloatArrayRegion(result, 0, vec.size(), vec.data());
-        return result;
-    }
-    return nullptr;
-}
-
-jboolean native_warmMemoryPipeline(JNIEnv *env, jobject thiz) {
-    auto skill = g_intent_engine ? g_intent_engine->getSkill(3) : nullptr;
-    auto* neural_node = dynamic_cast<Ronin::Kernel::Capability::NeuralEmbeddingNode*>(skill.get());
-    if (neural_node) {
-        return neural_node->load() ? JNI_TRUE : JNI_FALSE;
-    }
-    return JNI_FALSE;
-}
-
 jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
     jclass stringClass = env->FindClass("java/lang/String");
     if (g_ltm) {
@@ -434,10 +405,6 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     register_class("com/ronin/kernel/InferenceService", g_worker_methods, sizeof(g_worker_methods) / sizeof(g_worker_methods[0]));
 
     LOGI(TAG, "Ronin Unified JNI Registered with Nuclear Guardrails.");
-    return JNI_VERSION_1_6;
-}
-#endif // __ANDROID__
-LOGI(TAG, "Ronin Unified JNI Registered with Nuclear Guardrails.");
     return JNI_VERSION_1_6;
 }
 #endif // __ANDROID__

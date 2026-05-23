@@ -1,3 +1,5 @@
+#pragma once
+
 #include <string>
 #include <vector>
 #include "long_term_memory.h"
@@ -23,15 +25,10 @@ public:
 
 private:
     Memory::LongTermMemory* m_ltm;
-    NeuralEmbeddingNode* m_neural;
     
     // Phase 6.2: Pagination State
     std::vector<std::string> m_last_results;
     size_t m_last_offset = 0;
-};
-
-} // namespace Ronin::Kernel::Capability
- size_t m_last_offset = 0;
 };
 
 } // namespace Ronin::Kernel::Capability

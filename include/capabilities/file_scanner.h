@@ -1,10 +1,8 @@
 #pragma once
-
+#include "long_term_memory.h"
 #include <string>
 #include <thread>
 #include <atomic>
-#include <filesystem>
-#include "long_term_memory.h"
 
 namespace Ronin::Kernel::Capability {
 
@@ -30,7 +28,6 @@ public:
 
 private:
     Memory::LongTermMemory& m_ltm;
-    NeuralEmbeddingNode* m_neural;
     std::thread m_scan_thread;
     std::atomic<bool> m_is_running{false};
     std::atomic<bool> m_stop_requested{false};
@@ -40,4 +37,3 @@ private:
 };
 
 } // namespace Ronin::Kernel::Capability
-// namespace Ronin::Kernel::Capability
