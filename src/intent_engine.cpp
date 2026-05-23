@@ -31,7 +31,6 @@ namespace Ronin::Kernel::Intent {
 // Initialize to NORMAL by default
 ThermalState g_thermal_state = ThermalState::NORMAL;
 
-// Helper to strip non-alphanumeric chars for tokenizer
 static std::string strip_punctuation(const std::string& s) {
     bool has_unicode = false;
     for (unsigned char c : s) {
@@ -51,7 +50,6 @@ static std::string strip_punctuation(const std::string& s) {
     return out;
 }
 
-// Helper to trim leading/trailing whitespace
 static std::string trim(const std::string& s) {
     auto start = s.find_first_not_of(" \t\n\r");
     if (start == std::string::npos) return "";
@@ -72,7 +70,7 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
     if (cmd == "/status") {
         std::stringstream ss;
         ss << (m_inference_engine ? m_inference_engine->getRuntimeInfo() : "Runtime: LiteRT-LM / Backend: Unknown") << " | ";
-        ss << "Health: " << std::fixed << std::setprecision(1) << HardwareBridge::getTemperature() << "°C | ";
+        ss << "Health: " << std::fixed << std::setprecision(1) << HardwareBridge::getTemperature() << "deg C | ";
         ss << std::setprecision(2) << HardwareBridge::getRamUsed() << "/" << HardwareBridge::getRamTotal() << "GB | ";
         ss << "LMK: " << (m_memory_manager ? m_memory_manager->getPressureScore() : 0) << "%";
         output = ss.str();
@@ -125,11 +123,13 @@ void IntentEngine::notifyTrimMemory(int level) {
 
 IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     using namespace Ronin::Kernel::Capability;
+    
     m_skill_registry[2] = std::make_shared<FileSearchNode>();
     m_skill_registry[4] = std::make_shared<FlashlightNode>();
     m_skill_registry[5] = std::make_shared<LocationNode>();
     m_skill_registry[6] = std::make_shared<WifiNode>();
     m_skill_registry[7] = std::make_shared<BluetoothNode>();
+    
     LOGI(TAG, "IntentEngine: Modular Skill Registry initialized.");
 }
 
@@ -137,21 +137,23 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
     if (nodeId == 0) return m_last_command_output;
 
     if (m_current_tool_depth >= MAX_TOOL_CALL_DEPTH) {
-        return "Error: Maximum tool call depth reached.";
+        std::string depthError = "Guard-rail: MAX_TOOL_CALL_DEPTH reached.";
+        LOGW(TAG, "%s", depthError.c_str());
+        return "Error: Maximum tool call depth reached. Termination forced.";
     }
 
     auto it = m_skill_registry.find(nodeId);
     if (it != m_skill_registry.end()) {
         m_current_tool_depth++;
         
-        // Thermal check for Location
         if (nodeId == 5 && g_thermal_state == ThermalState::SEVERE) {
+            LOGW(TAG, "Thermal SEVERE: Using cached GPS.");
             return "Current Location (Cached): (" + std::to_string(m_last_lat) + ", " + std::to_string(m_last_lon) + ")";
         }
 
         std::string result = it->second->execute(param);
 
-        // Recursive Tool Dispatching for Chat
+        // Phase 4: Recursive Tool Dispatching for Chat
         if (nodeId == 1) {
             std::string toolResult = dispatchToolCall(result);
             if (toolResult != result) return toolResult;
@@ -159,7 +161,7 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
 
         return result;
     }
-    return "Error: Skill not found.";
+    return "Error: Modular skill not found.";
 }
 
 void IntentEngine::loadCapabilities(const std::string& json_path) {
@@ -169,7 +171,7 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
     buffer << file.rdbuf();
     std::string content = buffer.str();
     m_capabilities.clear();
-    // Minimalist parser logic...
+    // Simplified parser for now
 }
 
 std::vector<std::string> IntentEngine::tokenize(const std::string& input) {
@@ -184,7 +186,7 @@ std::vector<std::string> IntentEngine::tokenize(const std::string& input) {
 
 bool IntentEngine::isFuzzyMatch(std::string_view word, std::string_view target) {
     if (word == target) return true;
-    return false; // Simplified for brevity in fix
+    return false;
 }
 
 std::string IntentEngine::dispatchToolCall(const std::string& llm_output) {
@@ -196,31 +198,34 @@ std::string IntentEngine::dispatchToolCall(const std::string& llm_output) {
     if (paren_open == std::string::npos) return llm_output;
 
     std::string tool_name = llm_output.substr(tool_start, paren_open - tool_start);
+    
     size_t quote_start = llm_output.find("\"", paren_open);
     size_t quote_end = llm_output.find("\"", quote_start + 1);
     
     if (quote_start == std::string::npos || quote_end == std::string::npos) return llm_output;
+    
     std::string arg = llm_output.substr(quote_start + 1, quote_end - quote_start - 1);
 
     uint32_t target_id = 0;
     if (tool_name == "search_memory") target_id = 8;
     else if (tool_name == "archive_memory") target_id = 9;
 
-    if (target_id > 0) return "[TOOL_RESULT] " + executeSkill(target_id, arg);
+    if (target_id > 0) {
+        return "[TOOL_RESULT] " + executeSkill(target_id, arg);
+    }
+
     return llm_output;
 }
 
 bool IntentEngine::updateMetadata(const std::string& json_metadata) {
     if (json_metadata.empty()) return false;
     m_model_metadata.clear();
-    if (json_metadata.find("gemini-2.0-flash") != std::string::npos) {
-        m_model_metadata["gemini-2.0-flash"] = {"models/gemini-2.0-flash", "Gemini 2.0 Flash", false, 1048576};
-    }
     return true;
 }
 
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
     resetToolDepth();
+    
     std::string input_lower = input;
     std::transform(input_lower.begin(), input_lower.end(), input_lower.begin(), ::tolower);
     
@@ -230,10 +235,13 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         return {0, 1.0f, true};
     }
 
-    if (input_lower.find("flashlight") != std::string::npos) return {4, 1.0f, true};
-    if (input_lower.find("location") != std::string::npos) return {5, 1.0f, true};
+    // Deterministic Routing
+    if (input_lower.find("flashlight") != std::string::npos || input_lower.find("torch") != std::string::npos) return {4, 1.0f, true};
+    if (input_lower.find("location") != std::string::npos || input_lower.find("gps") != std::string::npos) return {5, 1.0f, true};
+    if (input_lower.find("wifi") != std::string::npos) return {6, 1.0f, true};
+    if (input_lower.find("bluetooth") != std::string::npos) return {7, 1.0f, true};
 
-    return {1, 1.0f, true}; // Default to Chat
+    return {1, 1.0f, true}; // Default to Local Reasoning (ID 1)
 }
 
 static float compute_similarity_scalar(const int8_t* a, const int8_t* b) {

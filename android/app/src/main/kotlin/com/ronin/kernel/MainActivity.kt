@@ -121,45 +121,10 @@ class MainActivity : ComponentActivity() {
         uri?.let { importModelFromUri(it) }
     }
 
-    private val embeddingPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { importEmbeddingModelFromUri(it) }
-    }
-
-    private fun importEmbeddingModelFromUri(uri: Uri) {
-        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        lifecycleScope.launch {
-            chatViewModel.wizardState = WizardState.IMPORTING
-            val success = withContext(Dispatchers.IO) {
-                try {
-                    val modelsDir = java.io.File(filesDir, "assets/models")
-                    if (!modelsDir.exists()) modelsDir.mkdirs()
-                    val targetFile = java.io.File(modelsDir, "multilingual-e5-small.tflite")
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        java.io.FileOutputStream(targetFile).use { output ->
-                            input.copyTo(output, bufferSize = 1024 * 1024)
-                        }
-                    }
-                    chatViewModel.wizardState = WizardState.VERIFYING
-                    nativeEngine.isValidModel(targetFile.absolutePath)
-                } catch (e: Exception) {
-                    Log.e("RoninBoot", "Embedding Import Failed: ${e.message}")
-                    false
-                }
-            }
-            if (success) {
-                chatViewModel.wizardState = WizardState.ACTIVE
-                scanLocalModels()
-                Toast.makeText(this@MainActivity, "Semantic Memory Integrated.", Toast.LENGTH_SHORT).show()
-            } else {
-                chatViewModel.wizardState = WizardState.MISSING_CORE
-                Toast.makeText(this@MainActivity, "Failed to import embedding model.", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
     private fun importModelFromUri(uri: Uri) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
+            chatViewModel.wizardState = WizardState.IMPORTING
             val success = withContext(Dispatchers.IO) {
                 try {
                     val inputStream = contentResolver.openInputStream(uri)
@@ -172,7 +137,8 @@ class MainActivity : ComponentActivity() {
                             input.copyTo(output, bufferSize = 1024 * 1024) 
                         } 
                     }
-                    true
+                    chatViewModel.wizardState = WizardState.VERIFYING
+                    nativeEngine.isValidModel(targetFile.absolutePath)
                 } catch (e: Exception) {
                     Log.e("Ronin_Import", "Failed to import model: ${e.message}")
                     false
@@ -182,6 +148,7 @@ class MainActivity : ComponentActivity() {
                 scanLocalModels()
                 Toast.makeText(this@MainActivity, "Brain Imported Successfully", Toast.LENGTH_SHORT).show()
             } else {
+                chatViewModel.wizardState = WizardState.MISSING_CORE
                 Toast.makeText(this@MainActivity, "Import Failed", Toast.LENGTH_LONG).show()
             }
         }
@@ -192,19 +159,16 @@ class MainActivity : ComponentActivity() {
         val modelsDir = java.io.File(filesDir, "models")
         if (!modelsDir.exists()) modelsDir.mkdirs()
 
-        val e5File = java.io.File(filesDir, "assets/models/multilingual-e5-small.tflite")
-        chatViewModel.wizardState = if (e5File.exists()) WizardState.ACTIVE else WizardState.MISSING_CORE
-
-        // Phase 9.3: Robust Deduplication via Canonical Path and File size guard
-        // Also blacklist E5 model from reasoning list
+        // Phase 11.0: Single Gemma 4 Architecture - Setup Wizard tracks Reasoning Brain presence
         val modelFiles = modelsDir.listFiles { file -> 
             file.name != "model.onnx" && 
-            file.name != "multilingual-e5-small.tflite" &&
             !file.isDirectory && 
             file.length() > 1024 
         } ?: emptyArray()
         
         val uniquePaths = modelFiles.map { it.canonicalPath }.distinct().sorted()
+
+        chatViewModel.wizardState = if (uniquePaths.isNotEmpty()) WizardState.ACTIVE else WizardState.MISSING_CORE
 
         if (chatViewModel.discoveredModels.toList() != uniquePaths) {
             chatViewModel.discoveredModels.clear()
@@ -271,7 +235,7 @@ class MainActivity : ComponentActivity() {
                     delay(3000)
                 }
             }
-            RoninChatUI(nativeEngine, chatViewModel, brainPicker, embeddingPicker, { saveOfflineMode(it) })
+            RoninChatUI(nativeEngine, chatViewModel, brainPicker, { saveOfflineMode(it) })
         }
     }
 
@@ -464,7 +428,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, embeddingPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
+fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
     val context = LocalContext.current; val scope = rememberCoroutineScope()
     var currentInput by remember { mutableStateOf("") }
 
@@ -507,7 +471,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
             if (chatViewModel.wizardState != WizardState.ACTIVE) {
-                BootstrapWizard(chatViewModel, embeddingPicker)
+                BootstrapWizard(chatViewModel, brainPicker)
             } else {
                 LaunchedEffect(Unit) {
                     var currentRoninMsgIndex = -1
@@ -516,7 +480,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     engine.inferenceFlow.collect { packet ->
                         var fragment = packet.fragment
                         
-                        // Phase 9.1: Detect Reasoning Spine Tags (Native and User-requested)
                         if (fragment.contains("<|channel|>thought") || fragment.contains("<thinking>")) {
                             isInsideThoughtBlock = true
                             fragment = fragment.replace("<|channel|>thought", "").replace("<thinking>", "")
@@ -526,12 +489,9 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         if (fragment.contains("<channel|>") || fragment.contains("</thinking>")) {
                             isInsideThoughtBlock = false
                             fragment = fragment.replace("<channel|>", "").replace("</thinking>", "")
-                            currentRoninMsgIndex = -1 // Force new bubble for final answer
+                            currentRoninMsgIndex = -1 
                         }
 
-                        // Requirement 5: Conservative Noise Filtering
-                        // Only filter tokens like *, [, laptop if we are at the start of a response 
-                        // and they are likely leaked prompt artifacts. 
                         if (currentRoninMsgIndex == -1 && !isInsideThoughtBlock) {
                             if (fragment.trim() in listOf("*", "[", "laptop")) {
                                 return@collect
@@ -548,7 +508,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                 }
                             }
                         } else {
-                            // Phase 8.7: Real-time Streaming UI (Append fragments to answer)
                             if (currentRoninMsgIndex == -1 || currentRoninMsgIndex >= chatViewModel.messages.size || !chatViewModel.messages[currentRoninMsgIndex].startsWith("Ronin: ")) {
                                 if (fragment.isNotBlank() || packet.isFinal) {
                                     chatViewModel.messages.add("Ronin: ${fragment}")
@@ -612,7 +571,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
 
                     Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
                         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            // Phase 9.0: Thinking Mode Toggle UI
                             Icon(
                                 imageVector = Icons.Default.Psychology, 
                                 contentDescription = "Thinking Mode",
@@ -631,7 +589,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                 onValueChange = { 
                                     currentInput = it
                                     chatViewModel.showCommandSuggestions = it.startsWith("/")
-                                    if (it.isNotEmpty()) engine.warmMemoryPipeline()
                                 }, 
                                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), 
                                 colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), 
@@ -658,9 +615,10 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             chatViewModel.messages.add("User: $rawInput")
                                             currentInput = ""
                                             chatViewModel.showCommandSuggestions = false
-                                            // Phase 10.0: Sovereign Cloud Switch
+                                            
+                                            // Phase 11.0: Integrated Cloud Fallback Logic
                                             if (!chatViewModel.isKernelHydrated) {
-                                                chatViewModel.reasoningLogs.add("> [SYSTEM] Local Brain missing. Escalating to Sovereign Cloud Switch.")
+                                                chatViewModel.reasoningLogs.add("> [SYSTEM] Local Brain missing. Escalating to Sovereign Cloud Fallback.")
                                                 scope.launch {
                                                     try {
                                                         val apiKey = engine.getSecureApiKey(chatViewModel.primaryCloudProvider)
@@ -676,7 +634,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             }
 
                                             chatViewModel.isGenerating = true
-                                            // Phase 9.1: Prompt Injection Trigger
                                             val inputToProcess = if (chatViewModel.isThinkingEnabled) "[THINK]$rawInput" else rawInput
 
                                             scope.launch { 
@@ -704,17 +661,17 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             }
         }
     }
-    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, embeddingPicker, onSaveOfflineMode, { (context.findActivity() as? MainActivity)?.deleteLocalModel(it) }, { (context.findActivity() as? MainActivity)?.hydrateModel(it) })
+    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, onSaveOfflineMode, { (context.findActivity() as? MainActivity)?.deleteLocalModel(it) }, { (context.findActivity() as? MainActivity)?.hydrateModel(it) })
 }
 
 @Composable
-fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: ActivityResultLauncher<Array<String>>) {
+fun BootstrapWizard(chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>) {
     Column(modifier = Modifier.fillMaxSize()) {
         Surface(color = Color(0xFFE57373).copy(alpha = 0.9f), modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Info, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(12.dp))
-                Text("Setup Required: Semantic Memory Model missing.", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Setup Required: Reasoning Brain missing.", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -723,33 +680,33 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, embeddingPicker: ActivityResul
             Spacer(Modifier.height(24.dp))
             Text("Ronin Kernel: Setup Mode", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.height(16.dp))
-            Text("The Core Router (Multilingual-E5) is required for semantic memory and reasoning. Please import the '.tflite' model file from your storage.", fontSize = 14.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text("The Reasoning Spine (Gemma 4 / LiteRT-LM) is required for intelligence and autonomous action. Please import a '.litertlm' or '.bin' model file from your storage.", fontSize = 14.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             Spacer(Modifier.height(32.dp))
             
             when (chatViewModel.wizardState) {
                 WizardState.IMPORTING -> {
                     CircularProgressIndicator(color = Color(0xFF64B5F6))
                     Spacer(Modifier.height(16.dp))
-                    Text("Copying Model to Secure Storage...", color = Color.Cyan, fontSize = 12.sp)
+                    Text("Copying Brain to Secure Storage...", color = Color.Cyan, fontSize = 12.sp)
                 }
                 WizardState.VERIFYING -> {
                     CircularProgressIndicator(color = Color.Green)
                     Spacer(Modifier.height(16.dp))
-                    Text("Verifying Integrity (TFL3 Magic Check)...", color = Color.Green, fontSize = 12.sp)
+                    Text("Verifying Model Signature...", color = Color.Green, fontSize = 12.sp)
                 }
                 else -> {
-                    Button(onClick = { embeddingPicker.launch(arrayOf("*/*")) }, colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF64B5F6))) {
+                    Button(onClick = { brainPicker.launch(arrayOf("*/*")) }, colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF64B5F6))) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Refresh, null, tint = Color.Black)
                             Spacer(Modifier.width(8.dp))
-                            Text("IMPORT CORE ROUTER", color = Color.Black)
+                            Text("IMPORT REASONING BRAIN", color = Color.Black)
                         }
                     }
                 }
             }
             
             Spacer(Modifier.height(16.dp))
-            TextButton(onClick = { /* Help link */ }) { Text("Where can I find the E5 model?", color = Color(0xFF64B5F6), fontSize = 12.sp) }
+            TextButton(onClick = { /* Help link */ }) { Text("Where can I find reasoning models?", color = Color(0xFF64B5F6), fontSize = 12.sp) }
         }
     }
 }
@@ -773,7 +730,7 @@ fun ChatBubble(m: String) {
 }
 
 @Composable
-fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, embeddingPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit, onDeleteModel: (String) -> Unit, onSelectModel: (String) -> Unit) {
+fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit, onDeleteModel: (String) -> Unit, onSelectModel: (String) -> Unit) {
     val context = LocalContext.current
     AlertDialog(onDismissRequest = { chatViewModel.showSettings = false }, title = { Text("Ronin Configuration", fontWeight = FontWeight.Bold) }, text = {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
@@ -788,8 +745,6 @@ fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: ActivityResultLaun
                 }
             }
             OutlinedButton(onClick = { brainPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Reasoning Brain") }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { embeddingPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Semantic Memory") }
             Spacer(Modifier.height(16.dp)); Divider()
             Row(verticalAlignment = Alignment.CenterVertically) { 
                 Text("Cloud Reasoning Models", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f)); 

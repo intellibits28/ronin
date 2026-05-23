@@ -129,44 +129,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun scanSpecificPathNative(path: String): Boolean
     private external fun isLoadedNative(): Boolean
     private external fun getActiveModelPathNative(): String
-    private external fun generateEmbeddingNative(text: String, isQuery: Boolean): FloatArray?
     private external fun isValidModelNative(path: String): Boolean
-    private external fun warmMemoryPipelineNative(): Boolean
     private external fun nativeResetContext()
-
-    /**
-     * Phase 2.1: Predictive Warming for Mapped-Streaming Architecture.
-     */
-    fun warmMemoryPipeline() {
-        scope.launch {
-            // Warm BGE Model (Native mmap)
-            if (isLibLoaded) {
-                try {
-                    warmMemoryPipelineNative()
-                } catch (e: UnsatisfiedLinkError) {}
-            }
-        }
-    }
+    private external fun requestCancellationNative()
 
     /**
      * Phase 2.1: Unicode NFKC Normalization for Burmese consistency.
      */
     fun normalizeBurmese(text: String): String {
         return java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
-    }
-
-    /**
-     * Phase 2.1: Generate semantic embedding for Memory v2.1 bridge.
-     */
-    fun generateEmbedding(text: String, isQuery: Boolean = true): FloatArray? {
-        if (isLibLoaded) {
-            return try {
-                generateEmbeddingNative(normalizeBurmese(text), isQuery)
-            } catch (e: UnsatisfiedLinkError) {
-                null
-            }
-        }
-        return null
     }
 
     /**
@@ -229,24 +200,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     fun isNativeLibraryLoaded(): Boolean = isLibLoaded
 
-    /**
-     * Phase 2.1: Memory Model Evolution (Native Multilingual)
-     * Generates 384-dim embedding from normalized MM text and saves to persistent storage.
-     */
-    suspend fun storeCognitiveMemory(mmText: String, importance: Float = 1.0f) {
-        // E5-Small supports MM natively, no need for translation bridge.
-        val vector = generateEmbedding(mmText, isQuery = false)
-        if (vector != null) {
-            Log.i(TAG, "Memory Bridge: Generated ${vector.size}-dim embedding for MM text.")
-            withContext(Dispatchers.IO) {
-                // Pass empty string for EN as it's no longer required for native multilingual search
-                dbHelper.storeMemory(mmText, "", vector, importance = importance)
-            }
-        } else {
-            Log.e(TAG, "Memory Bridge: Failed to generate embedding.")
-        }
-    }
-
     // --- External Call Wrappers ---
 
     fun setOfflineModeSafe(offline: Boolean) {
@@ -270,13 +223,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     fun setSafeMode(enabled: Boolean) {
-        /*
-        try {
-            inferenceService?.setSafeMode(enabled)
-        } catch (e: RemoteException) {
-            Log.e(TAG, "IPC setSafeMode failed: ${e.message}")
+        if (isLibLoaded) {
+            try {
+                setSafeModeNative(enabled)
+            } catch (e: UnsatisfiedLinkError) {}
         }
-        */
     }
 
     fun updateCloudProvidersSafe(json: String): Boolean {
@@ -343,10 +294,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
         bindInferenceService()
     }
-            private fun bindInferenceService() {
-            val intent = Intent(context, InferenceService::class.java)
-            context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-            }
+
+    private fun bindInferenceService() {
+        val intent = Intent(context, InferenceService::class.java)
+        context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+    }
 
     /**
      * Kotlin-Side Model Hydration with Native Delegation.
@@ -449,14 +401,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
         try {
             val result = processInputNative(input)
-
-            // Phase 2.1: Memory Model v2.1 Integration
-            // If it's a normal conversation (not a command), store it in cognitive memory.
-            if (!input.startsWith("/") && !result.startsWith("Error:")) {
-                scope.launch {
-                    storeCognitiveMemory(input)
-                }
-            }
             
             // Phase 3: If reasoning started, trigger the polling coroutine
             if (result.contains("[SHM Active]")) {
@@ -474,7 +418,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             Log.d(TAG, "SHM Polling already active. Skipping restart.")
             return
         }
-        // Requirement 1: Use a context that survives parent cancellation for critical polling
         pollingJob = scope.launch(Dispatchers.IO) {
             withContext(kotlinx.coroutines.NonCancellable) {
                 Log.d(TAG, "Starting SHM Inference Polling (Non-Cancellable)...")
@@ -514,6 +457,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         // Phase 9.7: Neural State Purge (JNI Bridge)
         if (isLibLoaded) {
             try {
+                requestCancellationNative()
                 nativeResetContext()
             } catch (e: UnsatisfiedLinkError) {}
         }
@@ -528,8 +472,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Callback invoked by C++ Kernel for neural reasoning.
-     * Proxied via Binder to :inference_core process.
-     * In Microkernel mode, this also streams results to SHM.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
@@ -537,22 +479,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         
         scope.launch {
             try {
-                // Ensure Polling is active for UI to see this
                 startInferencePolling()
-
-                // Call the actual LLM Engine (InferenceService)
-                // We use a streaming-compatible approach if available, but for now wrap sync response into SHM
                 val response = withContext(Dispatchers.IO) {
                     inferenceService?.runReasoning(input)
                 } ?: "Error: Inference Service unavailable."
                 
-                // Phase 4.5.1: Response Routing logic
-                // If the response is a status indicator, we don't push it to SHM.
-                // The actual tokens are streamed from the worker process directly.
                 if (response.startsWith("Reasoning Started") || response.startsWith("Processing")) {
                     Log.i(TAG, "<<< [Microkernel] Async stream active in worker. Native polling engaged.")
                 } else {
-                    // It's likely an error or a short sync response
                     pushTokenToSHMNative(response, true)
                     Log.i(TAG, "<<< [Microkernel] Reasoning complete (sync/error) and pushed to SHM.")
                 }
@@ -663,10 +597,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Suppress("unused")
     fun performCloudInference(input: String, primaryProvider: String, passedApiKey: String): String {
-        // Phase 4.5.9: Relaxed Connectivity Guard
-        // Instead of hard-blocking, we log a warning. The request will fail naturally if restricted.
         if (!isVpnActive(context)) {
-            Log.w(TAG, "Cloud Inference requested without active VPN. This may fail in restricted regions.")
+            Log.w(TAG, "Cloud Inference requested without active VPN.")
         }
 
         var finalEndpoint = ""
@@ -688,7 +620,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } catch (e: Exception) {}
         
         if (finalEndpoint.isEmpty()) {
-            return "Error: No cloud endpoint configured for $primaryProvider. Please select a model in Settings."
+            return "Error: No cloud endpoint configured for $primaryProvider."
         }
         
         return executeSingleInference(input, primaryProvider, finalEndpoint, modelId, passedApiKey)
@@ -701,17 +633,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private fun executeSingleInference(input: String, provider: String, endpoint: String, modelId: String, passedApiKey: String = "", isRetry: Boolean = false): String {
         val apiKey = if (passedApiKey.isNotEmpty()) passedApiKey else (getSecureApiKey?.invoke(provider)?.trim() ?: "")
-        
         if (apiKey.isEmpty()) return "Error: API Key for $provider is missing."
-        
         val isGemini = endpoint.contains("generativelanguage.googleapis.com")
-        
-        // Phase 4.5.9: Use endpoint as provided, append key if missing
-        var finalUrl = if (isGemini && !endpoint.contains("?key=")) {
-            "$endpoint?key=$apiKey"
-        } else endpoint
-
-        Log.d(TAG, "Cloud Inference [Provider: $provider]. URL: $finalUrl")
+        var finalUrl = if (isGemini && !endpoint.contains("?key=")) "$endpoint?key=$apiKey" else endpoint
 
         return try {
             val url = java.net.URL(finalUrl)
@@ -720,10 +644,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             conn.requestMethod = "POST"
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
-            
-            if (!isGemini) {
-                conn.setRequestProperty("Authorization", "Bearer $apiKey")
-            }
+            if (!isGemini) conn.setRequestProperty("Authorization", "Bearer $apiKey")
 
             val jsonBody = if (isGemini) {
                 JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", input)))))
@@ -741,20 +662,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 } else {
                     JSONObject(response).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
                 }
-            } else if (isGemini && conn.responseCode == 404 && !isRetry) {
-                // Fallback attempt for v2/v1 if v1beta failed with 404 for Gemini
-                val fallbackUrl = when {
-                    finalUrl.contains("v1beta") -> finalUrl.replace("v1beta", "v2")
-                    finalUrl.contains("v2") -> finalUrl.replace("v2", "v1")
-                    finalUrl.contains("v1") -> finalUrl.replace("v1", "v1beta") // Cycle back? Or just stop.
-                    else -> finalUrl
-                }
-                
-                if (fallbackUrl != finalUrl) {
-                    Log.i(TAG, "404 detected. Retrying with fallback URL: $fallbackUrl")
-                    return executeSingleInference(input, provider, fallbackUrl, modelId, passedApiKey, true)
-                }
-                "Error: [404] Endpoint not found even after fallback."
             } else {
                 val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
                 "Error: [${conn.responseCode}] $err"
@@ -784,7 +691,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 notifyTrimMemoryNative(level)
             } catch (e: UnsatisfiedLinkError) {}
             if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
-                Log.w(TAG, "Aggressive Memory Trim: Halting low-priority background tasks.")
                 stopLowPriorityTasks()
             }
         }
