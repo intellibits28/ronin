@@ -9,18 +9,18 @@
 
 namespace Ronin::Kernel::Capability {
 
-FileSearchNode::FileSearchNode(Memory::LongTermMemory* ltm, NeuralEmbeddingNode* neural) 
-    : m_ltm(ltm), m_neural(neural) {}
+FileSearchNode::FileSearchNode(Memory::LongTermMemory* ltm) 
+    : m_ltm(ltm) {}
 
 std::vector<std::string> FileSearchNode::search(const std::string& query) {
-    LOGI(TAG, "Phase 6.2: Granular Search (Query=%s)", query.c_str());
+    LOGI(TAG, "Phase 6.2: FTS5 File Search (Query=%s)", query.c_str());
     
     if (!m_ltm) return {"Error: Search LTM missing."};
 
     std::string lower_query = query;
     std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
 
-    // 1. Identify Extension Priority (Granular for Phase 6.2)
+    // 1. Identify Extension Priority
     std::vector<std::string> ext_filters;
     
     // Developer & Text
@@ -56,61 +56,12 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
         ext_filters.insert(ext_filters.end(), {".docx", ".doc", ".pdf", ".txt", ".odt"});
     }
 
-    // Special case: "md files" or "py files" only
-    bool strict_extension = false;
-    if (lower_query.find("only") != std::string::npos || lower_query.find("သီးသန့်") != std::string::npos) {
-        strict_extension = true;
-    }
-
     std::vector<std::pair<std::string, float>> candidates;
 
-    // 2. Step 1: Neural Match (if model hydrated)
-    if (m_neural && m_neural->isLoaded()) {
-        LOGD(TAG, "Generating BGE Query Vector...");
-        auto query_vec = m_neural->generateEmbedding(query);
-        auto all_embeddings = m_ltm->getAllFileEmbeddings();
-
-        for (auto& fe : all_embeddings) {
-            float sim = Ronin::Kernel::Intent::compute_cosine_similarity_neon(query_vec.data(), fe.vector.data(), 768);
-            
-            bool ext_match = false;
-            for (const auto& ext : ext_filters) {
-                if (fe.name.length() >= ext.length() && 
-                    fe.name.compare(fe.name.length() - ext.length(), ext.length(), ext) == 0) {
-                    sim += 0.25f; // Strong boost for explicit type request
-                    ext_match = true;
-                    break;
-                }
-            }
-            
-            if (strict_extension && !ext_match) continue;
-
-            // Phase 6.3: Strict Similarity Threshold (Requirement 1)
-            // Increased from 0.70 to 0.75 to prevent semantic drift (.py appearing for 'movie')
-            if (ext_match || sim >= 0.82f) {
-                // If it's a media query and it's not a media file, penalize it heavily
-                bool is_media_query = (lower_query.find("movie") != std::string::npos ||
-                                     lower_query.find("video") != std::string::npos ||
-                                     lower_query.find("music") != std::string::npos ||
-                                     lower_query.find("audio") != std::string::npos);
-
-                if (is_media_query && !ext_match) {
-                    sim -= 0.3f; // Heavy penalty for non-extension matches on explicit media queries
-                }
-
-                if (sim >= 0.82f || ext_match) {
-
-                    candidates.push_back({fe.path, sim});
-                }
-            }
-        }
-    }
-
-    // 3. Step 2: Keyword Fallback (Direct SQLite LIKE)
+    // 2. Keyword Search (Direct SQLite LIKE / FTS5)
     auto kw_results = m_ltm->searchFiles(query);
     LOGI(TAG, "Keyword Search Results: %zu found", kw_results.size());
     for (const auto& path : kw_results) {
-        // Boost keyword matches if they match extension filters
         float sim = 0.90f;
         for (const auto& ext : ext_filters) {
             if (path.length() >= ext.length() && 
@@ -119,13 +70,10 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
                 break;
             }
         }
-
-        bool already_present = false;
-        for(auto& c : candidates) { if(c.first == path) { c.second = std::max(c.second, sim); already_present = true; break; } }
-        if(!already_present) candidates.push_back({path, sim});
+        candidates.push_back({path, sim});
     }
 
-    // 4. Format Output List
+    // 3. Format Output List
     if (candidates.empty()) return {"No matching files found in local storage."};
 
     std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {

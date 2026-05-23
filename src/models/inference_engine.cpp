@@ -66,6 +66,18 @@ bool InferenceEngine::isLoaded() const {
     return m_impl->spine_bridge && m_impl->spine_bridge->is_valid();
 }
 
+void InferenceEngine::requestCancellation() {
+    m_cancel_flag.store(true, std::memory_order_release);
+}
+
+void InferenceEngine::resetCancellation() {
+    m_cancel_flag.store(false, std::memory_order_release);
+}
+
+bool InferenceEngine::isCancelled() const {
+    return m_cancel_flag.load(std::memory_order_acquire);
+}
+
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     if (!isLoaded()) return "Error: SHM Highway not initialized.";
 
@@ -75,30 +87,57 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
         m_impl->is_processing = true;
     }
 
-    uint32_t seq_id = ++m_impl->sequence_counter;
-    
-    // Detect Model Type for Prompt Formatting
-    PromptFactory::BackendType type = PromptFactory::BackendType::LOCAL_GEMMA_2;
-    if (m_impl->model_path.find("gemma-4") != std::string::npos || 
-        m_impl->model_path.find(".litertlm") != std::string::npos) {
-        type = PromptFactory::BackendType::LOCAL_GEMMA_4;
+    resetCancellation();
+    std::string response_buffer;
+
+    // Phase 2: Hardware Guard-rail - Reset the SHM tail to clear stale tokens
+    auto* rb = m_impl->spine_bridge->get();
+    if (rb) {
+        rb->tail.store(rb->head.load(std::memory_order_relaxed), std::memory_order_release);
+    }
+
+    // Phase 4: Wrap input with System Prompt and Tool Schemas
+    PromptFactory::BackendType type = PromptFactory::BackendType::LOCAL_GEMMA_4;
+    if (m_impl->model_path.find("gemma-2") != std::string::npos) {
+        type = PromptFactory::BackendType::LOCAL_GEMMA_2;
     }
     std::string wrapped_input = PromptFactory::wrap(input, type);
 
     // Microkernel Action: Trigger Kotlin Worker via JNI Proxy
-    LOGI(TAG, "Microkernel: Requesting Worker Inference [Seq: %u] [Length: %zu]", seq_id, wrapped_input.length());
-    
-    // This is an asynchronous request. Kotlin will spawn the worker and start pushing to SHM.
-    std::thread([this, wrapped_input]() {
-        // Notify Kotlin to start the Lazy Worker
-        Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
-        
-        // Finalize C++ side processing state (Polling is handled by UI/Core separately)
+    LOGI(TAG, "Microkernel: Triggering Gemma 4 Inference...");
+    Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
+
+    // Phase 2: Synchronous Polling Loop with Per-Token Cancellation
+    bool done = false;
+    while (!done) {
+        // 1. High-frequency cancellation check (Relaxed order)
+        if (m_cancel_flag.load(std::memory_order_relaxed)) {
+            // 2. Cancellation exit (Acquire order to sync state)
+            if (m_cancel_flag.load(std::memory_order_acquire)) {
+                LOGI(TAG, "Inference Loop Aborted: Hardware Guard-rail triggered.");
+                response_buffer.clear(); // Requirement 3: Discard partial content
+                break;
+            }
+        }
+
+        HAL::InferencePacket packet;
+        if (rb && rb->pop(packet)) {
+            response_buffer += packet.fragment;
+            if (packet.is_final) {
+                done = true;
+            }
+        } else {
+            // Small yield to prevent CPU thrashing while waiting for NPU/GPU
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    }
+
+    {
         std::lock_guard<std::mutex> lock(m_impl->inference_mutex);
         m_impl->is_processing = false;
-    }).detach();
+    }
 
-    return "Reasoning Started [SHM Active]";
+    return isCancelled() ? "" : response_buffer;
 }
 
 std::string InferenceEngine::escalateToCloud(const std::string& input, const std::string& apiKey, const std::string& provider) {

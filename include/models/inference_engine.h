@@ -95,9 +95,18 @@ public:
      */
     void purgeKVCache();
 
+    /**
+     * Phase 2: Hardware Guard-rails
+     * Request immediate cancellation of the current inference stream.
+     */
+    void requestCancellation();
+    void resetCancellation();
+    bool isCancelled() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+    std::atomic<bool> m_cancel_flag{false};
 };
 
 } // namespace Ronin::Kernel::Model

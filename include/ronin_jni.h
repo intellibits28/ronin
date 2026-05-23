@@ -121,4 +121,12 @@ JNIEXPORT jobjectArray JNICALL
 Java_com_ronin_kernel_NativeEngine_getChatHistory(
     JNIEnv *env, jobject thiz, jint limit, jint offset);
 
+/**
+ * Phase 2: Hardware Guard-rail
+ * Request immediate cancellation of any ongoing inference.
+ */
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_requestCancellationNative(
+    JNIEnv *env, jobject thiz);
+
 } // extern "C"

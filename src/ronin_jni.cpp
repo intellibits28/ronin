@@ -21,6 +21,9 @@
 #include "capabilities/file_scanner.h"
 #include "memory_manager.h"
 #include "long_term_memory.h"
+#include "memory_database.h"
+#include "capabilities/memory_search_skill.h"
+#include "capabilities/archive_memory_skill.h"
 #include "ronin_log.h"
 
 #define TAG "RoninKernel_JNI"
@@ -38,6 +41,7 @@ static std::unique_ptr<RoninKernel> g_kernel;
 static std::unique_ptr<Ronin::Kernel::Intent::IntentEngine> g_intent_engine;
 static std::unique_ptr<Ronin::Kernel::Memory::MemoryManager> g_memory_manager;
 static std::unique_ptr<Ronin::Kernel::Memory::LongTermMemory> g_ltm;
+static std::unique_ptr<Ronin::Kernel::Data::MemoryDatabase> g_memory_db;
 static std::unique_ptr<Ronin::Kernel::Capability::FileScanner> g_file_scanner;
 static std::string g_last_input_str;
 static std::string g_last_skill_output;
@@ -67,6 +71,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     if (is_worker == JNI_TRUE) return;
 
     g_ltm = std::make_unique<Ronin::Kernel::Memory::LongTermMemory>(base_path + "/ronin_cognitive.db");
+    g_memory_db = std::make_unique<Ronin::Kernel::Data::MemoryDatabase>(base_path + "/ronin_memory.db");
     g_memory_manager = std::make_unique<Ronin::Kernel::Memory::MemoryManager>(2048);
     g_memory_manager->setLongTermMemory(g_ltm.get());
     g_intent_engine = std::make_unique<Ronin::Kernel::Intent::IntentEngine>(g_ltm.get());
@@ -79,6 +84,8 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
         base_path + "/assets/sentencepiece.bpe.model"
     );
     auto search_node = std::make_shared<FileSearchNode>(g_ltm.get(), neural_node.get());
+    auto memory_search_skill = std::make_shared<MemorySearchSkill>(g_memory_db.get());
+    auto memory_archive_skill = std::make_shared<ArchiveMemorySkill>(g_memory_db.get());
     
     g_intent_engine->registerSkill(2, search_node);
     g_intent_engine->registerSkill(3, neural_node);
@@ -86,6 +93,8 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     g_intent_engine->registerSkill(5, std::make_shared<LocationNode>());
     g_intent_engine->registerSkill(6, std::make_shared<WifiNode>());
     g_intent_engine->registerSkill(7, std::make_shared<BluetoothNode>());
+    g_intent_engine->registerSkill(8, memory_search_skill);
+    g_intent_engine->registerSkill(9, memory_archive_skill);
     
     g_file_scanner = std::make_unique<Ronin::Kernel::Capability::FileScanner>(*g_ltm, neural_node.get());
     g_file_scanner->setDatabaseReady(true);
@@ -350,6 +359,13 @@ void native_resetContext(JNIEnv *env, jobject thiz) {
     }
 }
 
+void native_requestCancellation(JNIEnv *env, jobject thiz) {
+    if (g_llm_context.engine) {
+        LOGI(TAG, "JNI: Requesting Hardware Guard-rail Cancellation.");
+        g_llm_context.engine->requestCancellation();
+    }
+}
+
 void native_shutdownKernel(JNIEnv *env, jobject thiz) {
     if (g_kernel) {
         g_kernel->shutdown();
@@ -381,11 +397,10 @@ static JNINativeMethod g_methods[] = {
     {"updateModelRegistryNative", "(Ljava/lang/String;)Z", (void*)native_updateModelRegistry},
     {"updateCloudProvidersNative", "(Ljava/lang/String;)Z", (void*)native_updateCloudProviders},
     {"scanSpecificPathNative", "(Ljava/lang/String;)Z", (void*)native_scanSpecificPath},
-    {"generateEmbeddingNative", "(Ljava/lang/String;Z)[F", (void*)native_generateEmbedding},
     {"isValidModelNative", "(Ljava/lang/String;)Z", (void*)native_isValidModel},
-    {"warmMemoryPipelineNative", "()Z", (void*)native_warmMemoryPipeline},
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory},
-    {"nativeResetContext", "()V", (void*)native_resetContext}
+    {"nativeResetContext", "()V", (void*)native_resetContext},
+    {"requestCancellationNative", "()V", (void*)native_requestCancellation}
 };
 
 static JNINativeMethod g_worker_methods[] = {
@@ -419,6 +434,10 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     register_class("com/ronin/kernel/InferenceService", g_worker_methods, sizeof(g_worker_methods) / sizeof(g_worker_methods[0]));
 
     LOGI(TAG, "Ronin Unified JNI Registered with Nuclear Guardrails.");
+    return JNI_VERSION_1_6;
+}
+#endif // __ANDROID__
+LOGI(TAG, "Ronin Unified JNI Registered with Nuclear Guardrails.");
     return JNI_VERSION_1_6;
 }
 #endif // __ANDROID__

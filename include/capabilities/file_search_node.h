@@ -1,17 +1,14 @@
-#pragma once
-
 #include <string>
 #include <vector>
 #include "long_term_memory.h"
-#include "neural_embedding_node.h"
 #include "base_skill.h"
 
 namespace Ronin::Kernel::Capability {
 
 class FileSearchNode : public BaseSkill {
 public:
-    FileSearchNode() : m_ltm(nullptr), m_neural(nullptr) {}
-    FileSearchNode(Memory::LongTermMemory* ltm, NeuralEmbeddingNode* neural = nullptr);
+    FileSearchNode() : m_ltm(nullptr) {}
+    FileSearchNode(Memory::LongTermMemory* ltm);
 
     // BaseSkill Implementation
     std::string getName() const override { return "FileSearchNode"; }
@@ -31,6 +28,10 @@ private:
     // Phase 6.2: Pagination State
     std::vector<std::string> m_last_results;
     size_t m_last_offset = 0;
+};
+
+} // namespace Ronin::Kernel::Capability
+ size_t m_last_offset = 0;
 };
 
 } // namespace Ronin::Kernel::Capability

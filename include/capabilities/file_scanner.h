@@ -5,13 +5,12 @@
 #include <atomic>
 #include <filesystem>
 #include "long_term_memory.h"
-#include "neural_embedding_node.h"
 
 namespace Ronin::Kernel::Capability {
 
 class FileScanner {
 public:
-    FileScanner(Memory::LongTermMemory& ltm, NeuralEmbeddingNode* neural = nullptr);
+    FileScanner(Memory::LongTermMemory& ltm);
     ~FileScanner();
 
     // Start scanning /storage/emulated/0/ in a background thread
@@ -41,3 +40,4 @@ private:
 };
 
 } // namespace Ronin::Kernel::Capability
+// namespace Ronin::Kernel::Capability

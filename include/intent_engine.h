@@ -188,6 +188,20 @@ public:
      */
     void notifyTrimMemory(int level);
 
+    /**
+     * Phase 3: Tool Calling Guard-rails
+     */
+    static constexpr int MAX_TOOL_CALL_DEPTH = 1;
+    void resetToolDepth() { m_current_tool_depth = 0; }
+
+    /**
+     * Phase 4: Gemma 4 Tool Dispatcher
+     * Parses the 'CALL: tool_name(\"args\")' pattern and executes it.
+     * @param llm_output The raw output from Gemma 4.
+     * @return The execution result or original output if no tool was called.
+     */
+    std::string dispatchToolCall(const std::string& llm_output);
+
 private:
     Memory::LongTermMemory* m_ltm = nullptr;
     std::function<void()> m_stop_callback;
@@ -200,6 +214,7 @@ private:
     std::string m_primary_cloud_provider = "Gemini";
     Ronin::Kernel::Capability::SkillPriority m_current_priority = Ronin::Kernel::Capability::SkillPriority::LOW;
     std::string m_last_command_output;
+    int m_current_tool_depth = 0;
 
     // Phase 4.0: Vtable-based Skill Registry
     std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;

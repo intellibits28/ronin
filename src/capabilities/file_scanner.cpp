@@ -9,8 +9,8 @@ namespace Ronin::Kernel::Capability {
 
 namespace fs = std::filesystem;
 
-FileScanner::FileScanner(Memory::LongTermMemory& ltm, NeuralEmbeddingNode* neural) 
-    : m_ltm(ltm), m_neural(neural) {}
+FileScanner::FileScanner(Memory::LongTermMemory& ltm) 
+    : m_ltm(ltm) {}
 
 FileScanner::~FileScanner() {
     stopScan();

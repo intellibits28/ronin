@@ -217,6 +217,16 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
 
         std::string result = it->second->execute(param);
 
+        // Phase 4: Recursive Tool Dispatching for Gemma 4 (ChatSkill only)
+        if (nodeId == 1) {
+            std::string toolResult = dispatchToolCall(result);
+            if (toolResult != result) {
+                // If a tool was executed, return its result to the model/user
+                // Note: MAX_TOOL_CALL_DEPTH = 1 ensures we don't loop forever
+                return toolResult;
+            }
+        }
+
         // Update cached GPS if this was a location request
         if (nodeId == 5 && result.find("(") != std::string::npos) {
             try {
@@ -380,7 +390,40 @@ bool IntentEngine::isFuzzyMatch(std::string_view word, std::string_view target) 
     return diff <= 1;
 }
 
-// PATCH 3: Enforce Early Exit to prevent Pipeline Leak
+std::string IntentEngine::dispatchToolCall(const std::string& llm_output) {
+    size_t call_pos = llm_output.find("CALL: ");
+    if (call_pos == std::string::npos) return llm_output;
+
+    // Phase 4: Parsing 'CALL: tool_name("arg")'
+    size_t tool_start = call_pos + 6;
+    size_t paren_open = llm_output.find("(", tool_start);
+    if (paren_open == std::string::npos) return llm_output;
+
+    std::string tool_name = llm_output.substr(tool_start, paren_open - tool_start);
+    
+    size_t quote_start = llm_output.find("\"", paren_open);
+    size_t quote_end = llm_output.find("\"", quote_start + 1);
+    
+    if (quote_start == std::string::npos || quote_end == std::string::npos) return llm_output;
+    
+    std::string arg = llm_output.substr(quote_start + 1, quote_end - quote_start - 1);
+
+    LOGI(TAG, "Tool Dispatcher: Identified Tool '%s' with arg '%s'", tool_name.c_str(), arg.c_str());
+
+    uint32_t target_id = 0;
+    if (tool_name == "search_memory") target_id = 8;
+    else if (tool_name == "archive_memory") target_id = 9;
+
+    if (target_id > 0) {
+        // Execute the skill (MAX_TOOL_CALL_DEPTH is checked inside executeSkill)
+        std::string result = executeSkill(target_id, arg);
+        
+        // Return result wrapped for the model or user
+        return "[TOOL_RESULT] " + result;
+    }
+
+    return llm_output;
+}
 bool IntentEngine::updateMetadata(const std::string& json_metadata) {
     LOGI(TAG, "Parsing live model metadata registry...");
     try {
@@ -414,6 +457,9 @@ bool IntentEngine::updateMetadata(const std::string& json_metadata) {
 }
 
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& context_subject) {
+
+    // Phase 3: Reset tool depth for new user interaction
+    resetToolDepth();
 
     std::string_view sv_input = input;
     
@@ -599,53 +645,6 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         }
     }
 
-    // Tier 2.5: Semantic Similarity Matcher (Phase 8.0)
-    // If keyword matching fails, use BGE embeddings for fuzzy semantic routing
-    auto neural_skill = m_skill_registry.find(3);
-    if (neural_skill != m_skill_registry.end()) {
-        auto neural_node = std::static_pointer_cast<Ronin::Kernel::Capability::NeuralEmbeddingNode>(neural_skill->second);
-        if (neural_node) {
-            LOGI(TAG, "Tier 2.5: Keywords failed. Attempting semantic match...");
-            auto input_vec = neural_node->generateEmbedding(input_lower);
-            
-            // Phase 9.4: Proactive Long-term Memory Recall
-            if (m_ltm && !input_vec.empty()) {
-                auto recalls = m_ltm->searchSemantic(input_vec, Memory::LongTermMemory::RecallMode::FAST);
-                if (!recalls.empty()) {
-                    std::string recall_msg = "[LTM] Cognitive Recall: " + recalls[0];
-                    LOGI(TAG, "Memory Spine: %s", recall_msg.c_str());
-                    Ronin::Kernel::Capability::HardwareBridge::pushMessage(recall_msg);
-                    // For now we just log it to Reasoning Log, in future we inject to context
-                }
-            }
-
-            float best_score = 0.0f;
-            uint32_t best_id = 1; // Default to chat
-
-            for (const auto& cap : m_capabilities) {
-                for (const auto& sub : cap.subjects) {
-                    auto sub_vec = neural_node->generateEmbedding(sub);
-                    if (sub_vec.empty()) continue;
-                    
-                    float score = compute_cosine_similarity_neon(input_vec.data(), sub_vec.data(), input_vec.size());
-                    if (score > best_score) {
-                        best_score = score;
-                        best_id = cap.id;
-                    }
-                }
-            }
-
-            if (best_score > 0.88f || forceExecute) { // Threshold for semantic match
-                float confidence = forceExecute ? 1.0f : best_score;
-                std::string logMsg = "> Semantic Match: ID " + std::to_string(best_id) + " (Score: " + std::to_string(best_score) + ")";
-                if (forceExecute) logMsg += " [FORCED]";
-                LOGI(TAG, "%s", logMsg.c_str());
-                Ronin::Kernel::Capability::HardwareBridge::pushMessage(logMsg);
-                return {best_id, confidence, !isOff};
-            }
-        }
-    }
-
     // Tier 3: NPU-Accelerated Hierarchical Routing (Phase 4.2)
     if (m_inference_engine && m_inference_engine->isLoaded()) {
         // Layer 1: Coarse Classification (ACTION vs INFO)
@@ -786,6 +785,98 @@ float compute_cosine_similarity_neon(const float* a, const float* b, size_t leng
     float32x4_t mag_b_vec = vdupq_n_f32(0.0f);
 
     for (size_t i = 0; i < length; i += 4) {
+        float32x4_t va = vld1q_f32(a + i);
+        float32x4_t vb = vld1q_f32(b + i);
+        dot_vec = vmlaq_f32(dot_vec, va, vb);
+        mag_a_vec = vmlaq_f32(mag_a_vec, va, va);
+        mag_b_vec = vmlaq_f32(mag_b_vec, vb, vb);
+    }
+
+    float dot = vaddvq_f32(dot_vec);
+    float mag_a = vaddvq_f32(mag_a_vec);
+    float mag_b = vaddvq_f32(mag_b_vec);
+
+    float denominator = std::sqrt(mag_a) * std::sqrt(mag_b);
+    return (denominator < 1e-9f) ? 0.0f : (dot / denominator);
+#endif
+}
+
+} // namespace Ronin::Kernel::Intent
+ i < length; i += 4) {
+        float32x4_t va = vld1q_f32(a + i);
+        float32x4_t vb = vld1q_f32(b + i);
+        dot_vec = vmlaq_f32(dot_vec, va, vb);
+        mag_a_vec = vmlaq_f32(mag_a_vec, va, va);
+        mag_b_vec = vmlaq_f32(mag_b_vec, vb, vb);
+    }
+
+    float dot = vaddvq_f32(dot_vec);
+    float mag_a = vaddvq_f32(mag_a_vec);
+    float mag_b = vaddvq_f32(mag_b_vec);
+
+    float denominator = std::sqrt(mag_a) * std::sqrt(mag_b);
+    return (denominator < 1e-9f) ? 0.0f : (dot / denominator);
+#endif
+}
+
+} // namespace Ronin::Kernel::Intent
+te::SEVERE) {
+        return compute_similarity_scalar(a, b);
+    }
+
+    // Initialize accumulators with 0s
+    int32x4_t acc = vdupq_n_s32(0);
+
+    // Process 128 elements in chunks of 16 (128 / 16 = 8 iterations)
+    for (int i = 0; i < 128; i += 16) {
+        int8x16_t va = vld1q_s8(a + i);
+        int8x16_t vb = vld1q_s8(b + i);
+        // vdotq_s32 is extremely efficient on modern ARMv8-A (Cortex-A78/A55)
+        acc = vdotq_s32(acc, va, vb);
+    }
+
+    // Convert int32x4_t to float32x4_t and perform final reduction
+    float32x4_t f_acc = vcvtq_f32_s32(acc);
+    float final_sum = vaddvq_f32(f_acc);
+
+    return final_sum / 16129.0f;
+#endif
+}
+
+float compute_cosine_similarity_neon(const float* a, const float* b, size_t length) {
+#ifndef __aarch64__
+    float dot = 0.0f, mag_a = 0.0f, mag_b = 0.0f;
+    for (size_t i = 0; i < length; ++i) {
+        dot += a[i] * b[i];
+        mag_a += a[i] * a[i];
+        mag_b += b[i] * b[i];
+    }
+    float denominator = std::sqrt(mag_a) * std::sqrt(mag_b);
+    return (denominator < 1e-9f) ? 0.0f : (dot / denominator);
+#else
+    float32x4_t dot_vec = vdupq_n_f32(0.0f);
+    float32x4_t mag_a_vec = vdupq_n_f32(0.0f);
+    float32x4_t mag_b_vec = vdupq_n_f32(0.0f);
+
+    for (size_t i = 0; i < length; i += 4) {
+        float32x4_t va = vld1q_f32(a + i);
+        float32x4_t vb = vld1q_f32(b + i);
+        dot_vec = vmlaq_f32(dot_vec, va, vb);
+        mag_a_vec = vmlaq_f32(mag_a_vec, va, va);
+        mag_b_vec = vmlaq_f32(mag_b_vec, vb, vb);
+    }
+
+    float dot = vaddvq_f32(dot_vec);
+    float mag_a = vaddvq_f32(mag_a_vec);
+    float mag_b = vaddvq_f32(mag_b_vec);
+
+    float denominator = std::sqrt(mag_a) * std::sqrt(mag_b);
+    return (denominator < 1e-9f) ? 0.0f : (dot / denominator);
+#endif
+}
+
+} // namespace Ronin::Kernel::Intent
+ i < length; i += 4) {
         float32x4_t va = vld1q_f32(a + i);
         float32x4_t vb = vld1q_f32(b + i);
         dot_vec = vmlaq_f32(dot_vec, va, vb);

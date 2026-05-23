@@ -128,11 +128,11 @@ set(RONIN_CORE_SOURCES
     src/graph_storage.cpp
     src/memory_manager.cpp
     src/long_term_memory.cpp
+    src/memory_database.cpp
     src/capability_graph.cpp
     src/ronin_kernel.cpp
     src/capabilities/file_scanner.cpp
     src/capabilities/file_search_node.cpp
-    src/capabilities/neural_embedding_node.cpp
     src/capabilities/hardware_nodes.cpp
     src/capabilities/hardware_bridge.cpp
 )
