@@ -56,7 +56,6 @@ android {
             pickFirsts += [
                 'lib/arm64-v8a/liblitert.so',
                 'lib/arm64-v8a/liblitert_jni.so',
-                'lib/arm64-v8a/libtensorflowlite_jni.so',
                 'lib/arm64-v8a/libc++_shared.so'
             ]
         }
@@ -94,10 +93,6 @@ dependencies {
     // Hardware & Security
     implementation 'com.google.android.gms:play-services-location:21.1.0'
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
-
-    // AI Bridges (Stable TFLite with verified Prefab support)
-    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
-    implementation 'com.google.mlkit:translate:17.0.1'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3'
 
     testImplementation 'junit:junit:4.13.2'

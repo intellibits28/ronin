@@ -127,6 +127,6 @@ if(NOT ANDROID)
     add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp)
     target_link_libraries(ronin_atomic_test ronin_core gtest_main)
 
-    add_executable(ronin_search_test tests/search_capability_test.cpp)
-    target_link_libraries(ronin_search_test ronin_core gtest_main)
+    add_executable(ronin_integration_test tests/phase_1_3_integration_test.cpp)
+    target_link_libraries(ronin_integration_test ronin_core gtest_main)
 endif()

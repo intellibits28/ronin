@@ -17,14 +17,12 @@ jobs:
         run: |
           mkdir build_host && cd build_host
           cmake -DCMAKE_BUILD_TYPE=Debug ..
-          make ronin_atomic_test ronin_precision_test ronin_memory_test ronin_search_test
+          make ronin_atomic_test ronin_integration_test
       - name: Run Host Tests
         run: |
           cd build_host
           ./ronin_atomic_test
-          ./ronin_precision_test
-          ./ronin_memory_test
-          ./ronin_search_test
+          ./ronin_integration_test
 
   build-apk:
     needs: test-host
@@ -59,27 +57,12 @@ jobs:
           mkdir -p android/app/src/main/assets/models
           cp assets/capabilities.json android/app/src/main/assets/
           cp assets/providers.json android/app/src/main/assets/
-          cp assets/sentencepiece.bpe.model android/app/src/main/assets/
           echo "Assets deployed to APK folder."
 
-      - name: Download TFLite C API for Android
+      - name: "Debug: List Assets"
         run: |
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          # Download TFLite AAR and extract .so
-          wget -q "https://repo1.maven.org/maven2/org/tensorflow/tensorflow-lite/2.14.0/tensorflow-lite-2.14.0.aar" -O /tmp/tflite.aar
-          cd /tmp && unzip -q tflite.aar
-          cp /tmp/jni/arm64-v8a/libtensorflowlite_jni.so ${GITHUB_WORKSPACE}/android/app/src/main/jniLibs/arm64-v8a/libtensorflowlite.so
-          echo "TFLite .so deployed to jniLibs/arm64-v8a"
-          ls -lh ${GITHUB_WORKSPACE}/android/app/src/main/jniLibs/arm64-v8a/
-
-      - name: "Debug: List JNI Libraries and Model Assets"
-        run: |
-          echo "--- Assets models ---"
-          ls -R android/app/src/main/assets/models || echo "Assets directory missing"
-          echo "--- jniLibs (if any) ---"
-          ls -R android/app/src/main/jniLibs || echo "jniLibs directory missing"
-          echo "--- Searching for shared libraries (.so) ---"
-          find . -name "*.so"
+          echo "--- Assets ---"
+          ls -R android/app/src/main/assets/ || echo "Assets directory missing"
 
       - name: Build Android APK
         uses: gradle/actions/setup-gradle@v3
