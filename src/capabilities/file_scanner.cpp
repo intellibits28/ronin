@@ -89,7 +89,7 @@ void FileScanner::scanWorker(const std::string& root_path) {
                 auto sctp = std::chrono::time_point_cast<std::chrono::seconds>(ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
                 uint64_t modified = static_cast<uint64_t>(sctp.time_since_epoch().count());
 
-                if (m_ltm.indexFile(filename, abs_path, extension, modified, {})) {
+                if (m_ltm.indexFile(filename, abs_path, extension, modified)) {
                     indexed_count++;
                 }
             }

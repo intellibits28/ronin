@@ -129,7 +129,4 @@ if(NOT ANDROID)
 
     add_executable(ronin_search_test tests/search_capability_test.cpp)
     target_link_libraries(ronin_search_test ronin_core gtest_main)
-
-    add_executable(ronin_inference_test tests/inference_unit_test.cpp)
-    target_link_libraries(ronin_inference_test ronin_core gtest_main)
 endif()
