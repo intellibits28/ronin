@@ -12,70 +12,58 @@ enum class MemoryPriority : int {
     LOW = 0,
     MEDIUM = 1,
     HIGH = 2,
-    CRITICAL = 3 // Never forgotten
+    CRITICAL = 3
 };
 
-struct Fact {
-    std::string key;
-    std::string value;
-    double stability;
-    uint64_t last_accessed_timestamp;
-    MemoryPriority priority;
-};
-
+/**
+ * Phase 11.0 Hardening: Lexical Long-Term Memory (LTM)
+ * Aligned with Single Gemma 4 Architecture. 
+ * All E5/ONNX vector dependencies have been removed.
+ */
 class LongTermMemory {
 public:
-    LongTermMemory(const std::string& db_path);
+    explicit LongTermMemory(const std::string& db_path);
     ~LongTermMemory();
 
-    // Store a fact with an explicit priority level
-    bool storeFact(const std::string& key, const std::string& value, MemoryPriority priority = MemoryPriority::MEDIUM);
+    // Prevent copying
+    LongTermMemory(const LongTermMemory&) = delete;
+    LongTermMemory& operator=(const LongTermMemory&) = delete;
 
-    // Retrieve a fact with Temporal Decay applied
-    std::string retrieveFact(const std::string& key);
-
-    // Natural Forgetting: Background maintenance to prune stale, low-priority memories
-    // Returns the number of pruned items.
-    int runMaintenance(bool is_charging);
-
-    // Apply Temporal Decay: S(t) = e^(-lambda * t)
-    void applyDecay(uint64_t current_timestamp);
-
-    enum class RecallMode : int {
-        FAST = 0,    // Active + Cold
-        DEEP = 1,    // Partial Forgotten
-        EXPLICIT = 2 // Full Forgotten
+    enum class RecallMode {
+        FAST,     // Recent/Active memories only
+        DEEP,     // Include Cold/Archived
+        EXPLICIT  // Include everything including Forgotten
     };
 
-    std::vector<std::string> search(const std::string& query);
-    std::vector<std::string> searchSemantic(const std::vector<float>& query_embedding, RecallMode mode = RecallMode::FAST);
-    bool consolidate(const std::string& summary_text, const std::vector<float>& embedding = {});
+    // Fact Storage (Key-Value)
+    bool storeFact(const std::string& key, const std::string& value, MemoryPriority priority = MemoryPriority::MEDIUM);
+    std::string retrieveFact(const std::string& key);
 
-    // Chat History Persistence
+    // Message History
     bool storeMessage(const std::string& role, const std::string& content);
     std::vector<std::pair<std::string, std::string>> getHistory(int limit = 50, int offset = 0);
 
-    // SOUL Persistence: Vectorized interactions for self-improvement
-    bool storeInteraction(const std::string& content, const std::vector<float>& embedding);
+    // Cognitive Recall (FTS5 Keywords)
+    std::vector<std::string> search(const std::string& query);
+    
+    // Memory Consolidation
+    bool consolidate(const std::string& summary_text);
 
-    // File Indexing (FTS5 + Semantic)
-    struct FileEmbedding {
-        std::string name;
-        std::string path;
-        std::vector<float> vector;
-    };
-
-    bool indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified, const std::vector<float>& embedding = {});
+    // File Indexing (FTS5)
+    bool indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified);
     std::vector<std::string> searchFiles(const std::string& query);
-    std::vector<FileEmbedding> getAllFileEmbeddings();
 
-    // Sovereign Audit Store
+    // Lifecycle Management
+    void applyDecay(uint64_t current_timestamp);
+    int runMaintenance(bool is_charging);
+
+    // Auditing
     bool storeAuditLog(const std::string& action, const std::string& details);
 
 private:
     sqlite3* m_db = nullptr;
     std::mutex m_mutex;
-    double m_lambda = 0.000001; // Slower decay for long-term storage
+    double m_lambda = 0.000001; 
 
     bool initSchema();
 };

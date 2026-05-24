@@ -1,159 +1,71 @@
 #include "memory_manager.h"
-#include <sys/mman.h>
-#include <algorithm>
-#include <vector>
+#include <ctime>
 #include <numeric>
-#include <utility>
-#include <cmath>
-#include <iostream>
-#include <unordered_set>
+#include <algorithm>
 #include "ronin_log.h"
 
 #define TAG "RoninMemoryManager"
 
 namespace Ronin::Kernel::Memory {
 
-MemoryManager::MemoryManager(size_t recent_window_size) 
-    : m_recent_window_size(recent_window_size) {}
+MemoryManager::MemoryManager(size_t max_context_tokens) 
+    : m_max_tokens(max_context_tokens) {}
 
-MemoryManager::~MemoryManager() {
-    unpinMemory();
-}
+MemoryManager::~MemoryManager() = default;
 
-bool MemoryManager::setPrefix(const std::vector<Token>& prefix_tokens) {
+void MemoryManager::addMemory(const std::string& text, float importance) {
     std::lock_guard<std::mutex> lock(m_mutex);
     
-    unpinMemory();
-    m_anchor1_prefix = prefix_tokens;
-    
-    size_t total_size = m_anchor1_prefix.size() * sizeof(Token);
-    if (total_size > 0) {
-        pinMemory(m_anchor1_prefix.data(), total_size);
-    }
-    
-    LOGI(TAG, "Anchor 1 (Prefix) set and pinned: %zu tokens", m_anchor1_prefix.size());
-    return true;
+    MemoryChunk chunk;
+    chunk.id = static_cast<uint32_t>(m_context_window.size());
+    chunk.text = text;
+    chunk.timestamp = std::time(nullptr);
+    chunk.importance = importance;
+
+    m_context_window.push_back(chunk);
+
+    // Maintain context window size
+    onMemoryPressure();
 }
 
-void MemoryManager::addRecentToken(const Token& token) {
+std::string MemoryManager::getFullContext() const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_anchor3_recent.push_back(token);
-    if (m_anchor3_recent.size() > m_recent_window_size) {
-        pruneAndCompress();
+    std::string context;
+    for (const auto& chunk : m_context_window) {
+        context += chunk.text + "\n";
     }
-}
-
-void MemoryManager::pruneAndCompress() {
-    if (m_anchor3_recent.size() <= m_recent_window_size) return;
-
-    LOGI(TAG, "Triggering saliency-based pruning. Preserving chronological order.");
-
-    // 1. Create a list of indices and sort them by saliency
-    std::vector<size_t> indices(m_anchor3_recent.size());
-    std::iota(indices.begin(), indices.end(), 0);
-
-    std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
-        return m_anchor3_recent[a].saliency_score > m_anchor3_recent[b].saliency_score;
-    });
-
-    // 2. Identify the indices to keep (top-K salient) and to prune
-    std::vector<bool> keep(m_anchor3_recent.size(), false);
-    for (size_t i = 0; i < m_recent_window_size; ++i) {
-        keep[indices[i]] = true;
-    }
-
-    // 3. Separate tokens
-    std::vector<Token> next_recent;
-    for (size_t i = 0; i < m_anchor3_recent.size(); ++i) {
-        if (keep[i]) {
-            next_recent.push_back(std::move(m_anchor3_recent[i]));
-        } else {
-            // Move low-saliency tokens to Anchor 2 (Compressed History)
-            m_anchor2_compressed.push_back(quantize(m_anchor3_recent[i]));
-        }
-    }
-
-    m_anchor3_recent = std::move(next_recent);
-}
-
-std::vector<uint32_t> MemoryManager::reconstructContext() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    std::vector<uint32_t> context;
-    for (const auto& t : m_anchor1_prefix) context.push_back(t.id);
-    for (const auto& t : m_anchor2_compressed) context.push_back(t.id);
-    for (const auto& t : m_anchor3_recent) context.push_back(t.id);
     return context;
-}
-
-int MemoryManager::getPressureScore() const {
-    // Basic heuristic: Pressure increases as historical buffer (Anchor 2) grows.
-    // 1000 items = 100% pressure.
-    size_t count = m_anchor2_compressed.size();
-    if (count > 1000) return 100;
-    return static_cast<int>((static_cast<float>(count) / 1000.0f) * 100.0f);
-}
-
-void MemoryManager::onMemoryPressure() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Critical Memory Pressure: Consolidation triggered for Anchor 2.");
-
-    if (!m_anchor2_compressed.empty() && m_l3_store) {
-        // Simple mock: Reconstruct IDs as a summary string for consolidation
-        std::string summary = "Context Summary (IDs): ";
-        for (const auto& t : m_anchor2_compressed) {
-            summary += std::to_string(t.id) + ",";
-        }
-
-        if (m_l3_store->consolidate(summary)) {
-            LOGI(TAG, "Consolidation successful. Freeing %zu items from RAM.", m_anchor2_compressed.size());
-            m_anchor2_compressed.clear();
-        }
-    }
 }
 
 void MemoryManager::clearContext() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Memory Cleanup: Clearing L1/L2/L3 context buffers.");
-    unpinMemory();
-    m_anchor1_prefix.clear();
-    m_anchor2_compressed.clear();
-    m_anchor3_recent.clear();
+    m_context_window.clear();
 }
 
-std::vector<std::string> MemoryManager::filterDuplicateFilenames(const std::vector<std::string>& results) {
-    std::vector<std::string> unique_results = results;
-    std::sort(unique_results.begin(), unique_results.end());
-    auto last = std::unique(unique_results.begin(), unique_results.end());
-    unique_results.erase(last, unique_results.end());
-    return unique_results;
+size_t MemoryManager::estimateTokenCount(const std::string& text) const {
+    // Basic heuristic: 1 token ~= 4 chars for English, but for Myanmar 
+    // it's different. We use a safe upper bound here.
+    return text.length() / 2; 
 }
 
-CompressedToken MemoryManager::quantize(const Token& token) {
-    CompressedToken ct;
-    ct.id = token.id;
-    for (float v : token.embedding) {
-        // Safe mapping with clamp to prevent overflow: [-1.0, 1.0] -> [-127, 127]
-        float scaled = std::clamp(v, -1.0f, 1.0f) * 127.0f;
-        ct.quantized_embedding.push_back(static_cast<int8_t>(std::round(scaled)));
+void MemoryManager::onMemoryPressure() {
+    size_t total_tokens = 0;
+    for (const auto& chunk : m_context_window) {
+        total_tokens += estimateTokenCount(chunk.text);
     }
-    return ct;
-}
 
-void MemoryManager::pinMemory(void* ptr, size_t size) {
-    if (mlock(ptr, size) != 0) {
-        LOGE(TAG, "mlock failed for Anchor 1: Memory cannot be pinned.");
-    } else {
-        m_pinned_ptr = ptr;
-        m_pinned_size = size;
-        LOGI(TAG, "Successfully pinned %zu bytes of memory.", size);
+    while (total_tokens > m_max_tokens && !m_context_window.empty()) {
+        total_tokens -= estimateTokenCount(m_context_window.front().text);
+        m_context_window.pop_front();
     }
 }
 
-void MemoryManager::unpinMemory() {
-    if (m_pinned_ptr) {
-        munlock(m_pinned_ptr, m_pinned_size);
-        m_pinned_ptr = nullptr;
+int MemoryManager::getPressureScore() const {
+    size_t total_tokens = 0;
+    for (const auto& chunk : m_context_window) {
+        total_tokens += estimateTokenCount(chunk.text);
     }
+    return static_cast<int>((total_tokens * 100) / m_max_tokens);
 }
 
 } // namespace Ronin::Kernel::Memory

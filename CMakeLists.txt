@@ -5,49 +5,16 @@ if(POLICY CMP0135)
   cmake_policy(SET CMP0135 NEW)
 endif()
 
-# Global Configuration for Dependencies (CLI Critical Audit Directive)
+# Global Configuration for Dependencies (Single Model Hardening)
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
-set(SPM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_TUNIT OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_CLI OFF CACHE BOOL "" FORCE)
-set(SPM_BUILD_EXECUTABLES OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_TRAIN OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_TRAINING OFF CACHE BOOL "" FORCE)
-set(SPM_ENABLE_NFKC_COMPILE OFF CACHE BOOL "" FORCE)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(ANDROID)
-    message(STATUS "Android build detected. Resolving TFLite via manual jniLibs path...")
-    
-    # Path to pre-downloaded binary in jniLibs
-    set(TFLITE_PREBUILT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android/app/src/main/jniLibs/${ANDROID_ABI}")
-    
-    find_library(TFLITE_LIB 
-        NAMES tensorflowlite
-        PATHS ${TFLITE_PREBUILT_DIR}
-        NO_DEFAULT_PATH
-        NO_CMAKE_FIND_ROOT_PATH
-    )
-    
-    if(TFLITE_LIB)
-        message(STATUS "SUCCESS: TFLite binary located at: ${TFLITE_LIB}")
-        add_library(tensorflowlite SHARED IMPORTED)
-        set_target_properties(tensorflowlite PROPERTIES
-            IMPORTED_LOCATION ${TFLITE_LIB}
-        )
-    else()
-        message(FATAL_ERROR "TFLite binary not found in ${TFLITE_PREBUILT_DIR}. Deployment failure in workflow?")
-    endif()
-endif()
-
 include(FetchContent)
 
-# --- Requirement: SQLite ---
+# --- Requirement: SQLite (FTS5 Enabled) ---
 FetchContent_Declare(
   sqlite3_src
   URL "https://www.sqlite.org/2023/sqlite-amalgamation-3410200.zip"
@@ -75,7 +42,6 @@ FetchContent_MakeAvailable(flatbuffers)
 set(FBS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/checkpoint_schema.fbs)
 set(FBS_OUT ${CMAKE_CURRENT_BINARY_DIR}/checkpoint_schema_generated.h)
 
-# Use target flatc if available (host build) or find it in PATH (cross-build)
 if(TARGET flatc)
     set(FLATC_EXE flatc)
 else()
@@ -90,32 +56,7 @@ add_custom_command(
 )
 add_custom_target(generate_fbs DEPENDS ${FBS_OUT})
 
-
-# --- Requirement: SentencePiece ---
-FetchContent_Declare(
-  sentencepiece
-  GIT_REPOSITORY https://github.com/google/sentencepiece.git
-  GIT_TAG v0.1.99
-)
-FetchContent_GetProperties(sentencepiece)
-if(NOT sentencepiece_POPULATED)
-    FetchContent_Populate(sentencepiece)
-    # Use EXCLUDE_FROM_ALL to prevent building training/tools by default
-    add_subdirectory(${sentencepiece_SOURCE_DIR} ${sentencepiece_BINARY_DIR} EXCLUDE_FROM_ALL)
-endif()
-
-# --- Requirement: LiteRT (TensorFlow Lite) ---
-FetchContent_Declare(
-  tensorflow_lite
-  URL https://github.com/tensorflow/tensorflow/archive/v2.14.0.zip
-)
-# Headers are always needed for host tests and as fallback for Android
-FetchContent_GetProperties(tensorflow_lite)
-if(NOT tensorflow_lite_POPULATED)
-    FetchContent_Populate(tensorflow_lite)
-endif()
-
-# --- Core Ronin Logic ---
+# --- Core Ronin Logic (Single Model Architecture) ---
 set(RONIN_CORE_SOURCES
     src/intent_engine.cpp
     src/models/inference_engine.cpp
@@ -140,29 +81,14 @@ set(RONIN_CORE_SOURCES
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
 add_dependencies(ronin_core generate_fbs)
 
-if(ANDROID)
-    target_include_directories(ronin_core PUBLIC 
-        include 
-        ${sqlite3_src_SOURCE_DIR} 
-        ${tensorflow_lite_SOURCE_DIR}
-        ${sentencepiece_SOURCE_DIR}/src
-        ${flatbuffers_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_BINARY_DIR}
-    )
-    
-    # Direct Linkage to Pre-downloaded Binary
-    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static tensorflowlite)
-else()
-    target_include_directories(ronin_core PUBLIC 
-        include 
-        ${sqlite3_src_SOURCE_DIR} 
-        ${tensorflow_lite_SOURCE_DIR}
-        ${sentencepiece_SOURCE_DIR}/src
-        ${flatbuffers_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_BINARY_DIR}
-    )
-    target_link_libraries(ronin_core PUBLIC sqlite3_lib sentencepiece-static)
-endif()
+target_include_directories(ronin_core PUBLIC 
+    include 
+    ${sqlite3_src_SOURCE_DIR} 
+    ${flatbuffers_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+target_link_libraries(ronin_core PUBLIC sqlite3_lib)
 
 # --- JNI Implementation ---
 if(ANDROID)
@@ -179,19 +105,15 @@ if(ANDROID)
         ${android-lib}
     )
 
-    # Propagate TFLite linkage to Shared Library
-    target_link_libraries(ronin_kernel PRIVATE tensorflowlite)
-
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
     endif()
 else()
-    # Host build (Linux x64)
     add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
     target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib)
 endif()
 
-# Optional: Host-side Unit Tests
+# Host-side Unit Tests
 if(NOT ANDROID)
     FetchContent_Declare(
       googletest
@@ -204,12 +126,6 @@ if(NOT ANDROID)
     
     add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp)
     target_link_libraries(ronin_atomic_test ronin_core gtest_main)
-
-    add_executable(ronin_precision_test tests/precision_test.cpp)
-    target_link_libraries(ronin_precision_test ronin_core gtest_main)
-
-    add_executable(ronin_memory_test tests/memory_stress_test.cpp)
-    target_link_libraries(ronin_memory_test ronin_core gtest_main)
 
     add_executable(ronin_search_test tests/search_capability_test.cpp)
     target_link_libraries(ronin_search_test ronin_core gtest_main)

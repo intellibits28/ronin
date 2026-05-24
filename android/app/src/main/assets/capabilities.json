@@ -14,13 +14,6 @@
     "confidence_threshold": 0.6
   },
   {
-    "id": 3,
-    "name": "NeuralEmbeddingNode",
-    "subjects": ["embed", "vector", "semantic"],
-    "actions": ["calculate", "process"],
-    "confidence_threshold": 0.8
-  },
-  {
     "id": 4,
     "name": "FlashlightNode",
     "subjects": ["flashlight", "torch", "light", "ဓါတ်မီး", "မီး"],

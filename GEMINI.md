@@ -1,48 +1,34 @@
-🧠 Ronin Kernel - AI Context & Engineering Standards (REVISED v4.6)
+🧠 Ronin Kernel - AI Context & Engineering Standards (REVISED v4.7)
 
 ## Project Overview
 Modular AI agent runtime, Android (Snapdragon 778G+), C++20 + Kotlin-JNI.
-Core Philosophy: A sentient, self-improving hardware-aware agent.
+Core Philosophy: A single-spine reasoning kernel.
 
-## Current Phase: 4.6 (Core Router & Manual Import Strategy)
+## Current Phase: 4.7 (Single Gemma 4 Only)
 
-## ⚠️ CRITICAL ARCHITECTURAL RULES (v2.0 RESET)
+## ⚠️ CRITICAL ARCHITECTURAL RULES (v3.0 RESET)
 
-### 1. Core Router (E5) Strategy
-*   **Engine:** Multilingual-E5 (TFLite) is the ONLY embedding engine. Legacy ONNX is DEPRECATED and REMOVED.
-*   **Manual Import:** The 139MB E5 model is NOT bundled in the APK. The app starts in **Setup Mode** (Bootstrap Wizard) until the user manually imports the `.tflite` file.
-*   **Integrity:** Native validation must check for `TFL3` magic bytes before hydration.
+### 1. Single Reasoning Spine (Gemma 4)
+*   **Engine:** Gemma 4 (LiteRT-LM) is the ONLY reasoning engine. 
+*   **Vectorless Search:** All legacy embedding models (E5/ONNX) have been REMOVED. Ronin relies purely on SQLite FTS5 for fast keyword retrieval and Gemma 4's In-context Reasoning for semantic understanding.
+*   **Zero-SHM:** The legacy Shared Memory ring buffer has been deprecated. Token streaming is handled via direct JNI/Kotlin callbacks.
 
 ### 2. SentencePiece Runtime
 *   **Tokenizer:** Use SentencePiece Runtime (C++) with `assets/models/sentencepiece.bpe.model`.
-*   **Build Optimization:** `SPM_ENABLE_TRAINING=OFF` and `SPM_ENABLE_TRAIN=OFF`. Build ONLY the static runtime.
 
 ### 3. JNI Memory Safety (The JNI Guard)
-*   **Deep-Copy Requirement:** All JNI strings must be immediately deep-copied to `std::string` using the `GetStringUTFChars` / `ReleaseStringUTFChars` pattern before any file or mmap operations.
+*   **Deep-Copy Requirement:** All JNI strings must be immediately deep-copied to `std::string` using the `GetStringUTFChars` / `ReleaseStringUTFChars` pattern.
 *   **Threading:** C++ threads must be strictly asynchronous. Attach/DetachCurrentThread pairing is mandatory.
 
-### 4. Setup Wizard State Machine
-*   **States:** `MISSING_CORE`, `IMPORTING`, `VERIFYING`, `ACTIVE`.
-*   **Lock Logic:** The UI must remain locked in the Wizard state until the Core Router is verified and the state transitions to `ACTIVE`.
-
-### 5. Build Configuration
-*   **Pathing:** Gradle must point to `../../CMakeLists.txt` (Root).
-*   **TFLite Linkage (Direct CI Injection):** 
-    *   Bypass Prefab for TFLite linkage due to CI metadata inconsistencies.
-    *   The CI workflow (`build.yml`) must manually download the TFLite AAR and extract `libtensorflowlite_jni.so` into `android/app/src/main/jniLibs/arm64-v8a/`.
-    *   CMake must define an `IMPORTED SHARED` target for `tensorflowlite` pointing to this manual path.
-*   **Targets:** Ninja must be forced to build ONLY `ronin_kernel` to ensure sub-5-minute CI success.
-
-### 6. Memory & LMK Guards
+### 4. Memory & LMK Guards
 *   Adaptive RAM Guard thresholds:
     *   1.0GB for < 800MB free.
     *   1.2GB for < 1.5GB free.
     *   1.5GB for Gemma 4.
 
-## Memory Persistence & Routing Architecture
-* **Core Strategy:** Zero-VSS, Ultra-Low RAM Hybrid Search.
-* **Implementation:** Combined Text Matching via FTS5 and Semantic Vector Space via Multilingual-E5-small (384-dimensions).
-* **Source of Truth:** For full SQLite table structures, schemas, triggers, and native C++ linear search loops, strictly refer to the dedicated artifact:
+## Memory Persistence: Spec v2.1
+* **Core Strategy:** Lexical Keyword Search via FTS5.
+* **Source of Truth:** Full SQLite table structures and triggers are defined in:
     👉 **`[Ronin_Memory_Model_v2_1.md](./Ronin_Memory_Model_v2_1.md)`**
 * **CLI Constraint:** Never inline the complete schema here. Always modify the dedicated memory model file for any data-tier alterations.
 

@@ -28,9 +28,6 @@ table Checkpoint {
     // 7. Hardware Reality (v4.1)
     latitude:double;
     longitude:double;
-
-    // Legacy support (optional)
-    intent_vector:[int8] (force_align: 16);
 }
 
 root_type Checkpoint;

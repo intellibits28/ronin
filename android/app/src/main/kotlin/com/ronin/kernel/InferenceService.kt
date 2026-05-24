@@ -19,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.runBlocking
 
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Native"
@@ -28,18 +29,15 @@ class InferenceService : Service() {
     private var litertEngine: Engine? = null
     private var litertConversation: Conversation? = null
     private var legacyInference: LlmInference? = null
-    private var currentInferenceJob: Job? = null
     private var currentModelPath: String = ""
     private var isLowPerformanceMode = false
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val PREFS_NAME = "ronin_model_registry"
     private val STATUS_STABILITY_ISSUE = "STABILITY_ISSUE"
     private val STATUS_OK = "OK"
 
-    // JNI Bridge for Worker Process
+    // JNI Bridge for Worker Process (SHM methods removed)
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
-    private external fun pushTokenToSHMNative(fragment: String, isFinal: Boolean): Boolean
     private external fun getFreeRamGBNative(): Float
     private external fun shutdownKernelNative()
 
@@ -47,8 +45,8 @@ class InferenceService : Service() {
         init {
             try {
                 System.loadLibrary("ronin_kernel")
-            } catch (e: UnsatisfiedLinkError) {
-                Log.e("InferenceService", "Native linkage failed: ${e.message}")
+            } catch (e: Exception) {
+                Log.e("InferenceService", "Native linkage failed.")
             }
         }
     }
@@ -85,20 +83,19 @@ class InferenceService : Service() {
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Ronin Kernel: Neural Spine")
-            .setContentText("Local Reasoning Active (Snapdragon Optimized)")
+            .setContentText("Local Reasoning Active")
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .build()
     }
 
     private val binder = object : IInferenceService.Stub() {
         override fun loadModel(modelPath: String): Boolean {
-            Log.i(TAG, "Loading model: $modelPath")
             return tryHydrate(modelPath)
         }
 
         override fun runReasoning(input: String): String {
-            Log.d(TAG, "Running reasoning for: $input")
-            return executeReasoning(input)
+            // Synchronous execution for Single Model Architecture
+            return executeReasoningSync(input)
         }
 
         override fun isHydrated(): Boolean {
@@ -110,11 +107,10 @@ class InferenceService : Service() {
         }
 
         override fun notifyTrimMemory(level: Int) {
-            Log.i(TAG, "Memory trim notification: $level")
+            Log.i(TAG, "Memory trim: $level")
         }
 
         override fun setSafeMode(enabled: Boolean) {
-            Log.w(TAG, "Safe Mode Toggle: $enabled (Thermal Guard)")
             isSafeModeActive = enabled
         }
 
@@ -123,248 +119,96 @@ class InferenceService : Service() {
         }
 
         override fun resetConversation() {
-            Log.i(TAG, "Manual Neural Reset: Purging KV Cache Context.")
-            currentInferenceJob?.cancel()
-            turnCount = 0
             try {
                 litertConversation?.close()
                 litertConversation = litertEngine?.createConversation()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to reset conversation: ${e.message}")
-            }
+            } catch (e: Exception) {}
         }
     }
 
     private var isSafeModeActive = false
 
     override fun onBind(intent: Intent?): IBinder {
-        Log.i(TAG, "Service bound")
         return binder
     }
 
-    private fun getModelStatus(path: String): String {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString(path, STATUS_OK) ?: STATUS_OK
-    }
-
-    private fun setModelStatus(path: String, status: String) {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putString(path, status).apply()
-    }
-
-    private fun clearOrphanedArtifacts() {
-        try {
-            val cacheDir = java.io.File(filesDir, "models/cache")
-            if (cacheDir.exists()) {
-                val files = cacheDir.listFiles()
-                files?.forEach { 
-                    if (it.name.contains("_")) {
-                        Log.i(TAG, "Cleaning orphaned artifact: ${it.name}")
-                        it.delete()
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Artifact cleanup failed: ${e.message}")
-        }
-    }
-
     private fun tryHydrate(path: String): Boolean {
-        Log.i(TAG, ">>> IPC Hydration Request for: $path")
         val modelFile = java.io.File(path)
-        if (!modelFile.exists()) {
-            Log.e(TAG, "FATAL: Model file NOT FOUND in :inference_core process at $path")
-            return false
-        }
+        if (!modelFile.exists()) return false
         
         val fileSize = modelFile.length()
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
+        val minRam = if (fileSize < 800 * 1024 * 1024) 1.0f else 1.5f 
         
-        val minRam = when {
-            fileSize < 800 * 1024 * 1024 -> 1.0f 
-            fileSize < 1500 * 1024 * 1024 -> 1.2f 
-            else -> 1.5f 
-        }
-        
-        Log.i(TAG, "Hydration Guard: FileSize=${fileSize/(1024*1024)}MB, FreeRAM=${freeRam}GB, Required=${minRam}GB")
-        
-        if (freeRam < minRam) {
-            Log.e(TAG, "ABORT: Insufficient RAM. Available: ${freeRam}GB, Required: ${minRam}GB")
-            return false
-        }
+        if (freeRam < minRam) return false
 
         val cacheDirFile = java.io.File(filesDir, "models/cache")
         if (!cacheDirFile.exists()) cacheDirFile.mkdirs()
         
-        clearOrphanedArtifacts()
-
-        val modelStatus = getModelStatus(path)
-        isLowPerformanceMode = false
-
         val isLegacy = path.endsWith(".bin")
-
         return try {
             if (isLegacy) {
-                hydrateLegacy(path, modelStatus)
+                hydrateLegacy(path)
             } else {
-                hydrateLiteRT(path, modelStatus, cacheDirFile)
+                hydrateLiteRT(path)
             }
         } catch (e: Throwable) {
-            Log.e(TAG, "Hydration failed in service: ${e.message}")
-            setModelStatus(path, STATUS_STABILITY_ISSUE)
             false
         }
     }
 
-    private fun hydrateLegacy(path: String, status: String): Boolean {
-        Log.i(TAG, "Backing up to Legacy MediaPipe Engine for .bin model.")
-        val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
+    private fun hydrateLegacy(path: String): Boolean {
+        val options = LlmInference.LlmInferenceOptions.builder()
             .setModelPath(path)
             .setMaxTokens(1024)
-            
-        if (status != STATUS_STABILITY_ISSUE) {
-            try {
-                optionsBuilder.setPreferredBackend(LlmInference.Backend.GPU)
-            } catch (e: Exception) {
-                Log.w(TAG, "Legacy GPU failed: ${e.message}")
-            }
-        }
-
-        legacyInference = LlmInference.createFromOptions(this, optionsBuilder.build())
+            .build()
+        legacyInference = LlmInference.createFromOptions(this, options)
         currentModelPath = path
         return true
     }
 
-    private fun hydrateLiteRT(path: String, status: String, cacheDir: java.io.File): Boolean {
-        val backends = if (status == STATUS_STABILITY_ISSUE) {
-            listOf(Backend.CPU())
-        } else {
-            listOf(Backend.GPU(), Backend.CPU())
-        }
-
-        var engine: Engine? = null
-
-        for (backend in backends) {
-            try {
-                Log.i(TAG, "Attempting hydration with backend: $backend")
-                val config = EngineConfig(
-                    modelPath = path,
-                    backend = backend,
-                    maxNumTokens = 1024
-                )
-                
-                engine = Engine(config)
-                engine.initialize()
-                
-                if (backend is Backend.CPU) isLowPerformanceMode = true
-                break
-            } catch (e: Exception) {
-                Log.w(TAG, "Backend $backend failed: ${e.message}")
-            }
-        }
-
-        if (engine == null) return false
-        
+    private fun hydrateLiteRT(path: String): Boolean {
+        val config = EngineConfig(modelPath = path, maxNumTokens = 1024)
+        val engine = Engine(config)
+        engine.initialize()
         litertEngine = engine
         litertConversation = engine.createConversation()
         currentModelPath = path
         return true
     }
 
-    private var turnCount = 0
-    private val MAX_TURNS_BEFORE_ROTATION = 5
-
-    private fun executeReasoning(input: String): String {
+    private fun executeReasoningSync(input: String): String = runBlocking(Dispatchers.IO) {
         val litert = litertConversation
         val legacy = legacyInference
 
-        if (litert == null && legacy == null) {
-            return "Error: Local reasoning spine not hydrated in service."
-        }
+        if (litert == null && legacy == null) return@runBlocking "Error: Spine not hydrated."
 
-        val isThinkingRequest = input.startsWith("[THINK]")
-        val actualInput = if (isThinkingRequest) input.removePrefix("[THINK]") else input
-
-        Log.d(TAG, "Executing Reasoning [Thinking: $isThinkingRequest].")
-
-        return try {
+        val actualInput = input.removePrefix("[THINK]")
+        
+        try {
             if (litert != null) {
-                // Phase 9.5: Manual Sliding Window (Rotation)
-                turnCount++
-                if (turnCount >= MAX_TURNS_BEFORE_ROTATION) {
-                    Log.i(TAG, "Context Limit Approaching: Rotating Conversation.")
-                    litertConversation = litertEngine?.createConversation()
-                    turnCount = 0
+                val userMsg = Message.user(actualInput)
+                val fullResult = StringBuilder()
+                litert.sendMessageAsync(userMsg).collect { partial ->
+                    val token = try { 
+                        partial.javaClass.getMethod("getText").invoke(partial) as String 
+                    } catch(e: Exception) { partial.toString() }
+                    fullResult.append(token)
                 }
-
-                currentInferenceJob?.cancel()
-                currentInferenceJob = serviceScope.launch(Dispatchers.IO) {
-                    try {
-                        val isGemma4 = currentModelPath.contains("gemma-4")
-                        
-                        val finalInput = if (isThinkingRequest && isGemma4) {
-                            "You are Ronin Kernel Core. Before giving the final answer, you MUST think step-by-step. Break down the entities, relations, and logic inside <thinking> tags, then provide the precise response.\n\n$actualInput"
-                        } else actualInput
-
-                        val userMsg = Message.user(finalInput)
-                        var stopTriggered = false
-
-                        litertConversation?.sendMessageAsync(userMsg)?.collect { partialMessage ->
-                            if (stopTriggered) return@collect
-                            
-                            val token = try { 
-                                partialMessage.javaClass.getMethod("getText").invoke(partialMessage) as String 
-                            } catch(e: Exception) { 
-                                partialMessage.toString() 
-                            }
-
-                            // Phase 9.6: Strict Stop Token Masking (Native Boundary Guard)
-                            val stopTokens = listOf("<|eot_id|>", "<|im_end|>", "\nuser:", "\nassistant:", "assistant\n")
-                            if (stopTokens.any { token.contains(it) }) {
-                                Log.i(TAG, "Stop Token Detected: Masking and Terminating.")
-                                stopTriggered = true
-                                currentInferenceJob?.cancel()
-                                return@collect
-                            }
-
-                            pushTokenToSHMNative(token, false)
-                        }
-                        pushTokenToSHMNative("", true)
-                        Log.i(TAG, "Inference Stream Complete.")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Inference failure: ${e.message}")
-                        pushTokenToSHMNative("Error: ${e.message}", true)
-                    }
-                }
-            } else if (legacy != null) {
-                try {
-                    val response = legacy.generateResponse(actualInput)
-                    if (!response.isNullOrEmpty()) {
-                        pushTokenToSHMNative(response, true)
-                        Log.i(TAG, "Legacy reasoning complete and pushed to SHM.")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Legacy reasoning failure: ${e.message}")
-                    "Error: Legacy engine failure - ${e.message}"
-                }
+                fullResult.toString()
+            } else {
+                legacy?.generateResponse(actualInput) ?: "Error: Legacy failure."
             }
-            
-            "Reasoning Started [SHM Active]"
         } catch (e: Exception) {
-            Log.e(TAG, "Inference crash in service: ${e.message}")
-            "Error: Neural spine failure - ${e.message}"
+            "Error: ${e.message}"
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        currentInferenceJob?.cancel()
         litertConversation = null
         litertEngine = null
         legacyInference?.close()
-        try {
-            shutdownKernelNative()
-        } catch (e: Exception) {}
-        Log.i(TAG, "Service destroyed")
+        try { shutdownKernelNative() } catch (e: Exception) {}
     }
 }
