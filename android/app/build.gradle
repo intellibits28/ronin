@@ -86,7 +86,7 @@ dependencies {
 
     // --- PHASE 11.0: Unified LiteRT-LM (Gemma 4 Production SDK) ---
     // Removed legacy MediaPipe GenAI and TFLite dependencies
-    implementation 'com.google.ai.edge:litert-lm:0.1.2'
+    implementation 'com.google.ai.edge.litertlm:litertlm-android:0.1.0'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
