@@ -175,33 +175,38 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
     std::string content = buffer.str();
     m_capabilities.clear();
     
-    // Very basic JSON-ish parser for subjects/ids
+    // Improved JSON-ish parser for subjects, actions, and ids
     size_t pos = 0;
     while ((pos = content.find("\"id\"", pos)) != std::string::npos) {
         CapabilityEntry cap;
         size_t id_start = content.find(":", pos) + 1;
         cap.id = std::stoi(content.substr(id_start, content.find(",", id_start) - id_start));
         
-        size_t sub_pos = content.find("\"subjects\"", pos);
-        if (sub_pos != std::string::npos) {
-            size_t start_arr = content.find("[", sub_pos) + 1;
-            size_t end_arr = content.find("]", start_arr);
-            std::string subjects_raw = content.substr(start_arr, end_arr - start_arr);
-            
-            std::stringstream ss(subjects_raw);
-            std::string sub;
-            while (std::getline(ss, sub, ',')) {
-                size_t q1 = sub.find("\"");
-                size_t q2 = sub.find("\"", q1 + 1);
-                if (q1 != std::string::npos && q2 != std::string::npos) {
-                    cap.subjects.push_back(sub.substr(q1 + 1, q2 - q1 - 1));
+        auto parse_array = [&](const std::string& field, std::vector<std::string>& out) {
+            size_t f_pos = content.find("\"" + field + "\"", pos);
+            if (f_pos != std::string::npos) {
+                size_t start_arr = content.find("[", f_pos) + 1;
+                size_t end_arr = content.find("]", start_arr);
+                std::string raw = content.substr(start_arr, end_arr - start_arr);
+                std::stringstream ss(raw);
+                std::string item;
+                while (std::getline(ss, item, ',')) {
+                    size_t q1 = item.find("\"");
+                    size_t q2 = item.find("\"", q1 + 1);
+                    if (q1 != std::string::npos && q2 != std::string::npos) {
+                        out.push_back(item.substr(q1 + 1, q2 - q1 - 1));
+                    }
                 }
             }
-        }
+        };
+
+        parse_array("subjects", cap.subjects);
+        parse_array("actions", cap.actions);
+        
         m_capabilities.push_back(cap);
         pos = content.find("}", pos);
     }
-    LOGI(TAG, "Loaded %zu capabilities from JSON.", m_capabilities.size());
+    LOGI(TAG, "Loaded %zu capabilities for Dual-Condition Matching.", m_capabilities.size());
 }
 
 std::vector<std::string> IntentEngine::tokenize(const std::string& input) {
@@ -263,17 +268,39 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         return {0, 1.0f, true};
     }
 
-    // Phase 11.0: Multilingual Intent Routing (Restored)
+    // Phase 11.0: Dual-Condition Intent Routing (Subject + Action)
+    // To prevent false positives like "Where" -> "GPS" in general questions.
     for (const auto& cap : m_capabilities) {
-        for (const auto& subject : cap.subjects) {
-            if (input_lower.find(subject) != std::string::npos) {
-                LOGI(TAG, "Intent Matched: %s -> ID %u", subject.c_str(), cap.id);
+        // Chat (ID 1) always handled by LLM if no hardware action matched
+        if (cap.id == 1) continue; 
+
+        bool subject_match = false;
+        for (const auto& s : cap.subjects) {
+            if (input_lower.find(s) != std::string::npos) {
+                subject_match = true;
+                break;
+            }
+        }
+
+        if (subject_match) {
+            // Check for explicit action verbs (on, show, find, etc.)
+            bool action_match = false;
+            for (const auto& a : cap.actions) {
+                if (input_lower.find(a) != std::string::npos) {
+                    action_match = true;
+                    break;
+                }
+            }
+
+            if (action_match) {
+                LOGI(TAG, "Hardware Intent Matched (Subject+Action): ID %u", cap.id);
                 return {cap.id, 1.0f, true};
             }
         }
     }
 
-    return {1, 1.0f, true}; // Default to Local Reasoning (ID 1)
+    // Default: If no hardware intent (Subject+Action) matched, let Gemma 4 reason (ID 1)
+    return {1, 1.0f, true}; 
 }
 
 } // namespace Ronin::Kernel::Intent
