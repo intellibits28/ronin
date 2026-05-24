@@ -16,6 +16,7 @@ import com.google.android.gms.tasks.Tasks
 import android.os.Build
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -52,6 +53,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 data class CloudProvider(
     val name: String, 
@@ -67,6 +69,7 @@ class ChatViewModel : ViewModel() {
     val messages = mutableStateListOf<String>()
     val reasoningLogs = mutableStateListOf<String>()
     var showSysInfo by mutableStateOf(false)
+    var showReasoning by mutableStateOf(false) // Toggle for waste space fix
     var lmkPressure by mutableStateOf(0)
     
     var wizardState by mutableStateOf(WizardState.MISSING_CORE)
@@ -147,7 +150,6 @@ class MainActivity : ComponentActivity() {
         if (chatViewModel.discoveredModels.toList() != uniquePaths) {
             chatViewModel.discoveredModels.clear()
             chatViewModel.discoveredModels.addAll(uniquePaths)
-            Log.d("Ronin_UI", "Models synced: ${uniquePaths.size}")
         }
         
         chatViewModel.wizardState = if (uniquePaths.isNotEmpty()) WizardState.ACTIVE else WizardState.MISSING_CORE
@@ -269,6 +271,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun clearModelCache() {
+        val cacheDir = java.io.File(filesDir, "models/compiled_cache")
+        if (cacheDir.exists()) {
+            cacheDir.deleteRecursively()
+            Toast.makeText(this, "Compilation cache cleared.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun savePrimaryCloudProvider(name: String) {
         sharedPreferences.edit().putString("primary_cloud_provider", name).apply()
         nativeEngine.setPrimaryCloudProviderSafe(name)
@@ -315,12 +325,56 @@ class MainActivity : ComponentActivity() {
     private fun setupHardwareCallbacks() {
         val vm = ViewModelProvider(this)[ChatViewModel::class.java]
         nativeEngine.getSecureApiKeyProvider = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
-        nativeEngine.onRequestHardwareDataCallback = { nodeId -> "Hardware Node $nodeId Not Implemented" }
-        nativeEngine.executeHardwareActionCallback = { nodeId, state -> false }
+        nativeEngine.onRequestHardwareDataCallback = { nodeId -> 
+            if (nodeId == 5) {
+                try {
+                    val location = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token))
+                    location?.let { "${it.latitude}, ${it.longitude}" } ?: "Error: GPS Timeout"
+                } catch (e: Exception) { "Error: ${e.message}" }
+            } else "Data for node $nodeId"
+        }
+        nativeEngine.executeHardwareActionCallback = { nodeId, state -> 
+            when (nodeId) {
+                4 -> {
+                    try {
+                        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                        val cameraId = cameraManager.cameraIdList[0]
+                        cameraManager.setTorchMode(cameraId, state)
+                        true
+                    } catch (e: Exception) { false }
+                }
+                6 -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val intent = Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                        } else {
+                            val intent = Intent(Settings.ACTION_WIFI_SETTINGS)
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                        }
+                        true
+                    } catch (e: Exception) { false }
+                }
+                7 -> {
+                    try {
+                        val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                        true
+                    } catch (e: Exception) { false }
+                }
+                else -> false
+            }
+        }
         nativeEngine.onSystemTiersUpdateCallback = { temp, used, total ->
             vm.temperature = temp; vm.ramUsedGB = used; vm.ramTotalGB = total
         }
-        nativeEngine.onKernelMessageCallback = { msg -> vm.reasoningLogs.add(0, msg) }
+        nativeEngine.onKernelMessageCallback = { msg -> 
+            vm.reasoningLogs.add(0, msg)
+            if (!vm.showReasoning) vm.showReasoning = true
+        }
     }
 
     override fun onResume() { super.onResume(); scanLocalModels() }
@@ -337,7 +391,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             while (true) {
                 try {
                     am.getMemoryInfo(mi)
-                    val total = mi.totalMem / 1073741824f; val avail = mi.availMem / 1073741824f; val used = total - avail
+                    val used = (mi.totalMem - mi.availMem) / 1073741824f
+                    val total = mi.totalMem / 1073741824f
                     withContext(Dispatchers.Main) { 
                         chatViewModel.ramUsedGB = used
                         chatViewModel.ramTotalGB = total
@@ -360,6 +415,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     }
                 }, 
                 actions = { 
+                    IconButton(onClick = { chatViewModel.showReasoning = !chatViewModel.showReasoning }) { Icon(if (chatViewModel.showReasoning) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) }
                     IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.Info, null) }
                     IconButton(onClick = { chatViewModel.showSettings = true }) { Icon(Icons.Default.Settings, null) } 
                 }
@@ -373,11 +429,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 Column(modifier = Modifier.fillMaxSize()) {
                     if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
 
-                    Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }
+                    AnimatedVisibility(visible = chatViewModel.showReasoning) {
+                        Box(modifier = Modifier.height(150.dp).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }
+                        }
                     }
 
-                    Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) { 
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) { 
                         LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } 
 
                         if (chatViewModel.showCommandSuggestions) {
@@ -436,7 +494,10 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             }
         }
     }
-    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, onSaveOfflineMode, { (context.findActivity() as? MainActivity)?.deleteLocalModel(it) }, { (context.findActivity() as? MainActivity)?.hydrateModel(it) })
+    if (chatViewModel.showSettings) SettingsDialog(chatViewModel, brainPicker, onSaveOfflineMode, 
+        { (context.findActivity() as? MainActivity)?.deleteLocalModel(it) }, 
+        { (context.findActivity() as? MainActivity)?.hydrateModel(it) },
+        { (context.findActivity() as? MainActivity)?.clearModelCache() })
 }
 
 @Composable
@@ -472,7 +533,7 @@ fun ChatBubble(m: String) {
 }
 
 @Composable
-fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit, onDeleteModel: (String) -> Unit, onSelectModel: (String) -> Unit) {
+fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit, onDeleteModel: (String) -> Unit, onSelectModel: (String) -> Unit, onClearCache: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(onDismissRequest = { chatViewModel.showSettings = false }, title = { Text("Ronin Configuration") }, text = {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
@@ -487,6 +548,8 @@ fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: ActivityResultLaun
                 }
             }
             OutlinedButton(onClick = { brainPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Reasoning Brain") }
+            TextButton(onClick = onClearCache, modifier = Modifier.fillMaxWidth()) { Text("Clear Model Cache", color = Color.Red) }
+            
             Spacer(Modifier.height(16.dp)); Divider()
             Row(verticalAlignment = Alignment.CenterVertically) { 
                 Text("Cloud Reasoning Models", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f)); 
