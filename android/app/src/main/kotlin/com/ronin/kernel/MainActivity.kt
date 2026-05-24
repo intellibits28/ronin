@@ -382,7 +382,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             scope.launch { 
                                                 if (!chatViewModel.isGemmaReady) {
                                                     chatViewModel.reasoningLogs.add("> [SYSTEM] Local Brain missing. Escalating to Cloud Fallback.")
-                                                    val apiKey = engine.getSecureApiKey(chatViewModel.primaryCloudProvider)
+                                                    val apiKey = engine.getSecureApiKey?.invoke(chatViewModel.primaryCloudProvider) ?: ""
                                                     val res = engine.performCloudInference(rawInput, chatViewModel.primaryCloudProvider, apiKey)
                                                     chatViewModel.messages.add("Ronin: $res")
                                                 } else {
