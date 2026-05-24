@@ -237,15 +237,45 @@ void LongTermMemory::applyDecay(uint64_t current_timestamp) {
     // Legacy stability logic simplified or removed
 }
 
-bool LongTermMemory::storeMessage(const std::string& role, const std::string& content) {
+// Thinking process များကို ဖယ်ထုတ်ပေးမည့် Lightweight Function
+static std::string filterThinking(const std::string& input) {
+    std::string output = input;
+    size_t start_pos, end_pos;
+
+    // <thinking> နှင့် </thinking> ကြားရှိစာသားများကို loop ပတ်၍ ဖြတ်ထုတ်ခြင်း
+    while ((start_pos = output.find("<thinking>")) != std::string::npos) {
+        end_pos = output.find("</thinking>");
+        if (end_pos != std::string::npos && end_pos > start_pos) {
+            // </thinking> အပိတ် tag ပါအပါအဝင် အကုန်ဖြတ်မည် (length = end_pos - start_pos + 11)
+            output.erase(start_pos, (end_pos - start_pos) + 11);
+        } else {
+            // အပိတ် tag မပါသေးပါက <thinking> ကနေ အဆုံးထိ ဖြတ်ပစ်မည်
+            output.erase(start_pos);
+            break;
+        }
+    }
+    return output;
+}
+
+bool LongTermMemory::storeMessage(const std::string& role, const std::string& content, int64_t timestamp) {
     if (!m_db) return false;
+    
+    std::string final_content = content;
+    // Assistant ဆီကလာတဲ့ output ဆိုရင် DB ထဲမသွင်းခင် တွေးချက်တွေကို ဖြတ်ထုတ်မည်
+    if (role == "assistant") {
+        final_content = filterThinking(content);
+    }
+
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO chat_history (role, content, timestamp) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
     sqlite3_bind_text(stmt, 1, role.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, content.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 3, std::time(nullptr));
+    sqlite3_bind_text(stmt, 2, final_content.c_str(), -1, SQLITE_STATIC);
+    
+    int64_t final_ts = (timestamp == 0) ? std::time(nullptr) : timestamp;
+    sqlite3_bind_int64(stmt, 3, final_ts);
+    
     bool success = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
     return success;
@@ -255,7 +285,9 @@ std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int 
     if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::pair<std::string, std::string>> history;
-    const char* sql = "SELECT role, content FROM chat_history ORDER BY id ASC LIMIT ? OFFSET ?;";
+    
+    // Fetch the most recent messages first, then reverse them to restore chronological order
+    const char* sql = "SELECT role, content FROM chat_history ORDER BY id DESC LIMIT ? OFFSET ?;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_int(stmt, 1, limit);
@@ -269,6 +301,9 @@ std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int 
         }
     }
     sqlite3_finalize(stmt);
+    
+    // Reverse to get chronological order (oldest to newest)
+    std::reverse(history.begin(), history.end());
     return history;
 }
 

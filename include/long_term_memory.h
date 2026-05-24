@@ -40,7 +40,7 @@ public:
     std::string retrieveFact(const std::string& key);
 
     // Message History
-    bool storeMessage(const std::string& role, const std::string& content);
+    bool storeMessage(const std::string& role, const std::string& content, int64_t timestamp = 0);
     std::vector<std::pair<std::string, std::string>> getHistory(int limit = 50, int offset = 0);
 
     // Cognitive Recall (FTS5 Keywords)

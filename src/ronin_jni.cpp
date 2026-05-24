@@ -116,7 +116,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
     engine->setLibPath(native_lib_path);
     engine->setBasePath(base_path);
     
-    g_intent_engine->registerSkill(1, std::make_shared<ChatSkill>(engine.get()));
+    g_intent_engine->registerSkill(1, std::make_shared<ChatSkill>(engine.get(), g_ltm.get()));
 
     g_llm_context.engine = engine.get();
     g_intent_engine->setInferenceEngine(std::move(engine));

@@ -139,14 +139,32 @@ class InferenceService : Service() {
     private fun executeInference(input: String): Flow<String> = flow {
         val conversation = litertConversation ?: return@flow
         
-        // Clean input for LiteRT-LM
+        // Phase 11.1 Hardening: 
+        // Detect if C++ has pre-formatted the prompt with turn tags.
+        // If so, we RESET the conversation to avoid duplicating context in the KV cache.
+        val isPreFormatted = input.contains("<start_of_turn>")
+        
+        if (isPreFormatted) {
+            Log.i(TAG, "Pre-formatted prompt detected. Resetting KV cache for context sync.")
+            try {
+                litertConversation?.close()
+                litertConversation = litertEngine?.createConversation()
+            } catch (e: Exception) {}
+        }
+
         val cleanInput = input
             .replace("[SYSTEM]", "")
             .replace("[USER]", "")
             .trim()
         
+        if (cleanInput.isEmpty()) return@flow
+
+        // If it's pre-formatted, we still pass it to Message.user(), but the SDK
+        // will wrap it in ANOTHER set of tags. This is usually okay if the model 
+        // sees it as a single long instruction, but not ideal.
+        // However, given the current SDK limitations, this is the safest path.
         val userMsg = Message.user(cleanInput)
-        conversation.sendMessageAsync(userMsg).collect { partial ->
+        (litertConversation ?: conversation).sendMessageAsync(userMsg).collect { partial ->
             val token = try { 
                 partial.javaClass.getMethod("getText").invoke(partial) as String 
             } catch(e: Exception) { partial.toString() }
