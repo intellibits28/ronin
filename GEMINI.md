@@ -30,13 +30,16 @@ Core Philosophy: A single-spine reasoning kernel.
 * **Core Strategy:** Lexical Keyword Search via FTS5.
 * **Source of Truth:** Full SQLite table structures and triggers are defined in:
     👉 **`[Ronin_Memory_Model_v2_1.md](./Ronin_Memory_Model_v2_1.md)`**
-* **CLI Constraint:** Never inline the complete schema here. Always modify the dedicated memory model file for any data-tier alterations.
+
+## Hardware & Sensor Intelligence (Future)
+* **Strategy:** Offloading high-frequency sensor processing (IMU/Bio) to DSP/NPU.
+* **Specification:** Aligned with low-latency Hexagon/Snapdragon reality:
+    👉 **`[Ronin_Sensor_DSP_Tool_v1.0.md](./Ronin_Sensor_DSP_Tool_v1.0.md)`**
 
 ## Audit & Verification Protocol
-1.  **Linker Check:** Verify `TFLITE_JNI_LIB` resolves to Play Services TFLite binary.
-2.  **Constructor Audit:** `NeuralEmbeddingNode` must have a default constructor for `IntentEngine` compatibility.
-3.  **UI Scope:** Use `LocalContext.current` for `filesDir` access in Composables.
-4.  **Schema Alignment:** Verify SQLite logic against `Ronin_Memory_Model_v2_1.md`.
+1.  **UI Scope:** Use `LocalContext.current` for `filesDir` access in Composables.
+2.  **Schema Alignment:** Verify SQLite logic against `Ronin_Memory_Model_v2_1.md`.
+3.  **Tool Depth:** Ensure `MAX_TOOL_CALL_DEPTH = 1` is enforced in `IntentEngine`.
 
 ### 7. Security Posture: Sovereign Control Mode
 *   **Sandboxing (Privilege Isolation):** 
