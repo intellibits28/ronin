@@ -70,8 +70,8 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
     if (cmd == "/status") {
         std::stringstream ss;
         ss << (m_inference_engine ? m_inference_engine->getRuntimeInfo() : "Runtime: LiteRT-LM / Backend: Unknown") << " | ";
-        ss << "Health: " << std::fixed << std::setprecision(1) << HardwareBridge::getTemperature() << "deg C | ";
-        ss << std::setprecision(2) << HardwareBridge::getRamUsed() << "/" << HardwareBridge::getRamTotal() << "GB | ";
+        ss << "Health: " << std::fixed << std::setprecision(1) << Ronin::Kernel::Capability::HardwareBridge::getTemperature() << "deg C | ";
+        ss << std::setprecision(2) << Ronin::Kernel::Capability::HardwareBridge::getRamUsed() << "/" << Ronin::Kernel::Capability::HardwareBridge::getRamTotal() << "GB | ";
         ss << "LMK: " << (m_memory_manager ? m_memory_manager->getPressureScore() : 0) << "%";
         output = ss.str();
         return true;
@@ -166,12 +166,42 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
 
 void IntentEngine::loadCapabilities(const std::string& json_path) {
     std::ifstream file(json_path);
-    if (!file.is_open()) return;
+    if (!file.is_open()) {
+        LOGE(TAG, "Failed to load capabilities from %s", json_path.c_str());
+        return;
+    }
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string content = buffer.str();
     m_capabilities.clear();
-    // Simplified parser for now
+    
+    // Very basic JSON-ish parser for subjects/ids
+    size_t pos = 0;
+    while ((pos = content.find("\"id\"", pos)) != std::string::npos) {
+        CapabilityEntry cap;
+        size_t id_start = content.find(":", pos) + 1;
+        cap.id = std::stoi(content.substr(id_start, content.find(",", id_start) - id_start));
+        
+        size_t sub_pos = content.find("\"subjects\"", pos);
+        if (sub_pos != std::string::npos) {
+            size_t start_arr = content.find("[", sub_pos) + 1;
+            size_t end_arr = content.find("]", start_arr);
+            std::string subjects_raw = content.substr(start_arr, end_arr - start_arr);
+            
+            std::stringstream ss(subjects_raw);
+            std::string sub;
+            while (std::getline(ss, sub, ',')) {
+                size_t q1 = sub.find("\"");
+                size_t q2 = sub.find("\"", q1 + 1);
+                if (q1 != std::string::npos && q2 != std::string::npos) {
+                    cap.subjects.push_back(sub.substr(q1 + 1, q2 - q1 - 1));
+                }
+            }
+        }
+        m_capabilities.push_back(cap);
+        pos = content.find("}", pos);
+    }
+    LOGI(TAG, "Loaded %zu capabilities from JSON.", m_capabilities.size());
 }
 
 std::vector<std::string> IntentEngine::tokenize(const std::string& input) {
@@ -218,8 +248,6 @@ std::string IntentEngine::dispatchToolCall(const std::string& llm_output) {
 }
 
 bool IntentEngine::updateMetadata(const std::string& json_metadata) {
-    if (json_metadata.empty()) return false;
-    m_model_metadata.clear();
     return true;
 }
 
@@ -235,11 +263,15 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         return {0, 1.0f, true};
     }
 
-    // Deterministic Routing
-    if (input_lower.find("flashlight") != std::string::npos || input_lower.find("torch") != std::string::npos) return {4, 1.0f, true};
-    if (input_lower.find("location") != std::string::npos || input_lower.find("gps") != std::string::npos) return {5, 1.0f, true};
-    if (input_lower.find("wifi") != std::string::npos) return {6, 1.0f, true};
-    if (input_lower.find("bluetooth") != std::string::npos) return {7, 1.0f, true};
+    // Phase 11.0: Multilingual Intent Routing (Restored)
+    for (const auto& cap : m_capabilities) {
+        for (const auto& subject : cap.subjects) {
+            if (input_lower.find(subject) != std::string::npos) {
+                LOGI(TAG, "Intent Matched: %s -> ID %u", subject.c_str(), cap.id);
+                return {cap.id, 1.0f, true};
+            }
+        }
+    }
 
     return {1, 1.0f, true}; // Default to Local Reasoning (ID 1)
 }

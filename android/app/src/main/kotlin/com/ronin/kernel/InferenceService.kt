@@ -6,7 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.util.Log
 import com.google.ai.edge.litertlm.*
-import com.google.mediapipe.tasks.genai.llminference.*
+import com.google.mediapip.tasks.genai.llminference.*
 import kotlinx.coroutines.flow.*
 import android.app.Notification
 import android.app.NotificationChannel
@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
+import java.io.File
 
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Native"
@@ -32,11 +33,7 @@ class InferenceService : Service() {
     private var currentModelPath: String = ""
     private var isLowPerformanceMode = false
 
-    private val PREFS_NAME = "ronin_model_registry"
-    private val STATUS_STABILITY_ISSUE = "STABILITY_ISSUE"
-    private val STATUS_OK = "OK"
-
-    // JNI Bridge for Worker Process (SHM methods removed)
+    // JNI Bridge for Worker Process
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun getFreeRamGBNative(): Float
     private external fun shutdownKernelNative()
@@ -94,7 +91,6 @@ class InferenceService : Service() {
         }
 
         override fun runReasoning(input: String): String {
-            // Synchronous execution for Single Model Architecture
             return executeReasoningSync(input)
         }
 
@@ -110,9 +106,7 @@ class InferenceService : Service() {
             Log.i(TAG, "Memory trim: $level")
         }
 
-        override fun setSafeMode(enabled: Boolean) {
-            isSafeModeActive = enabled
-        }
+        override fun setSafeMode(enabled: Boolean) {}
 
         override fun isLowPerformanceMode(): Boolean {
             return this@InferenceService.isLowPerformanceMode
@@ -126,31 +120,28 @@ class InferenceService : Service() {
         }
     }
 
-    private var isSafeModeActive = false
-
     override fun onBind(intent: Intent?): IBinder {
         return binder
     }
 
     private fun tryHydrate(path: String): Boolean {
-        val modelFile = java.io.File(path)
+        val modelFile = File(path)
         if (!modelFile.exists()) return false
         
-        val fileSize = modelFile.length()
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
-        val minRam = if (fileSize < 800 * 1024 * 1024) 1.0f else 1.5f 
-        
-        if (freeRam < minRam) return false
+        // Harder check for Gemma 4
+        if (freeRam < 1.2f) return false
 
-        val cacheDirFile = java.io.File(filesDir, "models/cache")
-        if (!cacheDirFile.exists()) cacheDirFile.mkdirs()
+        // Phase 11.0: Explicit Cache Path to control storage size
+        val cacheDir = File(filesDir, "models/compiled_cache")
+        if (!cacheDir.exists()) cacheDir.mkdirs()
         
         val isLegacy = path.endsWith(".bin")
         return try {
             if (isLegacy) {
                 hydrateLegacy(path)
             } else {
-                hydrateLiteRT(path)
+                hydrateLiteRT(path, cacheDir.absolutePath)
             }
         } catch (e: Throwable) {
             false
@@ -160,15 +151,20 @@ class InferenceService : Service() {
     private fun hydrateLegacy(path: String): Boolean {
         val options = LlmInference.LlmInferenceOptions.builder()
             .setModelPath(path)
-            .setMaxTokens(1024)
+            .setMaxTokens(512) // Lower limit for stability
             .build()
         legacyInference = LlmInference.createFromOptions(this, options)
         currentModelPath = path
         return true
     }
 
-    private fun hydrateLiteRT(path: String): Boolean {
-        val config = EngineConfig(modelPath = path, maxNumTokens = 1024)
+    private fun hydrateLiteRT(path: String, cachePath: String): Boolean {
+        // Use limited context for SD778G+ to prevent Status 13
+        val config = EngineConfig(
+            modelPath = path, 
+            maxNumTokens = 512 
+        )
+        // Note: SDK version may vary. Some use internal cache.
         val engine = Engine(config)
         engine.initialize()
         litertEngine = engine
@@ -183,7 +179,8 @@ class InferenceService : Service() {
 
         if (litert == null && legacy == null) return@runBlocking "Error: Spine not hydrated."
 
-        val actualInput = input.removePrefix("[THINK]")
+        // Clean input for LiteRT-LM (it expects clean system/user parts)
+        val actualInput = if (input.contains("[USER]")) input.substringAfter("[USER]").trim() else input
         
         try {
             if (litert != null) {
