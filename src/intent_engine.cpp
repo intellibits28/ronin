@@ -28,7 +28,6 @@
 
 namespace Ronin::Kernel::Intent {
 
-// Initialize to NORMAL by default
 ThermalState g_thermal_state = ThermalState::NORMAL;
 
 static std::string strip_punctuation(const std::string& s) {
@@ -137,9 +136,7 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
     if (nodeId == 0) return m_last_command_output;
 
     if (m_current_tool_depth >= MAX_TOOL_CALL_DEPTH) {
-        std::string depthError = "Guard-rail: MAX_TOOL_CALL_DEPTH reached.";
-        LOGW(TAG, "%s", depthError.c_str());
-        return "Error: Maximum tool call depth reached. Termination forced.";
+        return "Error: Maximum tool call depth reached.";
     }
 
     auto it = m_skill_registry.find(nodeId);
@@ -147,7 +144,6 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
         m_current_tool_depth++;
         
         if (nodeId == 5 && g_thermal_state == ThermalState::SEVERE) {
-            LOGW(TAG, "Thermal SEVERE: Using cached GPS.");
             return "Current Location (Cached): (" + std::to_string(m_last_lat) + ", " + std::to_string(m_last_lon) + ")";
         }
 
@@ -166,16 +162,12 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
 
 void IntentEngine::loadCapabilities(const std::string& json_path) {
     std::ifstream file(json_path);
-    if (!file.is_open()) {
-        LOGE(TAG, "Failed to load capabilities from %s", json_path.c_str());
-        return;
-    }
+    if (!file.is_open()) return;
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string content = buffer.str();
     m_capabilities.clear();
     
-    // Improved JSON-ish parser for subjects, actions, and ids
     size_t pos = 0;
     while ((pos = content.find("\"id\"", pos)) != std::string::npos) {
         CapabilityEntry cap;
@@ -202,11 +194,9 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
 
         parse_array("subjects", cap.subjects);
         parse_array("actions", cap.actions);
-        
         m_capabilities.push_back(cap);
         pos = content.find("}", pos);
     }
-    LOGI(TAG, "Loaded %zu capabilities for Dual-Condition Matching.", m_capabilities.size());
 }
 
 std::vector<std::string> IntentEngine::tokenize(const std::string& input) {
@@ -268,38 +258,37 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         return {0, 1.0f, true};
     }
 
-    // Phase 11.0: Dual-Condition Intent Routing (Subject + Action)
-    // To prevent false positives like "Where" -> "GPS" in general questions.
+    // Split input for exact token matching
+    auto tokens = tokenize(input_lower);
+
+    // Precise Hardware Intent Logic
     for (const auto& cap : m_capabilities) {
-        // Chat (ID 1) always handled by LLM if no hardware action matched
         if (cap.id == 1) continue; 
 
-        bool subject_match = false;
+        bool subject_found = false;
         for (const auto& s : cap.subjects) {
-            if (input_lower.find(s) != std::string::npos) {
-                subject_match = true;
-                break;
+            for (const auto& token : tokens) {
+                if (token == s) { subject_found = true; break; }
             }
+            if (subject_found) break;
         }
 
-        if (subject_match) {
-            // Check for explicit action verbs (on, show, find, etc.)
-            bool action_match = false;
+        if (subject_found) {
+            bool action_found = false;
             for (const auto& a : cap.actions) {
-                if (input_lower.find(a) != std::string::npos) {
-                    action_match = true;
-                    break;
+                for (const auto& token : tokens) {
+                    if (token == a) { action_found = true; break; }
                 }
+                if (action_found) break;
             }
 
-            if (action_match) {
-                LOGI(TAG, "Hardware Intent Matched (Subject+Action): ID %u", cap.id);
+            if (action_found) {
+                LOGI(TAG, "Hardware Intent Match: ID %u", cap.id);
                 return {cap.id, 1.0f, true};
             }
         }
     }
 
-    // Default: If no hardware intent (Subject+Action) matched, let Gemma 4 reason (ID 1)
     return {1, 1.0f, true}; 
 }
 

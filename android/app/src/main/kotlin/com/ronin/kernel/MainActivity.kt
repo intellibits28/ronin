@@ -443,8 +443,12 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
 
                     AnimatedVisibility(visible = chatViewModel.showReasoning) {
-                        Box(modifier = Modifier.height(150.dp).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
-                            LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }
+                        Box(modifier = Modifier.height(180.dp).fillMaxWidth().background(Color(0xFF12141C)).padding(8.dp).border(1.dp, Color.Cyan.copy(alpha = 0.3f), RoundedCornerShape(8.dp))) {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) { 
+                                items(chatViewModel.reasoningLogs) { 
+                                    Text(it, color = Color.Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(vertical = 2.dp)) 
+                                } 
+                            }
                         }
                     }
 

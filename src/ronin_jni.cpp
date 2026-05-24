@@ -242,6 +242,15 @@ void native_shutdownKernel(JNIEnv *env, jobject thiz) {
     if (g_kernel) g_kernel->shutdown();
 }
 
+void native_onTokenGenerated(JNIEnv *env, jobject thiz, jstring fragment, jboolean is_final) {
+    // Forward directly to pushTokenToUI for immediate screen update
+    jclass cls = env->GetObjectClass(thiz);
+    jmethodID method = env->GetMethodID(cls, "pushTokenToUI", "(Ljava/lang/String;Z)V");
+    if (method) {
+        env->CallVoidMethod(thiz, method, fragment, is_final);
+    }
+}
+
 // --- JNI Registration ---
 
 static JNINativeMethod g_methods[] = {
@@ -254,6 +263,7 @@ static JNINativeMethod g_methods[] = {
     {"checkFileAccessNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_checkFileAccess},
     {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB},
     {"processInputNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
+    {"onTokenGeneratedNative", "(Ljava/lang/String;Z)V", (void*)native_onTokenGenerated},
     {"isLoadedNative", "()Z", (void*)native_isLoaded},
     {"notifyTrimMemoryNative", "(I)V", (void*)native_notifyTrimMemory},
     {"getActiveModelPathNative", "()Ljava/lang/String;", (void*)native_getActiveModelPath},

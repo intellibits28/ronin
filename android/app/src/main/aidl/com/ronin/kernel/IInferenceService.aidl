@@ -32,6 +32,11 @@ interface IInferenceService {
     void setSafeMode(boolean enabled);
 
     /**
+     * Executes neural reasoning and streams tokens back via callback.
+     */
+    void streamReasoning(String input, IInferenceCallback callback);
+
+    /**
      * Resets the conversation context (Clears KV Cache).
      */
     void resetConversation();

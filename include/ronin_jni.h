@@ -129,4 +129,12 @@ JNIEXPORT void JNICALL
 Java_com_ronin_kernel_NativeEngine_requestCancellationNative(
     JNIEnv *env, jobject thiz);
 
+/**
+* Phase 11.0: Real-time Streaming
+* Pushes a token fragment from Kotlin to the Native Kernel for processing/UI.
+*/
+JNIEXPORT void JNICALL
+Java_com_ronin_kernel_NativeEngine_onTokenGeneratedNative(
+JNIEnv *env, jobject thiz, jstring fragment, jboolean is_final);
+
 } // extern "C"

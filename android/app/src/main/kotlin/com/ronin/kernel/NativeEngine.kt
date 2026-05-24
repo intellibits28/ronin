@@ -12,14 +12,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 /**
- * Native Engine (Single Model Hardening - v4.7)
- * Fixed JNI Callback Methods and Cloud Fallback.
- * Renamed callback properties to avoid JNI naming conflicts.
+ * Native Engine (Phase 11.0: Real-time Streaming IPC)
+ * Zero-SHM, AIDL-based streaming for production reliability.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
@@ -27,14 +28,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private var inferenceService: IInferenceService? = null
     private var isServiceBound = false
 
+    private val _inferenceFlow = MutableSharedFlow<InferencePacket>(replay = 0)
+    val inferenceFlow = _inferenceFlow.asSharedFlow()
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: android.content.ComponentName?, service: IBinder?) {
             inferenceService = IInferenceService.Stub.asInterface(service)
             isServiceBound = true
             Log.i(TAG, "Inference Service Bound.")
-            if (currentModelPath.isNotEmpty()) {
-                scope.launch { loadModel(currentModelPath) }
-            }
+            if (currentModelPath.isNotEmpty()) scope.launch { loadModel(currentModelPath) }
         }
         override fun onServiceDisconnected(name: android.content.ComponentName?) {
             inferenceService = null
@@ -55,9 +57,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 System.loadLibrary("ronin_kernel")
                 isLibLoaded = true
                 Log.i(TAG, "Native library loaded.")
-            } catch (e: Exception) {
-                Log.e(TAG, "Native load failed: ${e.message}")
-            }
+            } catch (e: Exception) { Log.e(TAG, "Native load failed.") }
         }
     }
 
@@ -87,6 +87,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun nativeResetContext()
     private external fun requestCancellationNative()
 
+    // Internal JNI helper to receive tokens from C++ and emit to UI
+    @Suppress("unused")
+    fun pushTokenToUI(fragment: String, isFinal: Boolean) {
+        scope.launch { _inferenceFlow.emit(InferencePacket(0, fragment, isFinal)) }
+    }
+
     fun isNativeLibraryLoaded(): Boolean = isLibLoaded
 
     suspend fun initialize() = withContext(Dispatchers.IO) {
@@ -94,11 +100,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (isLibLoaded) {
             try {
                 setEngineInstanceNative()
-                val libDir = context.applicationInfo.nativeLibraryDir
-                initializeKernelNative(context.filesDir.absolutePath, libDir, false)
-            } catch (e: Exception) {
-                Log.e(TAG, "initializeKernel failed: ${e.message}")
-            }
+                initializeKernelNative(context.filesDir.absolutePath, context.applicationInfo.nativeLibraryDir, false)
+            } catch (e: Exception) {}
         }
         bindInferenceService()
     }
@@ -110,18 +113,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
         if (!isLibLoaded) return@withContext false
-        
         val start = System.currentTimeMillis()
-        while (inferenceService == null && (System.currentTimeMillis() - start) < 5000) {
-            delay(200)
-        }
-
+        while (inferenceService == null && (System.currentTimeMillis() - start) < 5000) delay(200)
         if (inferenceService == null) return@withContext false
 
-        val workerSuccess = try {
-            inferenceService?.loadModel(path) ?: false
-        } catch (e: RemoteException) { false }
-
+        val workerSuccess = try { inferenceService?.loadModel(path) ?: false } catch (e: Exception) { false }
         if (!workerSuccess) return@withContext false
 
         return@withContext try {
@@ -132,31 +128,18 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     fun isLoaded(): Boolean {
-        if (isLibLoaded) {
-            try { return isLoadedNative() } catch (e: Exception) {}
-        }
+        if (isLibLoaded) try { return isLoadedNative() } catch (e: Exception) {}
         return currentModelPath.isNotEmpty()
     }
 
     fun getActiveModelPath(): String {
-        if (isLibLoaded) {
-            try { return getActiveModelPathNative() } catch (e: Exception) {}
-        }
+        if (isLibLoaded) try { return getActiveModelPathNative() } catch (e: Exception) {}
         return currentModelPath
     }
 
     suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext "Error: Lib not loaded."
-        try {
-            processInputNative(input)
-        } catch (e: Exception) {
-            "Error: Kernel failure."
-        }
-    }
-
-    @Suppress("unused")
-    fun provideInferenceResultNative(result: String) {
-        // Method signature required by JNI registration table
+        try { processInputNative(input) } catch (e: Exception) { "Error: Kernel failure." }
     }
 
     fun stopInference() {
@@ -168,15 +151,49 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    // --- JNI Callbacks (Proper Methods for JNI to find) ---
-
+    /**
+     * Triggered by C++ for real-time streaming reasoning.
+     */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
-        return try {
-            inferenceService?.runReasoning(input) ?: "Error: Service Offline."
-        } catch (e: Exception) {
-            "Error: ${e.message}"
+        Log.d(TAG, "Native Trigger: Initiating Async Streaming Reasoning...")
+        
+        scope.launch {
+            try {
+                inferenceService?.streamReasoning(input, object : IInferenceCallback.Stub() {
+                    override fun onToken(fragment: String, isFinal: Boolean) {
+                        // Push token back to C++ so it can be handled or forwarded
+                        pushTokenToUI(fragment, isFinal)
+                    }
+                    override fun onError(message: String) {
+                        pushTokenToUI("Error: $message", true)
+                    }
+                })
+            } catch (e: Exception) {
+                pushTokenToUI("Error: IPC Failed", true)
+            }
         }
+        return "Reasoning Started" // C++ expects immediate ACK
+    }
+
+    fun getLMKPressureSafe(): Int {
+        if (isLibLoaded) try { return getLMKPressureNative() } catch (e: Exception) {}
+        return 0
+    }
+
+    fun updateSystemHealthSafe(temp: Float, used: Float, total: Float): Boolean {
+        if (isLibLoaded) try { return updateSystemHealthNative(temp, used, total) } catch (e: Exception) {}
+        return false
+    }
+
+    @Suppress("unused")
+    fun updateSystemTiers(temp: Float, used: Float, total: Float) {
+        onSystemTiersUpdateCallback?.invoke(temp, used, total)
+    }
+
+    @Suppress("unused")
+    fun performCloudInference(input: String, provider: String, apiKey: String): String {
+        return "Cloud fallback pending refactor."
     }
 
     @Suppress("unused")
@@ -199,100 +216,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return onRequestHardwareDataCallback?.invoke(nodeId) ?: "Error"
     }
 
-    @Suppress("unused")
-    fun updateSystemTiers(temp: Float, used: Float, total: Float) {
-        onSystemTiersUpdateCallback?.invoke(temp, used, total)
-    }
-
-    @Suppress("unused")
-    fun performCloudInference(input: String, provider: String, apiKey: String): String {
-        return executeSingleInference(input, provider, apiKey)
-    }
-
-    private fun executeSingleInference(input: String, provider: String, passedApiKey: String): String {
-        val apiKey = if (passedApiKey.isNotEmpty()) passedApiKey else (getSecureApiKeyProvider?.invoke(provider)?.trim() ?: "")
-        if (apiKey.isEmpty()) return "Error: API Key missing."
-
-        // Lookup endpoint from providers.json
-        var endpoint = ""
-        var modelId = ""
-        try {
-            val configDir = File(context.filesDir, "config")
-            val providersFile = File(configDir, "providers.json")
-            if (providersFile.exists()) {
-                val providersJson = JSONArray(providersFile.readText())
-                for (i in 0 until providersJson.length()) {
-                    val p = providersJson.getJSONObject(i)
-                    if (p.getString("name") == provider) {
-                        endpoint = p.getString("endpoint")
-                        modelId = p.optString("modelId", "")
-                        break
-                    }
-                }
-            }
-        } catch (e: Exception) {}
-
-        if (endpoint.isEmpty()) return "Error: Endpoint missing for $provider."
-
-        val isGemini = endpoint.contains("generativelanguage.googleapis.com")
-        var finalUrl = if (isGemini && !endpoint.contains("?key=")) "$endpoint?key=$apiKey" else endpoint
-
-        return try {
-            val url = java.net.URL(finalUrl)
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 15000
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json")
-            if (!isGemini) conn.setRequestProperty("Authorization", "Bearer $apiKey")
-
-            val jsonBody = if (isGemini) {
-                JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", input)))))
-            } else {
-                JSONObject()
-                    .put("model", if (modelId.isNotEmpty()) modelId else "meta-llama/llama-3.1-8b-instruct")
-                    .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", input)))
-            }
-
-            conn.outputStream.use { os -> os.write(jsonBody.toString().toByteArray()) }
-            if (conn.responseCode == 200) {
-                val response = conn.inputStream.bufferedReader().use { it.readText() }
-                if (isGemini) {
-                    JSONObject(response).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
-                } else {
-                    JSONObject(response).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
-                }
-            } else {
-                "Error: [${conn.responseCode}]"
-            }
-        } catch (e: Exception) { "Error: ${e.message}" }
-    }
-
-    // --- Helper Methods ---
-
-    fun getLMKPressureSafe(): Int {
-        if (isLibLoaded) {
-            try { return getLMKPressureNative() } catch (e: Exception) {}
-        }
-        return 0
-    }
-
-    fun updateSystemHealthSafe(temp: Float, used: Float, total: Float): Boolean {
-        if (isLibLoaded) {
-            try { return updateSystemHealthNative(temp, used, total) } catch (e: Exception) {}
-        }
-        return false
-    }
-
     override fun onTrimMemory(level: Int) {
-        if (isLibLoaded) {
-            try { notifyTrimMemoryNative(level) } catch (e: Exception) {}
-        }
+        if (isLibLoaded) try { notifyTrimMemoryNative(level) } catch (e: Exception) {}
     }
     override fun onConfigurationChanged(newConfig: Configuration) {}
     override fun onLowMemory() {}
     
-    // Callback Handlers (Kotlin-side access)
     var onKernelMessageCallback: ((String) -> Unit)? = null
     var getSecureApiKeyProvider: ((String) -> String)? = null
     var onRequestHardwareDataCallback: ((Int) -> String)? = null
@@ -304,14 +233,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
     fun setPrimaryCloudProviderSafe(provider: String) {
         if (isLibLoaded) try { setPrimaryCloudProviderNative(provider) } catch (e: Exception) {}
-    }
-    fun updateCloudProvidersSafe(json: String): Boolean {
-        try {
-            val configDir = File(context.filesDir, "config")
-            if (!configDir.exists()) configDir.mkdirs()
-            File(configDir, "providers.json").writeText(json)
-        } catch (e: Exception) {}
-        return if (isLibLoaded) try { updateCloudProvidersNative(json) } catch (e: Exception) { false } else false
     }
     fun isValidModel(path: String): Boolean {
         if (isLibLoaded) try { return isValidModelNative(path) } catch (e: Exception) {}
@@ -325,44 +246,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         try {
             val raw = getChatHistoryNative(limit, offset)
             val result = mutableListOf<Pair<String, String>>()
-            for (i in 0 until (raw.size / 2)) {
-                result.add(raw[i * 2] to raw[i * 2 + 1])
-            }
+            for (i in 0 until (raw.size / 2)) result.add(raw[i * 2] to raw[i * 2 + 1])
             result
         } catch (e: Exception) { emptyList() }
     }
-
-    suspend fun fetchAvailableModels(apiKey: String, provider: String = "Gemini"): FetchResult = withContext(Dispatchers.IO) {
-        val isGemini = provider.equals("Gemini", ignoreCase = true)
-        val baseUrl = if (isGemini) "https://generativelanguage.googleapis.com" else "https://openrouter.ai/api/v1"
-        fun tryFetch(version: String): List<JSONObject>? {
-            val endpoint = if (isGemini) "$baseUrl/$version/models?key=$apiKey" else "$baseUrl/models"
-            try {
-                val conn = java.net.URL(endpoint).openConnection() as java.net.HttpURLConnection
-                conn.requestMethod = "GET"
-                if (!isGemini) conn.setRequestProperty("Authorization", "Bearer $apiKey")
-                if (conn.responseCode == 200) {
-                    val response = conn.inputStream.bufferedReader().use { it.readText() }
-                    val root = JSONObject(response)
-                    val models = mutableListOf<JSONObject>()
-                    if (isGemini) {
-                        val modelArray = root.getJSONArray("models")
-                        for (i in 0 until modelArray.length()) {
-                            val m = modelArray.getJSONObject(i)
-                            if (m.optJSONArray("supportedGenerationMethods")?.toString()?.contains("generateContent") == true) models.add(m)
-                        }
-                    } else {
-                        val modelArray = root.getJSONArray("data")
-                        for (i in 0 until modelArray.length()) models.add(modelArray.getJSONObject(i))
-                    }
-                    return models
-                }
-            } catch (e: Exception) {}
-            return emptyList()
-        }
-        val models = if (isGemini) tryFetch("v1beta") ?: emptyList() else tryFetch("") ?: emptyList()
-        FetchResult(models, if (models.isEmpty()) "Fetch Failed" else null)
-    }
-
-    data class FetchResult(val models: List<JSONObject>, val error: String? = null)
 }
