@@ -6,7 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.util.Log
 import com.google.ai.edge.litertlm.*
-import com.google.mediapip.tasks.genai.llminference.*
+import com.google.mediapipe.tasks.genai.llminference.*
 import kotlinx.coroutines.flow.*
 import android.app.Notification
 import android.app.NotificationChannel
