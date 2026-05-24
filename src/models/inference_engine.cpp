@@ -5,7 +5,6 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
-#include <condition_variable>
 
 #define TAG "RoninInference"
 
@@ -15,10 +14,7 @@ struct InferenceEngine::Impl {
     std::string model_path;
     std::string base_path;
     int context_window = 2048;
-    
-    std::string last_result;
     std::mutex inference_mutex;
-    std::condition_variable cv;
     bool is_processing = false;
 
     Impl(const std::string& path) : model_path(path) {}
@@ -44,8 +40,6 @@ bool InferenceEngine::loadModel(const std::string& path) {
 }
 
 bool InferenceEngine::isLoaded() const {
-    // We assume the engine is "loaded" if a path is set.
-    // Real hydration is checked in Kotlin.
     return !m_impl->model_path.empty();
 }
 
@@ -62,20 +56,15 @@ bool InferenceEngine::isCancelled() const {
 }
 
 void InferenceEngine::provideInferenceResult(const std::string& result) {
-    std::lock_guard<std::mutex> lock(m_impl->inference_mutex);
-    m_impl->last_result = result;
-    m_impl->is_processing = false;
-    m_impl->cv.notify_all();
+    // No longer needed for sync flow
 }
 
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     std::string wrapped_input;
     {
-        std::unique_lock<std::mutex> lock(m_impl->inference_mutex);
+        std::lock_guard<std::mutex> lock(m_impl->inference_mutex);
         if (m_impl->is_processing) return "Error: Engine Busy.";
-        
         m_impl->is_processing = true;
-        m_impl->last_result.clear();
         resetCancellation();
 
         PromptFactory::BackendType type = PromptFactory::BackendType::LOCAL_GEMMA_4;
@@ -85,23 +74,21 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
         wrapped_input = PromptFactory::wrap(input, type);
     }
 
-    // Trigger Kotlin Inference
-    LOGI(TAG, "Requesting Neural Reasoning via JNI Bridge...");
-    Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
+    // Phase 11.0: Strictly Synchronous JNI Bridge (Freeze Prevention)
+    LOGI(TAG, "Requesting Neural Reasoning via Sync JNI Bridge...");
+    std::string result = Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
 
-    // Wait for the result (SHM-Free)
-    std::unique_lock<std::mutex> wait_lock(m_impl->inference_mutex);
-    m_impl->cv.wait_for(wait_lock, std::chrono::seconds(60), [this]{ 
-        return !m_impl->is_processing || isCancelled(); 
-    });
+    {
+        std::lock_guard<std::mutex> lock(m_impl->inference_mutex);
+        m_impl->is_processing = false;
+    }
 
     if (isCancelled()) {
         LOGW(TAG, "Inference cancelled by hardware guard-rail.");
-        m_impl->is_processing = false;
         return "";
     }
 
-    return m_impl->last_result;
+    return result;
 }
 
 std::string InferenceEngine::escalateToCloud(const std::string& input, const std::string& apiKey, const std::string& provider) {

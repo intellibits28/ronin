@@ -104,12 +104,6 @@ public:
     void resetCancellation();
     bool isCancelled() const;
 
-    /**
-     * Phase 11.0: SHM-Free communication
-     * Provides the final reasoned result back to the kernel.
-     */
-    void provideInferenceResult(const std::string& result);
-
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

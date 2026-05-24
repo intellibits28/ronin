@@ -125,7 +125,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
 }
 
 void native_setEngineInstance(JNIEnv *env, jobject thiz) {
-    Ronin::Kernel::Capability::HardwareBridge::initialize(g_vm, env->NewGlobalRef(thiz));
+    HardwareBridge::initialize(g_vm, env->NewGlobalRef(thiz));
 }
 
 void native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
@@ -168,13 +168,6 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input) {
     return ConvertStringToJString(env, g_last_skill_output);
 }
 
-void native_provideInferenceResult(JNIEnv *env, jobject thiz, jstring result) {
-    std::string res = ConvertJStringToString(env, result);
-    if (g_llm_context.engine) {
-        g_llm_context.engine->provideInferenceResult(res);
-    }
-}
-
 jboolean native_isLoaded(JNIEnv *env, jobject thiz) { return g_llm_context.initialized ? JNI_TRUE : JNI_FALSE; }
 
 void native_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
@@ -183,7 +176,7 @@ void native_notifyTrimMemory(JNIEnv *env, jobject thiz, jint level) {
 }
 
 jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
-    return JNI_TRUE; // Simplified for Single Model Hardening
+    return JNI_TRUE; 
 }
 
 void native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {
@@ -200,7 +193,7 @@ jstring native_getActiveModelPath(JNIEnv *env, jobject thiz) {
 void native_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) { if (g_kernel) g_kernel->injectLocation(lat, lon); }
 
 jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
-    Ronin::Kernel::Capability::HardwareBridge::reportSystemHealth(temp, used, total);
+    HardwareBridge::reportSystemHealth(temp, used, total);
     return JNI_TRUE;
 }
 
@@ -261,7 +254,6 @@ static JNINativeMethod g_methods[] = {
     {"checkFileAccessNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_checkFileAccess},
     {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB},
     {"processInputNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
-    {"provideInferenceResultNative", "(Ljava/lang/String;)V", (void*)native_provideInferenceResult},
     {"isLoadedNative", "()Z", (void*)native_isLoaded},
     {"notifyTrimMemoryNative", "(I)V", (void*)native_notifyTrimMemory},
     {"getActiveModelPathNative", "()Ljava/lang/String;", (void*)native_getActiveModelPath},

@@ -144,7 +144,6 @@ class MainActivity : ComponentActivity() {
         
         val uniquePaths = modelFiles.map { it.canonicalPath }.distinct().sorted()
         
-        // Use a temp list to avoid re-composition loops
         if (chatViewModel.discoveredModels.toList() != uniquePaths) {
             chatViewModel.discoveredModels.clear()
             chatViewModel.discoveredModels.addAll(uniquePaths)
@@ -315,13 +314,13 @@ class MainActivity : ComponentActivity() {
 
     private fun setupHardwareCallbacks() {
         val vm = ViewModelProvider(this)[ChatViewModel::class.java]
-        nativeEngine.getSecureApiKey = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
-        nativeEngine.onRequestHardwareData = { nodeId -> "Hardware Node $nodeId Not Implemented" }
-        nativeEngine.executeHardwareAction = { nodeId, state -> false }
-        nativeEngine.onSystemTiersUpdate = { temp, used, total ->
+        nativeEngine.getSecureApiKeyProvider = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
+        nativeEngine.onRequestHardwareDataCallback = { nodeId -> "Hardware Node $nodeId Not Implemented" }
+        nativeEngine.executeHardwareActionCallback = { nodeId, state -> false }
+        nativeEngine.onSystemTiersUpdateCallback = { temp, used, total ->
             vm.temperature = temp; vm.ramUsedGB = used; vm.ramTotalGB = total
         }
-        nativeEngine.onKernelMessage = { msg -> vm.reasoningLogs.add(0, msg) }
+        nativeEngine.onKernelMessageCallback = { msg -> vm.reasoningLogs.add(0, msg) }
     }
 
     override fun onResume() { super.onResume(); scanLocalModels() }
@@ -418,7 +417,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             scope.launch { 
                                                 if (!chatViewModel.isGemmaReady) {
                                                     chatViewModel.reasoningLogs.add("> [SYSTEM] Local Brain missing. Escalating to Cloud Fallback.")
-                                                    val apiKey = engine.getSecureApiKey?.invoke(chatViewModel.primaryCloudProvider) ?: ""
+                                                    val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
                                                     val res = engine.performCloudInference(rawInput, chatViewModel.primaryCloudProvider, apiKey)
                                                     chatViewModel.messages.add("Ronin: $res")
                                                 } else {

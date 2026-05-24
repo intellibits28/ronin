@@ -19,6 +19,7 @@ import java.io.File
 /**
  * Native Engine (Single Model Hardening - v4.7)
  * Fixed JNI Callback Methods and Cloud Fallback.
+ * Renamed callback properties to avoid JNI naming conflicts.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
@@ -175,27 +176,27 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Suppress("unused")
     fun pushKernelMessage(message: String) {
-        onKernelMessage?.invoke(message)
+        onKernelMessageCallback?.invoke(message)
     }
 
     @Suppress("unused")
     fun getSecureApiKey(provider: String): String {
-        return getSecureApiKey?.invoke(provider) ?: ""
+        return getSecureApiKeyProvider?.invoke(provider) ?: ""
     }
 
     @Suppress("unused")
     fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
-        return executeHardwareAction?.invoke(nodeId, state) ?: true
+        return executeHardwareActionCallback?.invoke(nodeId, state) ?: true
     }
 
     @Suppress("unused")
     fun requestHardwareData(nodeId: Int): String {
-        return onRequestHardwareData?.invoke(nodeId) ?: "Error"
+        return onRequestHardwareDataCallback?.invoke(nodeId) ?: "Error"
     }
 
     @Suppress("unused")
     fun updateSystemTiers(temp: Float, used: Float, total: Float) {
-        onSystemTiersUpdate?.invoke(temp, used, total)
+        onSystemTiersUpdateCallback?.invoke(temp, used, total)
     }
 
     @Suppress("unused")
@@ -204,7 +205,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     private fun executeSingleInference(input: String, provider: String, passedApiKey: String): String {
-        val apiKey = if (passedApiKey.isNotEmpty()) passedApiKey else (getSecureApiKey?.invoke(provider)?.trim() ?: "")
+        val apiKey = if (passedApiKey.isNotEmpty()) passedApiKey else (getSecureApiKeyProvider?.invoke(provider)?.trim() ?: "")
         if (apiKey.isEmpty()) return "Error: API Key missing."
 
         // Lookup endpoint from providers.json
@@ -287,11 +288,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     override fun onLowMemory() {}
     
     // Callback Handlers (Kotlin-side access)
-    var onKernelMessage: ((String) -> Unit)? = null
-    var getSecureApiKey: ((String) -> String)? = null
-    var onRequestHardwareData: ((Int) -> String)? = null
-    var executeHardwareAction: ((Int, Boolean) -> Boolean)? = null
-    var onSystemTiersUpdate: ((Float, Float, Float) -> Unit)? = null
+    var onKernelMessageCallback: ((String) -> Unit)? = null
+    var getSecureApiKeyProvider: ((String) -> String)? = null
+    var onRequestHardwareDataCallback: ((Int) -> String)? = null
+    var executeHardwareActionCallback: ((Int, Boolean) -> Boolean)? = null
+    var onSystemTiersUpdateCallback: ((Float, Float, Float) -> Unit)? = null
 
     fun setOfflineModeSafe(offline: Boolean) {
         if (isLibLoaded) try { setOfflineModeNative(offline) } catch (e: Exception) {}
