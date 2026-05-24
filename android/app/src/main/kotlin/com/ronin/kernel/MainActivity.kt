@@ -18,6 +18,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
@@ -69,7 +70,7 @@ class ChatViewModel : ViewModel() {
     val messages = mutableStateListOf<String>()
     val reasoningLogs = mutableStateListOf<String>()
     var showSysInfo by mutableStateOf(false)
-    var showReasoning by mutableStateOf(false) // Toggle for waste space fix
+    var showReasoning by mutableStateOf(false)
     var lmkPressure by mutableStateOf(0)
     
     var wizardState by mutableStateOf(WizardState.MISSING_CORE)
@@ -112,11 +113,18 @@ class MainActivity : ComponentActivity() {
             chatViewModel.wizardState = WizardState.IMPORTING
             val success = withContext(Dispatchers.IO) {
                 try {
+                    // Phase 11.0: Real Filename Resolution to prevent redundant copies
+                    val returnCursor = contentResolver.query(uri, null, null, null, null)
+                    val nameIndex = returnCursor?.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    returnCursor?.moveToFirst()
+                    val fileName = nameIndex?.let { returnCursor.getString(it) } ?: "imported_model.litertlm"
+                    returnCursor?.close()
+
                     val inputStream = contentResolver.openInputStream(uri)
-                    val modelsDir = java.io.File(filesDir, "models")
+                    val modelsDir = File(filesDir, "models")
                     if (!modelsDir.exists()) modelsDir.mkdirs()
-                    val fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "imported_model.bin"
-                    val targetFile = java.io.File(modelsDir, fileName)
+                    
+                    val targetFile = File(modelsDir, fileName)
                     inputStream?.use { input -> 
                         java.io.FileOutputStream(targetFile).use { output -> 
                             input.copyTo(output, bufferSize = 1024 * 1024) 
@@ -138,15 +146,18 @@ class MainActivity : ComponentActivity() {
 
     fun scanLocalModels() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        val modelsDir = java.io.File(filesDir, "models")
+        val modelsDir = File(filesDir, "models")
         if (!modelsDir.exists()) modelsDir.mkdirs()
 
+        // Clean scan specifically for model files
         val modelFiles = modelsDir.listFiles { file -> 
-            !file.isDirectory && file.length() > 1024 
+            !file.isDirectory && file.length() > 1024 && 
+            (file.name.endsWith(".litertlm") || file.name.endsWith(".bin"))
         } ?: emptyArray()
         
-        val uniquePaths = modelFiles.map { it.canonicalPath }.distinct().sorted()
+        val uniquePaths = modelFiles.map { it.absolutePath }.distinct().sorted()
         
+        // Strict list sync to prevent duplicates in UI
         if (chatViewModel.discoveredModels.toList() != uniquePaths) {
             chatViewModel.discoveredModels.clear()
             chatViewModel.discoveredModels.addAll(uniquePaths)
@@ -182,7 +193,7 @@ class MainActivity : ComponentActivity() {
             scanLocalModels()
             
             val savedModelPath = sharedPreferences.getString("local_model_path", "")
-            if (!savedModelPath.isNullOrEmpty()) hydrateModel(savedModelPath)
+            if (!savedModelPath.isNullOrEmpty() && File(savedModelPath).exists()) hydrateModel(savedModelPath)
         }
 
         setContent {
@@ -202,10 +213,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun copyAssetsToFilesDir() {
-        val assetsDir = java.io.File(filesDir, "assets")
+        val assetsDir = File(filesDir, "assets")
         if (!assetsDir.exists()) assetsDir.mkdirs()
         try {
-            val capFile = java.io.File(assetsDir, "capabilities.json")
+            val capFile = File(assetsDir, "capabilities.json")
             if (!capFile.exists()) {
                 assets.open("capabilities.json").use { input ->
                     java.io.FileOutputStream(capFile).use { output -> input.copyTo(output) }
@@ -216,8 +227,8 @@ class MainActivity : ComponentActivity() {
 
     private fun loadCloudProvidersFromDisk() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        val configDir = java.io.File(filesDir, "config")
-        val providersFile = java.io.File(configDir, "providers.json")
+        val configDir = File(filesDir, "config")
+        val providersFile = File(configDir, "providers.json")
         if (providersFile.exists()) {
             try {
                 val array = JSONArray(providersFile.readText())
@@ -233,9 +244,9 @@ class MainActivity : ComponentActivity() {
 
     private fun saveCloudProvidersToDisk() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-        val configDir = java.io.File(filesDir, "config")
+        val configDir = File(filesDir, "config")
         if (!configDir.exists()) configDir.mkdirs()
-        val providersFile = java.io.File(configDir, "providers.json")
+        val providersFile = File(configDir, "providers.json")
         try {
             val array = JSONArray()
             chatViewModel.cloudProviders.forEach { p ->
@@ -264,7 +275,7 @@ class MainActivity : ComponentActivity() {
     }
 
     fun deleteLocalModel(path: String) {
-        val file = java.io.File(path)
+        val file = File(path)
         if (file.exists() && file.delete()) {
             Toast.makeText(this, "Model deleted.", Toast.LENGTH_SHORT).show()
             scanLocalModels()
@@ -272,11 +283,13 @@ class MainActivity : ComponentActivity() {
     }
 
     fun clearModelCache() {
-        val cacheDir = java.io.File(filesDir, "models/compiled_cache")
+        val cacheDir = File(filesDir, "models/compiled_cache")
         if (cacheDir.exists()) {
             cacheDir.deleteRecursively()
-            Toast.makeText(this, "Compilation cache cleared.", Toast.LENGTH_SHORT).show()
         }
+        // Also clear system cache
+        codeCacheDir.deleteRecursively()
+        Toast.makeText(this, "System & Model cache cleared.", Toast.LENGTH_SHORT).show()
     }
 
     fun savePrimaryCloudProvider(name: String) {
@@ -507,7 +520,7 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, brainPicker: ActivityResultLau
         Spacer(Modifier.height(24.dp))
         Text("Ronin Kernel: Setup Mode", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Spacer(Modifier.height(16.dp))
-        Text("Single Gemma 4 Architecture: Import a '.litertlm' or '.bin' model to activate reasoning.", fontSize = 14.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
+        Text("The Reasoning Spine (Gemma 4) is required. Please import a '.litertlm' or '.bin' model.", fontSize = 14.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
         Spacer(Modifier.height(32.dp))
         
         when (chatViewModel.wizardState) {
@@ -539,7 +552,7 @@ fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: ActivityResultLaun
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             Text("Reasoning Brains (Internal)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             chatViewModel.discoveredModels.forEach { path ->
-                val file = java.io.File(path)
+                val file = File(path)
                 val isActive = path == chatViewModel.localModelPath
                 Row(verticalAlignment = Alignment.CenterVertically) { 
                     RadioButton(selected = isActive, onClick = { onSelectModel(path) })

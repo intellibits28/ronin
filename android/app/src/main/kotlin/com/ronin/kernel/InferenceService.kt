@@ -104,6 +104,7 @@ class InferenceService : Service() {
 
         override fun notifyTrimMemory(level: Int) {
             Log.i(TAG, "Memory trim: $level")
+            if (level >= 80) resetConversation() 
         }
 
         override fun setSafeMode(enabled: Boolean) {}
@@ -116,7 +117,9 @@ class InferenceService : Service() {
             try {
                 litertConversation?.close()
                 litertConversation = litertEngine?.createConversation()
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to reset conversation: ${e.message}")
+            }
         }
     }
 
@@ -128,43 +131,57 @@ class InferenceService : Service() {
         val modelFile = File(path)
         if (!modelFile.exists()) return false
         
-        val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
-        // Harder check for Gemma 4
-        if (freeRam < 1.2f) return false
+        // Critical: Release previous model resources before loading new one to prevent RAM Status 13
+        releaseResources()
 
-        // Phase 11.0: Explicit Cache Path to control storage size
-        val cacheDir = File(filesDir, "models/compiled_cache")
-        if (!cacheDir.exists()) cacheDir.mkdirs()
-        
+        val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
+        if (freeRam < 1.0f) {
+            Log.w(TAG, "Insufficient RAM for hydration: $freeRam GB")
+            return false
+        }
+
         val isLegacy = path.endsWith(".bin")
         return try {
             if (isLegacy) {
                 hydrateLegacy(path)
             } else {
-                hydrateLiteRT(path, cacheDir.absolutePath)
+                hydrateLiteRT(path)
             }
         } catch (e: Throwable) {
+            Log.e(TAG, "Hydration failed: ${e.message}")
             false
+        }
+    }
+
+    private fun releaseResources() {
+        try {
+            litertConversation?.close()
+            litertConversation = null
+            litertEngine?.close()
+            litertEngine = null
+            legacyInference?.close()
+            legacyInference = null
+            Log.i(TAG, "Released previous engine resources.")
+        } catch (e: Exception) {
+            Log.w(TAG, "Error during resource release: ${e.message}")
         }
     }
 
     private fun hydrateLegacy(path: String): Boolean {
         val options = LlmInference.LlmInferenceOptions.builder()
             .setModelPath(path)
-            .setMaxTokens(512) // Lower limit for stability
+            .setMaxTokens(1024)
             .build()
         legacyInference = LlmInference.createFromOptions(this, options)
         currentModelPath = path
         return true
     }
 
-    private fun hydrateLiteRT(path: String, cachePath: String): Boolean {
-        // Use limited context for SD778G+ to prevent Status 13
+    private fun hydrateLiteRT(path: String): Boolean {
         val config = EngineConfig(
             modelPath = path, 
-            maxNumTokens = 512 
+            maxNumTokens = 1024 
         )
-        // Note: SDK version may vary. Some use internal cache.
         val engine = Engine(config)
         engine.initialize()
         litertEngine = engine
@@ -179,14 +196,19 @@ class InferenceService : Service() {
 
         if (litert == null && legacy == null) return@runBlocking "Error: Spine not hydrated."
 
-        // Clean input for LiteRT-LM (it expects clean system/user parts)
-        val actualInput = if (input.contains("[USER]")) input.substringAfter("[USER]").trim() else input
+        // Phase 11.0 Hardening: Remove ALL manual markers. 
+        // SDK logic will apply its own template based on model metadata.
+        val cleanInput = input
+            .replace("[SYSTEM]", "")
+            .replace("[USER]", "")
+            .trim()
         
         try {
             if (litert != null) {
-                val userMsg = Message.user(actualInput)
+                val userMsg = Message.user(cleanInput)
                 val fullResult = StringBuilder()
                 litert.sendMessageAsync(userMsg).collect { partial ->
+                    // Handle SDK partial response variation
                     val token = try { 
                         partial.javaClass.getMethod("getText").invoke(partial) as String 
                     } catch(e: Exception) { partial.toString() }
@@ -194,18 +216,17 @@ class InferenceService : Service() {
                 }
                 fullResult.toString()
             } else {
-                legacy?.generateResponse(actualInput) ?: "Error: Legacy failure."
+                legacy?.generateResponse(cleanInput) ?: "Error: Legacy failure."
             }
         } catch (e: Exception) {
+            Log.e(TAG, "Inference Exception: ${e.message}")
             "Error: ${e.message}"
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        litertConversation = null
-        litertEngine = null
-        legacyInference?.close()
+        releaseResources()
         try { shutdownKernelNative() } catch (e: Exception) {}
     }
 }
