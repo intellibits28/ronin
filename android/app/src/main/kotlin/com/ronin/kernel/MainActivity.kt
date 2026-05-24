@@ -493,7 +493,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                     chatViewModel.messages.add("Ronin: $res")
                                                 } else {
                                                     val res = engine.processInputAsync(rawInput)
-                                                    chatViewModel.messages.add("Ronin: $res")
+                                                    
+                                                    // Phase 11.0: Post-Inference Log Routing
+                                                    if (res.contains("[THINK]")) {
+                                                        val thought = res.substringAfter("[THINK]").substringBefore("[/THINK]").trim()
+                                                        val reply = res.substringAfter("[/THINK]").trim()
+                                                        
+                                                        if (thought.isNotEmpty()) {
+                                                            chatViewModel.reasoningLogs.add(0, "--- Thought Process ---\n$thought")
+                                                            chatViewModel.showReasoning = true
+                                                        }
+                                                        chatViewModel.messages.add("Ronin: $reply")
+                                                    } else {
+                                                        chatViewModel.messages.add("Ronin: $res")
+                                                    }
                                                 }
                                                 chatViewModel.isGenerating = false
                                             } 

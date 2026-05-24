@@ -15,12 +15,12 @@ public:
 
     static std::string wrap(const std::string& input, BackendType type) {
         if (type == BackendType::LOCAL_GEMMA_4) {
-            // Phase 11.0: Tagless Wrapping for High-level SDK
-            // The LiteRT-LM SDK handles <|start_header_id|> etc. automatically.
+            // Phase 11.0: Tagless Wrapping with Language Constraint
             std::string instructions = 
                 "You are Ronin, a sovereign AI kernel. Access tools via 'CALL: tool_name(\"args\")'.\n"
                 "TOOLS: search_memory(query), archive_memory(text).\n"
-                "Always reason in [THINK] tags first.";
+                "Always reason in [THINK] tags first.\n"
+                "IMPORTANT: If the user speaks Myanmar, you MUST respond in Myanmar language.";
 
             return "[SYSTEM] " + instructions + "\n[USER] " + input;
         }
