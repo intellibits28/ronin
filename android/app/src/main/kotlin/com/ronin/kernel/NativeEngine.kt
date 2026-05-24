@@ -12,15 +12,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Native Engine (Phase 11.0: Real-time Streaming IPC)
- * Zero-SHM, AIDL-based streaming for production reliability.
+ * Zero-SHM, AIDL-based streaming.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
@@ -61,7 +64,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    // --- JNI API ---
+    // --- JNI API (Aligned with g_methods in ronin_jni.cpp) ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun setEngineInstanceNative()
     private external fun getChatHistoryNative(limit: Int, offset: Int): Array<String>
@@ -72,6 +75,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun checkFileAccessNative(path: String): String
     private external fun getFreeRamGBNative(): Float
     private external fun processInputNative(input: String): String
+    private external fun onTokenGeneratedNative(fragment: String, isFinal: Boolean)
     private external fun isLoadedNative(): Boolean
     private external fun notifyTrimMemoryNative(level: Int)
     private external fun getActiveModelPathNative(): String
@@ -87,7 +91,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun nativeResetContext()
     private external fun requestCancellationNative()
 
-    // Internal JNI helper to receive tokens from C++ and emit to UI
+    /**
+     * Internal JNI helper called from JNI to emit tokens to UI flow.
+     */
     @Suppress("unused")
     fun pushTokenToUI(fragment: String, isFinal: Boolean) {
         scope.launch { _inferenceFlow.emit(InferencePacket(0, fragment, isFinal)) }
@@ -152,28 +158,38 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     /**
-     * Triggered by C++ for real-time streaming reasoning.
+     * Triggered by C++ HardwareBridge.
+     * Blocks for full string while streaming fragments to UI.
      */
     @Suppress("unused")
-    fun runNeuralReasoning(input: String): String {
-        Log.d(TAG, "Native Trigger: Initiating Async Streaming Reasoning...")
+    fun runNeuralReasoning(input: String): String = runBlocking(Dispatchers.IO) {
+        Log.d(TAG, "Native Trigger: Initiating Sync Streaming Reasoning...")
+        val fullResult = StringBuilder()
+        val latch = CountDownLatch(1)
         
-        scope.launch {
-            try {
-                inferenceService?.streamReasoning(input, object : IInferenceCallback.Stub() {
-                    override fun onToken(fragment: String, isFinal: Boolean) {
-                        // Push token back to C++ so it can be handled or forwarded
-                        pushTokenToUI(fragment, isFinal)
+        try {
+            inferenceService?.streamReasoning(input, object : IInferenceCallback.Stub() {
+                override fun onToken(fragment: String, isFinal: Boolean) {
+                    if (isFinal) {
+                        latch.countDown()
+                    } else {
+                        fullResult.append(fragment)
+                        // Stream to UI Flow
+                        pushTokenToUI(fragment, false)
                     }
-                    override fun onError(message: String) {
-                        pushTokenToUI("Error: $message", true)
-                    }
-                })
-            } catch (e: Exception) {
-                pushTokenToUI("Error: IPC Failed", true)
-            }
+                }
+                override fun onError(message: String) {
+                    fullResult.append("Error: $message")
+                    latch.countDown()
+                }
+            })
+        } catch (e: Exception) {
+            return@runBlocking "Error: IPC Failed"
         }
-        return "Reasoning Started" // C++ expects immediate ACK
+        
+        latch.await(60, TimeUnit.SECONDS)
+        pushTokenToUI("", true) // Signal completion to UI
+        fullResult.toString()
     }
 
     fun getLMKPressureSafe(): Int {
@@ -193,7 +209,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Suppress("unused")
     fun performCloudInference(input: String, provider: String, apiKey: String): String {
-        return "Cloud fallback pending refactor."
+        return "Cloud fallback pending."
     }
 
     @Suppress("unused")
