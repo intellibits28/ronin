@@ -17,9 +17,8 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Native Engine (Single Model Hardening)
- * Pure synchronous communication for tool-calling reliability.
- * Cloud Fallback enabled.
+ * Native Engine (Single Model Hardening - v4.7)
+ * Fixed JNI Callback Methods and Cloud Fallback.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
@@ -56,7 +55,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 isLibLoaded = true
                 Log.i(TAG, "Native library loaded.")
             } catch (e: Exception) {
-                Log.e(TAG, "Native load failed.")
+                Log.e(TAG, "Native load failed: ${e.message}")
             }
         }
     }
@@ -72,7 +71,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun checkFileAccessNative(path: String): String
     private external fun getFreeRamGBNative(): Float
     private external fun processInputNative(input: String): String
-    private external fun provideInferenceResultNative(result: String)
     private external fun isLoadedNative(): Boolean
     private external fun notifyTrimMemoryNative(level: Int)
     private external fun getActiveModelPathNative(): String
@@ -97,7 +95,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 setEngineInstanceNative()
                 val libDir = context.applicationInfo.nativeLibraryDir
                 initializeKernelNative(context.filesDir.absolutePath, libDir, false)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.e(TAG, "initializeKernel failed: ${e.message}")
+            }
         }
         bindInferenceService()
     }
@@ -162,6 +162,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
+    // --- JNI Callbacks (Proper Methods for JNI to find) ---
+
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String {
         return try {
@@ -171,18 +173,24 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    fun getLMKPressureSafe(): Int {
-        if (isLibLoaded) {
-            try { return getLMKPressureNative() } catch (e: Exception) {}
-        }
-        return 0
+    @Suppress("unused")
+    fun pushKernelMessage(message: String) {
+        onKernelMessage?.invoke(message)
     }
 
-    fun updateSystemHealthSafe(temp: Float, used: Float, total: Float): Boolean {
-        if (isLibLoaded) {
-            try { return updateSystemHealthNative(temp, used, total) } catch (e: Exception) {}
-        }
-        return false
+    @Suppress("unused")
+    fun getSecureApiKey(provider: String): String {
+        return getSecureApiKey?.invoke(provider) ?: ""
+    }
+
+    @Suppress("unused")
+    fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
+        return executeHardwareAction?.invoke(nodeId, state) ?: true
+    }
+
+    @Suppress("unused")
+    fun requestHardwareData(nodeId: Int): String {
+        return onRequestHardwareData?.invoke(nodeId) ?: "Error"
     }
 
     @Suppress("unused")
@@ -191,8 +199,16 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     @Suppress("unused")
-    fun performCloudInference(input: String, primaryProvider: String, passedApiKey: String): String {
-        var finalEndpoint = ""
+    fun performCloudInference(input: String, provider: String, apiKey: String): String {
+        return executeSingleInference(input, provider, apiKey)
+    }
+
+    private fun executeSingleInference(input: String, provider: String, passedApiKey: String): String {
+        val apiKey = if (passedApiKey.isNotEmpty()) passedApiKey else (getSecureApiKey?.invoke(provider)?.trim() ?: "")
+        if (apiKey.isEmpty()) return "Error: API Key missing."
+
+        // Lookup endpoint from providers.json
+        var endpoint = ""
         var modelId = ""
         try {
             val configDir = File(context.filesDir, "config")
@@ -201,23 +217,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 val providersJson = JSONArray(providersFile.readText())
                 for (i in 0 until providersJson.length()) {
                     val p = providersJson.getJSONObject(i)
-                    if (p.getString("name") == primaryProvider) {
-                        finalEndpoint = p.getString("endpoint")
+                    if (p.getString("name") == provider) {
+                        endpoint = p.getString("endpoint")
                         modelId = p.optString("modelId", "")
                         break
                     }
                 }
             }
         } catch (e: Exception) {}
-        
-        if (finalEndpoint.isEmpty()) return "Error: Cloud endpoint missing for $primaryProvider."
-        
-        return executeSingleInference(input, primaryProvider, finalEndpoint, modelId, passedApiKey)
-    }
 
-    private fun executeSingleInference(input: String, provider: String, endpoint: String, modelId: String, passedApiKey: String): String {
-        val apiKey = if (passedApiKey.isNotEmpty()) passedApiKey else (getSecureApiKey?.invoke(provider)?.trim() ?: "")
-        if (apiKey.isEmpty()) return "Error: API Key missing."
+        if (endpoint.isEmpty()) return "Error: Endpoint missing for $provider."
+
         val isGemini = endpoint.contains("generativelanguage.googleapis.com")
         var finalUrl = if (isGemini && !endpoint.contains("?key=")) "$endpoint?key=$apiKey" else endpoint
 
@@ -252,6 +262,22 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
+    // --- Helper Methods ---
+
+    fun getLMKPressureSafe(): Int {
+        if (isLibLoaded) {
+            try { return getLMKPressureNative() } catch (e: Exception) {}
+        }
+        return 0
+    }
+
+    fun updateSystemHealthSafe(temp: Float, used: Float, total: Float): Boolean {
+        if (isLibLoaded) {
+            try { return updateSystemHealthNative(temp, used, total) } catch (e: Exception) {}
+        }
+        return false
+    }
+
     override fun onTrimMemory(level: Int) {
         if (isLibLoaded) {
             try { notifyTrimMemoryNative(level) } catch (e: Exception) {}
@@ -260,7 +286,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     override fun onConfigurationChanged(newConfig: Configuration) {}
     override fun onLowMemory() {}
     
-    // Callbacks
+    // Callback Handlers (Kotlin-side access)
     var onKernelMessage: ((String) -> Unit)? = null
     var getSecureApiKey: ((String) -> String)? = null
     var onRequestHardwareData: ((Int) -> String)? = null

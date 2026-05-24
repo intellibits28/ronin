@@ -143,12 +143,15 @@ class MainActivity : ComponentActivity() {
         } ?: emptyArray()
         
         val uniquePaths = modelFiles.map { it.canonicalPath }.distinct().sorted()
-        chatViewModel.wizardState = if (uniquePaths.isNotEmpty()) WizardState.ACTIVE else WizardState.MISSING_CORE
-
+        
+        // Use a temp list to avoid re-composition loops
         if (chatViewModel.discoveredModels.toList() != uniquePaths) {
             chatViewModel.discoveredModels.clear()
             chatViewModel.discoveredModels.addAll(uniquePaths)
+            Log.d("Ronin_UI", "Models synced: ${uniquePaths.size}")
         }
+        
+        chatViewModel.wizardState = if (uniquePaths.isNotEmpty()) WizardState.ACTIVE else WizardState.MISSING_CORE
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -246,10 +249,15 @@ class MainActivity : ComponentActivity() {
     fun hydrateModel(path: String) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
+            chatViewModel.kernelStatus = "Hydrating Brain..."
             if (nativeEngine.loadModel(path)) {
                 chatViewModel.isGemmaReady = true
                 sharedPreferences.edit().putString("local_model_path", path).apply()
                 chatViewModel.localModelPath = path
+                chatViewModel.kernelStatus = "Kernel Ready"
+            } else {
+                Toast.makeText(this@MainActivity, "Hydration Failed", Toast.LENGTH_SHORT).show()
+                chatViewModel.kernelStatus = "Bridge Active"
             }
         }
     }
@@ -308,7 +316,7 @@ class MainActivity : ComponentActivity() {
     private fun setupHardwareCallbacks() {
         val vm = ViewModelProvider(this)[ChatViewModel::class.java]
         nativeEngine.getSecureApiKey = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
-        nativeEngine.onRequestHardwareData = { nodeId -> "Data for node $nodeId" }
+        nativeEngine.onRequestHardwareData = { nodeId -> "Hardware Node $nodeId Not Implemented" }
         nativeEngine.executeHardwareAction = { nodeId, state -> false }
         nativeEngine.onSystemTiersUpdate = { temp, used, total ->
             vm.temperature = temp; vm.ramUsedGB = used; vm.ramTotalGB = total
@@ -330,8 +338,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             while (true) {
                 try {
                     am.getMemoryInfo(mi)
-                    val used = (mi.totalMem - mi.availMem) / 1073741824f
-                    withContext(Dispatchers.Main) { chatViewModel.ramUsedGB = used }
+                    val total = mi.totalMem / 1073741824f; val avail = mi.availMem / 1073741824f; val used = total - avail
+                    withContext(Dispatchers.Main) { 
+                        chatViewModel.ramUsedGB = used
+                        chatViewModel.ramTotalGB = total
+                        chatViewModel.lmkPressure = engine.getLMKPressureSafe()
+                    }
+                    engine.updateSystemHealthSafe(35f, used, total)
                 } catch (e: Exception) {}
                 delay(5000)
             }
@@ -359,17 +372,39 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 BootstrapWizard(chatViewModel, brainPicker)
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
+                    if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
+
                     Box(modifier = Modifier.weight(0.3f).fillMaxWidth().background(Color.Black.copy(alpha = 0.3f)).padding(8.dp)) {
                         LazyColumn(modifier = Modifier.fillMaxSize()) { items(chatViewModel.reasoningLogs) { Text(it, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace) } }
                     }
+
                     Box(modifier = Modifier.weight(0.7f).fillMaxWidth()) { 
                         LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } 
+
+                        if (chatViewModel.showCommandSuggestions) {
+                            val suggestions = listOf("/status", "/skills", "/model", "/reset", "/more").filter { it.startsWith(currentInput.lowercase()) }
+                            if (suggestions.isNotEmpty()) {
+                                Surface(color = Color(0xFF25283D).copy(alpha = 0.95f), modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, end = 16.dp, bottom = 8.dp).fillMaxWidth(0.8f).clip(RoundedCornerShape(12.dp)), elevation = 8.dp) {
+                                    LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                                        items(suggestions) { s -> 
+                                            TextButton(onClick = { currentInput = "$s "; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { 
+                                                Text(s, color = Color.White, fontSize = 14.sp) 
+                                            } 
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
+
                     Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
                         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             TextField(
                                 value = currentInput, 
-                                onValueChange = { currentInput = it }, 
+                                onValueChange = { 
+                                    currentInput = it
+                                    chatViewModel.showCommandSuggestions = it.startsWith("/")
+                                }, 
                                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), 
                                 colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), 
                                 trailingIcon = { 
@@ -379,6 +414,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             chatViewModel.messages.add("User: $rawInput")
                                             currentInput = ""
                                             chatViewModel.isGenerating = true
+                                            
                                             scope.launch { 
                                                 if (!chatViewModel.isGemmaReady) {
                                                     chatViewModel.reasoningLogs.add("> [SYSTEM] Local Brain missing. Escalating to Cloud Fallback.")
@@ -392,7 +428,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 chatViewModel.isGenerating = false
                                             } 
                                         } 
-                                    }) { Icon(Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } 
+                                    }) { Icon(if (chatViewModel.isGenerating) Icons.Default.HourglassEmpty else Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } 
                                 }
                             )
                         }
@@ -411,8 +447,9 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, brainPicker: ActivityResultLau
         Spacer(Modifier.height(24.dp))
         Text("Ronin Kernel: Setup Mode", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Spacer(Modifier.height(16.dp))
-        Text("The Reasoning Spine (Gemma 4) is required. Please import a '.litertlm' or '.bin' model.", fontSize = 14.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
+        Text("Single Gemma 4 Architecture: Import a '.litertlm' or '.bin' model to activate reasoning.", fontSize = 14.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
         Spacer(Modifier.height(32.dp))
+        
         when (chatViewModel.wizardState) {
             WizardState.IMPORTING -> CircularProgressIndicator(color = Color(0xFF64B5F6))
             WizardState.VERIFYING -> CircularProgressIndicator(color = Color.Green)
@@ -442,9 +479,11 @@ fun SettingsDialog(chatViewModel: ChatViewModel, brainPicker: ActivityResultLaun
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             Text("Reasoning Brains (Internal)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             chatViewModel.discoveredModels.forEach { path ->
+                val file = java.io.File(path)
+                val isActive = path == chatViewModel.localModelPath
                 Row(verticalAlignment = Alignment.CenterVertically) { 
-                    RadioButton(selected = path == chatViewModel.localModelPath, onClick = { onSelectModel(path) }); 
-                    Text(java.io.File(path).name, modifier = Modifier.weight(1f), color = Color.White)
+                    RadioButton(selected = isActive, onClick = { onSelectModel(path) })
+                    Text(file.name, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White)
                     IconButton(onClick = { onDeleteModel(path) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray) }
                 }
             }
@@ -519,6 +558,17 @@ fun AddCloudProviderDialog(onDismiss: () -> Unit, onAdd: (String, String, String
         if (name.isNotBlank() && selectedModelId.isNotBlank() && apiKey.isNotBlank()) onAdd(name, selectedTemplate, endpoint, selectedModelId, apiKey)
     }) { Text("SAVE") } })
 }
+
+@Composable
+fun SystemInfoPanel(chatViewModel: ChatViewModel) {
+    Surface(color = Color(0xFF161922), modifier = Modifier.fillMaxWidth().padding(16.dp)) { Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) { InfoItem("Thermal", "${chatViewModel.temperature} deg C", if (chatViewModel.temperature > 40) Color.Red else Color.Green); InfoItem("RAM", "${"%.2f".format(chatViewModel.ramUsedGB)}GB", Color.White); InfoItem("LMK", "${chatViewModel.lmkPressure}%", Color.Cyan) } }
+}
+
+@Composable
+fun InfoItem(l: String, v: String, c: Color) { Column { Text(l, fontSize = 10.sp, color = Color.Gray); Text(v, fontSize = 14.sp, color = c, fontWeight = FontWeight.Bold) } }
+
+@Composable
+fun Divider(color: Color = Color.Gray.copy(alpha = 0.2f), modifier: Modifier = Modifier) { androidx.compose.material.Divider(color = color, modifier = modifier) }
 
 fun Context.findActivity(): ComponentActivity? {
     var context = this
