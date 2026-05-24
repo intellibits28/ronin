@@ -125,7 +125,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring files_dir, jstri
 }
 
 void native_setEngineInstance(JNIEnv *env, jobject thiz) {
-    HardwareBridge::initialize(g_vm, env->NewGlobalRef(thiz));
+    Ronin::Kernel::Capability::HardwareBridge::initialize(g_vm, env->NewGlobalRef(thiz));
 }
 
 void native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
@@ -193,7 +193,7 @@ jstring native_getActiveModelPath(JNIEnv *env, jobject thiz) {
 void native_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) { if (g_kernel) g_kernel->injectLocation(lat, lon); }
 
 jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
-    HardwareBridge::reportSystemHealth(temp, used, total);
+    Ronin::Kernel::Capability::HardwareBridge::reportSystemHealth(temp, used, total);
     return JNI_TRUE;
 }
 
