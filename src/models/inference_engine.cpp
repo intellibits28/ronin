@@ -55,10 +55,6 @@ bool InferenceEngine::isCancelled() const {
     return m_cancel_flag.load(std::memory_order_acquire);
 }
 
-void InferenceEngine::provideInferenceResult(const std::string& result) {
-    // No longer needed for sync flow
-}
-
 std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
     std::string wrapped_input;
     {
