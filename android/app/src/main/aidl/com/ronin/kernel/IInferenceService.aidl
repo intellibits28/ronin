@@ -1,5 +1,7 @@
 package com.ronin.kernel;
 
+import com.ronin.kernel.IInferenceCallback;
+
 interface IInferenceService {
     /**
      * Hydrates the local reasoning spine with the specified model.
