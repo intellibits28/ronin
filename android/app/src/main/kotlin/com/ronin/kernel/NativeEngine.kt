@@ -154,6 +154,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
+    @Suppress("unused")
+    fun provideInferenceResultNative(result: String) {
+        // Method signature required by JNI registration table
+    }
+
     fun stopInference() {
         if (isLibLoaded) {
             try {
