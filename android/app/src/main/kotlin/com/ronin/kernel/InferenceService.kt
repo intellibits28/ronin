@@ -6,22 +6,21 @@ import android.content.Intent
 import android.os.IBinder
 import android.util.Log
 import com.google.ai.edge.litertlm.*
-import com.google.mediapipe.tasks.genai.llminference.*
 import kotlinx.coroutines.flow.*
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import java.io.File
 
+/**
+ * Phase 11.0: Unified LiteRT-LM Inference Service
+ * Pure LiteRT-LM Implementation (MediaPipe-Free).
+ * Optimized for Snapdragon 778G+ with explicit resource management.
+ */
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Native"
     private val CHANNEL_ID = "ronin_inference_channel"
@@ -29,11 +28,9 @@ class InferenceService : Service() {
 
     private var litertEngine: Engine? = null
     private var litertConversation: Conversation? = null
-    private var legacyInference: LlmInference? = null
     private var currentModelPath: String = ""
-    private var isLowPerformanceMode = false
 
-    // JNI Bridge for Worker Process
+    // JNI Bridge for Worker Process (Core logic linkage)
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun getFreeRamGBNative(): Float
     private external fun shutdownKernelNative()
@@ -61,17 +58,13 @@ class InferenceService : Service() {
             val libDir = applicationInfo.nativeLibraryDir
             initializeKernelNative(filesDir.absolutePath, libDir, true)
         } catch (e: Throwable) {
-            Log.e(TAG, "Worker JNI Initialization failed: ${e.message}")
+            Log.e(TAG, "Worker JNI Initialization failed.")
         }
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(
-                CHANNEL_ID,
-                "Ronin Inference Engine",
-                NotificationManager.IMPORTANCE_LOW
-            )
+            val serviceChannel = NotificationChannel(CHANNEL_ID, "Ronin Inference Engine", NotificationManager.IMPORTANCE_LOW)
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(serviceChannel)
         }
@@ -86,69 +79,55 @@ class InferenceService : Service() {
     }
 
     private val binder = object : IInferenceService.Stub() {
-        override fun loadModel(modelPath: String): Boolean {
-            return tryHydrate(modelPath)
-        }
-
-        override fun runReasoning(input: String): String {
-            return executeReasoningSync(input)
-        }
-
-        override fun isHydrated(): Boolean {
-            return litertEngine != null || legacyInference != null
-        }
-
-        override fun getActiveModelPath(): String {
-            return currentModelPath
-        }
-
+        override fun loadModel(modelPath: String): Boolean = tryHydrate(modelPath)
+        override fun runReasoning(input: String): String = executeReasoningSync(input)
+        override fun isHydrated(): Boolean = litertEngine != null
+        override fun getActiveModelPath(): String = currentModelPath
         override fun notifyTrimMemory(level: Int) {
-            Log.i(TAG, "Memory trim: $level")
             if (level >= 80) resetConversation() 
         }
-
         override fun setSafeMode(enabled: Boolean) {}
-
-        override fun isLowPerformanceMode(): Boolean {
-            return this@InferenceService.isLowPerformanceMode
-        }
-
+        override fun isLowPerformanceMode(): Boolean = false
         override fun resetConversation() {
             try {
                 litertConversation?.close()
                 litertConversation = litertEngine?.createConversation()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to reset conversation: ${e.message}")
-            }
+            } catch (e: Exception) {}
         }
     }
 
-    override fun onBind(intent: Intent?): IBinder {
-        return binder
-    }
+    override fun onBind(intent: Intent?): IBinder = binder
 
     private fun tryHydrate(path: String): Boolean {
         val modelFile = File(path)
         if (!modelFile.exists()) return false
         
-        // Critical: Release previous model resources before loading new one to prevent RAM Status 13
+        // Critical: Purge MediaPipe leftovers and clear RAM before new hydration
         releaseResources()
 
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
         if (freeRam < 1.0f) {
-            Log.w(TAG, "Insufficient RAM for hydration: $freeRam GB")
+            Log.w(TAG, "Insufficient RAM: $freeRam GB. Aborting hydration.")
             return false
         }
 
-        val isLegacy = path.endsWith(".bin")
         return try {
-            if (isLegacy) {
-                hydrateLegacy(path)
-            } else {
-                hydrateLiteRT(path)
-            }
+            // Unified LiteRT-LM Engine Configuration
+            val config = EngineConfig(
+                modelPath = path, 
+                maxNumTokens = 1024 
+            )
+            val engine = Engine(config)
+            engine.initialize()
+            
+            litertEngine = engine
+            litertConversation = engine.createConversation()
+            currentModelPath = path
+            
+            Log.i(TAG, "SUCCESS: Gemma 4 hydrated via Unified LiteRT-LM SDK.")
+            true
         } catch (e: Throwable) {
-            Log.e(TAG, "Hydration failed: ${e.message}")
+            Log.e(TAG, "LiteRT-LM Init Failed: ${e.message}")
             false
         }
     }
@@ -159,67 +138,36 @@ class InferenceService : Service() {
             litertConversation = null
             litertEngine?.close()
             litertEngine = null
-            legacyInference?.close()
-            legacyInference = null
-            Log.i(TAG, "Released previous engine resources.")
-        } catch (e: Exception) {
-            Log.w(TAG, "Error during resource release: ${e.message}")
-        }
-    }
-
-    private fun hydrateLegacy(path: String): Boolean {
-        val options = LlmInference.LlmInferenceOptions.builder()
-            .setModelPath(path)
-            .setMaxTokens(1024)
-            .build()
-        legacyInference = LlmInference.createFromOptions(this, options)
-        currentModelPath = path
-        return true
-    }
-
-    private fun hydrateLiteRT(path: String): Boolean {
-        val config = EngineConfig(
-            modelPath = path, 
-            maxNumTokens = 1024 
-        )
-        val engine = Engine(config)
-        engine.initialize()
-        litertEngine = engine
-        litertConversation = engine.createConversation()
-        currentModelPath = path
-        return true
+            Log.i(TAG, "Cleaned engine resources.")
+        } catch (e: Exception) {}
     }
 
     private fun executeReasoningSync(input: String): String = runBlocking(Dispatchers.IO) {
-        val litert = litertConversation
-        val legacy = legacyInference
+        val conversation = litertConversation ?: return@runBlocking "Error: Spine not hydrated."
 
-        if (litert == null && legacy == null) return@runBlocking "Error: Spine not hydrated."
-
-        // Phase 11.0 Hardening: Remove ALL manual markers. 
-        // SDK logic will apply its own template based on model metadata.
+        // Clean input for LiteRT-LM (Remove all manual P1/P2 tags)
         val cleanInput = input
             .replace("[SYSTEM]", "")
             .replace("[USER]", "")
             .trim()
         
         try {
-            if (litert != null) {
-                val userMsg = Message.user(cleanInput)
-                val fullResult = StringBuilder()
-                litert.sendMessageAsync(userMsg).collect { partial ->
-                    // Handle SDK partial response variation
-                    val token = try { 
-                        partial.javaClass.getMethod("getText").invoke(partial) as String 
-                    } catch(e: Exception) { partial.toString() }
-                    fullResult.append(token)
-                }
-                fullResult.toString()
-            } else {
-                legacy?.generateResponse(cleanInput) ?: "Error: Legacy failure."
+            val userMsg = Message.user(cleanInput)
+            val fullResult = StringBuilder()
+            
+            conversation.sendMessageAsync(userMsg).collect { partial ->
+                // Flexible token extraction to handle SDK variations
+                val token = try { 
+                    partial.javaClass.getMethod("getText").invoke(partial) as String 
+                } catch(e: Exception) { partial.toString() }
+                fullResult.append(token)
             }
+            
+            val finalResponse = fullResult.toString()
+            if (finalResponse.isEmpty()) "Error: Empty response from model." else finalResponse
+            
         } catch (e: Exception) {
-            Log.e(TAG, "Inference Exception: ${e.message}")
+            Log.e(TAG, "Inference Failed: ${e.message}")
             "Error: ${e.message}"
         }
     }
