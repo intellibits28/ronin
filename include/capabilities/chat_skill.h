@@ -19,28 +19,18 @@ public:
     uint32_t getLoraId() const override { return 1; }
     
     std::string execute(const std::string& param) override {
-        std::string final_prompt = param;
-
-        // ၁။ Context Reconstruction Logic (Hardening Phase 1)
+        // ၁။ User Message ကို Database ထဲ အရင်သိမ်းမည် (Thinking Filter logic ၎င်းထဲတွင်ပါပြီးသားဖြစ်သည်)
         if (m_ltm) {
-            // Get last 3 pairs (6 messages) to avoid KV cache explosion
-            auto raw_history = m_ltm->getHistory(6, 0);
-            std::vector<Ronin::Kernel::Model::ChatMessage> history;
-            
-            for (const auto& p : raw_history) {
-                history.push_back({p.first, p.second});
-            }
-
-            // Gemma 4 specific formatting
-            final_prompt = Ronin::Kernel::Model::ChatTemplateFormatter::formatGemma4(history, param);
+            m_ltm->storeMessage("user", param);
         }
 
         std::string res = "Error: Neural Spine not attached.";
         bool local_failed = true;
 
         if (m_engine) {
-            LOGI("ChatSkill", "Reconstructed Context Length: %zu chars", final_prompt.length());
-            res = m_engine->runLiteRTReasoning(final_prompt);
+            // Phase 11.2: Direct prompt passing. 
+            // Avoid manual reconstruction here to prevent context doubling/Error 13.
+            res = m_engine->runLiteRTReasoning(param);
             if (!res.empty() && !res.starts_with("Error:")) {
                 local_failed = false;
             }
