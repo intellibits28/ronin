@@ -22,8 +22,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Native Engine (Phase 11.2: Stability & Cloud Hardening)
- * Hardened v3.0 Production Architecture.
+ * Native Engine (Phase 11.2: Hardened v3.1 Architecture)
+ * Uses Dual-Process Isolation and AIDL Streaming for production reliability.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
@@ -38,7 +38,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         override fun onServiceConnected(name: android.content.ComponentName?, service: IBinder?) {
             inferenceService = IInferenceService.Stub.asInterface(service)
             isServiceBound = true
-            Log.i(TAG, "Inference Service Bound.")
+            Log.i(TAG, "Inference Service Bound (Isolated Process).")
             if (currentModelPath.isNotEmpty()) scope.launch { loadModel(currentModelPath) }
         }
         override fun onServiceDisconnected(name: android.content.ComponentName?) {
@@ -64,7 +64,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    // --- JNI API (Aligned with g_methods in ronin_jni.cpp) ---
+    // --- JNI API ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun setEngineInstanceNative()
     private external fun getChatHistoryNative(limit: Int, offset: Int): Array<String>
@@ -87,9 +87,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun updateCloudProvidersNative(json: String): Boolean
     private external fun scanSpecificPathNative(path: String): Boolean
     private external fun isValidModelNative(path: String): Boolean
-    private external fun resetContextNativeJNI() // Renamed to resolve collision
+    private external fun resetContextNativeJNI()
     private external fun requestCancellationNative()
 
+    /**
+     * Internal UI helper to emit tokens to UI flow.
+     */
     @Suppress("unused")
     fun pushTokenToUI(fragment: String, isFinal: Boolean) {
         scope.launch { _inferenceFlow.emit(InferencePacket(0, fragment, isFinal)) }
@@ -155,18 +158,36 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Triggered by C++ HardwareBridge.
-     * Blocks for full string as per Hardened v3.0.
+     * Synchronous across processes via AIDL streaming.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String = runBlocking(Dispatchers.IO) {
-        Log.d(TAG, "Native Trigger: Initiating Hardened Sync Reasoning...")
+        Log.d(TAG, "Native Trigger: Initiating Hardened AIDL Reasoning...")
+        val fullResult = StringBuilder()
+        val latch = CountDownLatch(1)
+        
         try {
-            // In v3.0, runReasoning is synchronous and handles JNI streaming internally.
-            inferenceService?.runReasoning(input) ?: "Error: Service unavailable."
+            inferenceService?.streamReasoning(input, object : IInferenceCallback.Stub() {
+                override fun onToken(fragment: String, isFinal: Boolean) {
+                    if (isFinal) {
+                        latch.countDown()
+                    } else {
+                        fullResult.append(fragment)
+                        pushTokenToUI(fragment, false)
+                    }
+                }
+                override fun onError(message: String) {
+                    fullResult.append("Error: $message")
+                    latch.countDown()
+                }
+            })
         } catch (e: Exception) {
-            Log.e(TAG, "Reasoning Fault: ${e.message}")
-            "Error: IPC/Reasoning failure."
+            return@runBlocking "Error: AIDL Bridge Failed"
         }
+        
+        latch.await(60, TimeUnit.SECONDS)
+        pushTokenToUI("", true)
+        fullResult.toString()
     }
 
     fun getLMKPressureSafe(): Int {
@@ -299,8 +320,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun nativeResetContext() {
         if (isLibLoaded) {
             try {
-                resetContextNativeJNI() // Call renamed JNI
-                inferenceService?.resetConversation() // Clear SDK KV Cache
+                resetContextNativeJNI() 
+                inferenceService?.resetConversation() 
             } catch (e: Exception) { Log.e(TAG, "Reset failed: ${e.message}") }
         }
     }

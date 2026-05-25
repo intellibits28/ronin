@@ -38,6 +38,7 @@
             android:name=".InferenceService"
             android:enabled="true"
             android:exported="false"
+            android:process=":inference_core"
             android:foregroundServiceType="specialUse" />
 
         <activity

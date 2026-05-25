@@ -16,9 +16,9 @@ import androidx.core.app.NotificationCompat
 import java.io.File
 
 /**
- * Hardened v3.0 Inference Spine
- * Uses Direct JNI Callbacks for SHM-speed streaming within a single process.
- * Optimized for Snapdragon 778G+.
+ * Hardened v3.1 Inference Spine
+ * Uses AIDL Callbacks for reliable real-time streaming in a dual-process architecture.
+ * Optimized for Snapdragon 778G+ with dedicated memory space.
  */
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Worker"
@@ -34,10 +34,9 @@ class InferenceService : Service() {
     
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // --- Native JNI Interface ---
+    // --- Native JNI Interface (Essential Only for Worker) ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun getFreeRamGBNative(): Float
-    private external fun pushTokenToKernelNative(token: String, isFinal: Boolean)
     private external fun shutdownKernelNative()
 
     companion object {
@@ -52,19 +51,24 @@ class InferenceService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
+        
+        // Initialize native components (no UI instance in worker process)
+        try {
+            initializeKernelNative(filesDir.absolutePath, applicationInfo.nativeLibraryDir, true)
+        } catch (e: Throwable) {}
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Ronin Hardened Spine", NotificationManager.IMPORTANCE_LOW))
+            manager?.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Ronin Inference", NotificationManager.IMPORTANCE_LOW))
         }
     }
 
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Ronin Kernel: Hardened v3.0")
-            .setContentText("Neural Spine Active (Single Process Mode)")
+            .setContentTitle("Ronin Kernel: Hardened v3.1")
+            .setContentText("Neural Spine Active (Isolated Process)")
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .build()
     }
@@ -88,22 +92,21 @@ class InferenceService : Service() {
         
         override fun runReasoning(input: String): String = runBlocking(Dispatchers.IO) {
             val fullResult = StringBuilder()
-            try {
-                executeInference(input).collect { token ->
-                    fullResult.append(token)
-                    pushTokenToKernelNative(token, false)
-                }
-                pushTokenToKernelNative("", true)
-                fullResult.toString()
-            } catch (e: Exception) {
-                val err = "Error: ${e.message}"
-                pushTokenToKernelNative(err, true)
-                err
-            }
+            executeInference(input).collect { fullResult.append(it) }
+            fullResult.toString()
         }
 
         override fun streamReasoning(input: String, callback: IInferenceCallback) {
-            runReasoning(input)
+            serviceScope.launch {
+                try {
+                    executeInference(input).collect { token ->
+                        callback.onToken(token, false)
+                    }
+                    callback.onToken("", true)
+                } catch (e: Exception) {
+                    callback.onError(e.message ?: "Inference Fault")
+                }
+            }
         }
 
         override fun isHydrated(): Boolean = litertEngine != null
@@ -121,7 +124,13 @@ class InferenceService : Service() {
         releaseResources()
 
         return try {
-            val config = EngineConfig(modelPath = path, maxNumTokens = 512)
+            // Hardened SD778G+ Settings:
+            // Use Builder for compatibility and 512 tokens for stability.
+            val config = EngineConfig.builder()
+                .setModelPath(path)
+                .setMaxNumTokens(512)
+                .build()
+            
             val engine = Engine(config)
             engine.initialize()
             litertEngine = engine
@@ -148,6 +157,7 @@ class InferenceService : Service() {
     private fun executeInference(input: String): Flow<String> = flow {
         val conversation = litertConversation ?: return@flow
         
+        // Clean prompt parsing
         val instructions = if (input.contains("[SYSTEM]")) input.substringAfter("[SYSTEM]").substringBefore("[USER]").trim() else ""
         val userPrompt = if (input.contains("[USER]")) input.substringAfter("[USER]").trim() else input
         
@@ -160,18 +170,23 @@ class InferenceService : Service() {
 
         if (finalInput.isEmpty()) return@flow
 
-        // RAM Guard: Prune KV cache if pressure is high
+        // RAM Guard: Prune KV cache if pressure is high (threshold 1.0GB for 2B models)
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
-        if (freeRam < 0.8f) {
+        if (freeRam < 1.0f) {
             Log.w(TAG, "LOW RAM ALERT (%.2fGB). Forcing KV Cache Pruning.".format(freeRam))
             resetConversationInternal()
         }
 
-        (litertConversation ?: conversation).sendMessageAsync(Message.user(finalInput)).collect { partial ->
-            val token = try { 
-                partial.javaClass.getMethod("getText").invoke(partial) as String 
-            } catch(e: Exception) { partial.toString() }
-            emit(token)
+        try {
+            (litertConversation ?: conversation).sendMessageAsync(Message.user(finalInput)).collect { partial ->
+                val token = try { 
+                    partial.javaClass.getMethod("getText").invoke(partial) as String 
+                } catch(e: Exception) { partial.toString() }
+                emit(token)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "LiteRT Fault: ${e.message}")
+            throw e
         }
     }.flowOn(Dispatchers.IO)
 

@@ -15,12 +15,11 @@ public:
 
     static std::string wrap(const std::string& input, BackendType type) {
         if (type == BackendType::LOCAL_GEMMA_4) {
-            // Phase 11.2: Explicit Language Constraints
+            // Hardened v3.1: Minimal instructions for stability
             std::string instructions = 
-                "You are Ronin, a sovereign AI kernel.\n"
-                "Access tools via 'CALL: tool_name(\"args\")'.\n"
+                "You are Ronin. Access tools via 'CALL: tool_name(\"args\")'.\n"
                 "TOOLS: search_memory(query), archive_memory(text).\n"
-                "LANGUAGE: If the user speaks Myanmar, you MUST [THINK] and REPLY in Myanmar language.";
+                "MYANMAR: Always reason [THINK] and REPLY in Myanmar if the user does.";
 
             return "[SYSTEM] " + instructions + "\n[USER] " + input;
         }
