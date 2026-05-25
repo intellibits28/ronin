@@ -242,24 +242,9 @@ void native_shutdownKernel(JNIEnv *env, jobject thiz) {
     if (g_kernel) g_kernel->shutdown();
 }
 
-void native_onTokenGenerated(JNIEnv *env, jobject thiz, jstring fragment, jboolean is_final) {
-    // Forward directly to pushTokenToUI for immediate screen update
-    jclass cls = env->GetObjectClass(thiz);
-    jmethodID method = env->GetMethodID(cls, "pushTokenToUI", "(Ljava/lang/String;Z)V");
-    if (method) {
-        env->CallVoidMethod(thiz, method, fragment, is_final);
-    }
-}
-
 void native_pushTokenToKernel(JNIEnv *env, jobject thiz, jstring token, jboolean is_final) {
-    // Phase 11.2: Hardened v3.0 Bridge
-    // This allows the Worker Process to push tokens directly into the Main Process UI Flow
-    // via a JNI jump, bypasses AIDL bottlenecks.
-    jclass cls = env->GetObjectClass(thiz);
-    jmethodID method = env->GetMethodID(cls, "pushTokenToUI", "(Ljava/lang/String;Z)V");
-    if (method) {
-        env->CallVoidMethod(thiz, method, token, is_final);
-    }
+    std::string token_str = ConvertJStringToString(env, token);
+    Ronin::Kernel::Capability::HardwareBridge::pushToken(token_str, (bool)is_final);
 }
 
 // --- JNI Registration ---
@@ -274,7 +259,6 @@ static JNINativeMethod g_methods[] = {
     {"checkFileAccessNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_checkFileAccess},
     {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB},
     {"processInputNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
-    {"onTokenGeneratedNative", "(Ljava/lang/String;Z)V", (void*)native_onTokenGenerated},
     {"isLoadedNative", "()Z", (void*)native_isLoaded},
     {"notifyTrimMemoryNative", "(I)V", (void*)native_notifyTrimMemory},
     {"getActiveModelPathNative", "()Ljava/lang/String;", (void*)native_getActiveModelPath},

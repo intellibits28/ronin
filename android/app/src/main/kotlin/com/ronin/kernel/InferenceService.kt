@@ -17,7 +17,8 @@ import java.io.File
 
 /**
  * Hardened v3.0 Inference Spine
- * Uses Direct JNI Callbacks for SHM-speed streaming without transport overhead.
+ * Uses Direct JNI Callbacks for SHM-speed streaming within a single process.
+ * Optimized for Snapdragon 778G+.
  */
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Worker"
@@ -28,9 +29,12 @@ class InferenceService : Service() {
     private var litertConversation: Conversation? = null
     private var currentModelPath: String = ""
     
+    // Phase 11.2: Context State
+    private var isConversationFresh = true
+    
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // --- Native JNI Interface (Hardened v3.0) ---
+    // --- Native JNI Interface ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun getFreeRamGBNative(): Float
     private external fun pushTokenToKernelNative(token: String, isFinal: Boolean)
@@ -39,7 +43,7 @@ class InferenceService : Service() {
     companion object {
         init {
             try { System.loadLibrary("ronin_kernel") } catch (e: Exception) {
-                Log.e("RoninKernel", "Failed to load native library in worker.")
+                Log.e("RoninKernel", "Failed to load native library.")
             }
         }
     }
@@ -48,11 +52,6 @@ class InferenceService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
-        
-        // Connect Worker to Native Kernel
-        try {
-            initializeKernelNative(filesDir.absolutePath, applicationInfo.nativeLibraryDir, true)
-        } catch (e: Throwable) {}
     }
 
     private fun createNotificationChannel() {
@@ -65,7 +64,7 @@ class InferenceService : Service() {
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Ronin Kernel: Hardened v3.0")
-            .setContentText("Neural Spine Active (Snapdragon Optimization)")
+            .setContentText("Neural Spine Active (Single Process Mode)")
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .build()
     }
@@ -74,21 +73,28 @@ class InferenceService : Service() {
         override fun loadModel(modelPath: String): Boolean = tryHydrate(modelPath)
         
         /**
-         * Hardened Sync Trigger: 
-         * Results are streamed via pushTokenToKernelNative for zero-lag UI update.
+         * Hardened Synchronous Inference:
+         * Returns full result to C++ kernel for persistent history, 
+         * while fragments are streamed to UI via pushTokenToKernelNative.
          */
-        override fun runReasoning(input: String): String {
-            serviceScope.launch {
+        override fun runReasoning(input: String): String = runBlocking(Dispatchers.IO) {
+            val fullResult = StringBuilder()
+            try {
                 executeInference(input).collect { token ->
+                    fullResult.append(token)
                     pushTokenToKernelNative(token, false)
                 }
                 pushTokenToKernelNative("", true)
+                fullResult.toString()
+            } catch (e: Exception) {
+                val err = "Error: ${e.message}"
+                pushTokenToKernelNative(err, true)
+                err
             }
-            return "STREAMING_ACTIVE"
         }
 
         override fun streamReasoning(input: String, callback: IInferenceCallback) {
-            // Deprecated in v3.0 in favor of Direct JNI Bridge, but kept for legacy compat.
+            // Forward to synchronous core in v3.0
             runReasoning(input)
         }
 
@@ -101,6 +107,7 @@ class InferenceService : Service() {
             try {
                 litertConversation?.close()
                 litertConversation = litertEngine?.createConversation()
+                isConversationFresh = true
             } catch (e: Exception) {}
         }
     }
@@ -113,18 +120,13 @@ class InferenceService : Service() {
 
         return try {
             // Hardened SD778G+ Settings:
-            // 1. Lower tokens to 512 for prefill stability.
-            // 2. Explicit cache to prevent storage bloat.
-            val config = EngineConfig(
-                modelPath = path, 
-                maxNumTokens = 512,
-                topK = 40,
-                temperature = 0.7f
-            )
+            // 512 tokens limit for stable KV cache allocation.
+            val config = EngineConfig(modelPath = path, maxNumTokens = 512)
             val engine = Engine(config)
             engine.initialize()
             litertEngine = engine
             litertConversation = engine.createConversation()
+            isConversationFresh = true
             currentModelPath = path
             Log.i(TAG, "Hardened Spine Hydrated: $path")
             true
@@ -146,24 +148,31 @@ class InferenceService : Service() {
     private fun executeInference(input: String): Flow<String> = flow {
         val conversation = litertConversation ?: return@flow
         
-        // Clean prompt for LiteRT-LM (Raw Injection)
-        val cleanInput = input
-            .replace("[SYSTEM]", "")
-            .replace("[USER]", "")
-            .trim()
+        // Phase 11.2: Raw Prompt Passthrough (LiteRT-LM SDK wraps internally)
+        val instructions = if (input.contains("[SYSTEM]")) input.substringAfter("[SYSTEM]").substringBefore("[USER]").trim() else ""
+        val userPrompt = if (input.contains("[USER]")) input.substringAfter("[USER]").trim() else input
         
-        if (cleanInput.isEmpty()) return@flow
+        val finalInput = if (isConversationFresh && instructions.isNotEmpty()) {
+            isConversationFresh = false
+            "$instructions\n\n$userPrompt"
+        } else {
+            userPrompt
+        }
 
-        try {
-            conversation.sendMessageAsync(Message.user(cleanInput)).collect { partial ->
-                val token = try { 
-                    partial.javaClass.getMethod("getText").invoke(partial) as String 
-                } catch(e: Exception) { partial.toString() }
-                emit(token)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Inference Fault: ${e.message}")
-            emit("Error: ${e.message}")
+        if (finalInput.isEmpty()) return@flow
+
+        // RAM Guard: Check before starting inference
+        val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
+        if (freeRam < 0.8f) {
+            Log.w(TAG, "LOW RAM ALERT (%.2fGB). Resetting conversation.".format(freeRam))
+            resetConversation() // Prune KV Cache
+        }
+
+        conversation.sendMessageAsync(Message.user(finalInput)).collect { partial ->
+            val token = try { 
+                partial.javaClass.getMethod("getText").invoke(partial) as String 
+            } catch(e: Exception) { partial.toString() }
+            emit(token)
         }
     }.flowOn(Dispatchers.IO)
 

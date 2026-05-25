@@ -23,8 +23,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Native Engine (Phase 11.2: Stability & Cloud Hardening)
- * Strictly synchronized with JNI g_methods.
- * Fixed property naming conflicts for callbacks.
+ * Hardened v3.0 Production Architecture.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
@@ -65,7 +64,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    // --- JNI API (Strictly Sync with g_methods in ronin_jni.cpp) ---
+    // --- JNI API ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun setEngineInstanceNative()
     private external fun getChatHistoryNative(limit: Int, offset: Int): Array<String>
@@ -76,7 +75,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun checkFileAccessNative(path: String): String
     private external fun getFreeRamGBNative(): Float
     private external fun processInputNative(input: String): String
-    private external fun onTokenGeneratedNative(fragment: String, isFinal: Boolean)
     private external fun isLoadedNative(): Boolean
     private external fun notifyTrimMemoryNative(level: Int)
     private external fun getActiveModelPathNative(): String
@@ -157,31 +155,18 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     /**
      * Triggered by C++ HardwareBridge.
+     * Blocks for full string as per Hardened v3.0.
      */
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String = runBlocking(Dispatchers.IO) {
-        Log.d(TAG, "Native Trigger: Initiating Sync Streaming Reasoning...")
-        val fullResult = StringBuilder()
-        val latch = CountDownLatch(1)
-        
+        Log.d(TAG, "Native Trigger: Initiating Hardened Sync Reasoning...")
         try {
-            inferenceService?.streamReasoning(input, object : IInferenceCallback.Stub() {
-                override fun onToken(fragment: String, isFinal: Boolean) {
-                    if (isFinal) { latch.countDown() } else {
-                        fullResult.append(fragment)
-                        pushTokenToUI(fragment, false)
-                    }
-                }
-                override fun onError(message: String) {
-                    fullResult.append("Error: $message")
-                    latch.countDown()
-                }
-            })
-        } catch (e: Exception) { return@runBlocking "Error: IPC Failed" }
-        
-        latch.await(60, TimeUnit.SECONDS)
-        pushTokenToUI("", true)
-        fullResult.toString()
+            // In v3.0, runReasoning is synchronous and handles JNI streaming internally.
+            inferenceService?.runReasoning(input) ?: "Error: Service unavailable."
+        } catch (e: Exception) {
+            Log.e(TAG, "Reasoning Fault: ${e.message}")
+            "Error: IPC/Reasoning failure."
+        }
     }
 
     fun getLMKPressureSafe(): Int {
@@ -248,12 +233,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 if (endpoint.contains("generativelanguage")) JSONObject(response).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
                 else JSONObject(response).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
             } else {
-                val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "Empty error response"
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "No error response"
                 "Error: Server returned code ${conn.responseCode} - $err"
             }
-        } catch (e: Exception) { 
-            "Error: ${e::class.java.simpleName} - ${e.message ?: "Network failure or timeout"}"
-        }
+        } catch (e: Exception) { "Error: ${e::class.java.simpleName} - ${e.message}" }
     }
 
     @Suppress("unused")
@@ -309,6 +292,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
     fun normalizeBurmese(text: String): String {
         return java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
+    }
+    /**
+     * Resets the cognitive context on both Native and Worker side.
+     */
+    fun nativeResetContext() {
+        if (isLibLoaded) {
+            try {
+                nativeResetContext() // Call JNI
+                inferenceService?.resetConversation() // Clear SDK KV Cache
+            } catch (e: Exception) { Log.e(TAG, "Reset failed: ${e.message}") }
+        }
     }
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         if (!isLibLoaded) return@withContext emptyList()

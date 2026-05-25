@@ -63,6 +63,12 @@ public:
      */
     static std::string runNeuralReasoning(const std::string& input);
 
+    /**
+     * Phase 11.2: Hardened v3.0 Bridge
+     * Pushes an inference token fragment directly to the UI flow.
+     */
+    static void pushToken(const std::string& token, bool isFinal);
+
 private:
     static JavaVM* s_vm;
     static jobject s_instance;

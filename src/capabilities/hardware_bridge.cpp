@@ -226,6 +226,24 @@ std::string HardwareBridge::runNeuralReasoning(const std::string& input) {
 #endif
 }
 
+void HardwareBridge::pushToken(const std::string& token, bool isFinal) {
+#ifdef __ANDROID__
+    if (!s_vm || !s_instance || !s_clazz) return;
+
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninTokenThread");
+    JNIEnv* env = scopedEnv.env();
+
+    if (env) {
+        jmethodID mid = env->GetMethodID(s_clazz, "pushTokenToUI", "(Ljava/lang/String;Z)V");
+        if (mid) {
+            jstring jtoken = env->NewStringUTF(token.c_str());
+            env->CallVoidMethod(s_instance, mid, jtoken, (jboolean)isFinal);
+            env->DeleteLocalRef(jtoken);
+        }
+    }
+#endif
+}
+
 bool HardwareBridge::triggerSync(uint32_t nodeId, bool state) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return state;
