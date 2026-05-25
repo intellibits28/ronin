@@ -111,7 +111,7 @@ class InferenceService : Service() {
 
         override fun isHydrated(): Boolean = litertEngine != null
         override fun getActiveModelPath(): String = currentModelPath
-        override fun notifyTrimMemory(level: Int) { if (level >= 80) resetConversation() }
+        override fun notifyTrimMemory(level: Int) { if (level >= 80) resetConversationInternal() }
         override fun setSafeMode(enabled: Boolean) {}
         override fun isLowPerformanceMode(): Boolean = false
         override fun resetConversation() = resetConversationInternal()
@@ -125,9 +125,8 @@ class InferenceService : Service() {
 
         return try {
             // Hardened SD778G+ Settings:
-            // Use Builder for compatibility and 512 tokens for stability.
-            val config = EngineConfig(modelPath = path, maxNumTokens = 512)
-            
+            // 1024 tokens for stable KV cache allocation.
+            val config = EngineConfig(modelPath = path, maxNumTokens = 1024)
             val engine = Engine(config)
             engine.initialize()
             litertEngine = engine
@@ -152,9 +151,11 @@ class InferenceService : Service() {
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
-        val conversation = litertConversation ?: return@flow
+        // Capture a local reference to the conversation to ensure it doesn't change during collection
+        val currentConv = synchronized(this@InferenceService) {
+            litertConversation ?: return@flow
+        }
         
-        // Clean prompt parsing
         val instructions = if (input.contains("[SYSTEM]")) input.substringAfter("[SYSTEM]").substringBefore("[USER]").trim() else ""
         val userPrompt = if (input.contains("[USER]")) input.substringAfter("[USER]").trim() else input
         
@@ -172,10 +173,12 @@ class InferenceService : Service() {
         if (freeRam < 1.0f) {
             Log.w(TAG, "LOW RAM ALERT (%.2fGB). Forcing KV Cache Pruning.".format(freeRam))
             resetConversationInternal()
+            // We don't return here, we let the current inference attempt proceed with the pre-reset conversation reference
+            // or we'd have to restart the flow.
         }
 
         try {
-            (litertConversation ?: conversation).sendMessageAsync(Message.user(finalInput)).collect { partial ->
+            currentConv.sendMessageAsync(Message.user(finalInput)).collect { partial ->
                 val token = try { 
                     partial.javaClass.getMethod("getText").invoke(partial) as String 
                 } catch(e: Exception) { partial.toString() }

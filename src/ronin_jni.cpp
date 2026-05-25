@@ -67,6 +67,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
         g_memory_manager->setLongTermMemory(g_ltm.get());
         
         g_intent_engine = std::make_shared<IntentEngine>(g_ltm.get());
+        g_intent_engine->setMemoryManager(g_memory_manager.get()); // Link MM for /reset
         
         HardwareBridge::initialize(g_vm, thiz);
         
@@ -165,7 +166,17 @@ jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
     char header[4];
     size_t read = fread(header, 1, 4, f);
     fclose(f);
-    return (read == 4 && memcmp(header, "TFL3", 4) == 0) ? JNI_TRUE : JNI_FALSE;
+    
+    // Accept TFL3 (Standard) or other TFLite variants if needed
+    if (read == 4 && memcmp(header, "TFL3", 4) == 0) return JNI_TRUE;
+    
+    // Fallback: If it's a large file with .bin or .litertlm, we trust the extension
+    if (p.find(".litertlm") != std::string::npos || p.find(".bin") != std::string::npos) {
+        LOGI(TAG, "Trusting model by extension: %s", p.c_str());
+        return JNI_TRUE;
+    }
+    
+    return JNI_FALSE;
 }
 
 jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint offset) {
