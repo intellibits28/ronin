@@ -126,10 +126,7 @@ class InferenceService : Service() {
         return try {
             // Hardened SD778G+ Settings:
             // Use Builder for compatibility and 512 tokens for stability.
-            val config = EngineConfig.builder()
-                .setModelPath(path)
-                .setMaxNumTokens(512)
-                .build()
+            val config = EngineConfig(modelPath = path, maxNumTokens = 512)
             
             val engine = Engine(config)
             engine.initialize()
