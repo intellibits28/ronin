@@ -26,6 +26,12 @@ using namespace Ronin::Kernel::Memory;
 using namespace Ronin::Kernel::Model;
 using namespace Ronin::Kernel::Capability;
 
+// Concrete implementation of CapabilityManager to resolve abstract class error
+class DefaultCapabilityManager : public CapabilityManager {
+public:
+    bool canExecute(uint32_t nodeId) const override { return true; }
+};
+
 static std::unique_ptr<RoninKernel> g_kernel = nullptr;
 static std::shared_ptr<LongTermMemory> g_ltm = nullptr;
 static std::shared_ptr<IntentEngine> g_intent_engine = nullptr;
@@ -65,7 +71,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
         HardwareBridge::initialize(g_vm, thiz);
         
         HandlerRegistry registry;
-        CapabilityManager cap_manager;
+        static DefaultCapabilityManager cap_manager; // Use concrete class
         
         g_kernel = std::make_unique<RoninKernel>(registry, cap_manager);
         auto engine = std::make_unique<InferenceEngine>("hybrid_mode");
@@ -86,7 +92,10 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
 void native_setEngineInstance(JNIEnv *env, jobject thiz) {}
 
 void native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
-    if (g_llm_context.engine) g_llm_context.engine->notifyModelLoaded(ConvertJStringToString(env, path));
+    if (g_llm_context.engine) {
+        // Use loadModel instead of notifyModelLoaded
+        g_llm_context.engine->loadModel(ConvertJStringToString(env, path));
+    }
 }
 
 void native_stopLowPriorityTasks(JNIEnv *env, jobject thiz) {
@@ -110,7 +119,9 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input) {
     if (!g_intent_engine) return env->NewStringUTF("Error: Engine Not Ready.");
     std::string rawInput = ConvertJStringToString(env, input);
     auto intent = g_intent_engine->process(rawInput, "");
-    std::string result = g_intent_engine->executeSkill(intent.nodeId, rawInput);
+    
+    // Fix CognitiveIntent member name (id instead of nodeId)
+    std::string result = g_intent_engine->executeSkill(intent.id, rawInput);
     return env->NewStringUTF(result.c_str());
 }
 

@@ -146,6 +146,11 @@ public:
      */
     bool updateMetadata(const std::string& json_metadata);
 
+    void updateLocation(double lat, double lon) {
+        m_last_lat = lat;
+        m_last_lon = lon;
+    }
+
     // Phase 4.1: Hardware Reality tracking
     double m_last_lat = 0.0;
     double m_last_lon = 0.0;
