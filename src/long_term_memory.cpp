@@ -307,6 +307,17 @@ std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int 
     return history;
 }
 
+bool LongTermMemory::clearHistory() {
+    if (!m_db) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "DELETE FROM chat_history;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    bool success = sqlite3_step(stmt) == SQLITE_DONE;
+    sqlite3_finalize(stmt);
+    return success;
+}
+
 bool LongTermMemory::storeAuditLog(const std::string& action, const std::string& details) {
     if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);

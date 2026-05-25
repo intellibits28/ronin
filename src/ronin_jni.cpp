@@ -16,6 +16,8 @@
 #include "models/inference_engine.h"
 #include "ronin_log.h"
 
+#ifdef __ANDROID__
+
 #define TAG "RoninKernel_JNI"
 
 using namespace Ronin::Kernel;
@@ -53,7 +55,11 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
     if (!isWorker) {
         // UI Process Initialization
         g_ltm = std::make_shared<LongTermMemory>(base_path + "/ronin_cognitive.db");
-        g_memory_manager = std::make_unique<MemoryManager>(g_ltm.get());
+        
+        // Fix MemoryManager initialization
+        g_memory_manager = std::make_unique<MemoryManager>(2048);
+        g_memory_manager->setLongTermMemory(g_ltm.get());
+        
         g_intent_engine = std::make_shared<IntentEngine>(g_ltm.get());
         
         HardwareBridge::initialize(g_vm, thiz);
@@ -226,4 +232,5 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
 
     return JNI_VERSION_1_6;
 }
+
 #endif // __ANDROID__

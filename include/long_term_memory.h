@@ -42,6 +42,7 @@ public:
     // Message History
     bool storeMessage(const std::string& role, const std::string& content, int64_t timestamp = 0);
     std::vector<std::pair<std::string, std::string>> getHistory(int limit = 50, int offset = 0);
+    bool clearHistory();
 
     // Cognitive Recall (FTS5 Keywords)
     std::vector<std::string> search(const std::string& query);
