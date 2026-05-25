@@ -77,13 +77,15 @@ class InferenceService : Service() {
      * Shared logic to prune KV cache and reset turn history.
      */
     private fun resetConversationInternal() {
-        try {
-            litertConversation?.close()
-            litertConversation = litertEngine?.createConversation()
-            isConversationFresh = true
-            Log.i(TAG, "Conversation Reset: KV Cache Pruned.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Reset failed: ${e.message}")
+        synchronized(this) {
+            try {
+                litertConversation?.close()
+                litertConversation = litertEngine?.createConversation()
+                isConversationFresh = true
+                Log.i(TAG, "Conversation Reset: KV Cache Pruned.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Reset failed: ${e.message}")
+            }
         }
     }
 
@@ -92,8 +94,18 @@ class InferenceService : Service() {
         
         override fun runReasoning(input: String): String = runBlocking(Dispatchers.IO) {
             val fullResult = StringBuilder()
-            executeInference(input).collect { fullResult.append(it) }
-            fullResult.toString()
+            try {
+                executeInference(input).collect { token ->
+                    fullResult.append(token)
+                    pushTokenToKernelNative(token, false)
+                }
+                pushTokenToKernelNative("", true)
+                fullResult.toString()
+            } catch (e: Exception) {
+                val err = "Error: ${e.message}"
+                pushTokenToKernelNative(err, true)
+                err
+            }
         }
 
         override fun streamReasoning(input: String, callback: IInferenceCallback) {
@@ -142,17 +154,26 @@ class InferenceService : Service() {
     }
 
     private fun releaseResources() {
-        try {
-            litertConversation?.close()
-            litertConversation = null
-            litertEngine?.close()
-            litertEngine = null
-        } catch (e: Exception) {}
+        synchronized(this) {
+            try {
+                litertConversation?.close()
+                litertConversation = null
+                litertEngine?.close()
+                litertEngine = null
+            } catch (e: Exception) {}
+        }
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
-        // Capture a local reference to the conversation to ensure it doesn't change during collection
-        val currentConv = synchronized(this@InferenceService) {
+        // 1. RAM Guard: Prune KV cache BEFORE capturing reference if pressure is high
+        val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
+        if (freeRam < 1.0f && !isConversationFresh) {
+            Log.w(TAG, "LOW RAM ALERT (%.2fGB). Pruning KV Cache before inference.".format(freeRam))
+            resetConversationInternal()
+        }
+
+        // 2. Capture the current active conversation reference
+        val activeConv = synchronized(this@InferenceService) {
             litertConversation ?: return@flow
         }
         
@@ -168,17 +189,8 @@ class InferenceService : Service() {
 
         if (finalInput.isEmpty()) return@flow
 
-        // RAM Guard: Prune KV cache if pressure is high (threshold 1.0GB for 2B models)
-        val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
-        if (freeRam < 1.0f) {
-            Log.w(TAG, "LOW RAM ALERT (%.2fGB). Forcing KV Cache Pruning.".format(freeRam))
-            resetConversationInternal()
-            // We don't return here, we let the current inference attempt proceed with the pre-reset conversation reference
-            // or we'd have to restart the flow.
-        }
-
         try {
-            currentConv.sendMessageAsync(Message.user(finalInput)).collect { partial ->
+            activeConv.sendMessageAsync(Message.user(finalInput)).collect { partial ->
                 val token = try { 
                     partial.javaClass.getMethod("getText").invoke(partial) as String 
                 } catch(e: Exception) { partial.toString() }
@@ -189,6 +201,9 @@ class InferenceService : Service() {
             throw e
         }
     }.flowOn(Dispatchers.IO)
+
+    // JNI fallback for pushToken
+    private external fun pushTokenToKernelNative(token: String, isFinal: Boolean)
 
     override fun onDestroy() {
         super.onDestroy()
