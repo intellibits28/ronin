@@ -1,53 +1,51 @@
 # Ronin Kernel: Project Status & Strategic Roadmap
 
 ## 1. Project Overview
-**Name:** Ronin Kernel (Phase 4.5 Evolution)
-**Current Version:** v4.6.0-NATIVE-STABLE
-**Active Branch:** feature/hydration-fix (Expert Native Path Finalized)
-**Objective:** A modular, high-efficiency AI agent runtime optimized for Snapdragon 778G+, utilizing Dual-Process isolation and LiteRT-LM v0.11.0 for optimized MoE and Gemma 4 inference.
+**Name:** Ronin Kernel (Phase 11.2 Hardening)
+**Current Version:** v4.7.26.05.24 (Hardened CalVer)
+**Active Branch:** feature/hydration-fix
+**Objective:** A sovereign AI kernel utilizing the **Hardened v3.0 Production Architecture**. Single-process Direct JNI Bridge, Lexical Keyword Spine, and LiteRT-LM 0.12.0 optimized for Snapdragon 778G+.
 
 ---
 
-## 2. Stable Features (v4.5 Finalized)
-*   **1B Inference (Gemma 3):** ✅ SUCCESS - Real-time streaming active via LiteRT-LM.
-*   **E2B Inference (Gemma 4):** ✅ SUCCESS - Operational via CPU Fallback (Low-Perf Mode) on SD778G.
-*   **Expert Native Memory (v2.1):** ✅ SUCCESS - SentencePiece + LiteRT C++ integration for high-fidelity MM->Vector indexing.
-*   **LiteRT-LM 0.11.0 Migration:** ✅ SUCCESS - Native Gemma 4 support and MoE compatibility.
-*   **File Search (v5.15):** High-precision semantic search with background indexing and interactive pagination (/more).
-*   **Hybrid Bridge:** Thread-safe JNI with ScopedJniEnv and Named Threads.
+## 2. Hardened Break-throughs (v3.0 SUCCESS)
+*   **Direct JNI Bridge:** ✅ SUCCESS - Zero-lag token streaming from Worker to UI. Bypasses AIDL bottlenecks.
+*   **Lexical Intent Spine:** ✅ SUCCESS - Strict token-based matching in `IntentEngine.cpp` prevents hardware misrouting.
+*   **Memory Hardening:** ✅ SUCCESS - 512-token cap and 0.8GB RAM Guard ensure stable SD778G+ prefill.
+*   **Cognitive Persistence:** ✅ SUCCESS - Thinking filter and turn-based context reconstruction active.
+*   **Cloud Fallback:** ✅ SUCCESS - Descriptive error reporting and auto-escalation active.
 
 ---
 
-## 3. Current Status: Phase 4.5 (Dual-Process Isolation)
-- **Status:** Transitioning from Monolithic Bridge to **Service-Oriented Architecture**.
-- **In-Progress:**
-    - [x] **Memory Model v2.1:** Implemented native Multilingual E5-Small support.
-    - [x] **Jinja Templating:** PromptFactory aligned with official specification.
-    - [ ] **Process Split:** Isolating Inference Engine into `:inference_core` process.
-- **Diagnostic Audit:**
-    - [x] **RAM Guard:** Adaptive threshold (1.0GB - 1.5GB) based on model size.
-    - [x] **Hybrid Precision:** Implemented Float16 for Semantic Memory and INT8 for Episodic Bulk (Rule v2.1).
-    - [x] **Integrity Guard:** Native 4-byte header check (TFL3) for model safety.
+## 3. Current Status: Phase 11.2 (Production Hardening)
+- **Status:** Architecture stabilized. Migration to Single-Process complete.
+- **Diagnostics:**
+    - [x] **Error 13 Fix:** Instruction isolation and token tuning finalized.
+    - [x] **JNI Hygiene:** Renamed conflicting methods (`resetContextNativeJNI`) and synced signatures.
+    - [x] **Storage Bloat:** Filename resolution and explicit cache purging utility active.
+- **Audit Trail:**
+    - Validated Myanmar reasoning and reply enforcement in `PromptFactory`.
+    - Verified real-time streaming UI with Cyan log visibility.
 
 ---
 
 ## 4. Completed Milestones
-- [x] **v4.0 Unified Interface:** Vtable-based Skill Registry for cognitive and hardware nodes.
-- [x] **v4.0.1 Deep Audit:** Validated JNI variable mapping and native file access reliability.
-- [x] **v4.0.2 Perf Patch:** Optimized large model handling (Gemma 4) with 1MB transfer buffers.
+- [x] **Hardened v3.0 Blueprint Integration:** Fully aligned with the sovereign architecture vision.
+- [x] **Zero-SHM Production Flow:** Direct JNI callbacks verified as performance-equivalent to SHM.
+- [x] **Lexical Persistence v2.1:** FTS5-only search active. Embeddings removed to save RAM.
 
 ---
 
 ## 5. Future Roadmap
-- **Phase 4.5 (Current):** Dual-Process isolation, Binder IPC, and Command Auto-completion.
-- **v4.5.x (SENSORY-HUB):** Native JNI Sensors (IMU/Vibration) and SHM Node.
-- **v4.6 (SOCIAL-BRIDGE):** Contacts/SMS integration for multi-step tasks.
+- **Phase 12.0 (Sensor Intelligence):** DSP/NPU offloading for high-frequency IMU/Bio processing.
+- **Phase 13.0 (Social Mesh):** Integration of sovereign identity and encrypted contacts/messaging.
+- **Phase 14.0 (Multi-Modal Hub):** Real-time Vision/Audio processing nodes.
 
 ---
 
-## 6. Compliance & Design Standards (REVISED v4.1)
-- **Zero-Mock Policy:** All system data (RAM, Temp, LMK) must be live-sampled from the OS.
-- **Dual-Process Isolation:** Mandatory separation of UI and Neural Reasoning to prevent Main Thread blocking.
-- **Internal Staging:** Mandatory 1MB buffer for model copies and `mmap` for hydration.
+## 6. Compliance & Design Standards (HARDENED v3.0)
+- **Single Process Mandate:** Inference and UI must share a process to ensure Direct JNI Bridge reliability.
+- **Instruction Isolation:** System prompt must be sent ONCE per conversation session.
+- **Thinking Filter:** Reasoning tokens MUST NOT persist in the chat history database.
 
-*Last Updated: May 3, 2026*
+*Last Updated: May 25, 2026*

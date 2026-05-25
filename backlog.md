@@ -1,32 +1,28 @@
 # Ronin Kernel Task Backlog
 
-## Priority 1: Phase 4.5 (Dual-Process & Command Intelligence)
-- [x] **LiteRT-LM Migration:** Successful upgrade to v0.11.0 for native Gemma 4 support.
-- [x] **Jinja Template Integration:** Alignment of PromptFactory with official Gemma 4 specifications.
-- [x] **Memory Model v2.1 (Native Path):** Implemented SentencePiece + LiteRT C++ for direct MM indexing.
-- [x] **Integrity Guard:** Native Magic Byte (TFL3) and size verification for models.
-- [x] **Adaptive RAM Guard:** Size-aware hydration thresholds (1.0GB - 1.5GB).
-- [ ] **SHM MAP_SHARED Audit:** Verify cross-process pointer consistency for zero-copy streaming.
-- [ ] **Process Isolation:** Implement `:inference_core` process split via Android Service.
-- [ ] **Binder IPC:** Create AIDL/Binder interface for cross-process reasoning requests.
-- [ ] **Command UI:** Implement Suggester Popup for `/` commands and OnTextChangedListener logic.
+## Priority 1: Phase 12.0 (Sensor Intelligence & Hardening)
+- [ ] **ASensorManager Bridge:** Implement native C++ bridge for high-frequency IMU (Gyro/Accel) data.
+- [ ] **DSP Offloading:** Explore Qualcomm Hexagon SDK for low-power sensor pre-processing.
+- [ ] **Vibration Node:** Implement structural health monitoring skill using haptic feedback.
+- [ ] **Context Pruning:** Refine the 0.8GB RAM Guard to selectively prune KV-cache chunks instead of full reset.
 
-## Priority 2: Phase 4.5.x (Sensory Hub & Quantization)
-- [x] **Hybrid Precision:** Implemented Float16 for Semantic and INT8 for Episodic storage.
-- [ ] **INT8 Tuning:** Optimize vector storage for 384-dim semantic memories.
-- [ ] **Native JNI Sensors:** Implement `ASensorManager` bridge for IMU/Vibration access.
-- [ ] **SHM Node:** Develop specialized skill for vibration-based structural health monitoring.
+## Priority 2: Phase 13.0 (Social Mesh & Encryption)
+- [ ] **Sovereign Identity:** Implement decentralized ID (DID) for kernel ownership.
+- [ ] **Encrypted Contacts:** Secure JNI bridge for local contact/messaging analysis.
+- [ ] **Multi-turn Memory:** Enhance FTS5 keywords with temporal relevance scores.
 
-## Completed (Phase 4.0 Deep Audit)
-- [x] **JNI Verification:** Fixed Health Data mapping (updateSystemHealth -> HardwareBridge).
-- [x] **Native Access Probe:** Verified model file readability via JNI `fopen` (checkFileAccessNative).
-- [x] **ProGuard Safety:** Added survival rules for JNI class and method names.
-- [x] **Staging Speedup:** Implemented 1MB buffer for high-speed model import.
+## Completed (Hardened v3.0 Production)
+- [x] **Native Direct Bridge:** Implemented single-process JNI callbacks for zero-lag streaming.
+- [x] **Lexical Intent Spine:** Strict token-based hardware matching in `IntentEngine.cpp`.
+- [x] **Error 13 Fix:** Instruction isolation and prefill buffer optimization for SD778G+.
+- [x] **Thinking Filter:** prunning reasoning tokens before SQLite persistence.
+- [x] **Storage Optimization:** Filename resolution and compiled-cache utility active.
+- [x] **CalVer Integration:** System-wide versioning update to v4.7.26.05.24.
 
-## Completed (v4.0 Unified Interface)
-- [x] **Vtable Registry:** Decoupled skill execution from intent routing.
-- [x] **File Search (v5.15):** Implemented semantic search with /more pagination.
-- [x] **JNI Thread Safety:** Implemented named threads and async-to-sync CountDownLatch bridge.
-- [x] **Dynamic Cloud:** Enabled custom Gemini endpoints via providers.json.
+## Completed (Phase 11.0 Stabilization)
+- [x] **LiteRT-LM 0.12.0:** Successful migration to the latest reasoning engine.
+- [x] **Myanmar Reasoning:** Enforced Burmese thinking and reply constraints.
+- [x] **Cyan Console:** Improved visibility and styling for reasoning logs.
+- [x] **Cloud Hardening:** Descriptive error reporting and auto-fallback logic.
 
-*Last Updated: May 3, 2026*
+*Last Updated: May 25, 2026*

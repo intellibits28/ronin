@@ -1,100 +1,58 @@
-# Technical Specifications: Mobile AI Cognitive Kernel (Ronin)
+# Technical Specifications: Mobile AI Cognitive Kernel (Ronin) v3.0
 
-## 1. Architecture Overview: Mobile Autonomous Assistant Infrastructure
-The "Ronin" project implements a mobile-focused autonomous AI assistant infrastructure. The core cognitive engine—including the Reasoning Spine, Intent Router, CheckpointManager (Memory Hydration via FlatBuffers + mlock), and LoRA Engine—is implemented purely in modern **C++20** using **NEON SIMD intrinsics**. The Android UI, JNI boundary layer, and OS-level lifecycle management (such as `onTrimMemory` hooks) are implemented strictly in **Kotlin** (no Java).
+## 1. Architecture Overview: Hardened Unified Infrastructure
+The "Ronin" v3.0 architecture implements a hardened, single-process autonomous AI assistant infrastructure. The core cognitive engine—including the Lexical Intent Spine, Memory Manager, and Native Direct Bridge—is implemented in **C++20**. The Android UI, JNI Direct Callbacks, and LiteRT-LM reasoning spine are implemented in **Kotlin/JNI**.
 
-The architecture includes several key components:
- * **Native Inference Engine (Kernel):** Implements an optimized C++20 core for vector operations (NEON SIMD).
- * **Survival Core (Checkpoint Engine):** Logic for LMK (Low Memory Killer) survival using shadowed buffers and SQLite L3 deep-store.
- * **Tri-Anchor KV Model:** Resolves mobile memory limitations via resolution-degradation memory zones.
- * **Reasoning Spine (Capability Graph):** Logic for dynamic capability selection and tool routing using Thompson sampling.
- * **JNI Bridge & Android Wrapper:** Connects the native kernel to a Jetpack Compose UI (Kotlin) with zero-copy access to memory buffers.
+Key Components:
+ * **Kernel Core (C++20):** Manages high-level orchestration, intent routing, and long-term memory.
+ * **Lexical Intent Spine:** Strict token-based hardware routing using SQLite FTS5 for zero-latency capability selection.
+ * **Native Direct Bridge:** Eliminates AIDL/IPC overhead by utilizing direct JNI callbacks from the Inference Spine to the UI flow within a single process.
+ * **Neural Spine (LiteRT-LM):** High-performance Gemma 4 inference optimized for Snapdragon 778G+ with prefill stability hardening.
+ * **RAM Guard:** Real-time LMK-aware KV-cache pruning triggered at 0.8GB free RAM threshold.
 
 ## 2. Logic & Algorithms
-### Intent Similarity Kernel (NEON SIMD)
-The core semantic matching is performed by a vectorized function, compute_intent_similarity_neon.
- * **Primary Logic:** Calculates cosine similarity with pre-normalized vectors. Range: [-1.0, 1.0].
- * **Thermal-Aware Fallback:** Monitors a global g_thermal_state. If state is SEVERE, it branches to a scalar implementation (compute_similarity_scalar) to mitigate thermal throttling.
- * **Normalization scaling:** 127 \times 127 = 16129 for integer arithmetic during dot product.
+### Lexical Intent Matching
+The core hardware matching is performed via exact token comparison.
+ * **Logic:** Input is tokenized and compared against a defined `capabilities.json` registry.
+ * **Hardening:** Requires both a **Subject** and an **Action** match to trigger hardware nodes (e.g., "Location" + "Show"), preventing general reasoning from misrouting.
 
-### Capability Graph Routing
- * **Routing Algorithm:** Uses an **Alias Method** for discrete approximation of **Thompson Sampling** to select capability nodes.
- * **Mathematical Audit (CI/CD):** Builds are validated by executing 10,000 samples against a known Beta distribution (\alpha=10, \beta=5). Errors must be within specified margins:
-   * Mean Error < 1\%.
-   * Variance Error < 5\%.
-
-### Memory Management & Forgetting (Tri-Anchor Model)
- * **LMK Response:** Simulates LMK pressure via onMemoryPressure() triggered by Kotlin `onTrimMemory` callbacks.
- * **Context Continuity:** Logic verifies token contexts and IDs remain intact throughout KV-cache compression.
- * **Pruning Logic:** Tokens move between Resolved zones based on token volume or LMK pressure signals.
- * **Natural Forgetting (L3 Deep-store):** Implements decay-based pruning using the stability formula: S(t) = e^{-\lambda t}. Low-priority memories with stability < 0.1 are pruned.
+### Context Management (Hardening v3.0)
+ * **Instruction Isolation:** System prompts are injected ONCE at the start of a conversation to maximize KV cache efficiency.
+ * **Thinking Filter:** Model reasoning tokens (`[THINK]`) are parsed in the UI for display but stripped via regex before SQLite persistence to prevent context poisoning.
+ * **Token Capping:** `maxNumTokens` is hard-set to **512** to align with SD778G+ prefill buffer limits.
 
 ## 3. Data Structures
-### Binary Checkpoint Schema (FlatBuffers)
-Designed for zero-copy deserialization and aligned access:
- * **Alignment:** 16-byte alignment of INT8 vector data is mandatory for NEON optimization.
- * **KV Cache Storage:** LZ4-compressed blocks of KV data. Differential LZ4 compressed KV cache in shadow buffer.
+### Lexical Persistence (SQLite FTS5)
+ * **FTS5 Virtual Tables:** Used for high-speed keyword retrieval in `ronin_memory.db`.
+ * **Chat History:** Cleaned (thinking-free) turns stored in `ronin_cognitive.db` for turn-based context reconstruction.
 
-### Tri-Anchor KV Model Structure
-The memory is resolution-degraded across three zones:
- * **Anchor 1 (Prefix/Identity):** System prompt and core identity are pinned via mlock() in C++20.
- * **Anchor 2 (Compressed Historical):** Summarized, INT8 quantized or LZ4 compressed historical context.
- * **Anchor 3 (Recent Context):** High-precision rolling window of the last N tokens. (Note: pruning logic shifts tokens between these).
-
-### SQLite Deep-store Schema
- * **Memory Storage:** Uses an Entity-Relationship model.
- * **Facts Table:** Includes a priority column (LOW, MEDIUM, HIGH, CRITICAL). BMD5 indexed summary of historical context.
+### JNI Direct Callback Table
+Designed for zero-lag token streaming:
+ * **pushTokenToUI:** Direct JNI jump from background inference thread to UI SharedFlow.
+ * **runNeuralReasoning:** Synchronous kernel-to-UI bridge for multi-step tool calls.
 
 ## 4. Platform Constraints
-### Mobile Hardware Targeting
- * **Architecture:** Snapdragon 778G / Cortex-A78 cores.
- * **Prerequisites:** ARMv8.2-A Dot Product extension is required for vectorized operations.
- * **Thermal Ceilings:** The kernel must shift to scalar paths on SEVERE global thermal state to prevent CPU frequency collapse.
+### Mobile Hardware targeting
+ * **Architecture:** Snapdragon 778G / Cortex-A78.
+ * **Memory Guard:** Dynamic KV-cache reset triggered if `OS_FREE_RAM < 800MB`.
+ * **Thermal Guard:** Scaling to scalar paths or cloud fallback if `TEMP > 42°C`.
 
 ### Operating System (Android)
- * **LMK Memory Pressure:** The Tri-Anchor model must respond to Kotlin-driven `onTrimMemory()` signals.
- * **Target API Level:** Target android-26 to natively support memfd_create for shadow buffers.
- * **Memory Residency:** Strict mlock() limits necessitate resolution-degradation memory management rather than full model state pinning.
+ * **Single Process Mandate:** InferenceService must share the Main process to ensure JNI Direct Bridge reliability.
+ * **Storage:** Mandatory filename resolution and compiled-cache purging to prevent storage bloat (>1GB).
 
-### Build & Verification (GitHub Actions)
- * **Build Pipeline:** must verify both compatibility (NDK build) and memory safety (Valgrind audit).
- * **Zero-Copy:** JNI boundary requires 16-byte pointer alignment for NEON vld1q_s8 instructions and use of GetDirectBufferAddress.
+## 5. Implementation Roadmap (Hardened v3.0)
+### JNI Direct Bridge (src/ronin_jni.cpp)
+ 1. Implement `native_pushTokenToKernel` for direct token ingestion.
+ 2. Ensure thread-safe GlobalRef for `MainActivity` instance.
+ 3. Use `ScopedJniEnv` for all worker-to-UI callbacks.
 
-## 5. Actionable Implementation Steps (C++20)
-### Vector Similarity Kernel (src/ronin_compute.cpp)
- 1. Initialize global thermal state flag g_thermal_state.
- 2. Implement compute_similarity_scalar for fallback.
- 3. Implement compute_intent_similarity_neon.
- 4. Inside neon function, check g_thermal_state. If SEVERE, jump to scalar.
- 5. Load 16 INT8 elements from normalized vectors (use vld1q_s8, require 16-byte aligned pointer).
- 6. Use vdotq_s32 SIMD intrinsic to process vectors (16 elements/cycle), accumulating to a 4-lane 32-bit register.
- 7. Perform final horizontal reduction using vaddvq_f32.
- 8. Normalize result after scaling by 127 \times 127 = 16129.
+### Lexical Intent Spine (src/intent_engine.cpp)
+ 1. Transition from fuzzy substring search to exact token-set comparison.
+ 2. Implement dual-condition Subject+Action check.
+ 3. Default to `ChatSkill (ID 1)` for all non-hardware queries.
 
-### JNI Bridge (src/ronin_jni.cpp)
- 1. Use GetDirectBufferAddress for Zero-Copy access to INT8 vectors.
- 2. Align pointer addresses to 16-bytes: (addr & 15) == 0.
- 3. Implement C++ wrapper function to wrap compute_intent_similarity_neon.
- 4. JNI signature must match com.ronin.kernel.NativeEngine (Kotlin).
-
-### Long-Term Memory Natural Forgetting Logic
- 1. Initialize SQLite Deep-store with Facts table and priority column.
- 2. Implement background maintenance loop in src/long_term_memory.cpp (C++20).
- 3. Scan Deep-store L3 using stability formula S(t) = e^{-\lambda t}. Identify memories below 0.1 stability threshold.
- 4. Identify LOW priority memories.
- 5. Prune memories meeting criteria.
- 6. Ensure maintenance task runs *only* when charging (Kotlin hook).
- 7. Log pruned items to Android system logs.
-
-### Build System & CI Configuration
- 1. Create standard Android project structure in android/: settings.gradle, build.gradle, AndroidManifest.xml (Kotlin-centric).
- 2. Set app-level build.gradle to use root CMakeLists.txt and include Jetpack Compose dependencies.
- 3. Modify build.yml in .github/workflows/:
-   * Verify linkage step for POSIX Realtime (rt) library on host builds.
-   * Integrate Valgrind with --error-exitcode=1 into test-host job.
-   * Add mandatory JNI symbol verification step using readelf on libronin_kernel.so. Explicitly fail build if symbols are missing.
-   * Set Android target to android-26 (API 26).
-   * Set build-android job to only run if test-host (host build/test) is 100% successful.
-   * Include mandatory precision test step in test-host (tests/precision_test.cpp). Ensure Mean Error < 1\%, Variance Error < 5\%.
-   * Include mandatory memory pressure stress test step in test-host (tests/memory_stress_test.cpp).
-   * Add final artifact upload step via actions/upload-artifact@v4 for .so (named ronin-kernel-arm64-v8a) and .apk files.
+### RAM Guard & Stability (InferenceService.kt)
+ 1. Set `maxNumTokens = 512` in `EngineConfig`.
+ 2. Monitor `getAvailableRAM()` before every inference.
+ 3. Execute `resetConversation()` if RAM pressure is critical.

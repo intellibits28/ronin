@@ -1,53 +1,40 @@
-🧠 Ronin Kernel - AI Context & Engineering Standards (REVISED v4.7)
+🧠 Ronin Kernel - AI Context & Engineering Standards (HARDENED v3.0)
 
 ## Project Overview
 Modular AI agent runtime, Android (Snapdragon 778G+), C++20 + Kotlin-JNI.
-Core Philosophy: A single-spine reasoning kernel.
+Core Philosophy: A single-spine reasoning kernel, hardened for production reliability.
 
-## Current Phase: 4.7 (Single Gemma 4 Only)
+## Current Phase: 11.2 (Hardened v3.0 Production)
 
-## ⚠️ CRITICAL ARCHITECTURAL RULES (v3.0 RESET)
+## ⚠️ CRITICAL ARCHITECTURAL RULES (v3.0 PRODUCTION)
 
-### 1. Single Reasoning Spine (Gemma 4)
-*   **Engine:** Gemma 4 (LiteRT-LM) is the ONLY reasoning engine. 
-*   **Vectorless Search:** All legacy embedding models (E5/ONNX) have been REMOVED. Ronin relies purely on SQLite FTS5 for fast keyword retrieval and Gemma 4's In-context Reasoning for semantic understanding.
-*   **Zero-SHM:** The legacy Shared Memory ring buffer has been deprecated. Token streaming is handled via direct JNI/Kotlin callbacks.
+### 1. Single Reasoning Spine (Gemma 4 Only)
+*   **Engine:** Gemma 4 (LiteRT-LM 0.12.0) is the ONLY reasoning engine. 
+*   **Vectorless Persistence:** All legacy embedding models (BGE/E5) have been REMOVED. Ronin relies purely on SQLite FTS5 for fast lexical keyword retrieval and Gemma 4's In-context Reasoning for semantic depth.
+*   **Direct JNI Bridge:** The AIDL/IPC transport for tokens has been replaced with a **Native Direct Bridge** (Single-Process). Token fragments are streamed via direct JNI callbacks (`pushTokenToUI`) for SHM-like performance.
 
-### 2. SentencePiece Runtime
-*   **Tokenizer:** Use SentencePiece Runtime (C++) with `assets/models/sentencepiece.bpe.model`.
+### 2. Precise Intent Routing (Lexical Spine)
+*   **Matching:** Hardware intents (GPS, Flashlight, etc.) must use **Strict Token-based matching** via `IntentEngine.cpp`. 
+*   **Avoid Substrings:** Fuzzy substring matching is FORBIDDEN for hardware triggers to prevent general questions from misrouting.
 
 ### 3. JNI Memory Safety (The JNI Guard)
-*   **Deep-Copy Requirement:** All JNI strings must be immediately deep-copied to `std::string` using the `GetStringUTFChars` / `ReleaseStringUTFChars` pattern.
-*   **Threading:** C++ threads must be strictly asynchronous. Attach/DetachCurrentThread pairing is mandatory.
+*   **Deep-Copy Requirement:** All JNI strings must be immediately deep-copied to `std::string`.
+*   **Thread Hygiene:** ScopedJniEnv is mandatory for all background thread callbacks.
 
-### 4. Memory & LMK Guards
-*   Adaptive RAM Guard thresholds:
-    *   1.0GB for < 800MB free.
-    *   1.2GB for < 1.5GB free.
-    *   1.5GB for Gemma 4.
+### 4. Memory & LMK Guards (SD778G+ Tuning)
+*   **Token Limit:** `maxNumTokens` is hard-capped at **512** for SD778G+ prefill stability.
+*   **RAM Guard:** Automatic KV-cache pruning (reset) is triggered if free RAM falls below **0.8GB**.
 
 ## Memory Persistence: Spec v2.1
 * **Core Strategy:** Lexical Keyword Search via FTS5.
-* **Source of Truth:** Full SQLite table structures and triggers are defined in:
-    👉 **`[Ronin_Memory_Model_v2_1.md](./Ronin_Memory_Model_v2_1.md)`**
-
-## Hardware & Sensor Intelligence (Future)
-* **Strategy:** Offloading high-frequency sensor processing (IMU/Bio) to DSP/NPU.
-* **Specification:** Aligned with low-latency Hexagon/Snapdragon reality:
-    👉 **`[Ronin_Sensor_DSP_Tool_v1.0.md](./Ronin_Sensor_DSP_Tool_v1.0.md)`**
+* **Storage:** `ronin_cognitive.db` (Chat History) and `ronin_memory.db` (FTS5 Keywords).
 
 ## Audit & Verification Protocol
-1.  **UI Scope:** Use `LocalContext.current` for `filesDir` access in Composables.
-2.  **Schema Alignment:** Verify SQLite logic against `Ronin_Memory_Model_v2_1.md`.
-3.  **Tool Depth:** Ensure `MAX_TOOL_CALL_DEPTH = 1` is enforced in `IntentEngine`.
+1.  **Thinking Filter:** All model reasoning (`[THINK]`) must be stripped before SQLite persistence to prevent context poisoning.
+2.  **Instruction Isolation:** System instructions are sent ONCE at the start of a conversation to optimize KV cache.
+3.  **Tool Depth:** `MAX_TOOL_CALL_DEPTH = 1` is strictly enforced.
 
 ### 7. Security Posture: Sovereign Control Mode
-*   **Sandboxing (Privilege Isolation):** 
-    *   Intent Engine မှ NativeBridge ကို ခေါ်ယူရာတွင် 'Read-only' mode အား Default အဖြစ် ကျင့်သုံးသည်။ 
-    *   System-wide change များအတွက် 'Write-Barrier' ပါဝင်ပြီး User ၏ တိုက်ရိုက်ခွင့်ပြုချက် (Explicit Consent) လိုအပ်သည်။
-*   **Atomic Shutdown Path:** 
-    *   `Kernel::Shutdown()` ခေါ်ယူသည်နှင့် Native memory အားလုံးအား `munmap` လုပ်ခြင်းနှင့် LiteRT Session ဖျက်သိမ်းခြင်းတို့ကို Atomic ဖြစ်စေရမည်။
-    *   Shutdown စတင်ချိန်မှစ၍ Inference အသစ်များ လက်ခံခြင်းကို ချက်ချင်းရပ်ဆိုင်းသည်။
-*   **Sovereign Override (`FORCE_EXECUTE`):** 
-    *   User မှ `FORCE_EXECUTE` keyword အား ထည့်သွင်းအသုံးပြုပါက Safety filtering နှင့် Confidence thresholds အားလုံးကို Bypass လုပ်ခွင့်ရှိသည်။ 
-    *   Bypass လုပ်သော်လည်း အဆိုပါ action အား Audit-trail အဖြစ် စနစ်တကျ မှတ်တမ်းတင် သိမ်းဆည်းသည်။
+*   **Sandboxing:** NativeBridge operates in 'Read-only' mode by default. System-wide changes require explicit User Consent.
+*   **Atomic Shutdown:** `Kernel::Shutdown()` must munmap native memory and close LiteRT sessions atomically.
+*   **Sovereign Override (`FORCE_EXECUTE`):** User can bypass safety filters, but all such actions are recorded in the Audit-trail.
