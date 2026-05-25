@@ -251,6 +251,17 @@ void native_onTokenGenerated(JNIEnv *env, jobject thiz, jstring fragment, jboole
     }
 }
 
+void native_pushTokenToKernel(JNIEnv *env, jobject thiz, jstring token, jboolean is_final) {
+    // Phase 11.2: Hardened v3.0 Bridge
+    // This allows the Worker Process to push tokens directly into the Main Process UI Flow
+    // via a JNI jump, bypasses AIDL bottlenecks.
+    jclass cls = env->GetObjectClass(thiz);
+    jmethodID method = env->GetMethodID(cls, "pushTokenToUI", "(Ljava/lang/String;Z)V");
+    if (method) {
+        env->CallVoidMethod(thiz, method, token, is_final);
+    }
+}
+
 // --- JNI Registration ---
 
 static JNINativeMethod g_methods[] = {
@@ -284,6 +295,7 @@ static JNINativeMethod g_methods[] = {
 static JNINativeMethod g_worker_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
     {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB},
+    {"pushTokenToKernelNative", "(Ljava/lang/String;Z)V", (void*)native_pushTokenToKernel},
     {"shutdownKernelNative", "()V", (void*)native_shutdownKernel}
 };
 

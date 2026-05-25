@@ -18,6 +18,7 @@
 #include <cmath>
 #include <algorithm>
 #include <iomanip>
+#include <set>
 #include "ronin_log.h"
 #include "capabilities/hardware_nodes.h"
 #include "capabilities/file_search_node.h"
@@ -28,7 +29,6 @@
 
 namespace Ronin::Kernel::Intent {
 
-// Initialize to NORMAL by default
 ThermalState g_thermal_state = ThermalState::NORMAL;
 
 static std::string strip_punctuation(const std::string& s) {
@@ -130,7 +130,7 @@ IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     m_skill_registry[6] = std::make_shared<WifiNode>();
     m_skill_registry[7] = std::make_shared<BluetoothNode>();
     
-    LOGI(TAG, "IntentEngine: Modular Skill Registry initialized.");
+    LOGI(TAG, "IntentEngine: Hardened v3.0 modular registry initialized.");
 }
 
 std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param) {
@@ -169,7 +169,6 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
     std::string content = buffer.str();
     m_capabilities.clear();
     
-    // Improved JSON-ish parser for subjects, actions, and ids
     size_t pos = 0;
     while ((pos = content.find("\"id\"", pos)) != std::string::npos) {
         CapabilityEntry cap;
@@ -260,49 +259,35 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         return {0, 1.0f, true};
     }
 
-    // Phase 11.2: Precise Token-based Intent Routing
-    // To prevent general "Where" questions from triggering hardware GPS.
+    // Hardened v3.0: Lexical Token Spine
     auto tokens = tokenize(input_lower);
+    std::set<std::string> token_set(tokens.begin(), tokens.end());
 
     for (const auto& cap : m_capabilities) {
         if (cap.id == 1) continue; 
 
         bool subject_found = false;
         for (const auto& s : cap.subjects) {
-            // Check for EXACT token match or specific phrase
-            for (const auto& token : tokens) {
-                if (token == s) { subject_found = true; break; }
-            }
-            if (subject_found) break;
-            
-            // Check for phrase in lower input (e.g. "မြန်မာစာ")
-            if (input_lower.find(s) != std::string::npos) {
-                // Heuristic: If it's a very short keyword, enforce token match.
-                // If it's a specific technical term, find is okay.
-                if (s.length() > 6) { subject_found = true; break; }
-            }
+            // Priority 1: Exact token match
+            if (token_set.count(s)) { subject_found = true; break; }
+            // Priority 2: Technical compound match (e.g. "flash light")
+            if (input_lower.find(s) != std::string::npos && s.length() > 6) { subject_found = true; break; }
         }
 
         if (subject_found) {
             bool action_found = false;
             for (const auto& a : cap.actions) {
-                for (const auto& token : tokens) {
-                    if (token == a) { action_found = true; break; }
-                }
-                if (action_found) break;
-                if (input_lower.find(a) != std::string::npos && a.length() > 4) {
-                    action_found = true; break;
-                }
+                if (token_set.count(a)) { action_found = true; break; }
+                if (input_lower.find(a) != std::string::npos && a.length() > 5) { action_found = true; break; }
             }
 
             if (action_found) {
-                LOGI(TAG, "Precise Intent Match: ID %u", cap.id);
+                LOGI(TAG, "Hardened Lexical Match: ID %u", cap.id);
                 return {cap.id, 1.0f, true};
             }
         }
     }
 
-    // Default to Local Reasoning if no specific hardware action triggered
     return {1, 1.0f, true}; 
 }
 
