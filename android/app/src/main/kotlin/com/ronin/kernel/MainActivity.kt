@@ -113,7 +113,6 @@ class MainActivity : ComponentActivity() {
             chatViewModel.wizardState = WizardState.IMPORTING
             val success = withContext(Dispatchers.IO) {
                 try {
-                    // Phase 11.0: Real Filename Resolution to prevent redundant copies
                     val returnCursor = contentResolver.query(uri, null, null, null, null)
                     val nameIndex = returnCursor?.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                     returnCursor?.moveToFirst()
@@ -149,7 +148,6 @@ class MainActivity : ComponentActivity() {
         val modelsDir = File(filesDir, "models")
         if (!modelsDir.exists()) modelsDir.mkdirs()
 
-        // Clean scan specifically for model files
         val modelFiles = modelsDir.listFiles { file -> 
             !file.isDirectory && file.length() > 1024 && 
             (file.name.endsWith(".litertlm") || file.name.endsWith(".bin"))
@@ -157,7 +155,6 @@ class MainActivity : ComponentActivity() {
         
         val uniquePaths = modelFiles.map { it.absolutePath }.distinct().sorted()
         
-        // Strict list sync to prevent duplicates in UI
         if (chatViewModel.discoveredModels.toList() != uniquePaths) {
             chatViewModel.discoveredModels.clear()
             chatViewModel.discoveredModels.addAll(uniquePaths)
@@ -284,10 +281,7 @@ class MainActivity : ComponentActivity() {
 
     fun clearModelCache() {
         val cacheDir = File(filesDir, "models/compiled_cache")
-        if (cacheDir.exists()) {
-            cacheDir.deleteRecursively()
-        }
-        // Also clear system cache
+        if (cacheDir.exists()) cacheDir.deleteRecursively()
         codeCacheDir.deleteRecursively()
         Toast.makeText(this, "System & Model cache cleared.", Toast.LENGTH_SHORT).show()
     }
