@@ -28,6 +28,9 @@ class InferenceService : Service() {
     private var litertConversation: Conversation? = null
     private var currentModelPath: String = ""
     
+    // Phase 11.2: Context Management to prevent Error 13
+    private var isConversationFresh = true
+    
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
@@ -57,9 +60,8 @@ class InferenceService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(CHANNEL_ID, "Ronin Inference Engine", NotificationManager.IMPORTANCE_LOW)
             val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(serviceChannel)
+            manager?.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Ronin Inference", NotificationManager.IMPORTANCE_LOW))
         }
     }
 
@@ -75,7 +77,6 @@ class InferenceService : Service() {
         override fun loadModel(modelPath: String): Boolean = tryHydrate(modelPath)
         
         override fun runReasoning(input: String): String = runBlocking {
-            // Synchronous fallback for C++ kernel calls (if needed)
             val fullResult = StringBuilder()
             executeInference(input).collect { fullResult.append(it) }
             fullResult.toString()
@@ -84,9 +85,7 @@ class InferenceService : Service() {
         override fun streamReasoning(input: String, callback: IInferenceCallback) {
             serviceScope.launch {
                 try {
-                    executeInference(input).collect { token ->
-                        callback.onToken(token, false)
-                    }
+                    executeInference(input).collect { token -> callback.onToken(token, false) }
                     callback.onToken("", true)
                 } catch (e: Exception) {
                     callback.onError(e.message ?: "Unknown Error")
@@ -103,6 +102,8 @@ class InferenceService : Service() {
             try {
                 litertConversation?.close()
                 litertConversation = litertEngine?.createConversation()
+                isConversationFresh = true
+                Log.i(TAG, "Conversation Reset: Context Cleared.")
             } catch (e: Exception) {}
         }
     }
@@ -114,14 +115,16 @@ class InferenceService : Service() {
         releaseResources()
 
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
-        if (freeRam < 1.0f) return false
+        // Hard check: Gemma 4 2B IT needs at least 1.2GB free to avoid Status 13 on SD778G+
+        if (freeRam < 1.1f) return false
 
         return try {
-            val config = EngineConfig(modelPath = path, maxNumTokens = 1024)
+            val config = EngineConfig(modelPath = path, maxNumTokens = 512) 
             val engine = Engine(config)
             engine.initialize()
             litertEngine = engine
             litertConversation = engine.createConversation()
+            isConversationFresh = true
             currentModelPath = path
             true
         } catch (e: Throwable) { false }
@@ -139,38 +142,36 @@ class InferenceService : Service() {
     private fun executeInference(input: String): Flow<String> = flow {
         val conversation = litertConversation ?: return@flow
         
-        // Phase 11.1 Hardening: 
-        // Detect if C++ has pre-formatted the prompt with turn tags.
-        // If so, we RESET the conversation to avoid duplicating context in the KV cache.
-        val isPreFormatted = input.contains("<start_of_turn>")
+        // Phase 11.2: Instruction Isolation
+        // Instructions are ONLY sent if the conversation is fresh.
+        val instructions = if (input.contains("[SYSTEM]")) input.substringAfter("[SYSTEM]").substringBefore("[USER]").trim() else ""
+        val userPrompt = if (input.contains("[USER]")) input.substringAfter("[USER]").trim() else input
         
-        if (isPreFormatted) {
-            Log.i(TAG, "Pre-formatted prompt detected. Resetting KV cache for context sync.")
-            try {
-                litertConversation?.close()
-                litertConversation = litertEngine?.createConversation()
-            } catch (e: Exception) {}
-        }
-
-        val cleanInput = input
-            .replace("[SYSTEM]", "")
-            .replace("[USER]", "")
-            .trim()
-        
-        if (cleanInput.isEmpty()) return@flow
-
-        // If it's pre-formatted, we still pass it to Message.user(), but the SDK
-        // will wrap it in ANOTHER set of tags. This is usually okay if the model 
-        // sees it as a single long instruction, but not ideal.
-        // However, given the current SDK limitations, this is the safest path.
-        val userMsg = Message.user(cleanInput)
-        (litertConversation ?: conversation).sendMessageAsync(userMsg).collect { partial ->
-            val token = try { 
-                partial.javaClass.getMethod("getText").invoke(partial) as String 
-            } catch(e: Exception) { partial.toString() }
-            emit(token)
+        try {
+            if (isConversationFresh && instructions.isNotEmpty()) {
+                Log.i(TAG, "Initializing session with system instructions...")
+                // Note: High-level SDK might not have .system(), using first .user() as instructions
+                val combinedInit = instructions + "\n\nUser: " + userPrompt
+                conversation.sendMessageAsync(Message.user(combinedInit)).collect { partial ->
+                    emit(extractToken(partial))
+                }
+                isConversationFresh = false
+            } else {
+                conversation.sendMessageAsync(Message.user(userPrompt)).collect { partial ->
+                    emit(extractToken(partial))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Inference failure: ${e.message}")
+            throw e
         }
     }.flowOn(Dispatchers.IO)
+
+    private fun extractToken(partial: Any): String {
+        return try { 
+            partial.javaClass.getMethod("getText").invoke(partial) as String 
+        } catch(e: Exception) { partial.toString() }
+    }
 
     override fun onDestroy() {
         super.onDestroy()

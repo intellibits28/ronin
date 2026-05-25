@@ -248,10 +248,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 if (endpoint.contains("generativelanguage")) JSONObject(response).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
                 else JSONObject(response).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
             } else {
-                val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "No error body"
-                "Error: [${conn.responseCode}] $err"
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "Empty error response"
+                "Error: Server returned code ${conn.responseCode} - $err"
             }
-        } catch (e: Exception) { "Error: ${e::class.java.simpleName} - ${e.message}" }
+        } catch (e: Exception) { 
+            "Error: ${e::class.java.simpleName} - ${e.message ?: "Network failure or timeout"}"
+        }
     }
 
     @Suppress("unused")
