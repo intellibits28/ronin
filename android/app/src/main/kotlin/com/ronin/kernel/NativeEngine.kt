@@ -64,7 +64,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    // --- JNI API ---
+    // --- JNI API (Aligned with g_methods in ronin_jni.cpp) ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun setEngineInstanceNative()
     private external fun getChatHistoryNative(limit: Int, offset: Int): Array<String>
@@ -87,7 +87,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun updateCloudProvidersNative(json: String): Boolean
     private external fun scanSpecificPathNative(path: String): Boolean
     private external fun isValidModelNative(path: String): Boolean
-    private external fun nativeResetContext()
+    private external fun resetContextNativeJNI() // Renamed to resolve collision
     private external fun requestCancellationNative()
 
     @Suppress("unused")
@@ -299,7 +299,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun nativeResetContext() {
         if (isLibLoaded) {
             try {
-                nativeResetContext() // Call JNI
+                resetContextNativeJNI() // Call renamed JNI
                 inferenceService?.resetConversation() // Clear SDK KV Cache
             } catch (e: Exception) { Log.e(TAG, "Reset failed: ${e.message}") }
         }

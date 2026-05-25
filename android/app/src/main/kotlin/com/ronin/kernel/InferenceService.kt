@@ -69,14 +69,23 @@ class InferenceService : Service() {
             .build()
     }
 
+    /**
+     * Shared logic to prune KV cache and reset turn history.
+     */
+    private fun resetConversationInternal() {
+        try {
+            litertConversation?.close()
+            litertConversation = litertEngine?.createConversation()
+            isConversationFresh = true
+            Log.i(TAG, "Conversation Reset: KV Cache Pruned.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Reset failed: ${e.message}")
+        }
+    }
+
     private val binder = object : IInferenceService.Stub() {
         override fun loadModel(modelPath: String): Boolean = tryHydrate(modelPath)
         
-        /**
-         * Hardened Synchronous Inference:
-         * Returns full result to C++ kernel for persistent history, 
-         * while fragments are streamed to UI via pushTokenToKernelNative.
-         */
         override fun runReasoning(input: String): String = runBlocking(Dispatchers.IO) {
             val fullResult = StringBuilder()
             try {
@@ -94,7 +103,6 @@ class InferenceService : Service() {
         }
 
         override fun streamReasoning(input: String, callback: IInferenceCallback) {
-            // Forward to synchronous core in v3.0
             runReasoning(input)
         }
 
@@ -103,13 +111,7 @@ class InferenceService : Service() {
         override fun notifyTrimMemory(level: Int) { if (level >= 80) resetConversation() }
         override fun setSafeMode(enabled: Boolean) {}
         override fun isLowPerformanceMode(): Boolean = false
-        override fun resetConversation() {
-            try {
-                litertConversation?.close()
-                litertConversation = litertEngine?.createConversation()
-                isConversationFresh = true
-            } catch (e: Exception) {}
-        }
+        override fun resetConversation() = resetConversationInternal()
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -119,8 +121,6 @@ class InferenceService : Service() {
         releaseResources()
 
         return try {
-            // Hardened SD778G+ Settings:
-            // 512 tokens limit for stable KV cache allocation.
             val config = EngineConfig(modelPath = path, maxNumTokens = 512)
             val engine = Engine(config)
             engine.initialize()
@@ -148,7 +148,6 @@ class InferenceService : Service() {
     private fun executeInference(input: String): Flow<String> = flow {
         val conversation = litertConversation ?: return@flow
         
-        // Phase 11.2: Raw Prompt Passthrough (LiteRT-LM SDK wraps internally)
         val instructions = if (input.contains("[SYSTEM]")) input.substringAfter("[SYSTEM]").substringBefore("[USER]").trim() else ""
         val userPrompt = if (input.contains("[USER]")) input.substringAfter("[USER]").trim() else input
         
@@ -161,14 +160,14 @@ class InferenceService : Service() {
 
         if (finalInput.isEmpty()) return@flow
 
-        // RAM Guard: Check before starting inference
+        // RAM Guard: Prune KV cache if pressure is high
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
         if (freeRam < 0.8f) {
-            Log.w(TAG, "LOW RAM ALERT (%.2fGB). Resetting conversation.".format(freeRam))
-            resetConversation() // Prune KV Cache
+            Log.w(TAG, "LOW RAM ALERT (%.2fGB). Forcing KV Cache Pruning.".format(freeRam))
+            resetConversationInternal()
         }
 
-        conversation.sendMessageAsync(Message.user(finalInput)).collect { partial ->
+        (litertConversation ?: conversation).sendMessageAsync(Message.user(finalInput)).collect { partial ->
             val token = try { 
                 partial.javaClass.getMethod("getText").invoke(partial) as String 
             } catch(e: Exception) { partial.toString() }

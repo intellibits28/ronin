@@ -272,7 +272,7 @@ static JNINativeMethod g_methods[] = {
     {"scanSpecificPathNative", "(Ljava/lang/String;)Z", (void*)native_scanSpecificPath},
     {"isValidModelNative", "(Ljava/lang/String;)Z", (void*)native_isValidModel},
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory},
-    {"nativeResetContext", "()V", (void*)native_resetContext},
+    {"resetContextNativeJNI", "()V", (void*)native_resetContext},
     {"requestCancellationNative", "()V", (void*)native_requestCancellation}
 };
 
