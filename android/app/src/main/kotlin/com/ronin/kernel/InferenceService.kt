@@ -16,8 +16,8 @@ import androidx.core.app.NotificationCompat
 import java.io.File
 
 /**
- * Hardened v3.3 Inference Spine
- * Supports dynamic sampling parameters (T,P,K) and robust RAM management.
+ * Hardened v3.5 Inference Spine
+ * Optimized prompt parsing and multi-process JNI stability.
  */
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Worker"
@@ -28,7 +28,6 @@ class InferenceService : Service() {
     private var litertConversation: Conversation? = null
     private var currentModelPath: String = ""
     
-    // Sampling State
     private var currentTemp = 0.7f
     private var currentTopK = 40
     private var currentTopP = 0.9f
@@ -36,7 +35,7 @@ class InferenceService : Service() {
     private var isConversationFresh = true
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // --- Native JNI Interface ---
+    // --- Native JNI Interface (Essential Only) ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun getFreeRamGBNative(): Float
     private external fun shutdownKernelNative()
@@ -67,8 +66,8 @@ class InferenceService : Service() {
 
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Ronin Kernel: Hardened v3.3")
-            .setContentText("Neural Spine Active (T,P,K Enabled)")
+            .setContentTitle("Ronin Kernel: Hardened v3.5")
+            .setContentText("Neural Spine Active (v3.5 Build)")
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .build()
     }
@@ -80,9 +79,7 @@ class InferenceService : Service() {
                 litertConversation = litertEngine?.createConversation()
                 isConversationFresh = true
                 Log.i(TAG, "Conversation Reset: KV Cache Pruned.")
-            } catch (e: Exception) {
-                Log.e(TAG, "Reset failed: ${e.message}")
-            }
+            } catch (e: Exception) { Log.e(TAG, "Reset failed: ${e.message}") }
         }
     }
 
@@ -91,22 +88,16 @@ class InferenceService : Service() {
         
         override fun runReasoning(input: String): String = runBlocking(Dispatchers.IO) {
             val fullResult = StringBuilder()
-            try {
-                executeInference(input).collect { token -> fullResult.append(token) }
-                fullResult.toString()
-            } catch (e: Exception) { "Error: ${e.message}" }
+            try { executeInference(input).collect { token -> fullResult.append(token) } ; fullResult.toString() } 
+            catch (e: Exception) { "Error: ${e.message}" }
         }
 
         override fun streamReasoning(input: String, callback: IInferenceCallback) {
             serviceScope.launch {
                 try {
-                    executeInference(input).collect { token ->
-                        callback.onToken(token, false)
-                    }
+                    executeInference(input).collect { token -> callback.onToken(token, false) }
                     callback.onToken("", true)
-                } catch (e: Exception) {
-                    callback.onError(e.message ?: "Inference Fault")
-                }
+                } catch (e: Exception) { callback.onError(e.message ?: "Inference Fault") }
             }
         }
 
@@ -118,12 +109,7 @@ class InferenceService : Service() {
         override fun resetConversation() = resetConversationInternal()
         
         override fun updateSamplingParams(temp: Float, topK: Int, topP: Float) {
-            currentTemp = temp
-            currentTopK = topK
-            currentTopP = topP
-            Log.d(TAG, "Sampling Params Updated: T=$temp, K=$topK, P=$topP")
-            // Note: LiteRT-LM SDK 0.12.0 might require re-hydration for some params
-            // but we'll store them for the next conversation or hydration.
+            currentTemp = temp; currentTopK = topK; currentTopP = topP
         }
     }
 
@@ -132,61 +118,40 @@ class InferenceService : Service() {
     private fun tryHydrate(path: String): Boolean {
         if (!File(path).exists()) return false
         releaseResources()
-
         return try {
-            // Hardened v3.3 tuning: Balanced sequence length
-            // Note: In 0.12.0, some params might be positional.
             val config = EngineConfig(modelPath = path, maxNumTokens = 1024)
             val engine = Engine(config)
             engine.initialize()
             litertEngine = engine
             litertConversation = engine.createConversation()
-            isConversationFresh = true
-            currentModelPath = path
+            isConversationFresh = true; currentModelPath = path
             Log.i(TAG, "Hardened Spine Hydrated: $path")
             true
-        } catch (e: Throwable) { 
-            Log.e(TAG, "Hydration Failed: ${e.message}")
-            false 
-        }
+        } catch (e: Throwable) { Log.e(TAG, "Hydration Failed: ${e.message}"); false }
     }
 
     private fun releaseResources() {
         synchronized(this) {
-            try {
-                litertConversation?.close()
-                litertConversation = null
-                litertEngine?.close()
-                litertEngine = null
-            } catch (e: Exception) {}
+            try { litertConversation?.close(); litertConversation = null; litertEngine?.close(); litertEngine = null } 
+            catch (e: Exception) {}
         }
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
+        // v3.5: Use explicit tag boundaries from C++ PromptFactory
+        val userPrompt = if (input.contains("User: ")) input.substringAfter("User: ").trim() else input
+        
+        // RAM Guard
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
         if (freeRam < 1.1f && !isConversationFresh) {
             Log.w(TAG, "LOW RAM ALERT (%.2fGB). Pruning KV Cache.".format(freeRam))
             resetConversationInternal()
         }
 
-        val activeConv = synchronized(this@InferenceService) {
-            litertConversation ?: return@flow
-        }
+        val activeConv = synchronized(this@InferenceService) { litertConversation ?: return@flow }
         
-        val instructions = if (input.contains("[SYSTEM]")) input.substringAfter("[SYSTEM]").substringBefore("[USER]").trim() else ""
-        val userPrompt = if (input.contains("[USER]")) input.substringAfter("[USER]").trim() else input
-        
-        val finalInput = if (isConversationFresh && instructions.isNotEmpty()) {
-            isConversationFresh = false
-            "$instructions\n\n$userPrompt"
-        } else {
-            userPrompt
-        }
-
-        if (finalInput.isEmpty()) return@flow
-
         try {
-            activeConv.sendMessageAsync(Message.user(finalInput)).collect { partial ->
+            activeConv.sendMessageAsync(Message.user(userPrompt)).collect { partial ->
                 val token = try { 
                     partial.javaClass.getMethod("getText").invoke(partial) as String 
                 } catch(e: Exception) { partial.toString() }
@@ -198,9 +163,5 @@ class InferenceService : Service() {
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun onDestroy() {
-        super.onDestroy()
-        releaseResources()
-        try { shutdownKernelNative() } catch (e: Exception) {}
-    }
+    override fun onDestroy() { super.onDestroy(); releaseResources(); try { shutdownKernelNative() } catch (e: Exception) {} }
 }
