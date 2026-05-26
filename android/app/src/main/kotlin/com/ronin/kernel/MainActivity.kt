@@ -332,7 +332,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
-    val context = LocalContext.current; val scope = rememberCoroutineScope(); val scaffoldState = rememberScaffoldState()
+    val context = LocalContext.current; val activity = context.findActivity() as? MainActivity
+    val scope = rememberCoroutineScope(); val scaffoldState = rememberScaffoldState()
     var currentInput by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
