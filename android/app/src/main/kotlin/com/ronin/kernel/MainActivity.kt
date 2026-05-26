@@ -97,6 +97,7 @@ class ChatViewModel : ViewModel() {
     var ramTotalGB by mutableStateOf(0f)
 
     var offlineMode by mutableStateOf(false)
+    var cloudOnlyMode by mutableStateOf(false)
     var localModelPath by mutableStateOf("")
     var primaryCloudProvider by mutableStateOf("Gemini")
     val cloudProviders = mutableStateListOf<CloudProvider>()
@@ -105,6 +106,7 @@ class ChatViewModel : ViewModel() {
     var systemPrompt by mutableStateOf("You are Ronin. Always reason inside [THINK] [/THINK] and then reply inside [REPLY] [/REPLY] in Myanmar.")
 
     var showAddCloudDialog by mutableStateOf(false)
+    var editingProvider by mutableStateOf<CloudProvider?>(null)
     var kernelStatus by mutableStateOf("Initializing...")
     var isGenerating by mutableStateOf(false)
 }
@@ -113,6 +115,8 @@ class MainActivity : ComponentActivity() {
     internal lateinit var nativeEngine: NativeEngine
     private lateinit var sharedPreferences: android.content.SharedPreferences
     private lateinit var fusedLocationClient: FusedLocationProviderClient
+    // ... rest of the class remains same but I need to include the modified methods
+    // I will replace larger blocks to be safe.
 
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
         if (permissions.entries.all { it.value }) scanLocalModels()
@@ -168,6 +172,7 @@ class MainActivity : ComponentActivity() {
         chatViewModel.topK = sharedPreferences.getInt("top_k", 40)
         chatViewModel.topP = sharedPreferences.getFloat("top_p", 0.9f)
         chatViewModel.isThinkingEnabled = sharedPreferences.getBoolean("is_thinking_enabled", true)
+        chatViewModel.cloudOnlyMode = sharedPreferences.getBoolean("cloud_only_mode", false)
 
         lifecycleScope.launch(Dispatchers.Main) {
             chatViewModel.kernelStatus = "Booting Engine..."
@@ -290,6 +295,7 @@ class MainActivity : ComponentActivity() {
 
     fun deleteLocalModel(path: String) { if (File(path).delete()) { Toast.makeText(this, "Deleted", Toast.LENGTH_SHORT).show(); scanLocalModels() } }
     fun clearModelCache() { File(filesDir, "models/compiled_cache").deleteRecursively(); codeCacheDir.deleteRecursively(); Toast.makeText(this, "Cache Cleared", Toast.LENGTH_SHORT).show() }
+    fun getApiKey(provider: String): String = sharedPreferences.getString(provider, "") ?: ""
     fun savePrimaryCloudProvider(name: String) { sharedPreferences.edit().putString("primary_cloud_provider", name).apply(); nativeEngine.setPrimaryCloudProviderSafe(name) }
     fun saveApiKey(provider: String, key: String) { sharedPreferences.edit().putString(provider, key).apply() }
     fun addCloudProvider(n: String, t: String, e: String, m: String) { val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]; if (chatViewModel.cloudProviders.none { it.name == n }) { chatViewModel.cloudProviders.add(CloudProvider(n, t, e, m, "bearer")); saveCloudProvidersToDisk() } }
@@ -299,6 +305,7 @@ class MainActivity : ComponentActivity() {
     fun saveMaxTokens(t: Int) { sharedPreferences.edit().putInt("max_tokens", t).apply() }
     fun saveSamplingParams(t: Float, k: Int, p: Float) { sharedPreferences.edit().putFloat("temperature", t).putInt("top_k", k).putFloat("top_p", p).apply(); nativeEngine.updateSamplingParams(t, k, p) }
     fun saveThinkingToggle(enabled: Boolean) { sharedPreferences.edit().putBoolean("is_thinking_enabled", enabled).apply() }
+    fun saveCloudOnlyMode(enabled: Boolean) { sharedPreferences.edit().putBoolean("cloud_only_mode", enabled).apply() }
 
     private fun checkAndRequestPermissions() {
         val permissions = mutableListOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.CAMERA)
@@ -380,14 +387,22 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                     val raw = currentInput; chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", raw)); currentInput = ""; chatViewModel.isGenerating = true
                                     chatViewModel.reasoningLogsText = "> Processing: $raw"
                                     scope.launch { 
-                                        if (!chatViewModel.isGemmaReady) { 
+                                        val isCommand = raw.trim().startsWith("/")
+                                        if (!isCommand && (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady)) { 
+                                            val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "")
+                                            chatViewModel.messages.add(roninMsg)
                                             val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
                                             val res = engine.performCloudInference(raw, chatViewModel.primaryCloudProvider, apiKey)
-                                            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis() + 1, "Ronin", res)) 
+                                            val idx = chatViewModel.messages.indexOf(roninMsg)
+                                            if (idx != -1) { chatViewModel.messages[idx] = roninMsg.copy(content = res) }
                                         } else { 
                                             val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "")
                                             chatViewModel.messages.add(roninMsg)
-                                            engine.processInputAsync(raw, chatViewModel.systemPrompt)
+                                            val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
+                                            val idx = chatViewModel.messages.indexOf(roninMsg)
+                                            if (idx != -1 && chatViewModel.messages[idx].content.isEmpty()) {
+                                                chatViewModel.messages[idx] = roninMsg.copy(content = result)
+                                            }
                                         } ; chatViewModel.isGenerating = false 
                                     } 
                                 } 
@@ -398,6 +413,9 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             }
         }
     }
+    if (chatViewModel.showAddCloudDialog) {
+        CloudProviderDialog(chatViewModel, activity)
+    }
 }
 
 @Composable
@@ -406,8 +424,9 @@ fun ModalDrawerSheet(chatViewModel: ChatViewModel, brainPicker: ActivityResultLa
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1C2C)).verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Ronin Configuration", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White); Spacer(Modifier.height(24.dp))
         
-        Text("Reasoning Logs", fontSize = 12.sp, color = Color.Gray)
-        Row(verticalAlignment = Alignment.CenterVertically) { Text("Show thinking process", modifier = Modifier.weight(1f), color = Color.White, fontSize = 14.sp); Switch(checked = chatViewModel.showReasoning, onCheckedChange = { chatViewModel.showReasoning = it }) }
+        Text("Operation Mode", fontSize = 12.sp, color = Color.Gray)
+        Row(verticalAlignment = Alignment.CenterVertically) { Text("Cloud Only Mode", modifier = Modifier.weight(1f), color = Color.White, fontSize = 14.sp); Switch(checked = chatViewModel.cloudOnlyMode, onCheckedChange = { chatViewModel.cloudOnlyMode = it; activity?.saveCloudOnlyMode(it) }) }
+        Row(verticalAlignment = Alignment.CenterVertically) { Text("Reasoning Logs", modifier = Modifier.weight(1f), color = Color.White, fontSize = 14.sp); Switch(checked = chatViewModel.showReasoning, onCheckedChange = { chatViewModel.showReasoning = it }) }
         
         Divider(Modifier.padding(vertical = 16.dp))
         Text("Sampling Parameters (T,P,K)", fontSize = 12.sp, color = Color.Gray)
@@ -433,11 +452,84 @@ fun ModalDrawerSheet(chatViewModel: ChatViewModel, brainPicker: ActivityResultLa
         OutlinedButton(onClick = { brainPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Brain") }
         
         Divider(Modifier.padding(vertical = 16.dp))
-        Text("Cloud Profiles", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-        chatViewModel.cloudProviders.forEach { profile -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = profile.name == chatViewModel.primaryCloudProvider, onClick = { activity?.savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }); Column(modifier = Modifier.weight(1f)) { Text(profile.name, color = Color.White, fontSize = 12.sp); Text(profile.modelId, fontSize = 9.sp, color = Color.Gray) } } }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Cloud Profiles", modifier = Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            IconButton(onClick = { chatViewModel.editingProvider = null; chatViewModel.showAddCloudDialog = true }) { Icon(Icons.Default.Add, null, tint = Color.Cyan) }
+        }
+        chatViewModel.cloudProviders.forEach { profile -> 
+            val isSelected = profile.name == chatViewModel.primaryCloudProvider
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) { 
+                    RadioButton(selected = isSelected, onClick = { activity?.savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }); 
+                    Column(modifier = Modifier.weight(1f).clickable { activity?.savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }) { 
+                        Text(profile.name, color = Color.White, fontSize = 12.sp); 
+                        Text(profile.modelId, fontSize = 9.sp, color = Color.Gray) 
+                    } 
+                    IconButton(onClick = { chatViewModel.editingProvider = profile; chatViewModel.showAddCloudDialog = true }) { Icon(Icons.Default.Edit, null, tint = Color.Gray, modifier = Modifier.size(16.dp)) }
+                    IconButton(onClick = { activity?.deleteCloudProvider(profile.name) }) { Icon(Icons.Default.Delete, null, tint = Color.Red, modifier = Modifier.size(16.dp)) }
+                }
+                if (isSelected) {
+                    var apiKey by remember(profile.name) { mutableStateOf(activity?.getApiKey(profile.name) ?: "") }
+                    TextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it; activity?.saveApiKey(profile.name, it) },
+                        placeholder = { Text("Enter API Key", fontSize = 10.sp, color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth().padding(start = 32.dp, end = 8.dp, bottom = 8.dp),
+                        colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
+                        singleLine = true
+                    )
+                }
+            }
+        }
         
         Spacer(Modifier.weight(1f)); TextButton(onClick = { activity?.clearModelCache() }) { Text("Clear All Cache", color = Color.Red, fontSize = 12.sp) }
     }
+}
+
+@Composable
+fun CloudProviderDialog(chatViewModel: ChatViewModel, activity: MainActivity?) {
+    var name by remember { mutableStateOf(chatViewModel.editingProvider?.name ?: "") }
+    var endpoint by remember { mutableStateOf(chatViewModel.editingProvider?.endpoint ?: "") }
+    var modelId by remember { mutableStateOf(chatViewModel.editingProvider?.modelId ?: "") }
+    var providerType by remember { mutableStateOf(chatViewModel.editingProvider?.providerType ?: "Gemini") }
+
+    AlertDialog(
+        onDismissRequest = { chatViewModel.showAddCloudDialog = false },
+        backgroundColor = Color(0xFF1E2130),
+        title = { Text(if (chatViewModel.editingProvider == null) "Add Cloud Provider" else "Edit Provider", color = Color.White) },
+        text = {
+            Column {
+                TextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID") }, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Type: ", color = Color.White)
+                    RadioButton(selected = providerType == "Gemini", onClick = { providerType = "Gemini" })
+                    Text("Gemini", color = Color.White, fontSize = 12.sp)
+                    RadioButton(selected = providerType == "OpenAI", onClick = { providerType = "OpenAI" })
+                    Text("OpenAI-Compatible", color = Color.White, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { 
+                if (name.isNotBlank() && endpoint.isNotBlank()) {
+                    if (chatViewModel.editingProvider != null) {
+                        activity?.deleteCloudProvider(chatViewModel.editingProvider!!.name)
+                    }
+                    activity?.addCloudProvider(name, providerType, endpoint, modelId)
+                    chatViewModel.showAddCloudDialog = false
+                }
+            }) { Text("SAVE", color = Color.Cyan) }
+        },
+        dismissButton = {
+            TextButton(onClick = { chatViewModel.showAddCloudDialog = false }) { Text("CANCEL", color = Color.Gray) }
+        }
+    )
 }
 
 @Composable
