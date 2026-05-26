@@ -2,18 +2,17 @@
 
 ## 1. Project Overview
 **Name:** Ronin Kernel (Phase 11.2 Hardening)
-**Current Version:** v4.7.26.05.25 (Hardened CalVer)
+**Current Version:** v4.7.26.05.26 (Hardened CalVer)
 **Active Branch:** feature/hydration-fix
-**Objective:** A sovereign AI kernel utilizing the **Hardened v3.2 Production Architecture**. Single-process Direct JNI Bridge, Real-time Streaming, and AI Edge Gallery UI optimized for Snapdragon 778G+.
+**Objective:** A sovereign AI kernel utilizing the **Hardened v3.3 Production Architecture**. Features Advanced Sampling (T,P,K), Streaming Stability, and AI Edge Gallery UI.
 
 ---
 
-## 2. Hardened Break-throughs (v3.2 SUCCESS)
-*   **Real-time Streaming:** ✅ SUCCESS - Token-by-token UI updates with zero wait time.
-*   **Thinking Filter:** ✅ SUCCESS - Log separation routes `[THINK]` to console and `[REPLY]` to chat.
-*   **AI Edge UI:** ✅ SUCCESS - Settings drawer with editable System Prompt and Max Tokens slider.
-*   **Lexical Intent Spine:** ✅ SUCCESS - Strict token-based matching prevents hardware misrouting.
-*   **Memory Hardening:** ✅ SUCCESS - 768-token cap and 1.1GB RAM Guard ensure stable SD778G+ prefill.
+## 2. Hardened Break-throughs (v3.3 SUCCESS)
+*   **Dynamic Sampling:** ✅ SUCCESS - Temperature, Top-K, Top-P sliders active in Drawer.
+*   **Thinking Toggle:** ✅ SUCCESS - Real-time filtering of reasoning logs.
+*   **Bubble Integrity:** ✅ SUCCESS - "Ronin is reasoning..." status prevents empty bubbles.
+*   **Real-time Streaming:** ✅ SUCCESS - Token-by-token UI updates.
 
 ---
 

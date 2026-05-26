@@ -42,7 +42,8 @@ interface IInferenceService {
      * Resets the conversation context (Clears KV Cache).
      */
     void resetConversation();
-
+    void updateSamplingParams(float temperature, int topK, float topP);
+    }
     /**
      * Checks if the engine is running in Low Performance Mode (CPU Fallback).
      */

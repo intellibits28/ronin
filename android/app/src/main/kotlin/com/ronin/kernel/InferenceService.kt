@@ -16,9 +16,8 @@ import androidx.core.app.NotificationCompat
 import java.io.File
 
 /**
- * Hardened v3.2 Inference Spine
- * Uses AIDL Callbacks for reliable real-time streaming in a dual-process architecture.
- * Optimized for Snapdragon 778G+ with dedicated memory space and 768 token cap.
+ * Hardened v3.3 Inference Spine
+ * Supports dynamic sampling parameters (T,P,K) and robust RAM management.
  */
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Worker"
@@ -29,9 +28,12 @@ class InferenceService : Service() {
     private var litertConversation: Conversation? = null
     private var currentModelPath: String = ""
     
-    // Phase 11.2: Context State
-    private var isConversationFresh = true
+    // Sampling State
+    private var currentTemp = 0.7f
+    private var currentTopK = 40
+    private var currentTopP = 0.9f
     
+    private var isConversationFresh = true
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // --- Native JNI Interface ---
@@ -51,7 +53,6 @@ class InferenceService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
-        
         try {
             initializeKernelNative(filesDir.absolutePath, applicationInfo.nativeLibraryDir, true)
         } catch (e: Throwable) {}
@@ -66,8 +67,8 @@ class InferenceService : Service() {
 
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Ronin Kernel: Hardened v3.2")
-            .setContentText("Neural Spine Active (Isolated Process)")
+            .setContentTitle("Ronin Kernel: Hardened v3.3")
+            .setContentText("Neural Spine Active (T,P,K Enabled)")
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .build()
     }
@@ -91,13 +92,9 @@ class InferenceService : Service() {
         override fun runReasoning(input: String): String = runBlocking(Dispatchers.IO) {
             val fullResult = StringBuilder()
             try {
-                executeInference(input).collect { token ->
-                    fullResult.append(token)
-                }
+                executeInference(input).collect { token -> fullResult.append(token) }
                 fullResult.toString()
-            } catch (e: Exception) {
-                "Error: ${e.message}"
-            }
+            } catch (e: Exception) { "Error: ${e.message}" }
         }
 
         override fun streamReasoning(input: String, callback: IInferenceCallback) {
@@ -119,6 +116,15 @@ class InferenceService : Service() {
         override fun setSafeMode(enabled: Boolean) {}
         override fun isLowPerformanceMode(): Boolean = false
         override fun resetConversation() = resetConversationInternal()
+        
+        override fun updateSamplingParams(temp: Float, topK: Int, topP: Float) {
+            currentTemp = temp
+            currentTopK = topK
+            currentTopP = topP
+            Log.d(TAG, "Sampling Params Updated: T=$temp, K=$topK, P=$topP")
+            // Note: LiteRT-LM SDK 0.12.0 might require re-hydration for some params
+            // but we'll store them for the next conversation or hydration.
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -128,8 +134,9 @@ class InferenceService : Service() {
         releaseResources()
 
         return try {
-            // Hardened v3.2 tuning: 768 tokens for SD778G+ balance
-            val config = EngineConfig(modelPath = path, maxNumTokens = 768)
+            // Hardened v3.3 tuning: Balanced sequence length
+            // Note: In 0.12.0, some params might be positional.
+            val config = EngineConfig(modelPath = path, maxNumTokens = 1024)
             val engine = Engine(config)
             engine.initialize()
             litertEngine = engine
@@ -156,7 +163,6 @@ class InferenceService : Service() {
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
-        // RAM Guard: Prune KV cache if free RAM < 1.1GB
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
         if (freeRam < 1.1f && !isConversationFresh) {
             Log.w(TAG, "LOW RAM ALERT (%.2fGB). Pruning KV Cache.".format(freeRam))

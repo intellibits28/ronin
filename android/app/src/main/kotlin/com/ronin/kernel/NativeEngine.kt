@@ -314,6 +314,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun normalizeBurmese(text: String): String {
         return java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
     }
+    fun updateSamplingParams(temp: Float, topK: Int, topP: Float) {
+        try { inferenceService?.updateSamplingParams(temp, topK, topP) } catch (e: Exception) {}
+    }
+
     /**
      * Resets the cognitive context on both Native and Worker side.
      */
