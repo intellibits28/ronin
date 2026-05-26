@@ -194,16 +194,27 @@ class MainActivity : ComponentActivity() {
                         val lastMsg = chatViewModel.messages.last()
                         if (lastMsg.sender == "Ronin") {
                             val frag = packet.fragment
-                            if (frag.contains("[THINK]")) { lastMsg.isThinking = true }
+                            
+                            // Enhanced Tag Management: Ensure bubbles never stay empty
+                            if (frag.contains("[THINK]")) { 
+                                lastMsg.isThinking = true 
+                            }
                             
                             if (lastMsg.isThinking) {
                                 val clean = frag.replace("[THINK]", "").replace("[/THINK]", "")
                                 lastMsg.thoughtContent += clean
                                 if (chatViewModel.isThinkingEnabled) chatViewModel.reasoningLogs.add(0, clean)
-                                if (frag.contains("[/THINK]") || frag.contains("[REPLY]")) lastMsg.isThinking = false
+                                if (frag.contains("[/THINK]") || frag.contains("[REPLY]")) {
+                                    lastMsg.isThinking = false
+                                }
                             } else {
-                                lastMsg.content += frag.replace("[REPLY]", "").replace("[/THINK]", "").trimStart()
+                                // Capture everything not thinking
+                                val cleanReply = frag.replace("[REPLY]", "").replace("[/THINK]", "").trimStart()
+                                if (cleanReply.isNotEmpty()) {
+                                    lastMsg.content += cleanReply
+                                }
                             }
+                            
                             val idx = chatViewModel.messages.indexOf(lastMsg)
                             if (idx != -1) chatViewModel.messages[idx] = lastMsg.copy()
                         }
@@ -332,7 +343,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     }
                     Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
                         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val raw = currentInput; chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", raw)); currentInput = ""; chatViewModel.isGenerating = true; scope.launch { if (!chatViewModel.isGemmaReady) { chatViewModel.reasoningLogs.add("> Cloud Fallback Active"); val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""; val res = engine.performCloudInference(raw, chatViewModel.primaryCloudProvider, apiKey); chatViewModel.messages.add(ChatMessage(System.currentTimeMillis() + 1, "Ronin", res)) } else { val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", ""); chatViewModel.messages.add(roninMsg); val final = engine.processInputAsync(raw, chatViewModel.systemPrompt); if (roninMsg.content.isEmpty()) { roninMsg.content = final.substringAfter("[REPLY]").replace("[/THINK]", "").trim(); val idx = chatViewModel.messages.indexOf(roninMsg); if (idx != -1) chatViewModel.messages[idx] = roninMsg.copy() } } ; chatViewModel.isGenerating = false } } }) { Icon(if (chatViewModel.isGenerating) Icons.Default.HourglassEmpty else Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
+                            TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { if (currentInput.isNotBlank()) { val raw = currentInput; chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", raw)); currentInput = ""; chatViewModel.isGenerating = true; scope.launch { if (!chatViewModel.isGemmaReady) { chatViewModel.reasoningLogs.add("> Cloud Fallback Active"); val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""; val res = engine.performCloudInference(raw, chatViewModel.primaryCloudProvider, apiKey); chatViewModel.messages.add(ChatMessage(System.currentTimeMillis() + 1, "Ronin", res)) } else { val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", ""); chatViewModel.messages.add(roninMsg); val final = engine.processInputAsync(raw, chatViewModel.systemPrompt); if (roninMsg.content.isEmpty()) { roninMsg.content = final.substringAfter("[REPLY]").replace("[/THINK]", "").replace("[THINK]", "").trim(); val idx = chatViewModel.messages.indexOf(roninMsg); if (idx != -1) chatViewModel.messages[idx] = roninMsg.copy() } } ; chatViewModel.isGenerating = false } } }) { Icon(if (chatViewModel.isGenerating) Icons.Default.HourglassEmpty else Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
                         }
                     }
                 }
@@ -387,7 +398,7 @@ fun ChatBubble(msg: ChatMessage, isThinkingEnabled: Boolean) {
         Surface(color = if (isUser) Color(0xFF2D3142) else Color(0xFF1E2130), shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = if (isUser) 16.dp else 4.dp, bottomEnd = if (isUser) 4.dp else 16.dp), elevation = 2.dp) { 
             SelectionContainer { 
                 Column(modifier = Modifier.padding(12.dp)) {
-                    // Show thinking status if content is empty but thinking is active
+                    // Show thinking status if content is empty
                     if (!isUser && msg.content.isEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = Color.Cyan)
