@@ -79,7 +79,9 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
         engine->setLibPath(native_lib_path);
         engine->setBasePath(base_path);
         
-        g_intent_engine->registerSkill(1, std::make_shared<ChatSkill>(engine.get(), g_ltm.get()));
+        auto chatSkill = std::make_shared<ChatSkill>(engine.get(), g_ltm.get());
+        chatSkill->setKernel(g_kernel.get()); // Pass kernel for system prompt
+        g_intent_engine->registerSkill(1, chatSkill);
 
         g_llm_context.engine = engine.get();
         g_intent_engine->setInferenceEngine(std::move(engine));
@@ -116,12 +118,18 @@ jfloat native_getFreeRamGB(JNIEnv *env, jobject thiz) {
     return HardwareBridge::getFreeRamGB();
 }
 
-jstring native_processInput(JNIEnv *env, jobject thiz, jstring input) {
+jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring systemPrompt) {
     if (!g_intent_engine) return env->NewStringUTF("Error: Engine Not Ready.");
-    std::string rawInput = ConvertJStringToString(env, input);
-    auto intent = g_intent_engine->process(rawInput, "");
     
-    // Fix CognitiveIntent member name (id instead of nodeId)
+    std::string rawInput = ConvertJStringToString(env, input);
+    std::string customSystem = ConvertJStringToString(env, systemPrompt);
+    
+    // Inject dynamic system context if provided
+    if (!customSystem.empty() && g_kernel) {
+        g_kernel->setSuggestedSubject(customSystem);
+    }
+    
+    auto intent = g_intent_engine->process(rawInput, "");
     std::string result = g_intent_engine->executeSkill(intent.id, rawInput);
     return env->NewStringUTF(result.c_str());
 }
@@ -167,12 +175,9 @@ jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
     size_t read = fread(header, 1, 4, f);
     fclose(f);
     
-    // Accept TFL3 (Standard) or other TFLite variants if needed
     if (read == 4 && memcmp(header, "TFL3", 4) == 0) return JNI_TRUE;
     
-    // Fallback: If it's a large file with .bin or .litertlm, we trust the extension
     if (p.find(".litertlm") != std::string::npos || p.find(".bin") != std::string::npos) {
-        LOGI(TAG, "Trusting model by extension: %s", p.c_str());
         return JNI_TRUE;
     }
     
@@ -215,7 +220,7 @@ static JNINativeMethod g_methods[] = {
     {"setPriorityNative", "(I)V", (void*)native_setPriority},
     {"checkFileAccessNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_checkFileAccess},
     {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB},
-    {"processInputNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
+    {"processInputNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
     {"isLoadedNative", "()Z", (void*)native_isLoaded},
     {"notifyTrimMemoryNative", "(I)V", (void*)native_notifyTrimMemory},
     {"getActiveModelPathNative", "()Ljava/lang/String;", (void*)native_getActiveModelPath},

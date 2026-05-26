@@ -2,18 +2,18 @@
 
 ## 1. Project Overview
 **Name:** Ronin Kernel (Phase 11.2 Hardening)
-**Current Version:** v4.7.26.05.24 (Hardened CalVer)
+**Current Version:** v4.7.26.05.25 (Hardened CalVer)
 **Active Branch:** feature/hydration-fix
-**Objective:** A sovereign AI kernel utilizing the **Hardened v3.0 Production Architecture**. Single-process Direct JNI Bridge, Lexical Keyword Spine, and LiteRT-LM 0.12.0 optimized for Snapdragon 778G+.
+**Objective:** A sovereign AI kernel utilizing the **Hardened v3.2 Production Architecture**. Single-process Direct JNI Bridge, Real-time Streaming, and AI Edge Gallery UI optimized for Snapdragon 778G+.
 
 ---
 
-## 2. Hardened Break-throughs (v3.0 SUCCESS)
-*   **Direct JNI Bridge:** ✅ SUCCESS - Zero-lag token streaming from Worker to UI. Bypasses AIDL bottlenecks.
-*   **Lexical Intent Spine:** ✅ SUCCESS - Strict token-based matching in `IntentEngine.cpp` prevents hardware misrouting.
-*   **Memory Hardening:** ✅ SUCCESS - 512-token cap and 0.8GB RAM Guard ensure stable SD778G+ prefill.
-*   **Cognitive Persistence:** ✅ SUCCESS - Thinking filter and turn-based context reconstruction active.
-*   **Cloud Fallback:** ✅ SUCCESS - Descriptive error reporting and auto-escalation active.
+## 2. Hardened Break-throughs (v3.2 SUCCESS)
+*   **Real-time Streaming:** ✅ SUCCESS - Token-by-token UI updates with zero wait time.
+*   **Thinking Filter:** ✅ SUCCESS - Log separation routes `[THINK]` to console and `[REPLY]` to chat.
+*   **AI Edge UI:** ✅ SUCCESS - Settings drawer with editable System Prompt and Max Tokens slider.
+*   **Lexical Intent Spine:** ✅ SUCCESS - Strict token-based matching prevents hardware misrouting.
+*   **Memory Hardening:** ✅ SUCCESS - 768-token cap and 1.1GB RAM Guard ensure stable SD778G+ prefill.
 
 ---
 

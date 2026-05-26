@@ -13,13 +13,13 @@ public:
         CLOUD_OPENROUTER
     };
 
-    static std::string wrap(const std::string& input, BackendType type) {
+    static std::string wrap(const std::string& input, BackendType type, const std::string& systemOverride = "") {
         if (type == BackendType::LOCAL_GEMMA_4) {
-            // Hardened v3.1: Minimal instructions for stability
-            std::string instructions = 
+            // Hardened v3.2: Use dynamic system prompt if provided
+            std::string instructions = systemOverride.empty() ? 
                 "You are Ronin. Access tools via 'CALL: tool_name(\"args\")'.\n"
                 "TOOLS: search_memory(query), archive_memory(text).\n"
-                "MYANMAR: Always reason [THINK] and REPLY in Myanmar if the user does.";
+                "MYANMAR: Always reason [THINK] and REPLY in Myanmar if the user does." : systemOverride;
 
             return "[SYSTEM] " + instructions + "\n[USER] " + input;
         }

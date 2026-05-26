@@ -142,9 +142,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return currentModelPath
     }
 
-    suspend fun processInputAsync(input: String): String = withContext(Dispatchers.Default) {
+    suspend fun processInputAsync(input: String, systemPrompt: String = ""): String = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext "Error: Lib not loaded."
-        try { processInputNative(input) } catch (e: Exception) { "Error: Kernel failure." }
+        try { processInputNative(input, systemPrompt) } catch (e: Exception) { "Error: Kernel failure." }
     }
 
     fun stopInference() {

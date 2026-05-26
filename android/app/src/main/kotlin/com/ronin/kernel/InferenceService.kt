@@ -16,9 +16,9 @@ import androidx.core.app.NotificationCompat
 import java.io.File
 
 /**
- * Hardened v3.1 Inference Spine
+ * Hardened v3.2 Inference Spine
  * Uses AIDL Callbacks for reliable real-time streaming in a dual-process architecture.
- * Optimized for Snapdragon 778G+ with dedicated memory space.
+ * Optimized for Snapdragon 778G+ with dedicated memory space and 768 token cap.
  */
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Worker"
@@ -34,7 +34,7 @@ class InferenceService : Service() {
     
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // --- Native JNI Interface (Essential Only for Worker) ---
+    // --- Native JNI Interface ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun getFreeRamGBNative(): Float
     private external fun shutdownKernelNative()
@@ -52,7 +52,6 @@ class InferenceService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
         
-        // Initialize native components (no UI instance in worker process)
         try {
             initializeKernelNative(filesDir.absolutePath, applicationInfo.nativeLibraryDir, true)
         } catch (e: Throwable) {}
@@ -67,15 +66,12 @@ class InferenceService : Service() {
 
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Ronin Kernel: Hardened v3.1")
+            .setContentTitle("Ronin Kernel: Hardened v3.2")
             .setContentText("Neural Spine Active (Isolated Process)")
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .build()
     }
 
-    /**
-     * Shared logic to prune KV cache and reset turn history.
-     */
     private fun resetConversationInternal() {
         synchronized(this) {
             try {
@@ -97,14 +93,10 @@ class InferenceService : Service() {
             try {
                 executeInference(input).collect { token ->
                     fullResult.append(token)
-                    pushTokenToKernelNative(token, false)
                 }
-                pushTokenToKernelNative("", true)
                 fullResult.toString()
             } catch (e: Exception) {
-                val err = "Error: ${e.message}"
-                pushTokenToKernelNative(err, true)
-                err
+                "Error: ${e.message}"
             }
         }
 
@@ -136,9 +128,8 @@ class InferenceService : Service() {
         releaseResources()
 
         return try {
-            // Hardened SD778G+ Settings:
-            // 1024 tokens for stable KV cache allocation.
-            val config = EngineConfig(modelPath = path, maxNumTokens = 1024)
+            // Hardened v3.2 tuning: 768 tokens for SD778G+ balance
+            val config = EngineConfig(modelPath = path, maxNumTokens = 768)
             val engine = Engine(config)
             engine.initialize()
             litertEngine = engine
@@ -165,14 +156,13 @@ class InferenceService : Service() {
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
-        // 1. RAM Guard: Prune KV cache BEFORE capturing reference if pressure is high
+        // RAM Guard: Prune KV cache if free RAM < 1.1GB
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
-        if (freeRam < 1.0f && !isConversationFresh) {
-            Log.w(TAG, "LOW RAM ALERT (%.2fGB). Pruning KV Cache before inference.".format(freeRam))
+        if (freeRam < 1.1f && !isConversationFresh) {
+            Log.w(TAG, "LOW RAM ALERT (%.2fGB). Pruning KV Cache.".format(freeRam))
             resetConversationInternal()
         }
 
-        // 2. Capture the current active conversation reference
         val activeConv = synchronized(this@InferenceService) {
             litertConversation ?: return@flow
         }
@@ -201,9 +191,6 @@ class InferenceService : Service() {
             throw e
         }
     }.flowOn(Dispatchers.IO)
-
-    // JNI fallback for pushToken
-    private external fun pushTokenToKernelNative(token: String, isFinal: Boolean)
 
     override fun onDestroy() {
         super.onDestroy()

@@ -32,7 +32,7 @@ public:
      * Uses MediaPipe LLM Inference API for autoregressive Gemma 4 decoding.
      * Implements native KV-cache management and prefill optimization.
      */
-    std::string runLiteRTReasoning(const std::string& input);
+    std::string runLiteRTReasoning(const std::string& input, const std::string& systemPrompt = "");
 
     /**
      * Secure Cloud Escalation.

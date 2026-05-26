@@ -55,7 +55,7 @@ bool InferenceEngine::isCancelled() const {
     return m_cancel_flag.load(std::memory_order_acquire);
 }
 
-std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
+std::string InferenceEngine::runLiteRTReasoning(const std::string& input, const std::string& systemPrompt) {
     std::string wrapped_input;
     {
         std::lock_guard<std::mutex> lock(m_impl->inference_mutex);
@@ -67,7 +67,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input) {
         if (m_impl->model_path.find("gemma-2") != std::string::npos) {
             type = PromptFactory::BackendType::LOCAL_GEMMA_2;
         }
-        wrapped_input = PromptFactory::wrap(input, type);
+        wrapped_input = PromptFactory::wrap(input, type, systemPrompt);
     }
 
     // Phase 11.0: Strictly Synchronous JNI Bridge (Freeze Prevention)
