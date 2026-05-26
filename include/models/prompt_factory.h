@@ -15,13 +15,11 @@ public:
 
     static std::string wrap(const std::string& input, BackendType type, const std::string& systemOverride = "") {
         if (type == BackendType::LOCAL_GEMMA_4) {
-            // Hardened v3.2: Use dynamic system prompt if provided
+            // Hardened v3.4: Let LiteRT-LM handle tags. Send minimal combined text.
             std::string instructions = systemOverride.empty() ? 
-                "You are Ronin. Access tools via 'CALL: tool_name(\"args\")'.\n"
-                "TOOLS: search_memory(query), archive_memory(text).\n"
-                "MYANMAR: Always reason [THINK] and REPLY in Myanmar if the user does." : systemOverride;
+                "You are Ronin. Always [THINK] then [REPLY] in Myanmar." : systemOverride;
 
-            return "[SYSTEM] " + instructions + "\n[USER] " + input;
+            return instructions + "\n\nUser: " + input;
         }
         
         switch (type) {
