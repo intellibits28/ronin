@@ -107,6 +107,7 @@ class ChatViewModel : ViewModel() {
 
     var showAddCloudDialog by mutableStateOf(false)
     var editingProvider by mutableStateOf<CloudProvider?>(null)
+    var isSelectingType by mutableStateOf(true)
     var fetchedModels = mutableStateListOf<String>()
     var isFetchingModels by mutableStateOf(false)
     var kernelStatus by mutableStateOf("Initializing...")
@@ -421,7 +422,11 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         } else { 
                                             val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
                                             if (msgIdx != -1 && chatViewModel.messages[msgIdx].content.isEmpty()) {
-                                                chatViewModel.messages[msgIdx] = chatViewModel.messages[msgIdx].copy(content = result)
+                                                // Create a new list to force recomposition if needed
+                                                val updatedList = chatViewModel.messages.toMutableList()
+                                                updatedList[msgIdx] = updatedList[msgIdx].copy(content = result)
+                                                chatViewModel.messages.clear()
+                                                chatViewModel.messages.addAll(updatedList)
                                             }
                                         } ; chatViewModel.isGenerating = false 
                                     } 
@@ -510,63 +515,111 @@ fun ModalDrawerSheet(chatViewModel: ChatViewModel, brainPicker: ActivityResultLa
 @Composable
 fun CloudProviderDialog(chatViewModel: ChatViewModel, activity: MainActivity?) {
     var name by remember { mutableStateOf(chatViewModel.editingProvider?.name ?: "") }
-    var endpoint by remember { mutableStateOf(chatViewModel.editingProvider?.endpoint ?: if (name == "Gemini") "https://generativelanguage.googleapis.com/v1beta" else "") }
+    var endpoint by remember { mutableStateOf(chatViewModel.editingProvider?.endpoint ?: "") }
     var modelId by remember { mutableStateOf(chatViewModel.editingProvider?.modelId ?: "gemini-1.5-flash-latest") }
     var providerType by remember { mutableStateOf(chatViewModel.editingProvider?.providerType ?: "Gemini") }
+    
+    // Auto-advance if editing
+    LaunchedEffect(chatViewModel.editingProvider) {
+        if (chatViewModel.editingProvider != null) {
+            chatViewModel.isSelectingType = false
+        }
+    }
 
     AlertDialog(
-        onDismissRequest = { chatViewModel.showAddCloudDialog = false; chatViewModel.fetchedModels.clear() },
+        onDismissRequest = { 
+            chatViewModel.showAddCloudDialog = false
+            chatViewModel.isSelectingType = true
+            chatViewModel.fetchedModels.clear()
+        },
         backgroundColor = Color(0xFF1E2130),
-        title = { Text(if (chatViewModel.editingProvider == null) "Add Cloud Provider" else "Edit Provider", color = Color.White) },
+        title = { Text(if (chatViewModel.isSelectingType) "Select Cloud Provider" else "Configure ${providerType}", color = Color.White) },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                TextField(value = name, onValueChange = { name = it; if (it == "Gemini") endpoint = "https://generativelanguage.googleapis.com/v1beta" }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(8.dp))
-                TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(8.dp))
-                
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID") }, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { if (name.isNotEmpty()) activity?.fetchModels(name) }) { 
-                        if (chatViewModel.isFetchingModels) CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        else Icon(Icons.Default.Refresh, null, tint = Color.Cyan) 
-                    }
-                }
-                
-                if (chatViewModel.fetchedModels.isNotEmpty()) {
-                    Text("Available Models:", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
-                    chatViewModel.fetchedModels.forEach { m ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { modelId = m }.padding(vertical = 4.dp)) {
-                            RadioButton(selected = modelId == m, onClick = { modelId = m })
-                            Text(m, color = Color.White, fontSize = 12.sp)
+            if (chatViewModel.isSelectingType) {
+                Column {
+                    val types = listOf("Gemini", "OpenAI", "OpenRouter")
+                    types.forEach { type ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { 
+                                providerType = type
+                                name = type
+                                endpoint = when(type) {
+                                    "Gemini" -> "https://generativelanguage.googleapis.com/v1beta"
+                                    "OpenRouter" -> "https://openrouter.ai/api/v1"
+                                    else -> ""
+                                }
+                                chatViewModel.isSelectingType = false
+                            },
+                            color = Color(0xFF25283D),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    when(type) {
+                                        "Gemini" -> Icons.Default.Cloud
+                                        "OpenAI" -> Icons.Default.Memory
+                                        else -> Icons.Default.Public
+                                    },
+                                    null, tint = Color.Cyan, modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(Modifier.width(16.dp))
+                                Text(type, color = Color.White, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
-
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Type: ", color = Color.White)
-                    RadioButton(selected = providerType == "Gemini", onClick = { providerType = "Gemini" })
-                    Text("Gemini", color = Color.White, fontSize = 12.sp)
-                    RadioButton(selected = providerType == "OpenAI", onClick = { providerType = "OpenAI" })
-                    Text("OpenAI", color = Color.White, fontSize = 12.sp)
+            } else {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    TextField(value = name, onValueChange = { name = it }, label = { Text("Provider Name") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID") }, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { activity?.fetchModels(name) }) { 
+                            if (chatViewModel.isFetchingModels) CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            else Icon(Icons.Default.Refresh, null, tint = Color.Cyan) 
+                        }
+                    }
+                    
+                    if (chatViewModel.fetchedModels.isNotEmpty()) {
+                        Text("Available Models:", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                        chatViewModel.fetchedModels.forEach { m ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { modelId = m }.padding(vertical = 4.dp)) {
+                                RadioButton(selected = modelId == m, onClick = { modelId = m })
+                                Text(m, color = Color.White, fontSize = 12.sp)
+                            }
+                        }
+                    }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { 
-                if (name.isNotBlank() && endpoint.isNotBlank()) {
-                    if (chatViewModel.editingProvider != null) {
-                        activity?.deleteCloudProvider(chatViewModel.editingProvider!!.name)
+            if (!chatViewModel.isSelectingType) {
+                TextButton(onClick = { 
+                    if (name.isNotBlank() && endpoint.isNotBlank()) {
+                        if (chatViewModel.editingProvider != null) {
+                            activity?.deleteCloudProvider(chatViewModel.editingProvider!!.name)
+                        }
+                        activity?.addCloudProvider(name, providerType, endpoint, modelId)
+                        chatViewModel.showAddCloudDialog = false
+                        chatViewModel.isSelectingType = true
+                        chatViewModel.fetchedModels.clear()
                     }
-                    activity?.addCloudProvider(name, providerType, endpoint, modelId)
-                    chatViewModel.showAddCloudDialog = false
-                    chatViewModel.fetchedModels.clear()
-                }
-            }) { Text("SAVE", color = Color.Cyan) }
+                }) { Text("SAVE", color = Color.Cyan) }
+            }
         },
         dismissButton = {
-            TextButton(onClick = { chatViewModel.showAddCloudDialog = false; chatViewModel.fetchedModels.clear() }) { Text("CANCEL", color = Color.Gray) }
+            TextButton(onClick = { 
+                if (!chatViewModel.isSelectingType && chatViewModel.editingProvider == null) {
+                    chatViewModel.isSelectingType = true
+                } else {
+                    chatViewModel.showAddCloudDialog = false
+                    chatViewModel.isSelectingType = true
+                    chatViewModel.fetchedModels.clear()
+                }
+            }) { Text(if (!chatViewModel.isSelectingType && chatViewModel.editingProvider == null) "BACK" else "CANCEL", color = Color.Gray) }
         }
     )
 }
