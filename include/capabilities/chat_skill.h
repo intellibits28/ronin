@@ -7,6 +7,10 @@
 #include "chat_template_formatter.h"
 #include "ronin_log.h"
 
+namespace Ronin::Kernel {
+    class RoninKernel;
+}
+
 namespace Ronin::Kernel::Capability {
 
 class ChatSkill : public BaseSkill {
@@ -66,12 +70,12 @@ public:
         return res;
     }
 
-    void setKernel(RoninKernel* kernel) { m_kernel = kernel; }
+    void setKernel(Ronin::Kernel::RoninKernel* kernel) { m_kernel = kernel; }
 
 private:
     Ronin::Kernel::Model::InferenceEngine* m_engine;
     Ronin::Kernel::Memory::LongTermMemory* m_ltm;
-    RoninKernel* m_kernel = nullptr;
+    Ronin::Kernel::RoninKernel* m_kernel = nullptr;
 };
 
 } // namespace Ronin::Kernel::Capability
