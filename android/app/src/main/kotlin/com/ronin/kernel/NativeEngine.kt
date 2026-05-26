@@ -74,7 +74,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun setPriorityNative(priority: Int)
     private external fun checkFileAccessNative(path: String): String
     private external fun getFreeRamGBNative(): Float
-    private external fun processInputNative(input: String): String
+    private external fun processInputNative(input: String, systemPrompt: String): String
     private external fun isLoadedNative(): Boolean
     private external fun notifyTrimMemoryNative(level: Int)
     private external fun getActiveModelPathNative(): String
