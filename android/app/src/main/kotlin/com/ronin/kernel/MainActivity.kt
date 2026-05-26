@@ -64,7 +64,7 @@ data class CloudProvider(
     val authType: String
 )
 
-data class ChatMessage(
+class ChatMessage(
     val id: Long,
     val sender: String,
     initialContent: String,
@@ -74,6 +74,12 @@ data class ChatMessage(
     var content by mutableStateOf(initialContent)
     var isThinking by mutableStateOf(initialIsThinking)
     var thoughtContent by mutableStateOf(initialThoughtContent)
+
+    fun copy(
+        content: String = this.content,
+        isThinking: Boolean = this.isThinking,
+        thoughtContent: String = this.thoughtContent
+    ) = ChatMessage(id, sender, content, isThinking, thoughtContent)
 }
 
 enum class WizardState { MISSING_CORE, IMPORTING, VERIFYING, ACTIVE }
