@@ -67,10 +67,14 @@ data class CloudProvider(
 data class ChatMessage(
     val id: Long,
     val sender: String,
-    var content: String,
-    var isThinking: Boolean = false,
-    var thoughtContent: String = ""
-)
+    initialContent: String,
+    initialIsThinking: Boolean = false,
+    initialThoughtContent: String = ""
+) {
+    var content by mutableStateOf(initialContent)
+    var isThinking by mutableStateOf(initialIsThinking)
+    var thoughtContent by mutableStateOf(initialThoughtContent)
+}
 
 enum class WizardState { MISSING_CORE, IMPORTING, VERIFYING, ACTIVE }
 
@@ -197,7 +201,6 @@ class MainActivity : ComponentActivity() {
                         if (lastMsg.sender == "Ronin") {
                             val frag = packet.fragment
                             
-                            // v3.5 Hardened Parser: State-based filtering
                             if (frag.contains("[THINK]")) { lastMsg.isThinking = true }
                             
                             if (lastMsg.isThinking) {
@@ -210,17 +213,9 @@ class MainActivity : ComponentActivity() {
                                     lastMsg.isThinking = false
                                 }
                             } else {
-                                // Capture reply with space preservation
+                                // v3.6: Strict streaming with tag stripping
                                 val cleanReply = frag.replace("[REPLY]", "").replace("[/REPLY]", "").replace("[/THINK]", "")
-                                if (cleanReply.isNotEmpty()) {
-                                    lastMsg.content += cleanReply
-                                }
-                            }
-                            
-                            // Replace in list to trigger Compose update
-                            val idx = chatViewModel.messages.size - 1
-                            if (idx >= 0 && chatViewModel.messages[idx].id == lastMsg.id) {
-                                chatViewModel.messages[idx] = lastMsg.copy()
+                                lastMsg.content += cleanReply
                             }
                         }
                     }
@@ -418,15 +413,11 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         if (!isCommand && (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady)) { 
                                             val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
                                             val res = engine.performCloudInference(raw, chatViewModel.primaryCloudProvider, apiKey)
-                                            if (msgIdx != -1) { chatViewModel.messages[msgIdx] = chatViewModel.messages[msgIdx].copy(content = res) }
+                                            roninMsg.content = res
                                         } else { 
                                             val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
-                                            if (msgIdx != -1 && chatViewModel.messages[msgIdx].content.isEmpty()) {
-                                                // Create a new list to force recomposition if needed
-                                                val updatedList = chatViewModel.messages.toMutableList()
-                                                updatedList[msgIdx] = updatedList[msgIdx].copy(content = result)
-                                                chatViewModel.messages.clear()
-                                                chatViewModel.messages.addAll(updatedList)
+                                            if (roninMsg.content.isEmpty()) {
+                                                roninMsg.content = result
                                             }
                                         } ; chatViewModel.isGenerating = false 
                                     } 
@@ -533,19 +524,20 @@ fun CloudProviderDialog(chatViewModel: ChatViewModel, activity: MainActivity?) {
             chatViewModel.fetchedModels.clear()
         },
         backgroundColor = Color(0xFF1E2130),
-        title = { Text(if (chatViewModel.isSelectingType) "Select Cloud Provider" else "Configure ${providerType}", color = Color.White) },
+        title = { Text(if (chatViewModel.isSelectingType) "Select Cloud Provider" else "Setup ${providerType}", color = Color.White) },
         text = {
             if (chatViewModel.isSelectingType) {
                 Column {
-                    val types = listOf("Gemini", "OpenAI", "OpenRouter")
+                    val types = listOf("Gemini", "OpenAI", "OpenRouter", "Custom")
                     types.forEach { type ->
                         Surface(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { 
                                 providerType = type
-                                name = type
+                                name = if (type == "Custom") "" else type
                                 endpoint = when(type) {
                                     "Gemini" -> "https://generativelanguage.googleapis.com/v1beta"
                                     "OpenRouter" -> "https://openrouter.ai/api/v1"
+                                    "OpenAI" -> "https://api.openai.com/v1"
                                     else -> ""
                                 }
                                 chatViewModel.isSelectingType = false
@@ -558,7 +550,8 @@ fun CloudProviderDialog(chatViewModel: ChatViewModel, activity: MainActivity?) {
                                     when(type) {
                                         "Gemini" -> Icons.Default.Cloud
                                         "OpenAI" -> Icons.Default.Memory
-                                        else -> Icons.Default.Public
+                                        "OpenRouter" -> Icons.Default.Public
+                                        else -> Icons.Default.Settings
                                     },
                                     null, tint = Color.Cyan, modifier = Modifier.size(24.dp)
                                 )
@@ -570,14 +563,31 @@ fun CloudProviderDialog(chatViewModel: ChatViewModel, activity: MainActivity?) {
                 }
             } else {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    TextField(value = name, onValueChange = { name = it }, label = { Text("Provider Name") }, modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(8.dp))
-                    TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(8.dp))
+                    val isCustom = providerType == "Custom"
                     
+                    if (isCustom) {
+                        TextField(value = name, onValueChange = { name = it }, label = { Text("Provider Name") }, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(8.dp))
+                        TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(8.dp))
+                    } else {
+                        Text("Provider: $providerType", color = Color.Cyan, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    
+                    var apiKey by remember { mutableStateOf(activity?.getApiKey(name) ?: "") }
+                    TextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it; activity?.saveApiKey(name, it) },
+                        label = { Text("API Key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White)
+                    )
+                    Spacer(Modifier.height(12.dp))
+
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID") }, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { activity?.fetchModels(name) }) { 
+                        IconButton(onClick = { if (name.isNotEmpty()) activity?.fetchModels(name) }) { 
                             if (chatViewModel.isFetchingModels) CircularProgressIndicator(modifier = Modifier.size(24.dp))
                             else Icon(Icons.Default.Refresh, null, tint = Color.Cyan) 
                         }
