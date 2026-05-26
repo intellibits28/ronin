@@ -76,6 +76,7 @@ set(RONIN_CORE_SOURCES
     src/capabilities/file_search_node.cpp
     src/capabilities/hardware_nodes.cpp
     src/capabilities/hardware_bridge.cpp
+    src/capabilities/chat_skill.cpp
 )
 
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
