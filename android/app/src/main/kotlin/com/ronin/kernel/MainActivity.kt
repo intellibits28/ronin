@@ -107,6 +107,8 @@ class ChatViewModel : ViewModel() {
 
     var showAddCloudDialog by mutableStateOf(false)
     var editingProvider by mutableStateOf<CloudProvider?>(null)
+    var fetchedModels = mutableStateListOf<String>()
+    var isFetchingModels by mutableStateOf(false)
     var kernelStatus by mutableStateOf("Initializing...")
     var isGenerating by mutableStateOf(false)
 }
@@ -307,6 +309,25 @@ class MainActivity : ComponentActivity() {
     fun saveThinkingToggle(enabled: Boolean) { sharedPreferences.edit().putBoolean("is_thinking_enabled", enabled).apply() }
     fun saveCloudOnlyMode(enabled: Boolean) { sharedPreferences.edit().putBoolean("cloud_only_mode", enabled).apply() }
 
+    fun fetchModels(provider: String) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        val apiKey = getApiKey(provider)
+        if (apiKey.isEmpty()) { Toast.makeText(this, "API Key Required", Toast.LENGTH_SHORT).show(); return }
+        
+        lifecycleScope.launch {
+            chatViewModel.isFetchingModels = true
+            chatViewModel.fetchedModels.clear()
+            val result = nativeEngine.fetchAvailableModels(apiKey, provider)
+            if (result.error == null) {
+                result.models.forEach { m -> 
+                    val id = if (provider.equals("Gemini", true)) m.getString("name").removePrefix("models/") else m.getString("id")
+                    chatViewModel.fetchedModels.add(id)
+                }
+            } else { Toast.makeText(this@MainActivity, "Fetch Failed: ${result.error}", Toast.LENGTH_SHORT).show() }
+            chatViewModel.isFetchingModels = false
+        }
+    }
+
     private fun checkAndRequestPermissions() {
         val permissions = mutableListOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.CAMERA)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -375,7 +396,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         } 
                     }
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) { 
-                        LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.reversed()) { ChatBubble(it) } } 
+                        LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.asReversed()) { ChatBubble(it) } } 
                         if (chatViewModel.showCommandSuggestions) {
                             val suggestions = listOf("/status", "/skills", "/model", "/reset").filter { it.startsWith(currentInput.lowercase()) }
                             if (suggestions.isNotEmpty()) { Surface(color = Color(0xFF25283D), modifier = Modifier.align(Alignment.BottomStart).padding(16.dp).fillMaxWidth(0.7f).clip(RoundedCornerShape(12.dp)), elevation = 8.dp) { LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) { items(suggestions) { s -> TextButton(onClick = { currentInput = "$s "; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { Text(s, color = Color.White) } } } } }
@@ -389,20 +410,18 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                     chatViewModel.reasoningLogsText = "> Processing: $raw"
                                     scope.launch { 
                                         val isCommand = raw.trim().startsWith("/")
+                                        val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "")
+                                        chatViewModel.messages.add(roninMsg)
+                                        val msgIdx = chatViewModel.messages.size - 1
+
                                         if (!isCommand && (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady)) { 
-                                            val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "")
-                                            chatViewModel.messages.add(roninMsg)
                                             val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
                                             val res = engine.performCloudInference(raw, chatViewModel.primaryCloudProvider, apiKey)
-                                            val idx = chatViewModel.messages.indexOf(roninMsg)
-                                            if (idx != -1) { chatViewModel.messages[idx] = roninMsg.copy(content = res) }
+                                            if (msgIdx != -1) { chatViewModel.messages[msgIdx] = chatViewModel.messages[msgIdx].copy(content = res) }
                                         } else { 
-                                            val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "")
-                                            chatViewModel.messages.add(roninMsg)
                                             val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
-                                            val idx = chatViewModel.messages.indexOf(roninMsg)
-                                            if (idx != -1 && chatViewModel.messages[idx].content.isEmpty()) {
-                                                chatViewModel.messages[idx] = roninMsg.copy(content = result)
+                                            if (msgIdx != -1 && chatViewModel.messages[msgIdx].content.isEmpty()) {
+                                                chatViewModel.messages[msgIdx] = chatViewModel.messages[msgIdx].copy(content = result)
                                             }
                                         } ; chatViewModel.isGenerating = false 
                                     } 
@@ -491,28 +510,46 @@ fun ModalDrawerSheet(chatViewModel: ChatViewModel, brainPicker: ActivityResultLa
 @Composable
 fun CloudProviderDialog(chatViewModel: ChatViewModel, activity: MainActivity?) {
     var name by remember { mutableStateOf(chatViewModel.editingProvider?.name ?: "") }
-    var endpoint by remember { mutableStateOf(chatViewModel.editingProvider?.endpoint ?: "") }
-    var modelId by remember { mutableStateOf(chatViewModel.editingProvider?.modelId ?: "") }
+    var endpoint by remember { mutableStateOf(chatViewModel.editingProvider?.endpoint ?: if (name == "Gemini") "https://generativelanguage.googleapis.com/v1beta" else "") }
+    var modelId by remember { mutableStateOf(chatViewModel.editingProvider?.modelId ?: "gemini-1.5-flash-latest") }
     var providerType by remember { mutableStateOf(chatViewModel.editingProvider?.providerType ?: "Gemini") }
 
     AlertDialog(
-        onDismissRequest = { chatViewModel.showAddCloudDialog = false },
+        onDismissRequest = { chatViewModel.showAddCloudDialog = false; chatViewModel.fetchedModels.clear() },
         backgroundColor = Color(0xFF1E2130),
         title = { Text(if (chatViewModel.editingProvider == null) "Add Cloud Provider" else "Edit Provider", color = Color.White) },
         text = {
-            Column {
-                TextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                TextField(value = name, onValueChange = { name = it; if (it == "Gemini") endpoint = "https://generativelanguage.googleapis.com/v1beta" }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 TextField(value = endpoint, onValueChange = { endpoint = it }, label = { Text("Endpoint URL") }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
-                TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID") }, modifier = Modifier.fillMaxWidth())
+                
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID") }, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { if (name.isNotEmpty()) activity?.fetchModels(name) }) { 
+                        if (chatViewModel.isFetchingModels) CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        else Icon(Icons.Default.Refresh, null, tint = Color.Cyan) 
+                    }
+                }
+                
+                if (chatViewModel.fetchedModels.isNotEmpty()) {
+                    Text("Available Models:", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                    chatViewModel.fetchedModels.forEach { m ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { modelId = m }.padding(vertical = 4.dp)) {
+                            RadioButton(selected = modelId == m, onClick = { modelId = m })
+                            Text(m, color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Type: ", color = Color.White)
                     RadioButton(selected = providerType == "Gemini", onClick = { providerType = "Gemini" })
                     Text("Gemini", color = Color.White, fontSize = 12.sp)
                     RadioButton(selected = providerType == "OpenAI", onClick = { providerType = "OpenAI" })
-                    Text("OpenAI-Compatible", color = Color.White, fontSize = 12.sp)
+                    Text("OpenAI", color = Color.White, fontSize = 12.sp)
                 }
             }
         },
@@ -524,11 +561,12 @@ fun CloudProviderDialog(chatViewModel: ChatViewModel, activity: MainActivity?) {
                     }
                     activity?.addCloudProvider(name, providerType, endpoint, modelId)
                     chatViewModel.showAddCloudDialog = false
+                    chatViewModel.fetchedModels.clear()
                 }
             }) { Text("SAVE", color = Color.Cyan) }
         },
         dismissButton = {
-            TextButton(onClick = { chatViewModel.showAddCloudDialog = false }) { Text("CANCEL", color = Color.Gray) }
+            TextButton(onClick = { chatViewModel.showAddCloudDialog = false; chatViewModel.fetchedModels.clear() }) { Text("CANCEL", color = Color.Gray) }
         }
     )
 }
