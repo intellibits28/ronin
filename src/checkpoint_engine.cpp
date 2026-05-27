@@ -48,10 +48,21 @@ bool CheckpointEngine::initializeShadowBuffer(size_t size) {
     m_memfd = -1; 
 #endif
 
+    // Fallback for host tests or older kernels
     if (m_memfd == -1) {
-        LOGE(TAG, "Failed to create memfd shadow buffer.");
+        LOGI(TAG, "memfd_create not supported, falling back to tmpfile().");
+        FILE* tmp = tmpfile();
+        if (tmp) {
+            m_memfd = dup(fileno(tmp));
+            fclose(tmp);
+        }
+    }
+
+    if (m_memfd == -1) {
+        LOGE(TAG, "Failed to create shadow buffer (memfd and tmpfile failed).");
         return false;
     }
+
 
     if (ftruncate(m_memfd, size) == -1) {
         LOGE(TAG, "Failed to truncate memfd to %zu bytes.", size);
