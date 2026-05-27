@@ -418,7 +418,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
 
                                         if (!isCommand && (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady)) { 
                                             val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
-                                            val res = engine.performCloudInference(raw, chatViewModel.primaryCloudProvider, apiKey)
+                                            val res = engine.performCloudInferenceAsync(raw, chatViewModel.primaryCloudProvider, apiKey)
                                             roninMsg.content = res
                                         } else { 
                                             val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
@@ -681,5 +681,8 @@ fun Divider(modifier: Modifier = Modifier) { androidx.compose.material.Divider(c
 fun Context.findActivity(): ComponentActivity? {
     var context = this
     while (context is ContextWrapper) { if (context is ComponentActivity) return context; context = context.baseContext }
+    return null
+}
+e (context is ContextWrapper) { if (context is ComponentActivity) return context; context = context.baseContext }
     return null
 }

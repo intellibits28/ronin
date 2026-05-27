@@ -210,6 +210,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return executeSingleInference(input, provider, apiKey)
     }
 
+    suspend fun performCloudInferenceAsync(input: String, provider: String, apiKey: String): String = withContext(Dispatchers.IO) {
+        executeSingleInference(input, provider, apiKey)
+    }
+
     private fun executeSingleInference(input: String, provider: String, passedApiKey: String): String {
         val apiKey = if (passedApiKey.isNotEmpty()) passedApiKey else (getSecureApiKeyProvider?.invoke(provider)?.trim() ?: "")
         if (apiKey.isEmpty()) return "Error: API Key missing for $provider."
@@ -225,7 +229,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     val p = providersJson.getJSONObject(i)
                     if (p.getString("name") == provider) {
                         endpoint = p.getString("endpoint")
-                        modelId = p.optString("modelId", "")
+                        modelId = p.optString("modelId", "gemini-1.5-flash-latest")
                         break
                     }
                 }
@@ -235,14 +239,22 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (endpoint.isEmpty()) return "Error: Endpoint missing for $provider."
 
         return try {
-            val url = java.net.URL(if (endpoint.contains("generativelanguage")) "$endpoint?key=$apiKey" else endpoint)
+            val isGemini = endpoint.contains("generativelanguage")
+            val finalUrl = if (isGemini) {
+                // Ensure correct Gemini chat endpoint
+                val base = endpoint.removeSuffix("/")
+                if (!base.contains(":generateContent")) "$base/models/$modelId:generateContent?key=$apiKey"
+                else "$base?key=$apiKey"
+            } else endpoint
+
+            val url = java.net.URL(finalUrl)
             val conn = url.openConnection() as java.net.HttpURLConnection
             conn.connectTimeout = 15000; conn.readTimeout = 15000
             conn.requestMethod = "POST"; conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
-            if (!endpoint.contains("generativelanguage")) conn.setRequestProperty("Authorization", "Bearer $apiKey")
+            if (!isGemini) conn.setRequestProperty("Authorization", "Bearer $apiKey")
 
-            val jsonBody = if (endpoint.contains("generativelanguage")) {
+            val jsonBody = if (isGemini) {
                 JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", input)))))
             } else {
                 JSONObject().put("model", if (modelId.isNotEmpty()) modelId else "meta-llama/llama-3.1-8b-instruct").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", input)))
