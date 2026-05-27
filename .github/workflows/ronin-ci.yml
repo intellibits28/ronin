@@ -47,13 +47,17 @@ jobs:
         with:
           ndk-version: r26b
 
-      - name: Build Android JNI & APK (arm64-v8a)
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           build-root-directory: android
           gradle-version: 8.9
           cache-disabled: true
-          arguments: assembleDebug -Pandroid.bundle.enableUncompressedNativeLibs=false
+
+      - name: Build Android JNI & APK (arm64-v8a)
+        run: |
+          cd android
+          gradle assembleDebug
 
       - name: Extract Native Library (.so)
         run: |
