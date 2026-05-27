@@ -2,29 +2,29 @@
 
 ## 1. Project Overview
 **Name:** Ronin Kernel (Phase 11.2 Hardening)
-**Current Version:** v4.7.26.05.26 (Hardened CalVer)
-**Active Branch:** feature/hydration-fix
-**Objective:** A sovereign AI kernel utilizing the **Hardened v3.3 Production Architecture**. Features Advanced Sampling (T,P,K), Streaming Stability, and AI Edge Gallery UI.
+**Current Version:** v4.7.27.05.26 (Hardened CalVer)
+**Active Branch:** main
+**Objective:** A sovereign AI kernel utilizing the **Hardened v3.6 Production Architecture**. Features real-time Gemma 4 streaming, simplified Cloud setup, and atomic crash-safe persistence.
 
 ---
 
-## 2. Hardened Break-throughs (v3.3 SUCCESS)
-*   **Dynamic Sampling:** ✅ SUCCESS - Temperature, Top-K, Top-P sliders active in Drawer.
-*   **Thinking Toggle:** ✅ SUCCESS - Real-time filtering of reasoning logs.
-*   **Bubble Integrity:** ✅ SUCCESS - "Ronin is reasoning..." status prevents empty bubbles.
-*   **Real-time Streaming:** ✅ SUCCESS - Token-by-token UI updates.
+## 2. Hardened Break-throughs (v3.6 SUCCESS)
+*   **Reactive Streaming:** ✅ SUCCESS - Reactive properties in `ChatMessage` ensure sub-second rendering.
+*   **Smart Cloud Setup:** ✅ SUCCESS - Pre-filled profiles for Gemini/OpenAI/OpenRouter with dynamic model fetching.
+*   **Network Stability:** ✅ SUCCESS - Fixed `NetworkOnMainThreadException` via `performCloudInferenceAsync`.
+*   **Host Test Stability:** ✅ SUCCESS - Implemented `mkstemp` fallback for `CheckpointEngine` on restricted host kernels.
 
 ---
 
 ## 3. Current Status: Phase 11.2 (Production Hardening)
-- **Status:** Architecture stabilized. Migration to Single-Process complete.
+- **Status:** Architecture finalized. Branch swap to `main` complete.
 - **Diagnostics:**
-    - [x] **Error 13 Fix:** Instruction isolation and token tuning finalized.
-    - [x] **JNI Hygiene:** Renamed conflicting methods (`resetContextNativeJNI`) and synced signatures.
-    - [x] **Storage Bloat:** Filename resolution and explicit cache purging utility active.
+    - [x] **Reasoning Hang:** Resolved list update issues via atomic refresh and reactive state.
+    - [x] **Data Class Fix:** Refactored `ChatMessage` to handle Compose `mutableStateOf` correctly.
+    - [x] **Cloud URL Sync:** Unified Gemini chat endpoints and API key routing.
 - **Audit Trail:**
     - Validated Myanmar reasoning and reply enforcement in `PromptFactory`.
-    - Verified real-time streaming UI with Cyan log visibility.
+    - Verified real-time streaming UI with tag-stripped bubbles.
 
 ---
 
