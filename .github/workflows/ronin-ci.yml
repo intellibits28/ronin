@@ -48,16 +48,19 @@ jobs:
           ndk-version: r26b
 
       - name: Build Android JNI & APK (arm64-v8a)
-        run: |
-          cd android
-          ./gradlew assembleDebug -Pandroid.bundle.enableUncompressedNativeLibs=false
-          cp app/build/outputs/apk/debug/app-debug.apk ../ronin-kernel-debug.apk
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          build-root-directory: android
+          gradle-version: 8.9
+          cache-disabled: true
+          arguments: assembleDebug -Pandroid.bundle.enableUncompressedNativeLibs=false
 
       - name: Extract Native Library (.so)
         run: |
           mkdir -p output_libs
           find android/app/build/intermediates/cmake/debug -name "libronin_kernel.so" -exec cp {} output_libs/ \;
-          echo "Native library extracted to output_libs/"
+          cp android/app/build/outputs/apk/debug/app-debug.apk ronin-kernel-debug.apk
+          echo "Native library and APK extracted."
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
