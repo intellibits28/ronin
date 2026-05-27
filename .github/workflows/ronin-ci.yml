@@ -22,12 +22,13 @@ jobs:
         run: |
           mkdir build_host && cd build_host
           cmake -DCMAKE_BUILD_TYPE=Release ..
-          make ronin_inference_test -j$(nproc)
+          make ronin_atomic_test ronin_integration_test -j$(nproc)
 
       - name: Run Inference Module Tests
         run: |
           cd build_host
-          ./ronin_inference_test
+          ./ronin_atomic_test
+          ./ronin_integration_test
 
   build-android-jni:
     needs: validate-inference-module
