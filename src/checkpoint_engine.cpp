@@ -50,16 +50,16 @@ bool CheckpointEngine::initializeShadowBuffer(size_t size) {
 
     // Fallback for host tests or older kernels
     if (m_memfd == -1) {
-        LOGI(TAG, "memfd_create not supported, falling back to tmpfile().");
-        FILE* tmp = tmpfile();
-        if (tmp) {
-            m_memfd = dup(fileno(tmp));
-            fclose(tmp);
+        char temp_path[] = "/tmp/ronin_shadow_XXXXXX";
+        m_memfd = mkstemp(temp_path);
+        if (m_memfd != -1) {
+            LOGI(TAG, "memfd_create not supported, using mkstemp: %s", temp_path);
+            unlink(temp_path); // Unlink immediately so it's deleted on close
         }
     }
 
     if (m_memfd == -1) {
-        LOGE(TAG, "Failed to create shadow buffer (memfd and tmpfile failed).");
+        LOGE(TAG, "Failed to create shadow buffer (memfd and fallback failed).");
         return false;
     }
 
