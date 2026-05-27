@@ -683,6 +683,3 @@ fun Context.findActivity(): ComponentActivity? {
     while (context is ContextWrapper) { if (context is ComponentActivity) return context; context = context.baseContext }
     return null
 }
-e (context is ContextWrapper) { if (context is ComponentActivity) return context; context = context.baseContext }
-    return null
-}
