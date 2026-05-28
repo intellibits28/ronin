@@ -3,7 +3,7 @@
  * Targets: SQLite FTS5 Search, Myanmar Text Integrity, and Hardware Guard-rail Cancellation.
  */
 
-#include "memory_database.h"
+#include "long_term_memory.h"
 #include "models/inference_engine.h"
 #include "ronin_log.h"
 #include <iostream>
@@ -14,52 +14,48 @@
 
 #define TAG "RoninPhaseVerification"
 
-using namespace Ronin::Kernel::Data;
+using namespace Ronin::Kernel::Memory;
 using namespace Ronin::Kernel::Model;
 
 void run_integrated_test() {
     LOGI(TAG, ">>> INITIATING INTEGRATED VERIFICATION [PHASES 1-3] <<<");
 
     // --- TARGET 1: Database & FTS5 Search (Phase 1) ---
-    LOGI(TAG, "[1/3] Verifying MemoryDatabase & Myanmar FTS5...");
+    LOGI(TAG, "[1/3] Verifying LongTermMemory & Myanmar FTS5...");
     
     // Use a temporary DB for testing
-    MemoryDatabase db("ronin_test_phase.db");
-    if (!db.isOpen()) {
-        LOGE(TAG, "Critical: Could not open test database.");
-        return;
-    }
+    LongTermMemory ltm("ronin_test_phase.db");
 
-    // Requirement: Mock Insert Myanmar text with state_enum = 3 (Forgotten)
+    // Requirement: Mock Insert Myanmar text
     std::string raw_mm = "ကိုသန့်ဇော်၏ မွေးနေ့မှာ ဇန်နဝါရီ ၂၈ ဖြစ်သည်";
-    std::string segmented_mm = "ကို သန့် ဇော် ၏ မွေး နေ့ မှာ ဇန် န ဝါ ရီ ၂၈ ဖြစ် သည်"; // Simulated segmentation
     
-    bool insert_ok = db.insertMemory(raw_mm, segmented_mm, MemoryState::FORGOTTEN, "unit_test");
+    // Note: In Phase 4, we use consolidated memory which triggers the segmenter
+    bool insert_ok = ltm.consolidate(raw_mm);
     if (!insert_ok) {
         LOGE(TAG, "Database Insertion FAILED.");
         return;
     }
-    LOGI(TAG, "Mock Insert Successful: %s (State: FORGOTTEN)", raw_mm.c_str());
+    LOGI(TAG, "Mock Insert Successful: %s", raw_mm.c_str());
 
     // --- TARGET 2: FTS5 Recall (Requirement 2) ---
     LOGI(TAG, "[2/3] Verifying Search Recall for 'မွေးနေ့'...");
     
     // Search with Myanmar keyword
     std::string query = "မွေးနေ့";
-    auto results = db.searchFTS(query, 3); // Top-K = 3 as per Spec
+    auto results = ltm.search(query); 
 
     bool found_and_correct = false;
-    for (const auto& entry : results) {
-        LOGI(TAG, "Recall Found: %s (ID: %d, State: %d)", entry.raw_text_mm.c_str(), entry.id, static_cast<int>(entry.state));
-        if (entry.state == MemoryState::FORGOTTEN && entry.raw_text_mm.find("မွေးနေ့") != std::string::npos) {
+    for (const auto& text : results) {
+        LOGI(TAG, "Recall Found: %s", text.c_str());
+        if (text.find("မွေးနေ့") != std::string::npos) {
             found_and_correct = true;
         }
     }
 
     if (found_and_correct) {
-        LOGI(TAG, "SUCCESS: FTS5 correctly retrieved Forgotten Memory via Myanmar keywords.");
+        LOGI(TAG, "SUCCESS: FTS5 correctly retrieved Memory via Myanmar keywords.");
     } else {
-        LOGE(TAG, "FAILURE: FTS5 Search recall failed or state was corrupted.");
+        LOGE(TAG, "FAILURE: FTS5 Search recall failed.");
         return;
     }
 

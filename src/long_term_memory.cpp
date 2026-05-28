@@ -143,10 +143,19 @@ std::vector<std::string> LongTermMemory::search(const std::string& query) {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
     
+    // Segment the query to match the tokenized index
+    std::string processed_query = query;
+    if (m_segmenter) {
+        processed_query = m_segmenter->segment(query);
+    }
+    
+    // If segmentation resulted in empty (all stop words), fallback to raw query
+    if (processed_query.empty()) processed_query = query;
+
     const char* sql = "SELECT original_text_mm FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank LIMIT 5;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 1, processed_query.c_str(), -1, SQLITE_STATIC);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* content_ptr = sqlite3_column_text(stmt, 0);
             if (content_ptr) results.push_back(reinterpret_cast<const char*>(content_ptr));

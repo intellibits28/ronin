@@ -69,7 +69,6 @@ set(RONIN_CORE_SOURCES
     src/graph_storage.cpp
     src/memory_manager.cpp
     src/long_term_memory.cpp
-    src/memory_database.cpp
     src/capability_graph.cpp
     src/ronin_kernel.cpp
     src/capabilities/file_scanner.cpp
