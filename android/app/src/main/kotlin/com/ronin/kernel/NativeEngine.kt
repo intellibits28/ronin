@@ -88,6 +88,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun scanSpecificPathNative(path: String): Boolean
     private external fun isValidModelNative(path: String): Boolean
     private external fun resetContextNativeJNI()
+    private external fun loadMyanmarDictionaryNative(path: String): Boolean
     private external fun requestCancellationNative()
 
     /**
