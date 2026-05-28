@@ -23,6 +23,8 @@
 #include "capabilities/hardware_nodes.h"
 #include "capabilities/file_search_node.h"
 #include "capabilities/chat_skill.h"
+#include "capabilities/memory_search_skill.h"
+#include "capabilities/archive_memory_skill.h"
 #include "capabilities/hardware_bridge.h"
 
 #define TAG "RoninIntentEngine"
@@ -124,13 +126,15 @@ void IntentEngine::notifyTrimMemory(int level) {
 IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     using namespace Ronin::Kernel::Capability;
     
-    m_skill_registry[2] = std::make_shared<FileSearchNode>();
+    m_skill_registry[2] = std::make_shared<FileSearchNode>(m_ltm);
     m_skill_registry[4] = std::make_shared<FlashlightNode>();
     m_skill_registry[5] = std::make_shared<LocationNode>();
     m_skill_registry[6] = std::make_shared<WifiNode>();
     m_skill_registry[7] = std::make_shared<BluetoothNode>();
+    m_skill_registry[8] = std::make_shared<MemorySearchSkill>(m_ltm);
+    m_skill_registry[9] = std::make_shared<ArchiveMemorySkill>(m_ltm);
     
-    LOGI(TAG, "IntentEngine: Hardened v3.0 modular registry initialized.");
+    LOGI(TAG, "IntentEngine: Hardened v3.6 modular registry initialized.");
 }
 
 std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param) {

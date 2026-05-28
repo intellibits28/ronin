@@ -163,7 +163,13 @@ jint native_getLMKPressure(JNIEnv *env, jobject thiz) {
     return g_memory_manager ? g_memory_manager->getPressureScore() : 0;
 }
 
-jboolean native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) { return JNI_TRUE; }
+jboolean native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring path) {
+    if (g_intent_engine) {
+        g_intent_engine->loadCapabilities(ConvertJStringToString(env, path));
+        return JNI_TRUE;
+    }
+    return JNI_FALSE;
+}
 jboolean native_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) { return JNI_TRUE; }
 jboolean native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring path) { return JNI_TRUE; }
 
@@ -201,12 +207,20 @@ void native_resetContext(JNIEnv *env, jobject thiz) {
     if (g_memory_manager) g_memory_manager->clearContext();
 }
 
+jboolean native_loadMyanmarDictionary(JNIEnv *env, jobject thiz, jstring path) {
+    if (g_ltm) {
+        return g_ltm->loadSegmenter(ConvertJStringToString(env, path)) ? JNI_TRUE : JNI_FALSE;
+    }
+    return JNI_FALSE;
+}
+
 void native_requestCancellation(JNIEnv *env, jobject thiz) {
     if (g_llm_context.engine) g_llm_context.engine->requestCancellation();
 }
 
 void native_shutdownKernel(JNIEnv *env, jobject thiz) {
     if (g_kernel) g_kernel->shutdown();
+    HardwareBridge::release(env);
 }
 
 // --- JNI Registration ---
@@ -235,6 +249,7 @@ static JNINativeMethod g_methods[] = {
     {"isValidModelNative", "(Ljava/lang/String;)Z", (void*)native_isValidModel},
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory},
     {"resetContextNativeJNI", "()V", (void*)native_resetContext},
+    {"loadMyanmarDictionaryNative", "(Ljava/lang/String;)Z", (void*)native_loadMyanmarDictionary},
     {"requestCancellationNative", "()V", (void*)native_requestCancellation}
 };
 

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <mutex>
 #include <sqlite3.h>
+#include "myanmar_segmenter.h"
 
 namespace Ronin::Kernel::Memory {
 
@@ -61,10 +62,14 @@ public:
     // Auditing
     bool storeAuditLog(const std::string& action, const std::string& details);
 
+    // Segmenter Control
+    bool loadSegmenter(const std::string& dict_path);
+
 private:
     sqlite3* m_db = nullptr;
     std::mutex m_mutex;
     double m_lambda = 0.000001; 
+    std::unique_ptr<Ronin::Kernel::NLP::MyanmarSegmenter> m_segmenter;
 
     bool initSchema();
 };

@@ -308,7 +308,18 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun setOfflineModeSafe(offline: Boolean) {
         if (isLibLoaded) try { setOfflineModeNative(offline) } catch (e: Exception) {}
     }
+
+    fun loadCapabilities(path: String) {
+        if (isLibLoaded) try { updateModelRegistryNative(path) } catch (e: Exception) {}
+    }
+
+    fun loadMyanmarDictionary(path: String): Boolean {
+        if (isLibLoaded) try { return loadMyanmarDictionaryNative(path) } catch (e: Exception) {}
+        return false
+    }
+
     fun setPrimaryCloudProviderSafe(provider: String) {
+
         if (isLibLoaded) try { setPrimaryCloudProviderNative(provider) } catch (e: Exception) {}
     }
     fun updateCloudProvidersSafe(json: String): Boolean {

@@ -191,6 +191,8 @@ class MainActivity : ComponentActivity() {
             chatViewModel.kernelStatus = "Booting Engine..."
             NativeEngine.initializeAsync(); nativeEngine.initialize()
             setupHardwareCallbacks(); loadCloudProvidersFromDisk()
+            nativeEngine.loadCapabilities(File(filesDir, "assets/capabilities.json").absolutePath)
+            nativeEngine.loadMyanmarDictionary(File(filesDir, "assets/myanmar_dictionary.txt").absolutePath)
             savePrimaryCloudProvider(sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini")
             saveOfflineMode(sharedPreferences.getBoolean("offline_mode", false))
             nativeEngine.updateSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP)
@@ -250,6 +252,9 @@ class MainActivity : ComponentActivity() {
             val assetsDir = File(filesDir, "assets").apply { if (!exists()) mkdirs() }
             val capFile = File(assetsDir, "capabilities.json")
             if (!capFile.exists()) assets.open("capabilities.json").use { input -> java.io.FileOutputStream(capFile).use { output -> input.copyTo(output) } }
+            
+            val dictFile = File(assetsDir, "myanmar_dictionary.txt")
+            if (!dictFile.exists()) assets.open("myanmar_dictionary.txt").use { input -> java.io.FileOutputStream(dictFile).use { output -> input.copyTo(output) } }
         } catch (e: Exception) { Log.e("RoninBoot", "Asset copy failed.") }
     }
 

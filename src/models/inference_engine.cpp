@@ -13,7 +13,7 @@ namespace Ronin::Kernel::Model {
 struct InferenceEngine::Impl {
     std::string model_path;
     std::string base_path;
-    int context_window = 2048;
+    int context_window = 512;
     std::mutex inference_mutex;
     bool is_processing = false;
 

@@ -12,7 +12,8 @@
 
 namespace Ronin::Kernel::Memory {
 
-LongTermMemory::LongTermMemory(const std::string& db_path) {
+LongTermMemory::LongTermMemory(const std::string& db_path) 
+    : m_segmenter(std::make_unique<Ronin::Kernel::NLP::MyanmarSegmenter>()) {
     if (sqlite3_open(db_path.c_str(), &m_db) != SQLITE_OK) {
         LOGE(TAG, "Failed to open SQLite database: %s", sqlite3_errmsg(m_db));
         if (m_db) {
@@ -159,6 +160,12 @@ bool LongTermMemory::consolidate(const std::string& summary_text) {
     if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     
+    // Segment the text before storing for FTS5
+    std::string segmented = summary_text;
+    if (m_segmenter) {
+        segmented = m_segmenter->segment(summary_text);
+    }
+
     sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
     const char* sql = "INSERT INTO memories (original_text_mm, creation_time, last_accessed_time) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
@@ -184,7 +191,8 @@ bool LongTermMemory::consolidate(const std::string& summary_text) {
     const char* fts_sql = "INSERT INTO memories_fts (original_text_mm, content_id) VALUES (?, ?);";
     sqlite3_stmt* fts_stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, fts_sql, -1, &fts_stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(fts_stmt, 1, summary_text.c_str(), -1, SQLITE_STATIC);
+        // Use segmented text for FTS5 indexing
+        sqlite3_bind_text(fts_stmt, 1, segmented.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_int64(fts_stmt, 2, last_id);
         sqlite3_step(fts_stmt);
         sqlite3_finalize(fts_stmt);
@@ -192,6 +200,13 @@ bool LongTermMemory::consolidate(const std::string& summary_text) {
 
     sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
     return true;
+}
+
+bool LongTermMemory::loadSegmenter(const std::string& dict_path) {
+    if (m_segmenter) {
+        return m_segmenter->loadDictionary(dict_path);
+    }
+    return false;
 }
 
 bool LongTermMemory::indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified) {
@@ -242,14 +257,14 @@ static std::string filterThinking(const std::string& input) {
     std::string output = input;
     size_t start_pos, end_pos;
 
-    // <thinking> နှင့် </thinking> ကြားရှိစာသားများကို loop ပတ်၍ ဖြတ်ထုတ်ခြင်း
-    while ((start_pos = output.find("<thinking>")) != std::string::npos) {
-        end_pos = output.find("</thinking>");
+    // [THINK] နှင့် [/THINK] ကြားရှိစာသားများကို loop ပတ်၍ ဖြတ်ထုတ်ခြင်း
+    while ((start_pos = output.find("[THINK]")) != std::string::npos) {
+        end_pos = output.find("[/THINK]");
         if (end_pos != std::string::npos && end_pos > start_pos) {
-            // </thinking> အပိတ် tag ပါအပါအဝင် အကုန်ဖြတ်မည် (length = end_pos - start_pos + 11)
-            output.erase(start_pos, (end_pos - start_pos) + 11);
+            // [/THINK] အပိတ် tag ပါအပါအဝင် အကုန်ဖြတ်မည် (length = end_pos - start_pos + 8)
+            output.erase(start_pos, (end_pos - start_pos) + 8);
         } else {
-            // အပိတ် tag မပါသေးပါက <thinking> ကနေ အဆုံးထိ ဖြတ်ပစ်မည်
+            // အပိတ် tag မပါသေးပါက [THINK] ကနေ အဆုံးထိ ဖြတ်ပစ်မည်
             output.erase(start_pos);
             break;
         }

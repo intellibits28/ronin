@@ -77,6 +77,7 @@ set(RONIN_CORE_SOURCES
     src/capabilities/hardware_nodes.cpp
     src/capabilities/hardware_bridge.cpp
     src/capabilities/chat_skill.cpp
+    src/myanmar_segmenter.cpp
 )
 
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
