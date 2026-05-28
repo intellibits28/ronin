@@ -84,6 +84,10 @@ dependencies {
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3'
 
+    // Network Stack
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+
     // --- PHASE 11.0: Unified LiteRT-LM (Gemma 4 Production SDK) ---
     // Removed legacy MediaPipe GenAI and TFLite dependencies
     implementation 'com.google.ai.edge.litertlm:litertlm-android:0.12.0'

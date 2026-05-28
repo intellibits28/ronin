@@ -1,21 +1,22 @@
 # Project Ronin: Mobile AI Kernel Manifest
 
 ## Hardened Goal
-Build a sovereign, fault-tolerant Mobile AI runtime kernel utilizing the **Hardened v3.6 Production Architecture** (SD778G focus).
+Build a sovereign, fault-tolerant Mobile AI runtime kernel utilizing the **Hardened v4.0 Production Architecture** (SD778G / Mid-range focus).
 
 ## Core Tech Stack
 - **Engine:** C++20 (Kernel Core), Kotlin (Android UI & JNI Wrapper)
-- **Inference:** LiteRT-LM 0.12.0 (Gemma 4 Optimized)
-- **Bridge:** Native Direct Bridge (Direct JNI Callbacks)
-- **Database:** SQLite FTS5 (Lexical Keyword Spine)
-- **Build System:** CMake, Android NDK 26b, GitHub Actions (JDK 21)
+- **Inference:** LiteRT-LM 0.12.0 (Gemma 4 Optimized, 1024 Token Default)
+- **Bridge:** Native Direct Bridge + AIDL (Dual-Process Isolation)
+- **Networking:** OkHttp 4.12.0 (Reliable Cloud Inference)
+- **Database:** SQLite FTS5 (Trie-Segmented Myanmar Keywords)
 
 ## Key Hardened Components
-1. **Direct JNI Bridge:** Single-process token streaming with reactive UI updates.
-2. **Real-time Streaming:** Reactive `ChatMessage` properties for sub-second rendering.
-3. **Cloud Profile Setup:** Simplified multi-step setup with dynamic model fetching.
-4. **RAM Guard:** Real-time LMK-aware KV-cache pruning (0.8GB threshold).
-5. **Instruction Isolation:** Single-injection system prompt for context efficiency.
+1. **Dual-Process Isolation:** Inference isolated in `:inference_core` for UI stability.
+2. **Real-time Streaming:** Reactive `ChatMessage` properties for zero-lag rendering.
+3. **OkHttp Stack:** Modern network implementation with proper timeouts and error handling.
+4. **Trie-based BWS:** Pure C++ segmenter with 23k+ Myanmar words for memory precision.
+5. **RAM Guard:** Real-time LMK-aware KV-cache pruning (1.1GB threshold).
+
 
 ## Repository Mapping (v3.6 Alignment)
 - `src/ronin_jni.cpp`: Production JNI method table and callback bridge.

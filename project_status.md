@@ -2,26 +2,26 @@
 
 ## 1. Project Overview
 **Name:** Ronin Kernel (Phase 11.2 Hardening)
-**Current Version:** v4.7.27.05.26 (Hardened CalVer)
+**Current Version:** v4.7.27.05.27 (Hardened v4.0 CalVer)
 **Active Branch:** main
-**Objective:** A sovereign AI kernel utilizing the **Hardened v3.6 Production Architecture**. Features real-time Gemma 4 streaming, simplified Cloud setup, and atomic crash-safe persistence.
+**Objective:** A sovereign AI kernel utilizing the **Hardened v4.0 Production Architecture**. Optimized for mid-range Android hardware and precise Myanmar text handling.
 
 ---
 
-## 2. Hardened Break-throughs (v3.6 SUCCESS)
-*   **Reactive Streaming:** ✅ SUCCESS - Reactive properties in `ChatMessage` ensure sub-second rendering.
-*   **Smart Cloud Setup:** ✅ SUCCESS - Pre-filled profiles for Gemini/OpenAI/OpenRouter with dynamic model fetching.
-*   **Network Stability:** ✅ SUCCESS - Fixed `NetworkOnMainThreadException` via `performCloudInferenceAsync`.
-*   **Host Test Stability:** ✅ SUCCESS - Implemented `mkstemp` fallback for `CheckpointEngine` on restricted host kernels.
+## 2. Hardened Break-throughs (v4.0 SUCCESS)
+*   **Linguistic Precision:** ✅ SUCCESS - Pure C++ Trie Segmenter (23k+ words) integrated with FTS5.
+*   **Mid-range Optimization:** ✅ SUCCESS - Restored `:inference_core` isolation and increased token limit to 1024.
+*   **Reliable Networking:** ✅ SUCCESS - Migrated Cloud Provider setup and inference to **OkHttp**.
+*   **Security & Safety:** ✅ SUCCESS - Implemented `@Keep` for reflection protection and enhanced JNI resource cleanup.
 
 ---
 
 ## 3. Current Status: Phase 11.2 (Production Hardening)
-- **Status:** Architecture finalized. Branch swap to `main` complete.
+- **Status:** v4.0 finalized. Multi-process stability verified.
 - **Diagnostics:**
-    - [x] **Reasoning Hang:** Resolved list update issues via atomic refresh and reactive state.
-    - [x] **Data Class Fix:** Refactored `ChatMessage` to handle Compose `mutableStateOf` correctly.
-    - [x] **Cloud URL Sync:** Unified Gemini chat endpoints and API key routing.
+    - [x] **Token Truncation:** Fixed by defaulting to 1024 tokens and allowing up to 2048.
+    - [x] **Network Exceptions:** Resolved by migrating to OkHttp and async IO.
+    - [x] **UI Freeze:** Eliminated via AIDL process isolation.
 - **Audit Trail:**
     - Validated Myanmar reasoning and reply enforcement in `PromptFactory`.
     - Verified real-time streaming UI with tag-stripped bubbles.

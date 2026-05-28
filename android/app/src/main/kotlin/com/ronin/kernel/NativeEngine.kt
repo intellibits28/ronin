@@ -17,19 +17,29 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Native Engine (Phase 11.2: Hardened v3.1 Architecture)
- * Uses Dual-Process Isolation and AIDL Streaming for production reliability.
+ * Native Engine (Hardened v4.0 Architecture)
+ * Optimized for Mid-range stability with OkHttp networking and process isolation.
  */
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private val dbHelper = DatabaseHelper(context)
     private var inferenceService: IInferenceService? = null
     private var isServiceBound = false
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     private val _inferenceFlow = MutableSharedFlow<InferencePacket>(replay = 0)
     val inferenceFlow = _inferenceFlow.asSharedFlow()
@@ -208,22 +218,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Suppress("unused")
     fun performCloudInference(input: String, provider: String, apiKey: String): String {
-        return executeSingleInference(input, provider, apiKey)
+        return runBlocking { performCloudInferenceAsync(input, provider, apiKey) }
     }
 
     suspend fun performCloudInferenceAsync(input: String, provider: String, apiKey: String): String = withContext(Dispatchers.IO) {
-        executeSingleInference(input, provider, apiKey)
-    }
-
-    private fun executeSingleInference(input: String, provider: String, passedApiKey: String): String {
-        val apiKey = if (passedApiKey.isNotEmpty()) passedApiKey else (getSecureApiKeyProvider?.invoke(provider)?.trim() ?: "")
-        if (apiKey.isEmpty()) return "Error: API Key missing for $provider."
+        val key = if (apiKey.isNotEmpty()) apiKey else (getSecureApiKeyProvider?.invoke(provider)?.trim() ?: "")
+        if (key.isEmpty()) return@withContext "Error: API Key missing for $provider."
 
         var endpoint = ""
         var modelId = ""
         try {
-            val configDir = File(context.filesDir, "config")
-            val providersFile = File(configDir, "providers.json")
+            val providersFile = File(context.filesDir, "config/providers.json")
             if (providersFile.exists()) {
                 val providersJson = JSONArray(providersFile.readText())
                 for (i in 0 until providersJson.length()) {
@@ -235,42 +240,40 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     }
                 }
             }
-        } catch (e: Exception) { return "Error: Config failure." }
+        } catch (e: Exception) { return@withContext "Error: Config failure." }
 
-        if (endpoint.isEmpty()) return "Error: Endpoint missing for $provider."
+        if (endpoint.isEmpty()) return@withContext "Error: Endpoint missing for $provider."
 
-        return try {
+        try {
             val isGemini = endpoint.contains("generativelanguage")
             val finalUrl = if (isGemini) {
-                // Ensure correct Gemini chat endpoint
                 val base = endpoint.removeSuffix("/")
-                if (!base.contains(":generateContent")) "$base/models/$modelId:generateContent?key=$apiKey"
-                else "$base?key=$apiKey"
+                if (!base.contains(":generateContent")) "$base/models/$modelId:generateContent?key=$key"
+                else "$base?key=$key"
             } else endpoint
-
-            val url = java.net.URL(finalUrl)
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 15000; conn.readTimeout = 15000
-            conn.requestMethod = "POST"; conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json")
-            if (!isGemini) conn.setRequestProperty("Authorization", "Bearer $apiKey")
 
             val jsonBody = if (isGemini) {
                 JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", input)))))
             } else {
-                JSONObject().put("model", if (modelId.isNotEmpty()) modelId else "meta-llama/llama-3.1-8b-instruct").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", input)))
+                JSONObject().put("model", modelId).put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", input)))
             }
 
-            conn.outputStream.use { it.write(jsonBody.toString().toByteArray()) }
-            if (conn.responseCode == 200) {
-                val response = conn.inputStream.bufferedReader().use { it.readText() }
-                if (endpoint.contains("generativelanguage")) JSONObject(response).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
-                else JSONObject(response).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
-            } else {
-                val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "No error response"
-                "Error: Server returned code ${conn.responseCode} - $err"
+            val request = Request.Builder()
+                .url(finalUrl)
+                .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                .apply { if (!isGemini) header("Authorization", "Bearer $key") }
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    if (isGemini) JSONObject(body).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                    else JSONObject(body).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+                } else {
+                    "Error: HTTP ${response.code} - ${response.message}"
+                }
             }
-        } catch (e: Exception) { "Error: ${e::class.java.simpleName} - ${e.message}" }
+        } catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Suppress("unused")
@@ -320,9 +323,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     fun setPrimaryCloudProviderSafe(provider: String) {
-
         if (isLibLoaded) try { setPrimaryCloudProviderNative(provider) } catch (e: Exception) {}
     }
+
     fun updateCloudProvidersSafe(json: String): Boolean {
         try {
             val configDir = File(context.filesDir, "config")
@@ -331,20 +334,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } catch (e: Exception) {}
         return if (isLibLoaded) try { updateCloudProvidersNative(json) } catch (e: Exception) { false } else false
     }
+
     fun isValidModel(path: String): Boolean {
         if (isLibLoaded) try { return isValidModelNative(path) } catch (e: Exception) {}
         return true
     }
-    fun normalizeBurmese(text: String): String {
-        return java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
-    }
-    fun updateSamplingParams(temp: Float, topK: Int, topP: Float) {
-        try { inferenceService?.updateSamplingParams(temp, topK, topP) } catch (e: Exception) {}
-    }
 
-    /**
-     * Resets the cognitive context on both Native and Worker side.
-     */
     fun nativeResetContext() {
         if (isLibLoaded) {
             try {
@@ -353,6 +348,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             } catch (e: Exception) { Log.e(TAG, "Reset failed: ${e.message}") }
         }
     }
+
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         if (!isLibLoaded) return@withContext emptyList()
         try {
@@ -366,15 +362,19 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     suspend fun fetchAvailableModels(apiKey: String, provider: String = "Gemini"): FetchResult = withContext(Dispatchers.IO) {
         val isGemini = provider.equals("Gemini", ignoreCase = true)
         val baseUrl = if (isGemini) "https://generativelanguage.googleapis.com" else "https://openrouter.ai/api/v1"
-        fun tryFetch(version: String): List<JSONObject>? {
-            val endpoint = if (isGemini) "$baseUrl/$version/models?key=$apiKey" else "$baseUrl/models"
-            try {
-                val conn = java.net.URL(endpoint).openConnection() as java.net.HttpURLConnection
-                conn.requestMethod = "GET"
-                if (!isGemini) conn.setRequestProperty("Authorization", "Bearer $apiKey")
-                if (conn.responseCode == 200) {
-                    val response = conn.inputStream.bufferedReader().use { it.readText() }
-                    val root = JSONObject(response)
+        val endpoint = if (isGemini) "$baseUrl/v1beta/models?key=$apiKey" else "$baseUrl/models"
+        
+        try {
+            val request = Request.Builder()
+                .url(endpoint)
+                .get()
+                .apply { if (!isGemini) header("Authorization", "Bearer $apiKey") }
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val root = JSONObject(body)
                     val models = mutableListOf<JSONObject>()
                     if (isGemini) {
                         val modelArray = root.getJSONArray("models")
@@ -386,13 +386,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                         val modelArray = root.getJSONArray("data")
                         for (i in 0 until modelArray.length()) models.add(modelArray.getJSONObject(i))
                     }
-                    return models
+                    FetchResult(models, null)
+                } else {
+                    FetchResult(emptyList(), "HTTP ${response.code}")
                 }
-            } catch (e: Exception) {}
-            return emptyList()
+            }
+        } catch (e: Exception) {
+            FetchResult(emptyList(), e.message)
         }
-        val models = if (isGemini) tryFetch("v1beta") ?: emptyList() else tryFetch("") ?: emptyList()
-        FetchResult(models, if (models.isEmpty()) "Fetch Failed" else null)
     }
 
     data class FetchResult(val models: List<JSONObject>, val error: String? = null)
