@@ -286,6 +286,15 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             }
 
             if (action_found) {
+                // v4.0 Hardened: Prevent false triggers for LocationNode (ID 5)
+                // generic words like "နေရာ" (place) and "ပြပေး" (show) are used often in chat
+                if (cap.id == 5) {
+                    bool strictly_location = (input_lower.find("တည်နေရာ") != std::string::npos) || 
+                                           (input_lower.find("gps") != std::string::npos) ||
+                                           (input_lower.find("မြေပုံ") != std::string::npos);
+                    if (!strictly_location) continue;
+                }
+
                 LOGI(TAG, "Hardened Lexical Match: ID %u", cap.id);
                 return {cap.id, 1.0f, true};
             }
