@@ -89,7 +89,7 @@ class ChatViewModel : ViewModel() {
     var reasoningLogsText by mutableStateOf("") // v3.5: Unified console text
     
     var showSysInfo by mutableStateOf(false)
-    var showReasoning by mutableStateOf(true) // Default show for feedback
+    var showReasoning by mutableStateOf(false) // Default hide reasoning console
     var lmkPressure by mutableStateOf(0)
     
     var wizardState by mutableStateOf(WizardState.MISSING_CORE)
@@ -412,7 +412,9 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
                         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { 
-                                if (currentInput.isNotBlank()) { 
+                                if (chatViewModel.isGenerating) {
+                                    engine.stopInference()
+                                } else if (currentInput.isNotBlank()) { 
                                     val raw = currentInput; chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", raw)); currentInput = ""; chatViewModel.isGenerating = true
                                     chatViewModel.reasoningLogsText = "> Processing: $raw"
                                     scope.launch { 
@@ -433,7 +435,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         } ; chatViewModel.isGenerating = false 
                                     } 
                                 } 
-                            }) { Icon(if (chatViewModel.isGenerating) Icons.Default.HourglassEmpty else Icons.Default.Send, null, tint = Color(0xFF64B5F6)) } })
+                            }) { Icon(if (chatViewModel.isGenerating) Icons.Default.Stop else Icons.Default.Send, null, tint = if (chatViewModel.isGenerating) Color.Red else Color(0xFF64B5F6)) } })
                         }
                     }
                 }
@@ -653,16 +655,31 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, brainPicker: ActivityResultLau
 @Composable
 fun ChatBubble(msg: ChatMessage) {
     val isUser = msg.sender == "User"
+    var isThoughtExpanded by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
         if (!isUser) Text("Ronin", fontSize = 10.sp, color = Color.Gray, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
         Surface(color = if (isUser) Color(0xFF2D3142) else Color(0xFF1E2130), shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = if (isUser) 16.dp else 4.dp, bottomEnd = if (isUser) 4.dp else 16.dp), elevation = 2.dp) { 
             SelectionContainer { 
                 Column(modifier = Modifier.padding(12.dp)) {
-                    if (!isUser && msg.content.isEmpty()) {
+                    if (!isUser && (msg.thoughtContent.isNotEmpty() || msg.isThinking)) {
+                        Row(modifier = Modifier.fillMaxWidth().clickable { isThoughtExpanded = !isThoughtExpanded }.padding(bottom = if (isThoughtExpanded || msg.content.isNotEmpty()) 8.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(if (isThoughtExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (msg.isThinking) "Reasoning..." else "Thought Process", color = Color.Gray, fontSize = 11.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                            if (msg.isThinking) {
+                                Spacer(Modifier.width(8.dp))
+                                CircularProgressIndicator(modifier = Modifier.size(10.dp), strokeWidth = 1.dp, color = Color.Gray)
+                            }
+                        }
+                        AnimatedVisibility(visible = isThoughtExpanded) {
+                            Text(msg.thoughtContent, color = Color.Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = if (msg.content.isNotEmpty()) 8.dp else 0.dp, start = 8.dp))
+                        }
+                    }
+                    if (!isUser && msg.content.isEmpty() && !msg.isThinking && msg.thoughtContent.isEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = Color.Cyan)
                             Spacer(Modifier.width(8.dp))
-                            Text("Ronin is reasoning...", color = Color.Cyan, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                            Text("Ronin is preparing...", color = Color.Cyan, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
                         }
                     }
                     if (msg.content.isNotEmpty()) {
