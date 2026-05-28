@@ -340,6 +340,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return true
     }
 
+    fun updateSamplingParams(temp: Float, topK: Int, topP: Float) {
+        try { inferenceService?.updateSamplingParams(temp, topK, topP) } catch (e: Exception) {}
+    }
+
     fun nativeResetContext() {
         if (isLibLoaded) {
             try {

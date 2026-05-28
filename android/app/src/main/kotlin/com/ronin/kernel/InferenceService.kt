@@ -153,7 +153,6 @@ class InferenceService : Service() {
         try {
             activeConv.sendMessageAsync(Message.user(userPrompt)).collect { partial ->
                 val token = try { 
-                    @Keep
                     val method = partial.javaClass.getMethod("getText")
                     method.invoke(partial) as String 
                 } catch(e: Exception) { partial.toString() }
