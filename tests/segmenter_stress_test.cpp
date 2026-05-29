@@ -42,7 +42,7 @@ void run_stress_tests() {
         {
             "Corrupted boundary recovery",
             "မြန်မာXYZဘာသာစကား",
-            {"မြန်မာ", "X", "Y", "Z", "ဘာသာစကား"}
+            {"မြန်မာ", "XYZ", "ဘာသာစကား"}
         }
     };
 

@@ -53,22 +53,37 @@ bool MyanmarSegmenter::loadDictionary(const std::string& path) {
     return true;
 }
 
-// --- Phase 1: Syllable Breaking (Rule-based State Machine) ---
+// --- Phase 1: Syllable Breaking (Hardened v4.7) ---
 std::vector<std::u32string> MyanmarSegmenter::breakSyllables(const std::u32string& input) {
     std::vector<std::u32string> syllables;
     std::u32string current;
     
+    auto is_myanmar = [](char32_t c) { return (c >= 0x1000 && c <= 0x109F); };
+    auto is_whitespace = [](char32_t c) { return (c == U' ' || c == U'\n' || c == U'\t' || c == U'\r'); };
+
     for (size_t i = 0; i < input.length(); ++i) {
         char32_t c = input[i];
         
-        // simple rule: break before any consonant (U+1000 to U+1021) 
-        // if not preceded by Virama (U+1039)
-        bool is_consonant = (c >= 0x1000 && c <= 0x1021);
-        bool prev_is_virama = (i > 0 && input[i-1] == 0x1039);
+        bool current_is_mm = is_myanmar(c);
+        bool current_is_ws = is_whitespace(c);
         
-        if (is_consonant && !prev_is_virama && !current.empty()) {
-            syllables.push_back(current);
-            current.clear();
+        if (!current.empty()) {
+            char32_t prev = current.back();
+            bool prev_is_mm = is_myanmar(prev);
+            bool prev_is_ws = is_whitespace(prev);
+            
+            // Break transitions: MM to Non-MM, Non-MM to MM, or any to Whitespace
+            bool script_transition = (prev_is_mm != current_is_mm) || (prev_is_ws != current_is_ws);
+            
+            // Myanmar internal syllable break rule
+            bool is_consonant = (c >= 0x1000 && c <= 0x1021);
+            bool prev_is_virama = (prev == 0x1039);
+            bool mm_break = current_is_mm && prev_is_mm && is_consonant && !prev_is_virama;
+
+            if (script_transition || mm_break) {
+                syllables.push_back(current);
+                current.clear();
+            }
         }
         current += c;
     }
@@ -76,24 +91,25 @@ std::vector<std::u32string> MyanmarSegmenter::breakSyllables(const std::u32strin
     return syllables;
 }
 
-// --- Phase 2: Forward MaxMatch ---
+// --- Phase 2: Forward MaxMatch (v4.7 with OOV Grouping) ---
 std::vector<std::string> MyanmarSegmenter::forwardMaxMatch(const std::vector<std::u32string>& syllables) {
     std::vector<std::string> result;
     size_t i = 0;
     while (i < syllables.size()) {
+        // Skip whitespace clusters
+        if (syllables[i][0] == U' ' || syllables[i][0] == U'\n' || syllables[i][0] == U'\t' || syllables[i][0] == U'\r') {
+            i++; continue;
+        }
+
         TrieNode* curr = m_root.get();
         size_t longest_match = 0;
         bool is_stop = false;
         
-        std::u32string combined;
         for (size_t j = i; j < syllables.size(); ++j) {
-            combined += syllables[j];
             bool possible = true;
             TrieNode* temp_curr = curr;
             for (char32_t c : syllables[j]) {
-                if (temp_curr->children.find(c) == temp_curr->children.end()) {
-                    possible = false; break;
-                }
+                if (temp_curr->children.find(c) == temp_curr->children.end()) { possible = false; break; }
                 temp_curr = temp_curr->children[c].get();
             }
             if (!possible) break;
@@ -105,29 +121,53 @@ std::vector<std::string> MyanmarSegmenter::forwardMaxMatch(const std::vector<std
         }
         
         if (longest_match > 0) {
-            std::u32string word;
-            for (size_t k = 0; k < longest_match; ++k) word += syllables[i + k];
-            if (!is_stop) result.push_back(utf32_to_utf8(word));
+            if (!is_stop) {
+                std::u32string word;
+                for (size_t k = 0; k < longest_match; ++k) word += syllables[i + k];
+                result.push_back(utf32_to_utf8(word));
+            }
             i += longest_match;
         } else {
-            // OOV: Keep as syllable if not whitespace
-            std::string s = utf32_to_utf8(syllables[i]);
-            if (s != " " && s != "\n") result.push_back(s);
-            i++;
+            // OOV Span-based Grouping
+            std::u32string oov_span;
+            size_t k = i;
+            while (k < syllables.size()) {
+                char32_t first = syllables[k][0];
+                if (first == U' ' || first == U'\n' || first == U'\t' || first == U'\r') break;
+
+                // Stop if a dictionary word starts at this syllable
+                TrieNode* test = m_root.get();
+                bool word_starts = false;
+                for (char32_t c : syllables[k]) {
+                    if (test->children.count(c)) { test = test->children[c].get(); if (test->is_end) word_starts = true; }
+                    else break;
+                }
+                if (word_starts && k > i) break;
+
+                oov_span += syllables[k];
+                k++;
+                if (oov_span.length() > 100) break;
+            }
+            if (!oov_span.empty()) result.push_back(utf32_to_utf8(oov_span));
+            i = (k > i) ? k : i + 1;
         }
     }
     return result;
 }
 
-// --- Phase 2: Reverse MaxMatch ---
+// --- Phase 2: Reverse MaxMatch (v4.7 with OOV Grouping) ---
 std::vector<std::string> MyanmarSegmenter::reverseMaxMatch(const std::vector<std::u32string>& syllables) {
     std::vector<std::string> result;
     int i = static_cast<int>(syllables.size()) - 1;
     while (i >= 0) {
+        if (syllables[i][0] == U' ' || syllables[i][0] == U'\n' || syllables[i][0] == U'\t' || syllables[i][0] == U'\r') {
+            i--; continue;
+        }
+
         size_t longest_match = 0;
         bool is_stop = false;
         
-        for (int j = 0; j <= i; ++j) {
+        for (int j = i; j >= 0; --j) {
             std::u32string combined;
             for (int k = j; k <= i; ++k) combined += syllables[k];
             
@@ -138,11 +178,8 @@ std::vector<std::string> MyanmarSegmenter::reverseMaxMatch(const std::vector<std
                 curr = curr->children[c].get();
             }
             if (match && curr->is_end) {
-                size_t len = i - j + 1;
-                if (len > longest_match) {
-                    longest_match = len;
-                    is_stop = curr->is_stopword;
-                }
+                longest_match = i - j + 1;
+                is_stop = curr->is_stopword;
             }
         }
         
@@ -152,8 +189,16 @@ std::vector<std::string> MyanmarSegmenter::reverseMaxMatch(const std::vector<std
             if (!is_stop) result.insert(result.begin(), utf32_to_utf8(word));
             i -= longest_match;
         } else {
-            result.insert(result.begin(), utf32_to_utf8(syllables[i]));
-            i--;
+            std::u32string oov_span;
+            int k = i;
+            while (k >= 0) {
+                if (syllables[k][0] == U' ' || syllables[k][0] == U'\n' || syllables[k][0] == U'\t' || syllables[k][0] == U'\r') break;
+                oov_span.insert(0, syllables[k]);
+                k--;
+                if (oov_span.length() > 100) break;
+            }
+            if (!oov_span.empty()) result.insert(result.begin(), utf32_to_utf8(oov_span));
+            i = k;
         }
     }
     return result;
