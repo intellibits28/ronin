@@ -13,12 +13,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.annotation.Keep
 import java.io.File
 
 /**
- * Hardened v3.5 Inference Spine
- * Optimized prompt parsing and multi-process JNI stability.
+ * Hardened v4.0 Inference Spine
+ * Optimized for Myanmar text (1024 tokens) and robust multi-process JNI stability.
  */
+@Keep
 class InferenceService : Service() {
     private val TAG = "RoninKernel_Worker"
     private val CHANNEL_ID = "ronin_hardened_spine"

@@ -344,6 +344,19 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         try { inferenceService?.updateSamplingParams(temp, topK, topP) } catch (e: Exception) {}
     }
 
+    private fun trimChatHistory(history: List<Pair<String, String>>, maxChars: Int = 4000): String {
+        var currentLength = 0
+        val optimized = mutableListOf<String>()
+        for (i in history.indices.reversed()) {
+            val line = "${history[i].first}: ${history[i].second}"
+            if (currentLength + line.length < maxChars) {
+                optimized.add(0, line)
+                currentLength += line.length
+            } else break
+        }
+        return optimized.joinToString("\n")
+    }
+
     fun nativeResetContext() {
         if (isLibLoaded) {
             try {
