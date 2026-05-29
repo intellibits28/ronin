@@ -47,6 +47,7 @@ struct LLMContext {
 static std::string ConvertJStringToString(JNIEnv* env, jstring jstr) {
     if (!jstr) return "";
     const char* cstr = env->GetStringUTFChars(jstr, nullptr);
+    if (!cstr) return "";
     std::string str(cstr);
     env->ReleaseStringUTFChars(jstr, cstr);
     return str;

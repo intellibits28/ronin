@@ -121,7 +121,8 @@ class InferenceService : Service() {
         if (!File(path).exists()) return false
         releaseResources()
         return try {
-            val config = EngineConfig(modelPath = path, maxNumTokens = 1024)
+            // Hardened v4.0: Increased token budget to resolve truncation on mid-range devices
+            val config = EngineConfig(modelPath = path, maxNumTokens = 2048)
             val engine = Engine(config)
             engine.initialize()
             litertEngine = engine
