@@ -130,4 +130,7 @@ if(NOT ANDROID)
 
     add_executable(ronin_integration_test tests/phase_1_3_integration_test.cpp)
     target_link_libraries(ronin_integration_test ronin_core gtest_main)
+
+    add_executable(ronin_segmenter_test tests/segmenter_stress_test.cpp)
+    target_link_libraries(ronin_segmenter_test ronin_core)
 endif()
