@@ -14,12 +14,15 @@ public:
     };
 
     static std::string wrap(const std::string& input, BackendType type, const std::string& systemOverride = "") {
-        if (type == BackendType::LOCAL_GEMMA_4) {
-            // Hardened v3.4: Let LiteRT-LM handle tags. Send minimal combined text.
-            std::string instructions = systemOverride.empty() ? 
-                "You are Ronin. Always [THINK] then [REPLY] in Myanmar." : systemOverride;
+        // Hardened v4.9: Immutable Kernel Persona (Hidden from User)
+        const std::string RONIN_PERSONA = 
+            "You are Ronin, core of Ronin Kernel. 1. Useful, Truthful, Efficient, Private. "
+            "2. No fabrication. 3. Problem-solve > Discuss. 4. Concise. 5. Use memory/tools. "
+            "Always [THINK] then [REPLY] in Myanmar.";
 
-            return instructions + "\n\nUser: " + input;
+        if (type == BackendType::LOCAL_GEMMA_4) {
+            std::string instructions = systemOverride.empty() ? "" : systemOverride + "\n";
+            return RONIN_PERSONA + "\n" + instructions + "\nUser: " + input;
         }
         
         switch (type) {
