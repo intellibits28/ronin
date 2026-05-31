@@ -267,7 +267,8 @@ class MainActivity : ComponentActivity() {
         try {
             val assetsDir = File(filesDir, "assets").apply { if (!exists()) mkdirs() }
             val capFile = File(assetsDir, "capabilities.json")
-            if (!capFile.exists()) assets.open("capabilities.json").use { input -> java.io.FileOutputStream(capFile).use { output -> input.copyTo(output) } }
+            // v5.2: Force overwrite capabilities to sync keyword changes
+            assets.open("capabilities.json").use { input -> java.io.FileOutputStream(capFile).use { output -> input.copyTo(output) } }
             
             val dictFile = File(assetsDir, "myanmar_dictionary.txt")
             if (!dictFile.exists()) assets.open("myanmar_dictionary.txt").use { input -> java.io.FileOutputStream(dictFile).use { output -> input.copyTo(output) } }
