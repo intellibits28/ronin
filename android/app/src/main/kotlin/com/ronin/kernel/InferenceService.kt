@@ -121,18 +121,18 @@ class InferenceService : Service() {
         if (!File(path).exists()) return false
         releaseResources()
         return try {
-            // Hardened v5.0: Optimizing for mid-range (2K Output Tokens)
-            // Note: maxSequenceLength is not directly supported in this SDK version's EngineConfig constructor.
+            // Hardened v5.1: 4K Context Window for Mi 11 Lite stability
             val config = EngineConfig(
                 modelPath = path, 
-                maxNumTokens = 2048
+                maxNumTokens = 2048,
+                maxSequenceLength = 4096
             )
             val engine = Engine(config)
             engine.initialize()
             litertEngine = engine
             litertConversation = engine.createConversation()
             isConversationFresh = true; currentModelPath = path
-            Log.i(TAG, "Hardened Spine Hydrated: $path")
+            Log.i(TAG, "Hardened Spine Hydrated (4K Window): $path")
             true
         } catch (e: Throwable) { Log.e(TAG, "Hydration Failed: ${e.message}"); false }
     }
@@ -145,8 +145,12 @@ class InferenceService : Service() {
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
-        // v3.5: Use explicit tag boundaries from C++ PromptFactory
-        val userPrompt = if (input.contains("User: ")) input.substringAfter("User: ").trim() else input
+        // v5.1 Hardened Stripping: Only strip if conversation already has history
+        val userPrompt = if (!isConversationFresh && input.contains("User: ")) {
+            input.substringAfter("User: ").trim()
+        } else {
+            input
+        }
         
         // RAM Guard
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
@@ -156,6 +160,7 @@ class InferenceService : Service() {
         }
 
         val activeConv = synchronized(this@InferenceService) { litertConversation ?: return@flow }
+        isConversationFresh = false // Mark as used
         
         try {
             activeConv.sendMessageAsync(Message.user(userPrompt)).collect { partial ->

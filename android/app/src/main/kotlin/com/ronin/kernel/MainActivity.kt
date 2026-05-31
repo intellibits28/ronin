@@ -426,9 +426,9 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         msg.isContinuing = true
                                         chatViewModel.isGenerating = true
                                         scope.launch {
-                                            val continuePrompt = "ရပ်တန့်သွားသော နေရာမှစ၍ ကျန်ရှိသည်များကို ဆက်လက်ရေးသားပေးပါ"
+                                            val continuePrompt = "ဆက်ရေးပေးပါ။"
                                             val result = engine.processInputAsync(continuePrompt, chatViewModel.systemPrompt)
-                                            msg.content += "\n$result"
+                                            msg.content += result
                                             msg.isTruncated = result.isNotEmpty() && !result.trim().let { it.endsWith("။") || it.endsWith(".") || it.endsWith("?") || it.endsWith("!") }
                                             msg.isContinuing = false
                                             chatViewModel.isGenerating = false
