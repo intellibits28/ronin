@@ -121,11 +121,11 @@ class InferenceService : Service() {
         if (!File(path).exists()) return false
         releaseResources()
         return try {
-            // Hardened v5.1: 4K Context Window for Mi 11 Lite stability
+            // Hardened v5.1: Stabilized EngineConfig for Mi 11 Lite
+            // Note: maxSequenceLength is not supported in this SDK version's constructor.
             val config = EngineConfig(
                 modelPath = path, 
-                maxNumTokens = 2048,
-                maxSequenceLength = 4096
+                maxNumTokens = 2048
             )
             val engine = Engine(config)
             engine.initialize()
