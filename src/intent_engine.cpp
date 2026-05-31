@@ -134,7 +134,7 @@ IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     m_skill_registry[8] = std::make_shared<MemorySearchSkill>(m_ltm);
     m_skill_registry[9] = std::make_shared<ArchiveMemorySkill>(m_ltm);
     
-    LOGI(TAG, "IntentEngine: Hardened v3.6 modular registry initialized.");
+    LOGI(TAG, "IntentEngine: Hardened v4.8 token-based registry initialized.");
 }
 
 std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param) {
@@ -263,19 +263,34 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         return {0, 1.0f, true};
     }
 
-    // Hardened v3.0: Lexical Token Spine
-    auto tokens = tokenize(input_lower);
-    std::set<std::string> token_set(tokens.begin(), tokens.end());
+    // Hardened v4.8: Hybrid Token Spine (Segmenter + Space-based)
+    std::set<std::string> token_set;
+    
+    // 1. Add standard space-based tokens
+    auto base_tokens = tokenize(input_lower);
+    token_set.insert(base_tokens.begin(), base_tokens.end());
+
+    // 2. Add Myanmar segmented tokens if segmenter is available
+    if (m_ltm && m_ltm->getSegmenter()) {
+        std::string segmented = m_ltm->getSegmenter()->segment(input_lower);
+        std::stringstream ss(segmented);
+        std::string token;
+        while (ss >> token) token_set.insert(token);
+        LOGI(TAG, "Linguistic Tokens Injected: %s", segmented.c_str());
+    }
 
     for (const auto& cap : m_capabilities) {
         if (cap.id == 1) continue; 
 
         bool subject_found = false;
         for (const auto& s : cap.subjects) {
-            // Priority 1: Exact token match
+            // v4.8: Strict token-level matching
             if (token_set.count(s)) { subject_found = true; break; }
-            // Priority 2: Technical compound match (e.g. "flash light")
-            if (input_lower.find(s) != std::string::npos && s.length() > 6) { subject_found = true; break; }
+            
+            // Substring fallback only for long technical compounds (e.g. "flashlight")
+            if (input_lower.find(s) != std::string::npos && s.length() > 6) { 
+                subject_found = true; break; 
+            }
         }
 
         if (subject_found) {
@@ -286,8 +301,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             }
 
             if (action_found) {
-                // v4.0 Hardened: Prevent false triggers for LocationNode (ID 5)
-                // generic words like "နေရာ" (place) and "ပြပေး" (show) are used often in chat
+                // v4.0+ Hardened: LocationNode (ID 5) safety
                 if (cap.id == 5) {
                     bool strictly_location = (input_lower.find("တည်နေရာ") != std::string::npos) || 
                                            (input_lower.find("gps") != std::string::npos) ||
@@ -295,7 +309,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                     if (!strictly_location) continue;
                 }
 
-                LOGI(TAG, "Hardened Lexical Match: ID %u", cap.id);
+                LOGI(TAG, "Hardened Token Match: ID %u", cap.id);
                 return {cap.id, 1.0f, true};
             }
         }

@@ -13,6 +13,7 @@
 #include "lora_engine.h"
 #include "memory_manager.h"
 #include "long_term_memory.h"
+#include "myanmar_segmenter.h"
 
 namespace Ronin::Kernel::Intent {
 

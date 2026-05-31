@@ -64,6 +64,7 @@ public:
 
     // Segmenter Control
     bool loadSegmenter(const std::string& dict_path);
+    Ronin::Kernel::NLP::MyanmarSegmenter* getSegmenter() { return m_segmenter.get(); }
 
 private:
     sqlite3* m_db = nullptr;

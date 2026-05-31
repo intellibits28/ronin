@@ -74,12 +74,19 @@ class ChatMessage(
     var content by mutableStateOf(initialContent)
     var isThinking by mutableStateOf(initialIsThinking)
     var thoughtContent by mutableStateOf(initialThoughtContent)
+    var isTruncated by mutableStateOf(false)
+    var isContinuing by mutableStateOf(false)
 
     fun copy(
         content: String = this.content,
         isThinking: Boolean = this.isThinking,
-        thoughtContent: String = this.thoughtContent
-    ) = ChatMessage(id, sender, content, isThinking, thoughtContent)
+        thoughtContent: String = this.thoughtContent,
+        isTruncated: Boolean = this.isTruncated,
+        isContinuing: Boolean = this.isContinuing
+    ) = ChatMessage(id, sender, content, isThinking, thoughtContent).apply {
+        this.isTruncated = isTruncated
+        this.isContinuing = isContinuing
+    }
 }
 
 enum class WizardState { MISSING_CORE, IMPORTING, VERIFYING, ACTIVE }
@@ -224,6 +231,15 @@ class MainActivity : ComponentActivity() {
                                 // v3.6: Strict streaming with tag stripping
                                 val cleanReply = frag.replace("[REPLY]", "").replace("[/REPLY]", "").replace("[/THINK]", "")
                                 lastMsg.content += cleanReply
+                            }
+                            
+                            if (packet.isFinal) {
+                                val text = lastMsg.content.trim()
+                                if (text.isNotEmpty() && !text.endsWith("။") && !text.endsWith(".") && !text.endsWith("?") && !text.endsWith("!")) {
+                                    lastMsg.isTruncated = true
+                                } else {
+                                    lastMsg.isTruncated = false
+                                }
                             }
                         }
                     }
@@ -403,7 +419,24 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         } 
                     }
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) { 
-                        LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { items(chatViewModel.messages.asReversed()) { ChatBubble(it) } } 
+                        LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { 
+                            items(chatViewModel.messages.asReversed()) { msg -> 
+                                ChatBubble(msg, onContinue = {
+                                    if (!chatViewModel.isGenerating && !msg.isContinuing) {
+                                        msg.isContinuing = true
+                                        chatViewModel.isGenerating = true
+                                        scope.launch {
+                                            val continuePrompt = "ရပ်တန့်သွားသော နေရာမှစ၍ ကျန်ရှိသည်များကို ဆက်လက်ရေးသားပေးပါ"
+                                            val result = engine.processInputAsync(continuePrompt, chatViewModel.systemPrompt)
+                                            msg.content += "\n$result"
+                                            msg.isTruncated = result.isNotEmpty() && !result.trim().let { it.endsWith("။") || it.endsWith(".") || it.endsWith("?") || it.endsWith("!") }
+                                            msg.isContinuing = false
+                                            chatViewModel.isGenerating = false
+                                        }
+                                    }
+                                }) 
+                            } 
+                        } 
                         if (chatViewModel.showCommandSuggestions) {
                             val suggestions = listOf("/status", "/skills", "/model", "/reset").filter { it.startsWith(currentInput.lowercase()) }
                             if (suggestions.isNotEmpty()) { Surface(color = Color(0xFF25283D), modifier = Modifier.align(Alignment.BottomStart).padding(16.dp).fillMaxWidth(0.7f).clip(RoundedCornerShape(12.dp)), elevation = 8.dp) { LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) { items(suggestions) { s -> TextButton(onClick = { currentInput = "$s "; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { Text(s, color = Color.White) } } } } }
@@ -653,7 +686,7 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, brainPicker: ActivityResultLau
 }
 
 @Composable
-fun ChatBubble(msg: ChatMessage) {
+fun ChatBubble(msg: ChatMessage, onContinue: () -> Unit = {}) {
     val isUser = msg.sender == "User"
     var isThoughtExpanded by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
@@ -662,6 +695,7 @@ fun ChatBubble(msg: ChatMessage) {
             SelectionContainer { 
                 Column(modifier = Modifier.padding(12.dp)) {
                     if (!isUser && (msg.thoughtContent.isNotEmpty() || msg.isThinking)) {
+                        // ... existing reasoning UI
                         Row(modifier = Modifier.fillMaxWidth().clickable { isThoughtExpanded = !isThoughtExpanded }.padding(bottom = if (isThoughtExpanded || msg.content.isNotEmpty()) 8.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (isThoughtExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
@@ -684,6 +718,25 @@ fun ChatBubble(msg: ChatMessage) {
                     }
                     if (msg.content.isNotEmpty()) {
                         Text(msg.content, color = Color.White, fontSize = 15.sp, lineHeight = 20.sp)
+                    }
+                    
+                    if (!isUser && msg.isTruncated) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = onContinue,
+                            modifier = Modifier.height(32.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, Color(0xFF64B5F6)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                        ) {
+                            if (msg.isContinuing) {
+                                CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.dp, color = Color(0xFF64B5F6))
+                            } else {
+                                Icon(Icons.Default.PlayArrow, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("ကျန်ရှိသည်များကို ဆက်လက်ဖတ်ရှုမည် (Continue)", color = Color(0xFF64B5F6), fontSize = 11.sp)
+                            }
+                        }
                     }
                 }
             } 

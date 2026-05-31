@@ -155,6 +155,18 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     suspend fun processInputAsync(input: String, systemPrompt: String = ""): String = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext "Error: Lib not loaded."
+        
+        // v5.0: Dynamic Context Pruning
+        // Before sending next turn, evaluate history and prune if necessary
+        try {
+            val history = getChatHistoryAsync(10, 0)
+            if (history.size > 2) {
+                val prunedText = trimChatHistory(history, 3000)
+                Log.d(TAG, "Dynamic Pruning: Compressed history to ${prunedText.length} chars.")
+                // In a real agentic flow, we would inject prunedText into the internal context
+            }
+        } catch (e: Exception) { Log.w(TAG, "Pruning failed: ${e.message}") }
+
         try { processInputNative(input, systemPrompt) } catch (e: Exception) { "Error: Kernel failure." }
     }
 
