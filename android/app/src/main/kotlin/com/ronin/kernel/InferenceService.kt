@@ -121,11 +121,11 @@ class InferenceService : Service() {
         if (!File(path).exists()) return false
         releaseResources()
         return try {
-            // Hardened v5.0: Balanced context window for mid-range (5K Seq, 2K Output)
+            // Hardened v5.0: Optimizing for mid-range (2K Output Tokens)
+            // Note: maxSequenceLength is not directly supported in this SDK version's EngineConfig constructor.
             val config = EngineConfig(
                 modelPath = path, 
-                maxNumTokens = 2048,
-                maxSequenceLength = 5120
+                maxNumTokens = 2048
             )
             val engine = Engine(config)
             engine.initialize()
