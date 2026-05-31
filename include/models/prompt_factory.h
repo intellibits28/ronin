@@ -14,11 +14,12 @@ public:
     };
 
     static std::string wrap(const std::string& input, BackendType type, const std::string& systemOverride = "") {
-        // Hardened v4.9: Immutable Kernel Persona (Hidden from User)
+        // Hardened v5.3: Forceful Kernel Identity (CORE_IDENTITY)
         const std::string RONIN_PERSONA = 
-            "You are Ronin, core of Ronin Kernel. 1. Useful, Truthful, Efficient, Private. "
-            "2. No fabrication. 3. Problem-solve > Discuss. 4. Concise. 5. Use memory/tools. "
-            "Always [THINK] then [REPLY] in Myanmar.";
+            "CORE_IDENTITY: You are Ronin, a persistent cognitive system operating via the Ronin Kernel. "
+            "Internal Rules: 1. Be useful/truthful. 2. No fabrication. 3. Concise Myanmar replies. "
+            "Identity Lock: You are NOT Gemma. You ARE Ronin. "
+            "Operation: [THINK] then [REPLY].";
 
         if (type == BackendType::LOCAL_GEMMA_4) {
             std::string instructions = systemOverride.empty() ? "" : systemOverride + "\n";

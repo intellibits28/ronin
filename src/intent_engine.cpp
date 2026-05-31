@@ -295,18 +295,34 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         if (cap.id == 1) continue; 
 
         bool subject_found = false;
+        std::string matched_subject;
         for (const auto& s : cap.subjects) {
-            if (token_set.count(s)) { subject_found = true; break; }
+            if (token_set.count(s)) { 
+                subject_found = true; 
+                matched_subject = s;
+                break; 
+            }
             if (input_lower.find(s) != std::string::npos && s.length() > 6) { 
-                subject_found = true; break; 
+                subject_found = true; 
+                matched_subject = s;
+                break; 
             }
         }
 
         if (subject_found) {
             bool action_found = false;
+            std::string matched_action;
             for (const auto& a : cap.actions) {
-                if (token_set.count(a)) { action_found = true; break; }
-                if (input_lower.find(a) != std::string::npos && a.length() > 5) { action_found = true; break; }
+                if (token_set.count(a)) { 
+                    action_found = true; 
+                    matched_action = a;
+                    break; 
+                }
+                if (input_lower.find(a) != std::string::npos && a.length() > 5) { 
+                    action_found = true; 
+                    matched_action = a;
+                    break; 
+                }
             }
 
             if (action_found) {
@@ -318,7 +334,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                     if (!strictly_location) continue;
                 }
 
-                LOGI(TAG, "Hardened Token Match: ID %u, Category TOOL_QUERY", cap.id);
+                LOGI(TAG, "Hardened Match: ID %u (%s). Subject: '%s', Action: '%s'", 
+                     cap.id, cap.name.c_str(), matched_subject.c_str(), matched_action.c_str());
                 return {cap.id, 1.0f, true, IntentCategory::TOOL_QUERY};
             }
         }

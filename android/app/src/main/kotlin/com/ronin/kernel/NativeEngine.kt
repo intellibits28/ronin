@@ -179,7 +179,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (isLibLoaded) {
             try {
                 requestCancellationNative()
-                nativeResetContext()
+                // v5.3: Removed nativeResetContext() to prevent SDK deadlock/hang during active inference.
             } catch (e: Exception) {}
         }
     }

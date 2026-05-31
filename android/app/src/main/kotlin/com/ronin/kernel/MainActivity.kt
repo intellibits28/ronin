@@ -235,7 +235,8 @@ class MainActivity : ComponentActivity() {
                             
                             if (packet.isFinal) {
                                 val text = lastMsg.content.trim()
-                                if (text.isNotEmpty() && !text.endsWith("။") && !text.endsWith(".") && !text.endsWith("?") && !text.endsWith("!")) {
+                                val endMarkers = listOf("။", ".", "?", "!", "\"", ")", "]", "}", "*", "_", ">", "`", ":")
+                                if (text.isNotEmpty() && endMarkers.none { text.endsWith(it) }) {
                                     lastMsg.isTruncated = true
                                 } else {
                                     lastMsg.isTruncated = false

@@ -10,7 +10,7 @@
     "id": 2,
     "name": "FileSearchNode",
     "subjects": ["file", "document", "pdf", "photo", "image", "music", "audio", "video", "movie", "code", "script", "python", "markdown", "ဖိုင်", "စာရွက်စာတမ်း", "သီချင်း", "ဗီဒီယို", "ပုံ"],
-    "actions": ["search", "find", "list", "locate", "more", "next", "ထပ်ပြ"],
+    "actions": ["search", "find", "list", "locate", "ထပ်ပြ"],
     "confidence_threshold": 0.6
   },
   {
@@ -24,7 +24,7 @@
     "id": 5,
     "name": "LocationNode",
     "subjects": ["location", "gps", "coordinates", "where", "နေရာ", "ဘယ်မှာလဲ"],
-    "actions": ["show", "get", "find", "locate", "ပြပေး", "ရှာပေး"],
+    "actions": ["show", "get", "locate", "ပြပေး"],
     "confidence_threshold": 0.8
   },
   {
