@@ -286,6 +286,13 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // --- Adaptive Intent Categorization ---
     IntentCategory final_cat = IntentCategory::CHAT_QUERY;
     
+    // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
+    bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
+                      token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
+                      token_set.count("ရှိလဲ") || token_set.count("သိချင်လို့") ||
+                      token_set.count("how") || token_set.count("what") || 
+                      token_set.count("why") || token_set.count("explain");
+
     // Check for Memory Query (e.g. "မှတ်မိလား", "အရင်က")
     if (token_set.count("မှတ်မိလား") || token_set.count("အရင်က") || token_set.count("မှတ်ဉာဏ်")) {
         final_cat = IntentCategory::MEMORY_QUERY;
@@ -293,6 +300,12 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
     for (const auto& cap : m_capabilities) {
         if (cap.id == 1) continue; 
+
+        // Semantic Guard: Inquiries should mostly route to CHAT unless specific hardware keywords are dominant
+        if (is_inquiry && cap.id != 8 && cap.id != 9) {
+            // Allow memory skills but block generic hardware triggers in inquiry context
+            continue; 
+        }
 
         bool subject_found = false;
         std::string matched_subject;
