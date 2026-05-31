@@ -9,6 +9,9 @@
 #include "jni_utils.h"
 #include "ronin_kernel.hpp"
 #include "intent_engine.h"
+#include "graph_executor.h"
+#include "capability_graph.h"
+#include "graph_storage.h"
 #include "memory_manager.h"
 #include "long_term_memory.h"
 #include "capabilities/hardware_bridge.h"
@@ -25,6 +28,7 @@ using namespace Ronin::Kernel::Intent;
 using namespace Ronin::Kernel::Memory;
 using namespace Ronin::Kernel::Model;
 using namespace Ronin::Kernel::Capability;
+using namespace Ronin::Kernel::Reasoning;
 
 // Concrete implementation of CapabilityManager to resolve abstract class error
 class DefaultCapabilityManager : public CapabilityManager {
