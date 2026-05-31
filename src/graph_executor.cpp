@@ -47,47 +47,40 @@ GraphExecutor::~GraphExecutor() {
     }
 }
 
-Node* GraphExecutor::selectNextNode(const std::string& input) {
-    std::string clean = trim(lowercase(input));
-    
-    // --- Phase 4.0 Refactoring ---
-    // Deterministic bypasses have been moved to the IntentEngine Tier 1/2 matcher.
-    // GraphExecutor now focuses exclusively on probabilistic selection (Thompson Sampling)
-    // for complex reasoning paths or fallback nodes.
-
-    LOGI(TAG, "> Probabilistic Routing active for: '%s'", clean.c_str());
-    
-    return runThompsonSampling(clean);
-}
-
-Node* GraphExecutor::runThompsonSampling(const std::string& input) {
+GraphExecutor::TaskPlan GraphExecutor::generatePlan(const std::string& input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOGI(TAG, "Reasoning Spine active: [Kernel v3.9.7-AUTO-SCROLL]");
+    TaskPlan plan;
+    
+    // v6.0: Multi-step Path Exploration (Max Depth 4)
+    uint32_t current_id = 1; 
+    
+    for (int i = 0; i < 4; ++i) {
+        Node* current = m_graph.getNode(current_id);
+        if (!current || current->outgoing_edges.empty()) break;
 
-    Node* current = m_graph.getNode(1); 
-    if (!current) {
-        LOGE(TAG, "Thompson Sampling: Root node (ID 1) not found.");
-        return nullptr;
-    }
+        uint32_t best_next = current_id;
+        float max_sample = -1.0f;
 
-    if (current->outgoing_edges.empty()) return current;
+        for (auto& edge : current->outgoing_edges) {
+            float sample = m_sampler.sampleBeta(edge.success_count, edge.failure_count);
+            float score = sample * edge.base_weight;
 
-    // ChatNode (current) is the default with weight 1.0
-    uint32_t best_node_id = current->id;
-    float max_sample = 1.0f;
-
-    for (auto& edge : current->outgoing_edges) {
-        float sample = m_sampler.sampleBeta(edge.success_count, edge.failure_count);
-        float adjusted_score = (sample * edge.base_weight) * 1.5f;
-
-        if (adjusted_score > max_sample) {
-            max_sample = adjusted_score;
-            best_node_id = edge.target_node_id;
+            if (score > max_sample) {
+                max_sample = score;
+                best_next = edge.target_node_id;
+            }
         }
-    }
 
-    Node* result = m_graph.getNode(best_node_id);
-    return result ? result : current;
+        if (best_next == current_id) break;
+        plan.steps.push_back(best_next);
+        current_id = best_next;
+    }
+    
+    // Default to Chat (1) if no steps found
+    if (plan.steps.empty()) plan.steps.push_back(1);
+    
+    LOGI(TAG, "Adaptive Plan Generated: %zu steps.", plan.steps.size());
+    return plan;
 }
 
 

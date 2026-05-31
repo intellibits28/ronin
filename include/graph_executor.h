@@ -22,8 +22,14 @@ public:
     GraphExecutor(CapabilityGraph& graph, GraphStorage& storage);
     ~GraphExecutor();
 
-    // Selects the next node to execute (Foolproof Version)
-    Node* selectNextNode(const std::string& input_text);
+    // Execution Plan for multi-step tasks
+    struct TaskPlan {
+        std::vector<uint32_t> steps;
+        std::unordered_map<std::string, std::string> shared_context;
+    };
+
+    // Generates a multi-step execution plan based on input and learned weights
+    TaskPlan generatePlan(const std::string& input_text);
 
     // Feedback loop with dynamic learning rate based on risk level
     void reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk);

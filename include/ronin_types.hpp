@@ -29,12 +29,25 @@ struct Input {
 };
 
 /**
+ * Adaptive Intent Categories for v6.0 Agent Mode.
+ */
+enum class IntentCategory : uint32_t {
+    UNKNOWN = 0,
+    CHAT_QUERY = 1,     // General conversation (Gemma 4 only)
+    TOOL_QUERY = 2,     // Hardware/System tool execution
+    MEMORY_QUERY = 3,   // Recall from Long-term memory
+    FACT_QUERY = 4,     // World knowledge/fact checking
+    AGENT_PLAN = 5      // Multi-step complex task
+};
+
+/**
  * Represent a discrete user intent derived from the reasoning spine.
  */
 struct CognitiveIntent {
   uint32_t id;
   float confidence;
-  bool intent_param; // Added for stateful actions (e.g., ON/OFF)
+  bool intent_param; 
+  IntentCategory category; // Added for v6.0 adaptive routing
 };
 
 /**

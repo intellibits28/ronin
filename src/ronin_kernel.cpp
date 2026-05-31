@@ -22,20 +22,20 @@ void RoninKernel::tick(const Input &input) {
   state_.currentIntent = registry_.intentProcessor(input);
   lastIntent_ = state_.currentIntent;
 
-  // Tier 3: Reasoning Fallback
+  // Tier 3: Adaptive Reasoning Fallback
   if (state_.currentIntent.confidence < 0.6f) {
       std::string original_input(input.data, input.length);
-      LOGI(TAG, "> Tier 3: Reasoning Fallback triggered for input: '%s'", original_input.c_str());
-      LOGI(TAG, "> Prompt: User input: '%s'. Available tools: Flashlight, GPS, Chat. Which one?", original_input.c_str());
+      LOGI(TAG, "> Tier 3: Adaptive Fallback for: '%s'", original_input.c_str());
       
-      // Force ChatNode (ID 1) for the reasoning engine to handle it
+      // v6.0: Default to AGENT_PLAN for low confidence to explore paths
       state_.currentIntent.id = 1;
+      state_.currentIntent.category = IntentCategory::AGENT_PLAN;
       state_.currentIntent.confidence = 0.6f; 
       state_.currentIntent.intent_param = true;
   }
 
-  LOGI(TAG, "Heartbeat start: CognitiveIntent ID %u (Confidence: %.2f) [v3.9.5-STABLE]",
-       state_.currentIntent.id, state_.currentIntent.confidence);
+  LOGI(TAG, "Heartbeat start: Intent ID %u, Category %u (Conf: %.2f) [v6.0-ADAPTIVE]",
+       state_.currentIntent.id, static_cast<uint32_t>(state_.currentIntent.category), state_.currentIntent.confidence);
 
   runAutonomousLoop(input);
 

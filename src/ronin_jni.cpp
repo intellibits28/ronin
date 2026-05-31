@@ -36,6 +36,12 @@ static std::unique_ptr<RoninKernel> g_kernel = nullptr;
 static std::shared_ptr<LongTermMemory> g_ltm = nullptr;
 static std::shared_ptr<IntentEngine> g_intent_engine = nullptr;
 static std::unique_ptr<MemoryManager> g_memory_manager = nullptr;
+
+// v6.0 Adaptive Agent Core
+static std::unique_ptr<Ronin::Kernel::Reasoning::GraphStorage> g_graph_storage = nullptr;
+static std::unique_ptr<Ronin::Kernel::Reasoning::CapabilityGraph> g_cap_graph = nullptr;
+static std::unique_ptr<Ronin::Kernel::Reasoning::GraphExecutor> g_graph_executor = nullptr;
+
 static JavaVM* g_vm = nullptr;
 
 struct LLMContext {
@@ -53,6 +59,22 @@ static std::string ConvertJStringToString(JNIEnv* env, jstring jstr) {
     return str;
 }
 
+// --- v6.0 Registry Handlers ---
+
+static CognitiveIntent intent_handler(const Input& input) {
+    if (!g_intent_engine) return {1, 0.6f, true, IntentCategory::CHAT_QUERY};
+    return g_intent_engine->process(std::string(input.data, input.length), "");
+}
+
+static Result exec_handler(uint32_t nodeId, const CognitiveState& state) {
+    // v6.0 execution via IntentEngine registry
+    if (g_intent_engine) {
+        g_intent_engine->executeSkill(nodeId, ""); // Param handling needs expansion
+        return {true, 200};
+    }
+    return {false, 500};
+}
+
 // --- JNI Implementation ---
 
 void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstring libDir, jboolean isWorker) {
@@ -63,18 +85,29 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
         // UI Process Initialization
         g_ltm = std::make_shared<LongTermMemory>(base_path + "/ronin_cognitive.db");
         
+        // v6.0 Adaptive Agent Core Initialization
+        g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
+        g_cap_graph = std::make_unique<CapabilityGraph>();
+        g_graph_storage->loadGraph(*g_cap_graph);
+        g_graph_executor = std::make_unique<GraphExecutor>(*g_cap_graph, *g_graph_storage);
+
         // Fix MemoryManager initialization
         g_memory_manager = std::make_unique<MemoryManager>(2048);
         g_memory_manager->setLongTermMemory(g_ltm.get());
         
         g_intent_engine = std::make_shared<IntentEngine>(g_ltm.get());
-        g_intent_engine->setMemoryManager(g_memory_manager.get()); // Link MM for /reset
+        g_intent_engine->setMemoryManager(g_memory_manager.get()); 
         
         HardwareBridge::initialize(g_vm, thiz);
         
         HandlerRegistry registry;
-        static DefaultCapabilityManager cap_manager; // Use concrete class
-        
+        registry.intentProcessor = intent_handler;
+        registry.execProcessor = exec_handler;
+        registry.shutdownProcessor = []() {
+            LOGI(TAG, "Cleaning up JNI Global Kernel components.");
+        };
+
+        static DefaultCapabilityManager cap_manager; 
         g_kernel = std::make_unique<RoninKernel>(registry, cap_manager);
         auto engine = std::make_unique<InferenceEngine>("hybrid_mode");
         engine->setLibPath(native_lib_path);
@@ -119,19 +152,40 @@ jfloat native_getFreeRamGB(JNIEnv *env, jobject thiz) {
     return HardwareBridge::getFreeRamGB();
 }
 
+void native_reportOutcome(JNIEnv *env, jobject thiz, jint sourceId, jint targetId, jboolean success, jint risk) {
+    if (g_graph_executor) {
+        g_graph_executor->reportOutcome(
+            static_cast<uint32_t>(sourceId),
+            static_cast<uint32_t>(targetId),
+            success == JNI_TRUE,
+            static_cast<Ronin::Kernel::Reasoning::RiskLevel>(risk)
+        );
+    }
+}
+
 jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring systemPrompt) {
     if (!g_intent_engine) return env->NewStringUTF("Error: Engine Not Ready.");
     
     std::string rawInput = ConvertJStringToString(env, input);
     std::string customSystem = ConvertJStringToString(env, systemPrompt);
     
-    // Inject dynamic system context if provided
     if (!customSystem.empty() && g_kernel) {
         g_kernel->setSuggestedSubject(customSystem);
     }
     
     auto intent = g_intent_engine->process(rawInput, "");
-    std::string result = g_intent_engine->executeSkill(intent.id, rawInput);
+    std::string result;
+
+    if (intent.category == IntentCategory::AGENT_PLAN && g_graph_executor) {
+        LOGI(TAG, "Executing Adaptive Agent Plan...");
+        auto plan = g_graph_executor->generatePlan(rawInput);
+        for (uint32_t step_id : plan.steps) {
+            result += g_intent_engine->executeSkill(step_id, rawInput) + " ";
+        }
+    } else {
+        result = g_intent_engine->executeSkill(intent.id, rawInput);
+    }
+
     return env->NewStringUTF(result.c_str());
 }
 
@@ -251,6 +305,7 @@ static JNINativeMethod g_methods[] = {
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory},
     {"resetContextNativeJNI", "()V", (void*)native_resetContext},
     {"loadMyanmarDictionaryNative", "(Ljava/lang/String;)Z", (void*)native_loadMyanmarDictionary},
+    {"reportOutcomeNative", "(IIZI)V", (void*)native_reportOutcome},
     {"requestCancellationNative", "()V", (void*)native_requestCancellation}
 };
 

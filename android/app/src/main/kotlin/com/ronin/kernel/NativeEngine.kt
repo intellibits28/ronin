@@ -99,7 +99,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun isValidModelNative(path: String): Boolean
     private external fun resetContextNativeJNI()
     private external fun loadMyanmarDictionaryNative(path: String): Boolean
+    private external fun reportOutcomeNative(sourceId: Int, targetId: Int, success: Boolean, risk: Int)
     private external fun requestCancellationNative()
+
+    enum class RiskLevel(val value: Int) {
+        LOW(0), MEDIUM(1), HIGH(2), EXTREME(3)
+    }
 
     /**
      * Internal UI helper to emit tokens to UI flow.
@@ -376,6 +381,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 inferenceService?.resetConversation() 
             } catch (e: Exception) { Log.e(TAG, "Reset failed: ${e.message}") }
         }
+    }
+
+    fun reportOutcome(sourceId: Int, targetId: Int, success: Boolean, risk: RiskLevel = RiskLevel.MEDIUM) {
+        if (isLibLoaded) try { reportOutcomeNative(sourceId, targetId, success, risk.value) } catch (e: Exception) {}
     }
 
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {

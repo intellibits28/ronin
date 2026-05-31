@@ -260,10 +260,10 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     std::string cmdOutput;
     if (handleCommand(input, cmdOutput)) {
         m_last_command_output = cmdOutput;
-        return {0, 1.0f, true};
+        return {0, 1.0f, true, IntentCategory::TOOL_QUERY};
     }
 
-    // Hardened v4.8: Hybrid Token Spine (Segmenter + Space-based)
+    // Hardened v4.8+: Hybrid Token Spine (Segmenter + Space-based)
     std::set<std::string> token_set;
     
     // 1. Add standard space-based tokens
@@ -271,12 +271,24 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     token_set.insert(base_tokens.begin(), base_tokens.end());
 
     // 2. Add Myanmar segmented tokens if segmenter is available
+    bool has_mm_tokens = false;
     if (m_ltm && m_ltm->getSegmenter()) {
         std::string segmented = m_ltm->getSegmenter()->segment(input_lower);
         std::stringstream ss(segmented);
         std::string token;
-        while (ss >> token) token_set.insert(token);
-        LOGI(TAG, "Linguistic Tokens Injected: %s", segmented.c_str());
+        while (ss >> token) {
+            token_set.insert(token);
+            has_mm_tokens = true;
+        }
+        LOGI(TAG, "v6.0 Tokens Injected: %s", segmented.c_str());
+    }
+
+    // --- Adaptive Intent Categorization ---
+    IntentCategory final_cat = IntentCategory::CHAT_QUERY;
+    
+    // Check for Memory Query (e.g. "မှတ်မိလား", "အရင်က")
+    if (token_set.count("မှတ်မိလား") || token_set.count("အရင်က") || token_set.count("မှတ်ဉာဏ်")) {
+        final_cat = IntentCategory::MEMORY_QUERY;
     }
 
     for (const auto& cap : m_capabilities) {
@@ -284,10 +296,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
         bool subject_found = false;
         for (const auto& s : cap.subjects) {
-            // v4.8: Strict token-level matching
             if (token_set.count(s)) { subject_found = true; break; }
-            
-            // Substring fallback only for long technical compounds (e.g. "flashlight")
             if (input_lower.find(s) != std::string::npos && s.length() > 6) { 
                 subject_found = true; break; 
             }
@@ -309,13 +318,15 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                     if (!strictly_location) continue;
                 }
 
-                LOGI(TAG, "Hardened Token Match: ID %u", cap.id);
-                return {cap.id, 1.0f, true};
+                LOGI(TAG, "Hardened Token Match: ID %u, Category TOOL_QUERY", cap.id);
+                return {cap.id, 1.0f, true, IntentCategory::TOOL_QUERY};
             }
         }
     }
 
-    return {1, 1.0f, true}; 
+    // Default to categorized CHAT or MEMORY
+    LOGI(TAG, "v6.0 Intent: Category %u", static_cast<uint32_t>(final_cat));
+    return {1, 1.0f, true, final_cat}; 
 }
 
 } // namespace Ronin::Kernel::Intent
