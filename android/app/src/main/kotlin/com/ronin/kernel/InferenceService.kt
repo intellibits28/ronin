@@ -145,17 +145,18 @@ class InferenceService : Service() {
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
-        // v5.1 Hardened Stripping: Only strip if conversation already has history
-        val userPrompt = if (!isConversationFresh && input.contains("User: ")) {
+        // v5.4: Persistence Hardening
+        // Only strip standard User tags. NEVER strip CORE_IDENTITY to maintain persona.
+        val userPrompt = if (!isConversationFresh && input.contains("User: ") && !input.contains("CORE_IDENTITY")) {
             input.substringAfter("User: ").trim()
         } else {
             input
         }
         
-        // RAM Guard
+        // v5.4 Relaxed RAM Guard: 0.8GB (Optimized for SD778G multi-turn)
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
-        if (freeRam < 1.1f && !isConversationFresh) {
-            Log.w(TAG, "LOW RAM ALERT (%.2fGB). Pruning KV Cache.".format(freeRam))
+        if (freeRam < 0.8f && !isConversationFresh) {
+            Log.w(TAG, "CRITICAL RAM ALERT (%.2fGB). Pruning KV Cache.".format(freeRam))
             resetConversationInternal()
         }
 

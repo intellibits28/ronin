@@ -177,10 +177,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     fun stopInference() {
         if (isLibLoaded) {
-            try {
-                requestCancellationNative()
-                // v5.3: Removed nativeResetContext() to prevent SDK deadlock/hang during active inference.
-            } catch (e: Exception) {}
+            // v5.4: Backgrounded cancellation to prevent UI hang
+            serviceScope.launch {
+                try {
+                    requestCancellationNative()
+                    delay(200) // Brief grace period for SDK to acknowledge
+                    inferenceService?.resetConversation()
+                } catch (e: Exception) { Log.e(TAG, "Stop logic failed: ${e.message}") }
+            }
         }
     }
 

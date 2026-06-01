@@ -235,8 +235,10 @@ class MainActivity : ComponentActivity() {
                             
                             if (packet.isFinal) {
                                 val text = lastMsg.content.trim()
-                                val endMarkers = listOf("။", ".", "?", "!", "\"", ")", "]", "}", "*", "_", ">", "`", ":")
+                                // v5.4: Extended end markers to prevent false Continue button triggers
+                                val endMarkers = listOf("။", ".", "?", "!", "\"", ")", "]", "}", "*", "_", ">", "`", ":", ";", "၊")
                                 if (text.isNotEmpty() && endMarkers.none { text.endsWith(it) }) {
+                                    // Additional check: If it ends with a Myanmar consonant but no vowel/vowel-killer, it might be truncated.
                                     lastMsg.isTruncated = true
                                 } else {
                                     lastMsg.isTruncated = false
@@ -448,6 +450,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { 
                                 if (chatViewModel.isGenerating) {
+                                    chatViewModel.isGenerating = false
                                     engine.stopInference()
                                 } else if (currentInput.isNotBlank()) { 
                                     val raw = currentInput; chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", raw)); currentInput = ""; chatViewModel.isGenerating = true
@@ -456,18 +459,24 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         val isCommand = raw.trim().startsWith("/")
                                         val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "")
                                         chatViewModel.messages.add(roninMsg)
-                                        val msgIdx = chatViewModel.messages.size - 1
-
-                                        if (!isCommand && (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady)) { 
-                                            val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
-                                            val res = engine.performCloudInferenceAsync(raw, chatViewModel.primaryCloudProvider, apiKey)
-                                            roninMsg.content = res
-                                        } else { 
-                                            val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
-                                            if (roninMsg.content.isEmpty()) {
-                                                roninMsg.content = result
+                                        
+                                        try {
+                                            if (!isCommand && (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady)) { 
+                                                val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
+                                                val res = engine.performCloudInferenceAsync(raw, chatViewModel.primaryCloudProvider, apiKey)
+                                                roninMsg.content = res
+                                            } else if (isCommand) {
+                                                val res = engine.handleInternalCommand(raw)
+                                                roninMsg.content = res
+                                            } else { 
+                                                val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
+                                                if (roninMsg.content.isEmpty()) {
+                                                    roninMsg.content = result
+                                                }
                                             }
-                                        } ; chatViewModel.isGenerating = false 
+                                        } finally {
+                                            chatViewModel.isGenerating = false
+                                        }
                                     } 
                                 } 
                             }) { Icon(if (chatViewModel.isGenerating) Icons.Default.Stop else Icons.Default.Send, null, tint = if (chatViewModel.isGenerating) Color.Red else Color(0xFF64B5F6)) } })
