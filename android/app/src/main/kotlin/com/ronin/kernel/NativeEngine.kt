@@ -178,7 +178,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     fun stopInference() {
         if (isLibLoaded) {
             // v5.4: Backgrounded cancellation to prevent UI hang
-            serviceScope.launch {
+            scope.launch {
                 try {
                     requestCancellationNative()
                     delay(200) // Brief grace period for SDK to acknowledge

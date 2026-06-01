@@ -465,9 +465,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
                                                 val res = engine.performCloudInferenceAsync(raw, chatViewModel.primaryCloudProvider, apiKey)
                                                 roninMsg.content = res
-                                            } else if (isCommand) {
-                                                val res = engine.handleInternalCommand(raw)
-                                                roninMsg.content = res
                                             } else { 
                                                 val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
                                                 if (roninMsg.content.isEmpty()) {
