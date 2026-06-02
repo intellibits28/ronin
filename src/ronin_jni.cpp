@@ -18,6 +18,7 @@
 #include "capabilities/chat_skill.h"
 #include "models/inference_engine.h"
 #include "ronin_log.h"
+#include <nlohmann/json.hpp>
 
 #ifdef __ANDROID__
 
@@ -181,88 +182,66 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     std::string result;
 
     if (intent.category == IntentCategory::AGENT_PLAN && g_intent_engine->getPlanner()) {
-        LOGI(TAG, "v7.0: Initializing Agent Planning State...");
+        LOGI(TAG, "v7.2: Initializing Advanced Agent Planning...");
         
         auto plan = g_intent_engine->getPlanner()->createPlan(rawInput);
-        
-        // --- Dependency Resolution ---
-        bool all_fulfilled = true;
-        std::string missing_dep;
-        
-        for (const auto& dep : plan.dependencies) {
-            if (!dep.is_fulfilled) {
-                all_fulfilled = false;
-                missing_dep = dep.name;
-                break;
+        bool is_safe = true;
+
+        // --- Human-in-the-Loop (HITL) Safety Confirmation ---
+        if (plan.intent_name == "send_sms" || plan.intent_name == "send_sms_with_location") {
+            jclass cls = env->GetObjectClass(thiz);
+            jmethodID hitlMethod = env->GetMethodID(cls, "requestHITLConfirmation", "(Ljava/lang/String;Ljava/lang/String;)Z");
+            if (hitlMethod) {
+                std::string recipient = "Someone";
+                if (plan.parameters.count("recipient")) recipient = plan.parameters["recipient"];
+                else if (plan.parameters.count("contact_name")) recipient = plan.parameters["contact_name"];
+                
+                std::string hitl_msg = "Do you want to send your location to " + recipient + " via SMS?";
+                
+                jstring jIntentName = env->NewStringUTF(plan.intent_name.c_str());
+                jstring jMessage = env->NewStringUTF(hitl_msg.c_str());
+                jboolean approved = env->CallBooleanMethod(thiz, hitlMethod, jIntentName, jMessage);
+                env->DeleteLocalRef(jIntentName);
+                env->DeleteLocalRef(jMessage);
+                
+                if (approved == JNI_FALSE) {
+                    is_safe = false;
+                    result = "Action cancelled by user.";
+                }
             }
         }
         
-        if (!all_fulfilled) {
-            LOGI(TAG, "v7.0: Dependency Missing: %s", missing_dep.c_str());
-            result = "I need more information about: " + missing_dep + ". Could you please clarify?";
-        } else {
-            // v7.0: Execute Dynamic Tool Chain via GraphExecutor
-            LOGI(TAG, "v7.0: All dependencies fulfilled. Executing tool chain...");
-            
-            // Map intent names to node IDs (simplified for prototype)
-            std::vector<uint32_t> steps;
-            if (plan.intent_name == "send_sms") {
-                steps = {5, 8}; // LocationNode (5) -> SMS Node (placeholder ID 8 for now)
-            }
-            
-            bool is_safe = true;
-            
-            // Check for Safety Confirmation (HITL)
-            if (plan.intent_name == "send_sms") {
+        if (is_safe) {
+            if (plan.intent_name == "send_sms" || plan.intent_name == "send_sms_with_location" || 
+                plan.intent_name == "show_map" || plan.intent_name == "show_location") {
+                // Execute directly via Kotlin for tools requiring Android APIs
                 jclass cls = env->GetObjectClass(thiz);
-                jmethodID hitlMethod = env->GetMethodID(cls, "requestHITLConfirmation", "(Ljava/lang/String;Ljava/lang/String;)Z");
-                if (hitlMethod) {
-                    std::string hitl_msg = "Do you want to send an SMS with your location to " + plan.dependencies[0].value + "?";
-                    jstring jIntentName = env->NewStringUTF(plan.intent_name.c_str());
-                    jstring jMessage = env->NewStringUTF(hitl_msg.c_str());
-                    jboolean approved = env->CallBooleanMethod(thiz, hitlMethod, jIntentName, jMessage);
-                    env->DeleteLocalRef(jIntentName);
-                    env->DeleteLocalRef(jMessage);
+                jmethodID execMethod = env->GetMethodID(cls, "executeAgentTool", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+                if (execMethod) {
+                    nlohmann::json jPayload;
+                    for (const auto& [key, val] : plan.parameters) jPayload[key] = val;
                     
-                    if (approved == JNI_FALSE) {
-                        is_safe = false;
-                        result = "Action cancelled by user.";
-                    }
+                    jstring jToolName = env->NewStringUTF(plan.intent_name.c_str());
+                    jstring jParams = env->NewStringUTF(jPayload.dump().c_str());
+                    jstring jResult = (jstring)env->CallObjectMethod(thiz, execMethod, jToolName, jParams);
+                    
+                    result = ConvertJStringToString(env, jResult);
+                    
+                    env->DeleteLocalRef(jToolName);
+                    env->DeleteLocalRef(jParams);
+                    env->DeleteLocalRef(jResult);
                 }
-            }
-            
-            if (is_safe) {
-                if (plan.intent_name == "send_sms") {
-                    // Quick prototype hook directly to Kotlin execution
-                    jclass cls = env->GetObjectClass(thiz);
-                    jmethodID execMethod = env->GetMethodID(cls, "executeAgentTool", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
-                    if (execMethod) {
-                        // Construct a simple JSON string manually for the payload
-                        std::string jsonPayload = "{";
-                        for (size_t i = 0; i < plan.dependencies.size(); ++i) {
-                            jsonPayload += "\"" + plan.dependencies[i].name + "\":\"" + plan.dependencies[i].value + "\"";
-                            if (i < plan.dependencies.size() - 1) jsonPayload += ",";
-                        }
-                        jsonPayload += "}";
-                        
-                        jstring jToolName = env->NewStringUTF(plan.intent_name.c_str());
-                        jstring jParams = env->NewStringUTF(jsonPayload.c_str());
-                        jstring jResult = (jstring)env->CallObjectMethod(thiz, execMethod, jToolName, jParams);
-                        
-                        result = ConvertJStringToString(env, jResult);
-                        
-                        env->DeleteLocalRef(jToolName);
-                        env->DeleteLocalRef(jParams);
-                        env->DeleteLocalRef(jResult);
-                    }
-                } else if (g_graph_executor) {
-                    result = g_graph_executor->executeChain(steps, rawInput, 
-                        [](uint32_t id, const std::string& p, ToolContext* ctx) {
-                            return g_intent_engine->executeSkill(id, p, ctx);
-                        });
-                } else {
-                    result = "Error: Graph Executor not ready.";
+            } else if (g_graph_executor) {
+                // For other complex plans, execute via GraphExecutor chain
+                std::vector<uint32_t> steps = {1}; // Default fallback
+                if (plan.intent_name == "measure_resonance") {
+                    steps = {4, 1}; // Flashlight (4) + Chat (1) as placeholder
                 }
+                
+                result = g_graph_executor->executeChain(steps, rawInput, 
+                    [](uint32_t id, const std::string& p, ToolContext* ctx) {
+                        return g_intent_engine->executeSkill(id, p, ctx);
+                    });
             }
         }
     } else {

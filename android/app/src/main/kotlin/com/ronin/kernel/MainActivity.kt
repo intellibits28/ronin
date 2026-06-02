@@ -400,11 +400,27 @@ class MainActivity : ComponentActivity() {
         
         nativeEngine.executeAgentToolCallback = { toolName, params ->
             when (toolName) {
-                "send_sms" -> {
-                    val contact = params["contact_name"] ?: "Unknown"
+                "send_sms", "send_sms_with_location" -> {
+                    val contact = params["contact_name"] ?: params["recipient"] ?: "Unknown"
                     val location = params["location"] ?: "Unknown Location"
                     // Placeholder for actual SMS sending logic via Android Intent/API
                     "Sent SMS to $contact with payload: $location"
+                }
+                "show_map", "show_location" -> {
+                    try {
+                        val locationResult = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token))
+                        if (locationResult != null) {
+                            val uri = Uri.parse("geo:${locationResult.latitude},${locationResult.longitude}?q=${locationResult.latitude},${locationResult.longitude}")
+                            val mapIntent = Intent(Intent.ACTION_VIEW, uri)
+                            mapIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(mapIntent)
+                            "Opened Map at ${locationResult.latitude}, ${locationResult.longitude}"
+                        } else {
+                            "Error: Could not retrieve location for map."
+                        }
+                    } catch (e: Exception) {
+                        "Error opening map: ${e.message}"
+                    }
                 }
                 else -> "Tool $toolName executed with params: $params"
             }
