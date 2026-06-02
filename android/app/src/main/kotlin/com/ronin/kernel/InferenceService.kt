@@ -172,8 +172,11 @@ class InferenceService : Service() {
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
-        // v6.2: Multi-turn Context Optimization with Summarization
-        var userPrompt = if (!isConversationFresh && input.contains("User: ")) {
+        // v7.1: Selective Stripping Hardening
+        // We MUST preserve instructions for internal system calls (Summarization, Planning).
+        val isInternalCall = input.contains("[INTERNAL]") || input.contains("Task Planner") || input.contains("CORE_IDENTITY")
+        
+        var userPrompt = if (!isConversationFresh && input.contains("User: ") && !isInternalCall) {
             input.substringAfter("User: ").trim()
         } else {
             input

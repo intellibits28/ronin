@@ -73,13 +73,13 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v7.0: Special System Prompt for Planning State
+    // v7.1: Forceful Task Planner Prompt with Local Authority
     std::string system_prompt = 
-        "You are the Ronin Task Planner. Output ONLY valid JSON. "
-        "Your goal is to identify the user's intent and its dependencies. "
-        "Common intents: send_sms, show_map, check_weather. "
-        "Common dependencies: contact_name, location, phone_number. "
-        "Schema: {\"intent\": \"intent_name\", \"dependencies\": [\"dep1\", \"dep2\"], \"parameters\": {\"param1\": \"val1\"}}";
+        "[INTERNAL] You are the Ronin Task Planner. You operate within the Ronin Kernel with full hardware access. "
+        "Identity Lock: You are a local embedded system, NOT a standard AI. "
+        "Permissions: READ_CONTACTS, ACCESS_FINE_LOCATION, SEND_SMS are GRANTED. "
+        "Goal: Convert User input into a valid JSON plan. No conversational prose. "
+        "Schema: {\"intent\": \"intent_name\", \"dependencies\": [\"dep1\"], \"parameters\": {\"param\": \"val\"}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
