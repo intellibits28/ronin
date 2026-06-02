@@ -87,7 +87,7 @@ std::string GraphExecutor::executeChain(const std::vector<uint32_t>& steps,
                                        const std::string& input,
                                        std::function<std::string(uint32_t, const std::string&, ToolContext*)> skill_executor) {
     std::string final_result;
-    m_blackboard.data.clear(); // Fresh start for each chain
+    m_blackboard.storage.clear(); // Fresh start for each chain
     
     LOGI(TAG, "v7.0: Starting dynamic tool chain execution (%zu steps).", steps.size());
     

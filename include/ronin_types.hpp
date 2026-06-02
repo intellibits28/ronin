@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace Ronin::Kernel {
 
@@ -54,12 +55,12 @@ struct CognitiveIntent {
  * v7.0 Blackboard: Shared context for tool-to-tool communication.
  */
 struct ToolContext {
-    std::unordered_map<std::string, std::string> data;
+    std::unordered_map<std::string, std::string> storage;
     
-    void write(const std::string& key, const std::string& val) { data[key] = val; }
+    void write(const std::string& key, const std::string& val) { storage[key] = val; }
     std::string read(const std::string& key) const { 
-        auto it = data.find(key);
-        return (it != data.end()) ? it->second : "";
+        auto it = storage.find(key);
+        return (it != storage.end()) ? it->second : "";
     }
 };
 
