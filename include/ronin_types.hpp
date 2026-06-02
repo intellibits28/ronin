@@ -99,12 +99,15 @@ struct Dependency {
 };
 
 /**
- * LLM-driven execution plan.
+ * v7.2 Advanced LLM-driven execution plan.
+ * Separates tools, permissions, and sequential steps for robust orchestration.
  */
 struct AgentPlan {
     std::string intent_name;
-    std::vector<Dependency> dependencies;
-    std::vector<uint32_t> execution_chain;
+    std::vector<std::string> required_tools;
+    std::vector<std::string> required_permissions;
+    std::vector<std::string> plan_steps;
+    std::unordered_map<std::string, std::string> parameters;
     std::string raw_json;
 };
 

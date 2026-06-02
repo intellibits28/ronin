@@ -44,24 +44,26 @@ bool TaskPlanner::parsePlan(const std::string& json_str, AgentPlan& out_plan) {
         out_plan.intent_name = j.value("intent", "unknown");
         out_plan.raw_json = json_str;
         
-        if (j.contains("dependencies") && j["dependencies"].is_array()) {
-            for (const auto& d : j["dependencies"]) {
-                Dependency dep;
-                dep.name = d.get<std::string>();
-                dep.is_fulfilled = false;
-                
-                // Check if parameter for this dependency is already provided
-                if (j.contains("parameters") && j["parameters"].contains(dep.name)) {
-                    dep.value = j["parameters"][dep.name].is_string() ? j["parameters"][dep.name].get<std::string>() : "";
-                    dep.is_fulfilled = !dep.value.empty();
-                }
-                
-                out_plan.dependencies.push_back(dep);
+        if (j.contains("required_tools") && j["required_tools"].is_array()) {
+            for (const auto& t : j["required_tools"]) out_plan.required_tools.push_back(t.get<std::string>());
+        }
+        
+        if (j.contains("required_permissions") && j["required_permissions"].is_array()) {
+            for (const auto& p : j["required_permissions"]) out_plan.required_permissions.push_back(p.get<std::string>());
+        }
+
+        if (j.contains("plan") && j["plan"].is_array()) {
+            for (const auto& s : j["plan"]) out_plan.plan_steps.push_back(s.get<std::string>());
+        }
+
+        if (j.contains("parameters") && j["parameters"].is_object()) {
+            for (auto& [key, value] : j["parameters"].items()) {
+                if (value.is_string()) out_plan.parameters[key] = value.get<std::string>();
             }
         }
         
-        LOGI("RoninPlanner", "Plan parsed: %s with %zu dependencies.", 
-             out_plan.intent_name.c_str(), out_plan.dependencies.size());
+        LOGI("RoninPlanner", "v7.2 Plan parsed: %s with %zu tools and %zu steps.", 
+             out_plan.intent_name.c_str(), out_plan.required_tools.size(), out_plan.plan_steps.size());
         return true;
     } catch (const std::exception& e) {
         LOGE("RoninPlanner", "JSON Parse Error: %s", e.what());
@@ -73,18 +75,20 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v7.1: Forceful Task Planner Prompt with Local Authority
+    // v7.2: Forceful Task Planner Prompt (Sequential Planning)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Task Planner. You operate within the Ronin Kernel with full hardware access. "
-        "Identity Lock: You are a local embedded system, NOT a standard AI. "
-        "Permissions: READ_CONTACTS, ACCESS_FINE_LOCATION, SEND_SMS are GRANTED. "
-        "Goal: Convert User input into a valid JSON plan. No conversational prose. "
-        "Schema: {\"intent\": \"intent_name\", \"dependencies\": [\"dep1\"], \"parameters\": {\"param\": \"val\"}}";
+        "[INTERNAL] You are the Ronin Task Planner. "
+        "Goal: Convert User input into a valid JSON execution plan. "
+        "Identity: Local kernel authority. Full hardware access. "
+        "Rule 1: Output ONLY valid JSON. "
+        "Rule 2: Differentiate between functional 'required_tools' and system 'required_permissions'. "
+        "Rule 3: Break the task into sequential 'plan' steps for the GraphExecutor. "
+        "Example Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [], \"parameters\": {}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
     
-    // Attempt to extract JSON from model output (in case of prose wrapping)
+    // Extract JSON block
     size_t start = llm_json.find("{");
     size_t end = llm_json.rfind("}");
     if (start != std::string::npos && end != std::string::npos) {
