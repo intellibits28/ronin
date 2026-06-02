@@ -35,6 +35,7 @@ class InferenceService : Service() {
     private var currentTopP = 0.9f
     
     private var isConversationFresh = true
+    private var lastSummary: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // --- Native JNI Interface (Essential Only) ---
@@ -108,8 +109,34 @@ class InferenceService : Service() {
         override fun notifyTrimMemory(level: Int) { if (level >= 80) resetConversationInternal() }
         override fun setSafeMode(enabled: Boolean) {}
         override fun isLowPerformanceMode(): Boolean = false
-        override fun resetConversation() = resetConversationInternal()
-        
+        override fun resetConversation() { 
+            lastSummary = null
+            resetConversationInternal() 
+        }
+
+        override fun summarizeAndReset(): String = runBlocking(Dispatchers.IO) {
+            val activeConv = synchronized(this@InferenceService) { litertConversation } ?: return@runBlocking ""
+            val summaryPrompt = "[INTERNAL] Summarize our conversation concisely in 3 lines of Myanmar text. Focus on facts. No thinking tags."
+            val fullResult = StringBuilder()
+            try {
+                activeConv.sendMessageAsync(Message.user(summaryPrompt)).collect { partial ->
+                    val token = try { 
+                        val method = partial.javaClass.getMethod("getText")
+                        method.invoke(partial) as String 
+                    } catch(e: Exception) { partial.toString() }
+                    fullResult.append(token)
+                }
+                val summary = fullResult.toString().replace("[REPLY]", "").replace("[/REPLY]", "").trim()
+                lastSummary = summary
+                resetConversationInternal()
+                Log.i(TAG, "Summarization Complete. Next turn will include context anchor.")
+                summary
+            } catch (e: Exception) { 
+                Log.e(TAG, "Summarization Failed: ${e.message}")
+                ""
+            }
+        }
+
         override fun updateSamplingParams(temp: Float, topK: Int, topP: Float) {
             currentTemp = temp; currentTopK = topK; currentTopP = topP
         }
@@ -145,14 +172,17 @@ class InferenceService : Service() {
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
-        // v6.1: Multi-turn Context Optimization
-        // The LiteRT Conversation object manages history internally.
-        // We only send the full Persona+Identity wrap when the conversation is FRESH (Turn 1).
-        // On subsequent turns, we strip the redundant wrap to avoid confusing the model.
-        val userPrompt = if (!isConversationFresh && input.contains("User: ")) {
+        // v6.2: Multi-turn Context Optimization with Summarization
+        var userPrompt = if (!isConversationFresh && input.contains("User: ")) {
             input.substringAfter("User: ").trim()
         } else {
             input
+        }
+        
+        // Inject Summary as context anchor if turn 1
+        if (isConversationFresh && lastSummary != null) {
+            userPrompt = "CONTEXT_ANCHOR (Previous Conversation): ${lastSummary}\n\n$userPrompt"
+            Log.d(TAG, "Injected Summary Anchor into Turn 1.")
         }
         
         // v6.1 Maximum RAM Guard: 0.7GB (Pushing limits for SD778G)

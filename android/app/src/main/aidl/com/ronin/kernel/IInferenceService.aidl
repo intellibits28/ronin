@@ -13,4 +13,5 @@ interface IInferenceService {
     void resetConversation();
     void updateSamplingParams(float temperature, int topK, float topP);
     boolean isLowPerformanceMode();
+    String summarizeAndReset();
 }
