@@ -87,6 +87,7 @@ set(RONIN_CORE_SOURCES
     src/agent_session.cpp
     src/session_manager.cpp
     src/resource_manager.cpp
+    src/agent_scheduler.cpp
     src/ronin_kernel.cpp
     src/capabilities/file_scanner.cpp
     src/capabilities/file_search_node.cpp
