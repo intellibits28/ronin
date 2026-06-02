@@ -82,6 +82,8 @@ set(RONIN_CORE_SOURCES
     src/memory_manager.cpp
     src/long_term_memory.cpp
     src/capability_graph.cpp
+    src/capability_dispatcher.cpp
+    src/android_bridge.cpp
     src/ronin_kernel.cpp
     src/capabilities/file_scanner.cpp
     src/capabilities/file_search_node.cpp

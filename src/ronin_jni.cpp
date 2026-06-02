@@ -47,7 +47,8 @@ static std::unique_ptr<Ronin::Kernel::Reasoning::GraphStorage> g_graph_storage =
 static std::unique_ptr<Ronin::Kernel::Reasoning::CapabilityGraph> g_cap_graph = nullptr;
 static std::unique_ptr<Ronin::Kernel::Reasoning::GraphExecutor> g_graph_executor = nullptr;
 
-static JavaVM* g_vm = nullptr;
+JavaVM* g_vm = nullptr;
+jobject g_instance = nullptr;
 
 struct LLMContext {
     InferenceEngine* engine = nullptr;
@@ -87,6 +88,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
     std::string native_lib_path = ConvertJStringToString(env, libDir);
 
     if (!isWorker) {
+        g_instance = env->NewGlobalRef(thiz);
         // UI Process Initialization
         g_ltm = std::make_shared<LongTermMemory>(base_path + "/ronin_cognitive.db");
         
@@ -368,7 +370,8 @@ static JNINativeMethod g_methods[] = {
     {"resetContextNativeJNI", "()V", (void*)native_resetContext},
     {"loadMyanmarDictionaryNative", "(Ljava/lang/String;)Z", (void*)native_loadMyanmarDictionary},
     {"reportOutcomeNative", "(IIZI)V", (void*)native_reportOutcome},
-    {"requestCancellationNative", "()V", (void*)native_requestCancellation}
+    {"requestCancellationNative", "()V", (void*)native_requestCancellation},
+    {"onCapabilityRequest", "(Ljava/lang/String;)Ljava/lang/String;", (void*)nullptr} // We'll use this for Kotlin call
 };
 
 static JNINativeMethod g_worker_methods[] = {

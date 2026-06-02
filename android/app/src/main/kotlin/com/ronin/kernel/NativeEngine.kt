@@ -32,6 +32,33 @@ import java.util.concurrent.TimeUnit
 class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private val dbHelper = DatabaseHelper(context)
+    private val drivers = mutableMapOf<String, ICapabilityDriver>()
+
+    init {
+        // v7.0 Layer 4: Register Android Drivers
+        drivers["LOCATION"] = LocationDriver(context)
+        drivers["SMS"] = SmsDriver()
+    }
+
+    /**
+     * v7.0 Layer 3: JNI entry point for capability requests from C++.
+     */
+    @Suppress("unused")
+    fun onCapabilityRequest(jsonStr: String): String {
+        return try {
+            val request = org.json.JSONObject(jsonStr)
+            val capability = request.getString("capability")
+            val driver = drivers[capability]
+            
+            val result = driver?.execute(request) 
+                ?: org.json.JSONObject().put("success", false).put("error", "Driver not found: $capability")
+            
+            result.toString()
+        } catch (e: Exception) {
+            org.json.JSONObject().put("success", false).put("error", "Bridge error: ${e.message}").toString()
+        }
+    }
+
     private var inferenceService: IInferenceService? = null
     private var isServiceBound = false
 
