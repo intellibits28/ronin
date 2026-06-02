@@ -84,6 +84,9 @@ set(RONIN_CORE_SOURCES
     src/capability_graph.cpp
     src/capability_dispatcher.cpp
     src/android_bridge.cpp
+    src/agent_session.cpp
+    src/session_manager.cpp
+    src/resource_manager.cpp
     src/ronin_kernel.cpp
     src/capabilities/file_scanner.cpp
     src/capabilities/file_search_node.cpp
