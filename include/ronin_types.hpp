@@ -58,6 +58,41 @@ struct Result {
   int32_t statusCode;
 };
 
+// --- v7.0 Agent Mode Data Structures ---
+
+/**
+ * Execution states for the dynamic Task Planner.
+ */
+enum class AgentState : uint32_t {
+    IDLE = 0,
+    PLANNING = 1,
+    RESOLVING_DEPENDENCIES = 2,
+    WAITING_FOR_PERMISSION = 3,
+    REQUIRES_CONFIRMATION = 4, // HITL Pause
+    EXECUTING = 5,
+    COMPLETED = 6,
+    FAILED = 7
+};
+
+/**
+ * Represents a required data point or condition for a task.
+ */
+struct Dependency {
+    std::string name;
+    bool is_fulfilled;
+    std::string value;
+};
+
+/**
+ * LLM-driven execution plan.
+ */
+struct AgentPlan {
+    std::string intent_name;
+    std::vector<Dependency> dependencies;
+    std::vector<uint32_t> execution_chain;
+    std::string raw_json;
+};
+
 /**
  * Encapsulates the internal state of the kernel for a single tick cycle.
  */
@@ -66,6 +101,10 @@ struct CognitiveState {
   uint32_t activeNodeId;
   bool requiresAction;
   int iterations;
+  
+  // v7.0 Agent Mode Fields
+  AgentState agent_state = AgentState::IDLE;
+  AgentPlan current_plan;
 };
 
 } // namespace Ronin::Kernel
