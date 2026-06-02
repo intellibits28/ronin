@@ -102,6 +102,19 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     return plan;
 }
 
+CapabilityType TaskPlanner::mapIntentToCapability(const std::string& intent_name) {
+    if (intent_name == "show_location" || intent_name == "get_location" || intent_name == "where_am_i") {
+        return CapabilityType::LOCATION;
+    }
+    if (intent_name == "send_sms" || intent_name == "send_message" || intent_name == "sms_location") {
+        return CapabilityType::SMS;
+    }
+    if (intent_name == "measure_resonance" || intent_name == "vibration_analysis") {
+        return CapabilityType::SENSOR;
+    }
+    return CapabilityType::NONE;
+}
+
 ThermalState g_thermal_state = ThermalState::NORMAL;
 
 static std::string strip_punctuation(const std::string& s) {
@@ -363,6 +376,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     bool is_complex = (token_set.count("sms") || token_set.count("message")) && 
                       (token_set.count("location") || token_set.count("တည်နေရာ"));
     
+    bool is_simple_agent = token_set.count("location") || token_set.count("တည်နေရာ") || 
+                           token_set.count("မြေပုံ") || token_set.count("map");
+
     // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
     bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
                       token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
@@ -370,9 +386,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                       token_set.count("how") || token_set.count("what") || 
                       token_set.count("why") || token_set.count("explain");
 
-    if (is_complex) {
+    if ((is_complex || is_simple_agent) && !is_inquiry) {
         final_cat = IntentCategory::AGENT_PLAN;
-        LOGI(TAG, "v7.0 Complex Request Detected -> Category AGENT_PLAN");
+        LOGI(TAG, "v7.0 Agent Request Detected -> Category AGENT_PLAN");
     } else {
         // Check for Memory Query (e.g. "မှတ်မိလား", "အရင်က")
         if (token_set.count("မှတ်မိလား") || token_set.count("အရင်က") || token_set.count("မှတ်ဉာဏ်")) {

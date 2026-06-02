@@ -31,6 +31,9 @@ public:
     // Parses raw JSON string into AgentPlan struct
     bool parsePlan(const std::string& json_str, AgentPlan& out_plan);
 
+    // v7.0 Layer 5: Maps intent strings to capability types
+    CapabilityType mapIntentToCapability(const std::string& intent_name);
+
 private:
     Model::InferenceEngine* m_engine;
 };
