@@ -103,6 +103,12 @@ class ChatViewModel : ViewModel() {
     var isGemmaReady by mutableStateOf(false)
     var showCommandSuggestions by mutableStateOf(false)
     
+    // v7.0: Agent Mode HITL State
+    var showHITLDialog by mutableStateOf(false)
+    var hitlMessage by mutableStateOf("")
+    var hitlIntentName by mutableStateOf("")
+    var onHITLResult: ((Boolean) -> Unit)? = null
+    
     var samplingTemperature by mutableStateOf(0.7f)
     var topK by mutableStateOf(40)
     var topP by mutableStateOf(0.9f)
@@ -383,6 +389,26 @@ class MainActivity : ComponentActivity() {
         nativeEngine.onKernelMessageCallback = { msg -> 
             vm.reasoningLogsText += "\n> $msg"
         }
+        
+        // v7.0: Agent Mode Callbacks
+        nativeEngine.requestHITLConfirmationCallback = { intentName, message, callback ->
+            vm.hitlIntentName = intentName
+            vm.hitlMessage = message
+            vm.onHITLResult = callback
+            vm.showHITLDialog = true
+        }
+        
+        nativeEngine.executeAgentToolCallback = { toolName, params ->
+            when (toolName) {
+                "send_sms" -> {
+                    val contact = params["contact_name"] ?: "Unknown"
+                    val location = params["location"] ?: "Unknown Location"
+                    // Placeholder for actual SMS sending logic via Android Intent/API
+                    "Sent SMS to $contact with payload: $location"
+                }
+                else -> "Tool $toolName executed with params: $params"
+            }
+        }
     }
 
     override fun onResume() { super.onResume(); scanLocalModels() }
@@ -495,6 +521,40 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
     }
     if (chatViewModel.showAddCloudDialog) {
         CloudProviderDialog(chatViewModel, activity)
+    }
+    
+    // v7.0: HITL Dialog
+    if (chatViewModel.showHITLDialog) {
+        AlertDialog(
+            onDismissRequest = { 
+                chatViewModel.showHITLDialog = false
+                chatViewModel.onHITLResult?.invoke(false)
+            },
+            backgroundColor = Color(0xFF1E2130),
+            title = { 
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, null, tint = Color.Yellow)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Safety Confirmation", color = Color.White) 
+                }
+            },
+            text = { Text(chatViewModel.hitlMessage, color = Color.White) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        chatViewModel.showHITLDialog = false
+                        chatViewModel.onHITLResult?.invoke(true)
+                    },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = Color.Green)
+                ) { Text("Approve", color = Color.Black, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { 
+                    chatViewModel.showHITLDialog = false
+                    chatViewModel.onHITLResult?.invoke(false)
+                }) { Text("Reject", color = Color.Red) }
+            }
+        )
     }
 }
 

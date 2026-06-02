@@ -323,6 +323,47 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return onRequestHardwareDataCallback?.invoke(nodeId) ?: "Error"
     }
 
+    @Suppress("unused")
+    fun executeAgentTool(toolName: String, paramsJson: String): String {
+        val result = executeAgentToolCallback?.let { callback ->
+            val paramMap = mutableMapOf<String, String>()
+            try {
+                val json = JSONObject(paramsJson)
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    paramMap[key] = json.getString(key)
+                }
+            } catch (e: Exception) { Log.e(TAG, "Agent Tool Param Parse Error: ${e.message}") }
+            
+            runBlocking(Dispatchers.Main) {
+                // Execute on main thread since UI interactions (like intent sending) might be needed
+                callback.invoke(toolName, paramMap)
+            }
+        } ?: "Error: Tool execution callback not set."
+        return result
+    }
+
+    @Suppress("unused")
+    fun requestHITLConfirmation(intentName: String, message: String): Boolean {
+        var approved = false
+        val latch = CountDownLatch(1)
+        
+        runBlocking(Dispatchers.Main) {
+            requestHITLConfirmationCallback?.invoke(intentName, message) { result ->
+                approved = result
+                latch.countDown()
+            } ?: latch.countDown()
+        }
+        
+        try {
+            // Wait for user interaction (timeout after 2 minutes)
+            latch.await(120, TimeUnit.SECONDS)
+        } catch (e: Exception) {}
+        
+        return approved
+    }
+
     override fun onTrimMemory(level: Int) {
         if (isLibLoaded) try { notifyTrimMemoryNative(level) } catch (e: Exception) {}
     }
@@ -335,6 +376,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     var onRequestHardwareDataCallback: ((Int) -> String)? = null
     var executeHardwareActionCallback: ((Int, Boolean) -> Boolean)? = null
     var onSystemTiersUpdateCallback: ((Float, Float, Float) -> Unit)? = null
+    var requestHITLConfirmationCallback: ((String, String, (Boolean) -> Unit) -> Unit)? = null
+    var executeAgentToolCallback: ((String, Map<String, String>) -> String)? = null
 
     fun setOfflineModeSafe(offline: Boolean) {
         if (isLibLoaded) try { setOfflineModeNative(offline) } catch (e: Exception) {}

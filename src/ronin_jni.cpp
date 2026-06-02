@@ -208,16 +208,61 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
             std::vector<uint32_t> steps;
             if (plan.intent_name == "send_sms") {
                 steps = {5, 8}; // LocationNode (5) -> SMS Node (placeholder ID 8 for now)
-                // Actually, let's use real IDs from registry if possible
             }
             
-            if (g_graph_executor) {
-                result = g_graph_executor->executeChain(steps, rawInput, 
-                    [](uint32_t id, const std::string& p, ToolContext* ctx) {
-                        return g_intent_engine->executeSkill(id, p, ctx);
-                    });
-            } else {
-                result = "Error: Graph Executor not ready.";
+            bool is_safe = true;
+            
+            // Check for Safety Confirmation (HITL)
+            if (plan.intent_name == "send_sms") {
+                jclass cls = env->GetObjectClass(thiz);
+                jmethodID hitlMethod = env->GetMethodID(cls, "requestHITLConfirmation", "(Ljava/lang/String;Ljava/lang/String;)Z");
+                if (hitlMethod) {
+                    std::string hitl_msg = "Do you want to send an SMS with your location to " + plan.dependencies[0].value + "?";
+                    jstring jIntentName = env->NewStringUTF(plan.intent_name.c_str());
+                    jstring jMessage = env->NewStringUTF(hitl_msg.c_str());
+                    jboolean approved = env->CallBooleanMethod(thiz, hitlMethod, jIntentName, jMessage);
+                    env->DeleteLocalRef(jIntentName);
+                    env->DeleteLocalRef(jMessage);
+                    
+                    if (approved == JNI_FALSE) {
+                        is_safe = false;
+                        result = "Action cancelled by user.";
+                    }
+                }
+            }
+            
+            if (is_safe) {
+                if (plan.intent_name == "send_sms") {
+                    // Quick prototype hook directly to Kotlin execution
+                    jclass cls = env->GetObjectClass(thiz);
+                    jmethodID execMethod = env->GetMethodID(cls, "executeAgentTool", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+                    if (execMethod) {
+                        // Construct a simple JSON string manually for the payload
+                        std::string jsonPayload = "{";
+                        for (size_t i = 0; i < plan.dependencies.size(); ++i) {
+                            jsonPayload += "\"" + plan.dependencies[i].name + "\":\"" + plan.dependencies[i].value + "\"";
+                            if (i < plan.dependencies.size() - 1) jsonPayload += ",";
+                        }
+                        jsonPayload += "}";
+                        
+                        jstring jToolName = env->NewStringUTF(plan.intent_name.c_str());
+                        jstring jParams = env->NewStringUTF(jsonPayload.c_str());
+                        jstring jResult = (jstring)env->CallObjectMethod(thiz, execMethod, jToolName, jParams);
+                        
+                        result = ConvertJStringToString(env, jResult);
+                        
+                        env->DeleteLocalRef(jToolName);
+                        env->DeleteLocalRef(jParams);
+                        env->DeleteLocalRef(jResult);
+                    }
+                } else if (g_graph_executor) {
+                    result = g_graph_executor->executeChain(steps, rawInput, 
+                        [](uint32_t id, const std::string& p, ToolContext* ctx) {
+                            return g_intent_engine->executeSkill(id, p, ctx);
+                        });
+                } else {
+                    result = "Error: Graph Executor not ready.";
+                }
             }
         }
     } else {
