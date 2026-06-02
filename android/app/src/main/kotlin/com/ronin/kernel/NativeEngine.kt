@@ -161,17 +161,22 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     suspend fun processInputAsync(input: String, systemPrompt: String = ""): String = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext "Error: Lib not loaded."
         
-        // v6.2: Automatic Context Summarization Trigger
+        // v6.3: Automatic Context Optimization (Thinking Stripper)
         try {
             val history = getChatHistoryAsync(20, 0)
-            if (history.size >= 8) { // 4 turns (User+Ronin pairs)
-                Log.i(TAG, "Summarization Triggered: Long history detected (${history.size} items).")
-                val summary = inferenceService?.summarizeAndReset()
-                if (!summary.isNullOrEmpty()) {
-                    Log.i(TAG, "Context anchored with summary: ${summary.take(50)}...")
-                }
+            
+            // Tier 1: Full Summarization (Long history)
+            if (history.size >= 12) {
+                Log.i(TAG, "v6.3 Context Reset: High turn count (${history.size}). Summarizing...")
+                inferenceService?.summarizeAndReset()
+            } 
+            // Tier 2: Thinking Stripper (Intermediate turns)
+            else if (history.size >= 2) {
+                val cleanContext = trimHistoryToContext(history, 2500)
+                Log.d(TAG, "v6.3 Hybrid History: Injected ${cleanContext.length} clean chars.")
+                // The C++ processInputNative will combine this clean history with the new input
             }
-        } catch (e: Exception) { Log.w(TAG, "Summarization check failed: ${e.message}") }
+        } catch (e: Exception) { Log.w(TAG, "Context optimization failed: ${e.message}") }
 
         try { processInputNative(input, systemPrompt) } catch (e: Exception) { "Error: Kernel failure." }
     }
@@ -386,6 +391,29 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 inferenceService?.resetConversation() 
             } catch (e: Exception) { Log.e(TAG, "Reset failed: ${e.message}") }
         }
+    }
+
+    /**
+     * v6.3: Condenses history into a clean context string, stripping [THINK] blocks.
+     */
+    private fun trimHistoryToContext(history: List<Pair<String, String>>, maxChars: Int = 3000): String {
+        val result = StringBuilder()
+        // Process latest messages first until char limit is reached
+        for (i in history.indices.reversed()) {
+            val sender = history[i].first
+            var content = history[i].second
+            
+            // Strip [THINK] blocks from the history for context window efficiency
+            if (content.contains("[THINK]")) {
+                content = content.substringAfter("[/THINK]").substringAfter("[REPLY]").trim()
+            }
+            
+            val entry = "$sender: $content\n"
+            if (result.length + entry.length < maxChars) {
+                result.insert(0, entry)
+            } else break
+        }
+        return result.toString()
     }
 
     fun reportOutcome(sourceId: Int, targetId: Int, success: Boolean, risk: RiskLevel = RiskLevel.MEDIUM) {
