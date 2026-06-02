@@ -145,25 +145,33 @@ class InferenceService : Service() {
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
-        // v5.4: Persistence Hardening
-        // Only strip standard User tags. NEVER strip CORE_IDENTITY to maintain persona.
-        val userPrompt = if (!isConversationFresh && input.contains("User: ") && !input.contains("CORE_IDENTITY")) {
+        // v6.1: Multi-turn Context Optimization
+        // The LiteRT Conversation object manages history internally.
+        // We only send the full Persona+Identity wrap when the conversation is FRESH (Turn 1).
+        // On subsequent turns, we strip the redundant wrap to avoid confusing the model.
+        val userPrompt = if (!isConversationFresh && input.contains("User: ")) {
             input.substringAfter("User: ").trim()
         } else {
             input
         }
         
-        // v5.4 Relaxed RAM Guard: 0.8GB (Optimized for SD778G multi-turn)
+        // v6.1 Maximum RAM Guard: 0.7GB (Pushing limits for SD778G)
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
-        if (freeRam < 0.8f && !isConversationFresh) {
-            Log.w(TAG, "CRITICAL RAM ALERT (%.2fGB). Pruning KV Cache.".format(freeRam))
+        if (freeRam < 0.7f && !isConversationFresh) {
+            Log.w(TAG, "CRITICAL RAM ALERT (%.2fGB). Purging KV Cache.".format(freeRam))
             resetConversationInternal()
+            // Resetting isConversationFresh here would be too late for this loop, 
+            // but the next turn will see it as fresh and re-inject Persona.
         }
 
         val activeConv = synchronized(this@InferenceService) { litertConversation ?: return@flow }
-        isConversationFresh = false // Mark as used
+        
+        // Mark as no longer fresh AFTER we have decided to use/strip the wrap for THIS prompt
+        val wasFresh = isConversationFresh
+        isConversationFresh = false 
         
         try {
+            Log.d(TAG, "Inference active (Fresh=$wasFresh). Prompt length: ${userPrompt.length}")
             activeConv.sendMessageAsync(Message.user(userPrompt)).collect { partial ->
                 val token = try { 
                     val method = partial.javaClass.getMethod("getText")

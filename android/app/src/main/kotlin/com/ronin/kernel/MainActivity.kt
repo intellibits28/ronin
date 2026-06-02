@@ -215,24 +215,34 @@ class MainActivity : ComponentActivity() {
                         val lastMsg = chatViewModel.messages.last()
                         if (lastMsg.sender == "Ronin") {
                             val frag = packet.fragment
-                            
-                            if (frag.contains("[THINK]")) { lastMsg.isThinking = true }
-                            
+
+                            // v6.1: Robust Tag Splitting Logic
+                            var processedFrag = frag
+
+                            if (processedFrag.contains("[THINK]")) {
+                                lastMsg.isThinking = true
+                                processedFrag = processedFrag.replace("[THINK]", "")
+                            }
+
                             if (lastMsg.isThinking) {
-                                val clean = frag.replace("[THINK]", "").replace("[/THINK]", "")
-                                lastMsg.thoughtContent += clean
-                                if (chatViewModel.isThinkingEnabled) {
-                                    chatViewModel.reasoningLogsText += clean
-                                }
-                                if (frag.contains("[/THINK]") || frag.contains("[REPLY]")) {
+                                if (processedFrag.contains("[/THINK]") || processedFrag.contains("[REPLY]")) {
+                                    val splitTag = if (processedFrag.contains("[REPLY]")) "[REPLY]" else "[/THINK]"
+                                    val thoughtPart = processedFrag.substringBefore(splitTag)
+                                    val replyPart = processedFrag.substringAfter(splitTag)
+
+                                    lastMsg.thoughtContent += thoughtPart
+                                    if (chatViewModel.isThinkingEnabled) chatViewModel.reasoningLogsText += thoughtPart
+
                                     lastMsg.isThinking = false
+                                    lastMsg.content += replyPart.replace("[/REPLY]", "")
+                                } else {
+                                    lastMsg.thoughtContent += processedFrag
+                                    if (chatViewModel.isThinkingEnabled) chatViewModel.reasoningLogsText += processedFrag
                                 }
                             } else {
-                                // v3.6: Strict streaming with tag stripping
-                                val cleanReply = frag.replace("[REPLY]", "").replace("[/REPLY]", "").replace("[/THINK]", "")
+                                val cleanReply = processedFrag.replace("[REPLY]", "").replace("[/REPLY]", "").replace("[/THINK]", "")
                                 lastMsg.content += cleanReply
                             }
-                            
                             if (packet.isFinal) {
                                 val text = lastMsg.content.trim()
                                 // v5.4: Extended end markers to prevent false Continue button triggers
