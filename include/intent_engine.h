@@ -14,6 +14,7 @@
 #include "memory_manager.h"
 #include "long_term_memory.h"
 #include "myanmar_segmenter.h"
+#include "capability_types.h"
 #include <nlohmann/json.hpp>
 
 namespace Ronin::Kernel::Intent {
