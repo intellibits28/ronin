@@ -58,7 +58,7 @@ void AgentScheduler::workerLoop() {
 
         if (current_session && m_executor) {
             LOGI(TAG, "Worker executing multi-step plan for session: %s", current_session->getSessionId().c_str());
-            current_session->setState(AgentState::EXECUTING);
+            current_session->setState(AgentState::EXECUTE);
             
             // v7.0 Layer 10 Integration: Execute each step in the plan
             for (const auto& step : current_session->getPlan()) {

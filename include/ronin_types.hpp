@@ -76,17 +76,16 @@ struct Result {
 // --- v7.0 Agent Mode Data Structures ---
 
 /**
- * Execution states for the dynamic Task Planner.
+ * v7.0 Execution states for the dynamic Task Planner.
  */
 enum class AgentState : uint32_t {
-    IDLE = 0,
+    CHAT = 0,
     PLANNING = 1,
-    RESOLVING_DEPENDENCIES = 2,
-    WAITING_FOR_PERMISSION = 3,
-    REQUIRES_CONFIRMATION = 4, // HITL Pause
-    EXECUTING = 5,
-    COMPLETED = 6,
-    FAILED = 7
+    ASK_CONFIRMATION = 2,
+    WAITING_PERMISSION = 3,
+    EXECUTE = 4,
+    COMPLETED = 5,
+    FAILED = 6
 };
 
 /**
