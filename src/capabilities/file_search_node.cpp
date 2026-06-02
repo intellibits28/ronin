@@ -48,7 +48,8 @@ std::vector<std::string> FileSearchNode::search(const std::string& query) {
     return result_list;
 }
 
-std::string FileSearchNode::execute(const std::string& param) {
+std::string FileSearchNode::execute(const std::string& param, ToolContext* context) {
+    (void)context;
     m_last_results = search(param);
     if (m_last_results.empty()) return "No files found.";
     std::string out = "Results:\n";

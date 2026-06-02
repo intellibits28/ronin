@@ -97,9 +97,10 @@ public:
      * Phase 4.0: Vtable-based Skill Execution
      * @param nodeId The target node ID from the Reasoning Spine.
      * @param param The extracted parameter for this tool.
+     * @param context Optional shared context for tool chaining.
      * @return A response string for the UI.
      */
-    std::string executeSkill(uint32_t nodeId, const std::string& param);
+    std::string executeSkill(uint32_t nodeId, const std::string& param, ToolContext* context = nullptr);
 
     /**
      * Checks if a modular skill is registered for the given ID.

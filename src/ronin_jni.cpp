@@ -200,15 +200,24 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
         if (!all_fulfilled) {
             LOGI(TAG, "v7.0: Dependency Missing: %s", missing_dep.c_str());
             result = "I need more information about: " + missing_dep + ". Could you please clarify?";
-            // In a full implementation, we would save the plan state to g_kernel->state_
         } else {
-            // Check for Safety Confirmation (HITL)
+            // v7.0: Execute Dynamic Tool Chain via GraphExecutor
+            LOGI(TAG, "v7.0: All dependencies fulfilled. Executing tool chain...");
+            
+            // Map intent names to node IDs (simplified for prototype)
+            std::vector<uint32_t> steps;
             if (plan.intent_name == "send_sms") {
-                result = "Confirm: Send location to " + plan.dependencies[0].value + "?";
-                // Trigger HITL state in UI via callback or status field
+                steps = {5, 8}; // LocationNode (5) -> SMS Node (placeholder ID 8 for now)
+                // Actually, let's use real IDs from registry if possible
+            }
+            
+            if (g_graph_executor) {
+                result = g_graph_executor->executeChain(steps, rawInput, 
+                    [](uint32_t id, const std::string& p, ToolContext* ctx) {
+                        return g_intent_engine->executeSkill(id, p, ctx);
+                    });
             } else {
-                // Execute directly if safe
-                result = "Executing Plan: " + plan.intent_name;
+                result = "Error: Graph Executor not ready.";
             }
         }
     } else {

@@ -30,7 +30,7 @@ public:
      * Executes the reasoning loop.
      * Implementation moved to .cpp to avoid incomplete type errors.
      */
-    std::string execute(const std::string& param) override;
+    std::string execute(const std::string& param, ToolContext* context = nullptr) override;
 
     void setKernel(Ronin::Kernel::RoninKernel* kernel) { m_kernel = kernel; }
 

@@ -206,7 +206,7 @@ IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     LOGI(TAG, "IntentEngine: Hardened v4.8 token-based registry initialized.");
 }
 
-std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param) {
+std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param, ToolContext* context) {
     if (nodeId == 0) return m_last_command_output;
 
     if (m_current_tool_depth >= MAX_TOOL_CALL_DEPTH) {
@@ -221,7 +221,7 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
             return "Current Location (Cached): (" + std::to_string(m_last_lat) + ", " + std::to_string(m_last_lon) + ")";
         }
 
-        std::string result = it->second->execute(param);
+        std::string result = it->second->execute(param, context);
 
         // Phase 4: Recursive Tool Dispatching for Chat
         if (nodeId == 1) {

@@ -83,6 +83,32 @@ GraphExecutor::TaskPlan GraphExecutor::generatePlan(const std::string& input) {
     return plan;
 }
 
+std::string GraphExecutor::executeChain(const std::vector<uint32_t>& steps, 
+                                       const std::string& input,
+                                       std::function<std::string(uint32_t, const std::string&, ToolContext*)> skill_executor) {
+    std::string final_result;
+    m_blackboard.data.clear(); // Fresh start for each chain
+    
+    LOGI(TAG, "v7.0: Starting dynamic tool chain execution (%zu steps).", steps.size());
+    
+    for (uint32_t nodeId : steps) {
+        LOGI(TAG, "> Executing Node ID %u in chain.", nodeId);
+        std::string result = skill_executor(nodeId, input, &m_blackboard);
+        
+        // Append result to final output
+        if (!final_result.empty()) final_result += "\n";
+        final_result += result;
+        
+        // Optional: Termination logic if a critical node fails
+        if (result.find("Error:") != std::string::npos) {
+            LOGW(TAG, "Node ID %u failed. Breaking chain.", nodeId);
+            break;
+        }
+    }
+    
+    return final_result;
+}
+
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
     std::lock_guard<std::mutex> lock(m_mutex);

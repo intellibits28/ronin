@@ -3,10 +3,12 @@
 #include "capability_graph.h"
 #include "thompson_sampler.h"
 #include "graph_storage.h"
+#include "ronin_types.hpp"
 #include <future>
 #include <atomic>
 #include <mutex>
 #include <thread>
+#include <functional>
 
 namespace Ronin::Kernel::Reasoning {
 
@@ -34,6 +36,13 @@ public:
     // Feedback loop with dynamic learning rate based on risk level
     void reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk);
 
+    /**
+     * v7.0: Executes a deterministic sequence of nodes (Dynamic Tool Chaining).
+     */
+    std::string executeChain(const std::vector<uint32_t>& steps, 
+                             const std::string& input,
+                             std::function<std::string(uint32_t, const std::string&, ToolContext*)> skill_executor);
+
     // Forces an async sync to the L3 Deep-store
     void triggerAsyncSync();
 
@@ -41,6 +50,7 @@ private:
     CapabilityGraph& m_graph;
     GraphStorage& m_storage;
     ThompsonSampler m_sampler;
+    ToolContext m_blackboard; // v7.0 Shared Memory (Blackboard)
     
     std::mutex m_mutex;
     std::atomic<bool> m_is_syncing{false};

@@ -13,7 +13,7 @@ public:
     SkillPriority getPriority() const override { return SkillPriority::MEDIUM; }
     uint32_t getLoraId() const override { return 3; }
 
-    std::string execute(const std::string& param) override {
+    std::string execute(const std::string& param, ToolContext* context = nullptr) override {
         if (!m_ltm) return "ArchiveNode Error: Memory Spine not attached.";
 
         bool ok = m_ltm->consolidate(param);

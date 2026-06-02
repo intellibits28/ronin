@@ -14,7 +14,7 @@ public:
     SkillPriority getPriority() const override { return SkillPriority::MEDIUM; }
     uint32_t getLoraId() const override { return 2; }
 
-    std::string execute(const std::string& param) override {
+    std::string execute(const std::string& param, ToolContext* context = nullptr) override {
         if (!m_ltm) return "MemoryNode Error: Memory Spine not attached.";
 
         auto results = m_ltm->search(param);

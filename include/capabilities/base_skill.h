@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory>
+#include "ronin_types.hpp"
 
 namespace Ronin::Kernel::Capability {
 
@@ -27,9 +28,10 @@ public:
     /**
      * Primary execution entry point for the skill.
      * @param param The extracted parameter for this tool.
+     * @param context Optional shared context for tool chaining (Blackboard).
      * @return A response string for the Reasoning Console/UI.
      */
-    virtual std::string execute(const std::string& param) = 0;
+    virtual std::string execute(const std::string& param, ToolContext* context = nullptr) = 0;
 
     /**
      * @return The internal registration name of this skill.

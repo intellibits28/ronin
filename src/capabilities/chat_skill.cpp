@@ -4,7 +4,8 @@
 
 namespace Ronin::Kernel::Capability {
 
-std::string ChatSkill::execute(const std::string& param) {
+std::string ChatSkill::execute(const std::string& param, ToolContext* context) {
+    (void)context;
     // ၁။ User Message ကို Database ထဲ အရင်သိမ်းမည်
     if (m_ltm) {
         m_ltm->storeMessage("user", param);

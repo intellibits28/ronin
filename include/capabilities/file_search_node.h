@@ -16,7 +16,7 @@ public:
     std::string getName() const override { return "FileSearchNode"; }
     SkillPriority getPriority() const override { return SkillPriority::LOW; }
     uint32_t getLoraId() const override { return 2; }
-    std::string execute(const std::string& param) override;
+    std::string execute(const std::string& param, ToolContext* context = nullptr) override;
 
     /**
      * Executes the actual FTS5 search query.

@@ -11,25 +11,29 @@ static bool isActionOff(const std::string& param) {
             param.find("ပိတ်") != std::string::npos);
 }
 
-std::string FlashlightNode::execute(const std::string& param) {
+std::string FlashlightNode::execute(const std::string& param, ToolContext* context) {
+    (void)context;
     bool intent_param = !isActionOff(param);
     bool success = HardwareBridge::triggerSync(getId(), intent_param);
     if (!success) return "Error: Flashlight trigger failed.";
     return intent_param ? "Success: Action Initiated - Flashlight ON" : "Success: Action Initiated - Flashlight OFF";
 }
 
-std::string LocationNode::execute(const std::string& param) {
+std::string LocationNode::execute(const std::string& param, ToolContext* context) {
+    (void)context;
     return HardwareBridge::requestData(getId());
 }
 
-std::string WifiNode::execute(const std::string& param) {
+std::string WifiNode::execute(const std::string& param, ToolContext* context) {
+    (void)context;
     bool intent_param = !isActionOff(param);
     bool success = HardwareBridge::triggerSync(getId(), intent_param);
     if (!success) return "Error: WiFi trigger failed.";
     return intent_param ? "Success: Action Initiated - WiFi ENABLE" : "Success: Action Initiated - WiFi DISABLE";
 }
 
-std::string BluetoothNode::execute(const std::string& param) {
+std::string BluetoothNode::execute(const std::string& param, ToolContext* context) {
+    (void)context;
     bool intent_param = !isActionOff(param);
     bool success = HardwareBridge::triggerSync(getId(), intent_param);
     if (!success) return "Error: Bluetooth trigger failed.";
