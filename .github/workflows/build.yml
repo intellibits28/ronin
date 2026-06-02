@@ -71,14 +71,42 @@ jobs:
           build-root-directory: android
           gradle-version: 8.9
           cache-disabled: true
-          arguments: clean assembleDebug
+          arguments: |
+            clean assembleDebug 
+            -PversionCode=${{ github.run_number }} 
+            -PversionName=${{ format('{0}.{1}', env.CALVER, github.run_number) }}
+        env:
+          CALVER: v26.06.02
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk ronin-kernel-debug.apk
+        run: |
+          VERSION_NAME="26.06.02.${{ github.run_number }}"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "ronin-kernel-${VERSION_NAME}.apk"
+          echo "VERSION_TAG=v${VERSION_NAME}" >> $GITHUB_ENV
 
       - name: Upload Ronin APK
         uses: actions/upload-artifact@v4
         with:
           name: ronin-kernel-app-debug
-          path: ronin-kernel-debug.apk
+          path: "*.apk"
           retention-days: 5
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.VERSION_TAG }}
+          name: Ronin Kernel ${{ env.VERSION_TAG }}
+          files: "*.apk"
+          draft: false
+          prerelease: true
+          body: |
+            ### 🧠 Ronin Kernel: ${{ env.VERSION_TAG }}
+            Automatic hardened release with unified CalVer.
+            
+            **Changes in this version:**
+            - Unified APK and Release versioning (${{ env.VERSION_TAG }}).
+            - Sequential run number tracking.
+            - Phased Agent Mode Framework (10-Layer Architecture).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
