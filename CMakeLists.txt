@@ -43,6 +43,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(flatbuffers)
 
+FetchContent_Declare(
+  json
+  GIT_REPOSITORY https://github.com/nlohmann/json.git
+  GIT_TAG v3.11.3
+)
+FetchContent_MakeAvailable(json)
+
 # FlatBuffers Schema Generation
 set(FBS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/checkpoint_schema.fbs)
 set(FBS_OUT ${CMAKE_CURRENT_BINARY_DIR}/checkpoint_schema_generated.h)
@@ -94,7 +101,7 @@ target_include_directories(ronin_core PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(ronin_core PUBLIC sqlite3_lib)
+target_link_libraries(ronin_core PUBLIC sqlite3_lib nlohmann_json::nlohmann_json)
 
 # --- JNI Implementation ---
 if(ANDROID)

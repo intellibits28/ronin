@@ -14,8 +14,26 @@
 #include "memory_manager.h"
 #include "long_term_memory.h"
 #include "myanmar_segmenter.h"
+#include <nlohmann/json.hpp>
 
 namespace Ronin::Kernel::Intent {
+
+/**
+ * v7.0: Orchestrates complex multi-step tasks using LLM-driven planning.
+ */
+class TaskPlanner {
+public:
+    explicit TaskPlanner(Model::InferenceEngine* engine);
+    
+    // Generates a structured JSON plan from raw user input
+    AgentPlan createPlan(const std::string& input);
+    
+    // Parses raw JSON string into AgentPlan struct
+    bool parsePlan(const std::string& json_str, AgentPlan& out_plan);
+
+private:
+    Model::InferenceEngine* m_engine;
+};
 
 enum class ThermalState {
     NORMAL,
@@ -40,6 +58,7 @@ public:
      */
     void setInferenceEngine(std::unique_ptr<Model::InferenceEngine> engine) {
         m_inference_engine = std::move(engine);
+        m_planner = std::make_unique<TaskPlanner>(m_inference_engine.get());
     }
 
     /**
@@ -47,6 +66,10 @@ public:
      */
     Model::InferenceEngine* getInferenceEngine() const {
         return m_inference_engine.get();
+    }
+
+    TaskPlanner* getPlanner() const {
+        return m_planner.get();
     }
 
     /**
@@ -209,6 +232,7 @@ private:
     Ronin::Kernel::Capability::SkillPriority m_current_priority = Ronin::Kernel::Capability::SkillPriority::LOW;
     std::string m_last_command_output;
     int m_current_tool_depth = 0;
+    std::unique_ptr<TaskPlanner> m_planner;
 
     // Phase 4.0: Vtable-based Skill Registry
     std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;

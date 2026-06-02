@@ -51,11 +51,25 @@ struct CognitiveIntent {
 };
 
 /**
+ * v7.0 Blackboard: Shared context for tool-to-tool communication.
+ */
+struct ToolContext {
+    std::unordered_map<std::string, std::string> data;
+    
+    void write(const std::string& key, const std::string& val) { data[key] = val; }
+    std::string read(const std::string& key) const { 
+        auto it = data.find(key);
+        return (it != data.end()) ? it->second : "";
+    }
+};
+
+/**
  * Result of a capability node execution.
  */
 struct Result {
   bool success;
   int32_t statusCode;
+  std::string payload; // Added for tool chain output
 };
 
 // --- v7.0 Agent Mode Data Structures ---

@@ -180,11 +180,36 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     auto intent = g_intent_engine->process(rawInput, "");
     std::string result;
 
-    if (intent.category == IntentCategory::AGENT_PLAN && g_graph_executor) {
-        LOGI(TAG, "Executing Adaptive Agent Plan...");
-        auto plan = g_graph_executor->generatePlan(rawInput);
-        for (uint32_t step_id : plan.steps) {
-            result += g_intent_engine->executeSkill(step_id, rawInput) + " ";
+    if (intent.category == IntentCategory::AGENT_PLAN && g_intent_engine->getPlanner()) {
+        LOGI(TAG, "v7.0: Initializing Agent Planning State...");
+        
+        auto plan = g_intent_engine->getPlanner()->createPlan(rawInput);
+        
+        // --- Dependency Resolution ---
+        bool all_fulfilled = true;
+        std::string missing_dep;
+        
+        for (const auto& dep : plan.dependencies) {
+            if (!dep.is_fulfilled) {
+                all_fulfilled = false;
+                missing_dep = dep.name;
+                break;
+            }
+        }
+        
+        if (!all_fulfilled) {
+            LOGI(TAG, "v7.0: Dependency Missing: %s", missing_dep.c_str());
+            result = "I need more information about: " + missing_dep + ". Could you please clarify?";
+            // In a full implementation, we would save the plan state to g_kernel->state_
+        } else {
+            // Check for Safety Confirmation (HITL)
+            if (plan.intent_name == "send_sms") {
+                result = "Confirm: Send location to " + plan.dependencies[0].value + "?";
+                // Trigger HITL state in UI via callback or status field
+            } else {
+                // Execute directly if safe
+                result = "Executing Plan: " + plan.intent_name;
+            }
         }
     } else {
         result = g_intent_engine->executeSkill(intent.id, rawInput);

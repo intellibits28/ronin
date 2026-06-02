@@ -31,6 +31,73 @@
 
 namespace Ronin::Kernel::Intent {
 
+using json = nlohmann::json;
+
+// --- TaskPlanner Implementation ---
+
+TaskPlanner::TaskPlanner(Model::InferenceEngine* engine) : m_engine(engine) {}
+
+bool TaskPlanner::parsePlan(const std::string& json_str, AgentPlan& out_plan) {
+    try {
+        auto j = json::parse(json_str);
+        
+        out_plan.intent_name = j.value("intent", "unknown");
+        out_plan.raw_json = json_str;
+        
+        if (j.contains("dependencies") && j["dependencies"].is_array()) {
+            for (const auto& d : j["dependencies"]) {
+                Dependency dep;
+                dep.name = d.get<std::string>();
+                dep.is_fulfilled = false;
+                
+                // Check if parameter for this dependency is already provided
+                if (j.contains("parameters") && j["parameters"].contains(dep.name)) {
+                    dep.value = j["parameters"][dep.name].is_string() ? j["parameters"][dep.name].get<std::string>() : "";
+                    dep.is_fulfilled = !dep.value.empty();
+                }
+                
+                out_plan.dependencies.push_back(dep);
+            }
+        }
+        
+        LOGI("RoninPlanner", "Plan parsed: %s with %zu dependencies.", 
+             out_plan.intent_name.c_str(), out_plan.dependencies.size());
+        return true;
+    } catch (const std::exception& e) {
+        LOGE("RoninPlanner", "JSON Parse Error: %s", e.what());
+        return false;
+    }
+}
+
+AgentPlan TaskPlanner::createPlan(const std::string& input) {
+    AgentPlan plan;
+    if (!m_engine) return plan;
+
+    // v7.0: Special System Prompt for Planning State
+    std::string system_prompt = 
+        "You are the Ronin Task Planner. Output ONLY valid JSON. "
+        "Your goal is to identify the user's intent and its dependencies. "
+        "Common intents: send_sms, show_map, check_weather. "
+        "Common dependencies: contact_name, location, phone_number. "
+        "Schema: {\"intent\": \"intent_name\", \"dependencies\": [\"dep1\", \"dep2\"], \"parameters\": {\"param1\": \"val1\"}}";
+
+    // Requesting a reasoning cycle from the engine
+    std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
+    
+    // Attempt to extract JSON from model output (in case of prose wrapping)
+    size_t start = llm_json.find("{");
+    size_t end = llm_json.rfind("}");
+    if (start != std::string::npos && end != std::string::npos) {
+        llm_json = llm_json.substr(start, end - start + 1);
+    }
+
+    if (!parsePlan(llm_json, plan)) {
+        plan.intent_name = "fallback_chat";
+    }
+    
+    return plan;
+}
+
 ThermalState g_thermal_state = ThermalState::NORMAL;
 
 static std::string strip_punctuation(const std::string& s) {
@@ -133,6 +200,8 @@ IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     m_skill_registry[7] = std::make_shared<BluetoothNode>();
     m_skill_registry[8] = std::make_shared<MemorySearchSkill>(m_ltm);
     m_skill_registry[9] = std::make_shared<ArchiveMemorySkill>(m_ltm);
+    
+    m_planner = std::make_unique<TaskPlanner>(nullptr); // Will be attached later
     
     LOGI(TAG, "IntentEngine: Hardened v4.8 token-based registry initialized.");
 }
@@ -286,16 +355,25 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // --- Adaptive Intent Categorization ---
     IntentCategory final_cat = IntentCategory::CHAT_QUERY;
     
-    // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
-    bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
-                      token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
-                      token_set.count("ရှိလဲ") || token_set.count("သိချင်လို့") ||
-                      token_set.count("how") || token_set.count("what") || 
-                      token_set.count("why") || token_set.count("explain");
+    // v7.0: Enhanced Semantic Analysis for AGENT_PLAN
+    bool is_complex = (token_set.count("sms") || token_set.count("message")) && 
+                      (token_set.count("location") || token_set.count("တည်နေရာ"));
+    
+    if (is_complex) {
+        final_cat = IntentCategory::AGENT_PLAN;
+        LOGI(TAG, "v7.0 Complex Request Detected -> Category AGENT_PLAN");
+    } else {
+        // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
+        bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
+                          token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
+                          token_set.count("ရှိလဲ") || token_set.count("သိချင်လို့") ||
+                          token_set.count("how") || token_set.count("what") || 
+                          token_set.count("why") || token_set.count("explain");
 
-    // Check for Memory Query (e.g. "မှတ်မိလား", "အရင်က")
-    if (token_set.count("မှတ်မိလား") || token_set.count("အရင်က") || token_set.count("မှတ်ဉာဏ်")) {
-        final_cat = IntentCategory::MEMORY_QUERY;
+        // Check for Memory Query (e.g. "မှတ်မိလား", "အရင်က")
+        if (token_set.count("မှတ်မိလား") || token_set.count("အရင်က") || token_set.count("မှတ်ဉာဏ်")) {
+            final_cat = IntentCategory::MEMORY_QUERY;
+        }
     }
 
     for (const auto& cap : m_capabilities) {
