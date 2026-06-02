@@ -25,9 +25,16 @@ struct AgentTask {
     }
 };
 
+namespace Reasoning {
+    class GraphExecutor;
+}
+
 class AgentScheduler {
 public:
     static AgentScheduler& getInstance();
+
+    // Sets the workflow optimizer (Layer 10)
+    void setExecutor(Reasoning::GraphExecutor* executor) { m_executor = executor; }
 
     // Adds a session to the execution queue
     void schedule(std::shared_ptr<AgentSession> session, uint32_t priority = 5);
@@ -50,6 +57,7 @@ private:
     
     std::thread m_worker;
     std::atomic<bool> m_running{false};
+    Reasoning::GraphExecutor* m_executor = nullptr;
 };
 
 } // namespace Ronin::Kernel

@@ -4,6 +4,7 @@
 #include "thompson_sampler.h"
 #include "graph_storage.h"
 #include "ronin_types.hpp"
+#include "capability_dispatcher.h"
 #include <future>
 #include <atomic>
 #include <mutex>
@@ -35,6 +36,11 @@ public:
 
     // Feedback loop with dynamic learning rate based on risk level
     void reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk);
+
+    /**
+     * v7.0 Layer 10: Optimizes and executes a capability request using Thompson Sampling.
+     */
+    void optimizeAndDispatch(CapabilityType type, const std::string& session_id, const std::string& payload);
 
     /**
      * v7.0: Executes a deterministic sequence of nodes (Dynamic Tool Chaining).

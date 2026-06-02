@@ -110,6 +110,46 @@ std::string GraphExecutor::executeChain(const std::vector<uint32_t>& steps,
 }
 
 
+void GraphExecutor::optimizeAndDispatch(CapabilityType type, const std::string& session_id, const std::string& payload) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    // v7.0 Layer 10 logic: Redundancy Optimization
+    // In a production scenario, we'd look up all nodes that provide 'type'
+    // For this prototype, we'll simplify and use a specific node search
+    
+    uint32_t best_node_id = 0;
+    float max_sample = -1.0f;
+    
+    // Simple heuristic: search nodes that match the CapabilityType
+    // (This assumes CapabilityGraph is populated with such mappings)
+    for (auto& [id, node] : m_graph.getNodes()) {
+        // Mock check: if node provides the capability
+        // (In a full build, Node would have a CapabilityType field)
+        
+        float sample = m_sampler.sampleBeta(10, 1); // Mock weights for now
+        if (sample > max_sample) {
+            max_sample = sample;
+            best_node_id = id;
+        }
+    }
+
+    // v7.0: Construct Request and Dispatch to Layer 2
+    CapabilityRequest req;
+    req.request_id = std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+    req.capability = type;
+    req.session_id = session_id;
+    req.payload_json = payload;
+
+    LOGI(TAG, "L10 Optimizer: Selected Node %u for Capability %d. Dispatching to L2...", 
+         best_node_id, static_cast<int>(type));
+         
+    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id](const CapabilityResponse& res) {
+        // Feedback loop: Report outcome back to Thompson Sampler
+        this->reportOutcome(0, best_node_id, res.success, RiskLevel::MEDIUM);
+    });
+}
+
+
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
     std::lock_guard<std::mutex> lock(m_mutex);
     

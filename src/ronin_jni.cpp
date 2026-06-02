@@ -14,6 +14,8 @@
 #include "graph_storage.h"
 #include "memory_manager.h"
 #include "long_term_memory.h"
+#include "agent_scheduler.h"
+#include "session_manager.h"
 #include "capabilities/hardware_bridge.h"
 #include "capabilities/chat_skill.h"
 #include "models/inference_engine.h"
@@ -97,6 +99,8 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
         g_cap_graph = std::make_unique<CapabilityGraph>();
         g_graph_storage->loadGraph(*g_cap_graph);
         g_graph_executor = std::make_unique<GraphExecutor>(*g_cap_graph, *g_graph_storage);
+        
+        AgentScheduler::getInstance().setExecutor(g_graph_executor.get());
 
         // Fix MemoryManager initialization
         g_memory_manager = std::make_unique<MemoryManager>(2048);
@@ -187,10 +191,17 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
         LOGI(TAG, "v7.2: Initializing Advanced Agent Planning...");
         
         auto plan = g_intent_engine->getPlanner()->createPlan(rawInput);
+        
+        // v7.0 Layer 7: Create Agent Session
+        auto session = SessionManager::getInstance().createSession(plan.intent_name);
+        session->setPlan(plan.plan_steps);
+        for (const auto& [k, v] : plan.parameters) session->setParameter(k, v);
+
         bool is_safe = true;
 
         // --- Human-in-the-Loop (HITL) Safety Confirmation ---
         if (plan.intent_name == "send_sms" || plan.intent_name == "send_sms_with_location") {
+            session->setState(AgentState::ASK_CONFIRMATION);
             jclass cls = env->GetObjectClass(thiz);
             jmethodID hitlMethod = env->GetMethodID(cls, "requestHITLConfirmation", "(Ljava/lang/String;Ljava/lang/String;)Z");
             if (hitlMethod) {
@@ -208,43 +219,16 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
                 
                 if (approved == JNI_FALSE) {
                     is_safe = false;
+                    session->setState(AgentState::FAILED);
                     result = "Action cancelled by user.";
                 }
             }
         }
         
         if (is_safe) {
-            if (plan.intent_name == "send_sms" || plan.intent_name == "send_sms_with_location" || 
-                plan.intent_name == "show_map" || plan.intent_name == "show_location") {
-                // Execute directly via Kotlin for tools requiring Android APIs
-                jclass cls = env->GetObjectClass(thiz);
-                jmethodID execMethod = env->GetMethodID(cls, "executeAgentTool", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
-                if (execMethod) {
-                    nlohmann::json jPayload;
-                    for (const auto& [key, val] : plan.parameters) jPayload[key] = val;
-                    
-                    jstring jToolName = env->NewStringUTF(plan.intent_name.c_str());
-                    jstring jParams = env->NewStringUTF(jPayload.dump().c_str());
-                    jstring jResult = (jstring)env->CallObjectMethod(thiz, execMethod, jToolName, jParams);
-                    
-                    result = ConvertJStringToString(env, jResult);
-                    
-                    env->DeleteLocalRef(jToolName);
-                    env->DeleteLocalRef(jParams);
-                    env->DeleteLocalRef(jResult);
-                }
-            } else if (g_graph_executor) {
-                // For other complex plans, execute via GraphExecutor chain
-                std::vector<uint32_t> steps = {1}; // Default fallback
-                if (plan.intent_name == "measure_resonance") {
-                    steps = {4, 1}; // Flashlight (4) + Chat (1) as placeholder
-                }
-                
-                result = g_graph_executor->executeChain(steps, rawInput, 
-                    [](uint32_t id, const std::string& p, ToolContext* ctx) {
-                        return g_intent_engine->executeSkill(id, p, ctx);
-                    });
-            }
+            LOGI(TAG, "Scheduling session %s for execution.", session->getSessionId().c_str());
+            AgentScheduler::getInstance().schedule(session, 5); // Priority 5
+            result = "Agent is executing the plan: " + plan.intent_name;
         }
     } else {
         result = g_intent_engine->executeSkill(intent.id, rawInput);

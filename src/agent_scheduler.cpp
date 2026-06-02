@@ -1,5 +1,7 @@
 #include "agent_scheduler.h"
+#include "graph_executor.h"
 #include "ronin_log.h"
+#include <chrono>
 
 #define TAG "RoninScheduler"
 
@@ -54,14 +56,31 @@ void AgentScheduler::workerLoop() {
             m_task_queue.pop();
         }
 
-        if (current_session) {
-            LOGI(TAG, "Worker executing task for session: %s", current_session->getSessionId().c_str());
-            // Transition to execution or FSM logic (to be integrated)
+        if (current_session && m_executor) {
+            LOGI(TAG, "Worker executing multi-step plan for session: %s", current_session->getSessionId().c_str());
             current_session->setState(AgentState::EXECUTING);
             
-            // For now, this is a placeholder for the actual execution engine call
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            // v7.0 Layer 10 Integration: Execute each step in the plan
+            for (const auto& step : current_session->getPlan()) {
+                LOGI(TAG, "L8 Scheduler: Orchestrating step '%s'...", step.c_str());
+                
+                // v7.0 Layer 5: Map plan string to CapabilityType (Simplified)
+                CapabilityType type = CapabilityType::NONE;
+                if (step.find("location") != std::string::npos) type = CapabilityType::LOCATION;
+                else if (step.find("sms") != std::string::npos) type = CapabilityType::SMS;
+                else if (step.find("sensor") != std::string::npos) type = CapabilityType::SENSOR;
+                
+                if (type != CapabilityType::NONE) {
+                    // Call Layer 10 Optimizer
+                    m_executor->optimizeAndDispatch(type, current_session->getSessionId(), "");
+                }
+                
+                // Small delay between steps to simulate network/system latency
+                std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            }
+            
             current_session->setState(AgentState::COMPLETED);
+            LOGI(TAG, "Worker session %s execution chain completed.", current_session->getSessionId().c_str());
         }
     }
 }
