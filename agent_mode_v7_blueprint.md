@@ -10,15 +10,18 @@ Transform Ronin from a conversational chatbot into an **Autonomous Task Solver**
 ### Phase 1: The LLM-driven Task Planner (Gemma 4 as the Brain)
 Instead of relying solely on brittle keyword matching, Ronin will use Gemma 4 to dynamically generate execution plans in JSON format.
 - **Workflow:** User input -> System Prompt asking for a plan -> LLM outputs a JSON plan.
-- **Example Output:**
+- **Example Output (v7.2 Advanced Schema):**
   ```json
   {
-    "intent": "send_sms",
-    "dependencies": ["contact_name", "location"],
-    "parameters": {"contact_name": "Aung Aung"}
+    "intent": "send_sms_with_location",
+    "required_tools": ["LocationProvider", "SmsSender"],
+    "required_permissions": ["ACCESS_FINE_LOCATION", "SEND_SMS"],
+    "plan": ["resolve_recipient", "get_current_location", "compose_message", "send_sms"],
+    "parameters": {"recipient": "Aung Aung"}
   }
   ```
-- **Implementation:** Introduce a `TaskPlanner` within `IntentEngine` to parse and validate these JSON structures.
+- **Implementation:** Introduce a `TaskPlanner` within `IntentEngine` to parse and validate these structured JSON plans.
+
 
 ### Phase 2: Dependency Resolver & Human-in-the-Loop (HITL)
 Plans are not executed blindly. A state machine will validate dependencies and ensure safety.
