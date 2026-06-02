@@ -34,7 +34,7 @@ public:
 private:
     std::string m_session_id;
     std::string m_intent;
-    AgentState m_state = AgentState::IDLE;
+    AgentState m_state = AgentState::CHAT;
     
     std::unordered_map<std::string, std::string> m_parameters;
     std::vector<std::string> m_plan_steps;

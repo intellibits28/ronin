@@ -120,7 +120,7 @@ struct CognitiveState {
   int iterations;
   
   // v7.0 Agent Mode Fields
-  AgentState agent_state = AgentState::IDLE;
+  AgentState agent_state = AgentState::CHAT;
   AgentPlan current_plan;
 };
 
