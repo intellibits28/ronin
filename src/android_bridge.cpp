@@ -1,4 +1,6 @@
 #include "android_bridge.h"
+#include "capability_response.h"
+#include "capability_dispatcher.h"
 #include "ronin_log.h"
 #include <nlohmann/json.hpp>
 
