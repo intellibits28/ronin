@@ -359,17 +359,17 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     bool is_complex = (token_set.count("sms") || token_set.count("message")) && 
                       (token_set.count("location") || token_set.count("တည်နေရာ"));
     
+    // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
+    bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
+                      token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
+                      token_set.count("ရှိလဲ") || token_set.count("သိချင်လို့") ||
+                      token_set.count("how") || token_set.count("what") || 
+                      token_set.count("why") || token_set.count("explain");
+
     if (is_complex) {
         final_cat = IntentCategory::AGENT_PLAN;
         LOGI(TAG, "v7.0 Complex Request Detected -> Category AGENT_PLAN");
     } else {
-        // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
-        bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
-                          token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
-                          token_set.count("ရှိလဲ") || token_set.count("သိချင်လို့") ||
-                          token_set.count("how") || token_set.count("what") || 
-                          token_set.count("why") || token_set.count("explain");
-
         // Check for Memory Query (e.g. "မှတ်မိလား", "အရင်က")
         if (token_set.count("မှတ်မိလား") || token_set.count("အရင်က") || token_set.count("မှတ်ဉာဏ်")) {
             final_cat = IntentCategory::MEMORY_QUERY;
