@@ -81,7 +81,21 @@ void AgentScheduler::workerLoop() {
                     type = CapabilityType::SENSOR;
                 
                 if (type != CapabilityType::NONE) {
-                    m_executor->optimizeAndDispatch(type, current_session->getSessionId(), "");
+                    // Call Layer 10 Optimizer and WAIT for completion (v7.4)
+                    auto future = m_executor->optimizeAndDispatch(type, current_session->getSessionId(), "");
+                    
+                    try {
+                        bool step_success = future.get(); // Synchronous block in worker thread
+                        if (!step_success) {
+                            LOGE(TAG, "L8 Scheduler: Step '%s' failed. Stopping chain.", step.c_str());
+                            Capability::HardwareBridge::pushMessage("[AGENT] Step failed: " + step);
+                            current_session->setState(AgentState::FAILED);
+                            break;
+                        }
+                    } catch (const std::exception& e) {
+                        LOGE(TAG, "L8 Scheduler: Exception during step '%s': %s", step.c_str(), e.what());
+                        break;
+                    }
                 }
                 
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));

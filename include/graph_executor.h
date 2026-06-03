@@ -40,7 +40,7 @@ public:
     /**
      * v7.0 Layer 10: Optimizes and executes a capability request using Thompson Sampling.
      */
-    void optimizeAndDispatch(CapabilityType type, const std::string& session_id, const std::string& payload);
+    std::future<bool> optimizeAndDispatch(CapabilityType type, const std::string& session_id, const std::string& payload);
 
     /**
      * v7.0: Executes a deterministic sequence of nodes (Dynamic Tool Chaining).

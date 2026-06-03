@@ -110,43 +110,53 @@ std::string GraphExecutor::executeChain(const std::vector<uint32_t>& steps,
 }
 
 
-void GraphExecutor::optimizeAndDispatch(CapabilityType type, const std::string& session_id, const std::string& payload) {
+std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const std::string& session_id, const std::string& payload) {
+    auto promise = std::make_shared<std::promise<bool>>();
+    std::future<bool> future = promise->get_future();
+
     std::lock_guard<std::mutex> lock(m_mutex);
     
     // v7.0 Layer 10 logic: Redundancy Optimization
-    // In a production scenario, we'd look up all nodes that provide 'type'
-    // For this prototype, we'll simplify and use a specific node search
-    
-    uint32_t best_node_id = 0;
+    uint32_t best_node_id = 1; // Default
     float max_sample = -1.0f;
     
-    // Simple heuristic: search nodes that match the CapabilityType
-    // (This assumes CapabilityGraph is populated with such mappings)
     for (auto& [id, node] : m_graph.getNodes()) {
-        // Mock check: if node provides the capability
-        // (In a full build, Node would have a CapabilityType field)
-        
-        float sample = m_sampler.sampleBeta(10, 1); // Mock weights for now
+        float sample = m_sampler.sampleBeta(10, 1);
         if (sample > max_sample) {
             max_sample = sample;
             best_node_id = id;
         }
     }
 
-    // v7.0: Construct Request and Dispatch to Layer 2
+    // v7.0: Construct Request with Blackboard data injection
     CapabilityRequest req;
     req.request_id = std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
     req.capability = type;
     req.session_id = session_id;
-    req.payload_json = payload;
+    
+    // Inject all blackboard data into payload
+    nlohmann::json jPayload = nlohmann::json::parse(payload.empty() ? "{}" : payload);
+    for (const auto& [key, val] : m_blackboard.storage) jPayload["context_" + key] = val;
+    req.payload_json = jPayload.dump();
 
-    LOGI(TAG, "L10 Optimizer: Selected Node %u for Capability %d. Dispatching to L2...", 
+    LOGI(TAG, "L10 Optimizer: Selected Node %u for Capability %d. Dispatching...", 
          best_node_id, static_cast<int>(type));
          
-    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id](const CapabilityResponse& res) {
-        // Feedback loop: Report outcome back to Thompson Sampler
+    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise](const CapabilityResponse& res) {
+        // v7.4: Feedback + Blackboard Storage
         this->reportOutcome(0, best_node_id, res.success, RiskLevel::MEDIUM);
+        
+        if (res.success) {
+            std::lock_guard<std::mutex> inner_lock(m_mutex);
+            std::string cap_key = "last_result";
+            m_blackboard.storage[cap_key] = res.payload_json;
+            LOGI(TAG, "L10: Blackboard updated with result from Node %u", best_node_id);
+        }
+        
+        promise->set_value(res.success);
     });
+
+    return future;
 }
 
 
