@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cctype>
 #include <cstring>
+#include <nlohmann/json.hpp>
 #include "ronin_log.h"
 
 #ifdef ANDROID
