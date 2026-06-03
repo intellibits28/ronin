@@ -196,22 +196,26 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     std::string result;
 
     if (intent.category == IntentCategory::AGENT_PLAN && g_intent_engine->getPlanner()) {
-        LOGI(TAG, "v7.2: Initializing Advanced Agent Planning...");
+        LOGI(TAG, "v7.7: Initializing Robust Agent Planning...");
         
-        // v7.6: Suppress tokens during internal planning
+        // Suppress tokens during internal planning
         native_setInferenceSilence(env, thiz, JNI_TRUE);
         auto plan = g_intent_engine->getPlanner()->createPlan(rawInput);
         native_setInferenceSilence(env, thiz, JNI_FALSE);
         
-        // v7.0 Layer 7: Create Agent Session
         auto session = SessionManager::getInstance().createSession(plan.intent_name);
         session->setPlan(plan.plan_steps);
         for (const auto& [k, v] : plan.parameters) session->setParameter(k, v);
 
         bool is_safe = true;
+        std::string i_lower = plan.intent_name;
+        std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
 
-        // --- Human-in-the-Loop (HITL) Safety Confirmation ---
-        if (plan.intent_name == "send_sms" || plan.intent_name == "send_sms_with_location") {
+        // --- v7.7: Robust HITL Safety Check (Substring matching) ---
+        if (i_lower.find("sms") != std::string::npos || 
+            i_lower.find("message") != std::string::npos || 
+            i_lower.find("ပို့") != std::string::npos) {
+            
             session->setState(AgentState::ASK_CONFIRMATION);
             jclass cls = env->GetObjectClass(thiz);
             jmethodID hitlMethod = env->GetMethodID(cls, "requestHITLConfirmation", "(Ljava/lang/String;Ljava/lang/String;)Z");
@@ -221,7 +225,6 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
                 else if (plan.parameters.count("contact_name")) recipient = plan.parameters["contact_name"];
                 
                 std::string hitl_msg = "Do you want to send your location to " + recipient + " via SMS?";
-                
                 jstring jIntentName = env->NewStringUTF(plan.intent_name.c_str());
                 jstring jMessage = env->NewStringUTF(hitl_msg.c_str());
                 jboolean approved = env->CallBooleanMethod(thiz, hitlMethod, jIntentName, jMessage);
@@ -237,12 +240,7 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
         }
         
         if (is_safe) {
-            std::string i_lower = plan.intent_name;
-            std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
-
-            LOGI(TAG, "Scheduling session %s for execution. Intent: %s", 
-                 session->getSessionId().c_str(), i_lower.c_str());
-            
+            LOGI(TAG, "v7.7: Scheduling session %s. Intent: %s", session->getSessionId().c_str(), i_lower.c_str());
             AgentScheduler::getInstance().schedule(session, 5); 
             result = "Agent is executing the plan: " + plan.intent_name;
         }

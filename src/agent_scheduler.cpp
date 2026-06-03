@@ -68,14 +68,14 @@ void AgentScheduler::workerLoop() {
                 LOGI(TAG, "L8 Scheduler: Orchestrating step '%s'...", step.c_str());
                 Capability::HardwareBridge::pushMessage("[AGENT] Step: " + step);
                 
-                // v7.0 Layer 5: Map plan string to CapabilityType (Simplified)
+                // v7.7 Robust Step-to-Capability Mapping
                 CapabilityType type = CapabilityType::NONE;
                 std::string s_lower = step;
                 std::transform(s_lower.begin(), s_lower.end(), s_lower.begin(), ::tolower);
 
-                if (s_lower.find("location") != std::string::npos || s_lower.find("တည်နေရာ") != std::string::npos) 
+                if (s_lower.find("location") != std::string::npos || s_lower.find("တည်နေရာ") != std::string::npos || s_lower.find("နေရာ") != std::string::npos) 
                     type = CapabilityType::LOCATION;
-                else if (s_lower.find("sms") != std::string::npos || s_lower.find("message") != std::string::npos) 
+                else if (s_lower.find("sms") != std::string::npos || s_lower.find("message") != std::string::npos || s_lower.find("ပို့") != std::string::npos || s_lower.find("send") != std::string::npos) 
                     type = CapabilityType::SMS;
                 else if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
                     type = CapabilityType::MAP;
@@ -83,6 +83,7 @@ void AgentScheduler::workerLoop() {
                     type = CapabilityType::SENSOR;
                 
                 if (type != CapabilityType::NONE) {
+                    LOGI(TAG, "L8: Mapped step to CapabilityType %d", static_cast<int>(type));
                     // Call Layer 10 Optimizer and WAIT for completion (v7.4)
                     auto future = m_executor->optimizeAndDispatch(type, current_session->getSessionId(), "");
                     
