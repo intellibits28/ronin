@@ -226,8 +226,13 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
         }
         
         if (is_safe) {
-            LOGI(TAG, "Scheduling session %s for execution.", session->getSessionId().c_str());
-            AgentScheduler::getInstance().schedule(session, 5); // Priority 5
+            std::string i_lower = plan.intent_name;
+            std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
+
+            LOGI(TAG, "Scheduling session %s for execution. Intent: %s", 
+                 session->getSessionId().c_str(), i_lower.c_str());
+            
+            AgentScheduler::getInstance().schedule(session, 5); 
             result = "Agent is executing the plan: " + plan.intent_name;
         }
     } else {

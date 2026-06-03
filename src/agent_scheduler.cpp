@@ -1,6 +1,7 @@
 #include "agent_scheduler.h"
 #include "graph_executor.h"
 #include "ronin_log.h"
+#include "capabilities/hardware_bridge.h"
 #include <chrono>
 
 #define TAG "RoninScheduler"
@@ -60,26 +61,34 @@ void AgentScheduler::workerLoop() {
             LOGI(TAG, "Worker executing multi-step plan for session: %s", current_session->getSessionId().c_str());
             current_session->setState(AgentState::EXECUTE);
             
+            Capability::HardwareBridge::pushMessage("[AGENT] Starting: " + current_session->getIntent());
+
             // v7.0 Layer 10 Integration: Execute each step in the plan
             for (const auto& step : current_session->getPlan()) {
                 LOGI(TAG, "L8 Scheduler: Orchestrating step '%s'...", step.c_str());
+                Capability::HardwareBridge::pushMessage("[AGENT] Step: " + step);
                 
                 // v7.0 Layer 5: Map plan string to CapabilityType (Simplified)
                 CapabilityType type = CapabilityType::NONE;
-                if (step.find("location") != std::string::npos) type = CapabilityType::LOCATION;
-                else if (step.find("sms") != std::string::npos) type = CapabilityType::SMS;
-                else if (step.find("sensor") != std::string::npos) type = CapabilityType::SENSOR;
+                std::string s_lower = step;
+                std::transform(s_lower.begin(), s_lower.end(), s_lower.begin(), ::tolower);
+
+                if (s_lower.find("location") != std::string::npos || s_lower.find("တည်နေရာ") != std::string::npos) 
+                    type = CapabilityType::LOCATION;
+                else if (s_lower.find("sms") != std::string::npos || s_lower.find("message") != std::string::npos) 
+                    type = CapabilityType::SMS;
+                else if (s_lower.find("sensor") != std::string::npos) 
+                    type = CapabilityType::SENSOR;
                 
                 if (type != CapabilityType::NONE) {
-                    // Call Layer 10 Optimizer
                     m_executor->optimizeAndDispatch(type, current_session->getSessionId(), "");
                 }
                 
-                // Small delay between steps to simulate network/system latency
-                std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
             
             current_session->setState(AgentState::COMPLETED);
+            Capability::HardwareBridge::pushMessage("[AGENT] Task completed successfully.");
             LOGI(TAG, "Worker session %s execution chain completed.", current_session->getSessionId().c_str());
         }
     }

@@ -377,7 +377,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                       (token_set.count("location") || token_set.count("တည်နေရာ"));
     
     bool is_simple_agent = token_set.count("location") || token_set.count("တည်နေရာ") || 
-                           token_set.count("မြေပုံ") || token_set.count("map");
+                           token_set.count("မြေပုံ") || token_set.count("map") ||
+                           token_set.count("show") || token_set.count("ပြ") ||
+                           token_set.count("navigate") || token_set.count("open");
 
     // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
     bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
