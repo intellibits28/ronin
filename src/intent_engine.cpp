@@ -75,15 +75,15 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v7.2: Forceful Task Planner Prompt (Sequential Planning)
+    // v7.3: Strictly Formatted Task Planner Prompt
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Task Planner. "
-        "Goal: Convert User input into a valid JSON execution plan. "
-        "Identity: Local kernel authority. Full hardware access. "
-        "Rule 1: Output ONLY valid JSON. "
-        "Rule 2: Differentiate between functional 'required_tools' and system 'required_permissions'. "
-        "Rule 3: Break the task into sequential 'plan' steps for the GraphExecutor. "
-        "Example Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [], \"parameters\": {}}";
+        "[INTERNAL] You are the Ronin Task Planner. Output ONLY valid JSON. "
+        "Language: English or Myanmar only. No Chinese. "
+        "Identity: Local hardware agent. Full permissions GRANTED. "
+        "Rule 1: Output ONLY valid JSON block. "
+        "Rule 2: 'required_tools' and 'required_permissions' are lists of strings. "
+        "Rule 3: 'plan' must be a simple array of STRINGS describing the steps. "
+        "Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [\"step1\", \"step2\"], \"parameters\": {}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
@@ -372,14 +372,15 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // --- Adaptive Intent Categorization ---
     IntentCategory final_cat = IntentCategory::CHAT_QUERY;
     
-    // v7.0: Enhanced Semantic Analysis for AGENT_PLAN
-    bool is_complex = (token_set.count("sms") || token_set.count("message")) && 
-                      (token_set.count("location") || token_set.count("တည်နေရာ"));
+    // v7.2: Enhanced Semantic Analysis for AGENT_PLAN
+    bool is_complex = (token_set.count("sms") || token_set.count("message") || token_set.count("မက်ဆေ့") || token_set.count("ပို့")) && 
+                      (token_set.count("location") || token_set.count("တည်နေရာ") || token_set.count("နေရာ"));
     
     bool is_simple_agent = token_set.count("location") || token_set.count("တည်နေရာ") || 
                            token_set.count("မြေပုံ") || token_set.count("map") ||
                            token_set.count("show") || token_set.count("ပြ") ||
-                           token_set.count("navigate") || token_set.count("open");
+                           token_set.count("navigate") || token_set.count("open") ||
+                           token_set.count("ပို့ပေး");
 
     // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
     bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 

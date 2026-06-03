@@ -252,7 +252,7 @@ class MainActivity : ComponentActivity() {
                             if (packet.isFinal) {
                                 val text = lastMsg.content.trim()
                                 // v5.4: Extended end markers to prevent false Continue button triggers
-                                val endMarkers = listOf("။", ".", "?", "!", "\"", ")", "]", "}", "*", "_", ">", "`", ":", ";", "၊")
+                                val endMarkers = listOf("။", ".", "?", "!", "\"", ")", "]", "}", "*", "_", ">", "`", ":", ";", "၊", "}")
                                 if (text.isNotEmpty() && endMarkers.none { text.endsWith(it) }) {
                                     // Additional check: If it ends with a Myanmar consonant but no vowel/vowel-killer, it might be truncated.
                                     lastMsg.isTruncated = true
@@ -372,7 +372,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkAndRequestPermissions() {
-        val permissions = mutableListOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.CAMERA)
+        val permissions = mutableListOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            android.Manifest.permission.CAMERA,
+            android.Manifest.permission.SEND_SMS,
+            android.Manifest.permission.READ_CONTACTS
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
         requestPermissionLauncher.launch(permissions.toTypedArray())
     }
@@ -401,10 +407,21 @@ class MainActivity : ComponentActivity() {
         nativeEngine.executeAgentToolCallback = { toolName, params ->
             when (toolName) {
                 "send_sms", "send_sms_with_location" -> {
-                    val contact = params["contact_name"] ?: params["recipient"] ?: "Unknown"
-                    val location = params["location"] ?: "Unknown Location"
-                    // Placeholder for actual SMS sending logic via Android Intent/API
-                    "Sent SMS to $contact with payload: $location"
+                    try {
+                        val recipient = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: "Unknown"
+                        val location = params["location"] ?: params["current_location"] ?: "Unknown Location"
+                        
+                        val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            getSystemService(android.telephony.SmsManager::class.java)
+                        } else {
+                            android.telephony.SmsManager.getDefault()
+                        }
+                        
+                        smsManager.sendTextMessage(recipient, null, "Ronin Agent: My location is $location", null, null)
+                        "Sent SMS to $recipient successfully."
+                    } catch (e: Exception) {
+                        "SMS Tool Error: ${e.message}"
+                    }
                 }
                 "show_map", "show_location" -> {
                     try {
