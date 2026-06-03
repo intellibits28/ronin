@@ -354,8 +354,7 @@ static JNINativeMethod g_methods[] = {
     {"resetContextNativeJNI", "()V", (void*)native_resetContext},
     {"loadMyanmarDictionaryNative", "(Ljava/lang/String;)Z", (void*)native_loadMyanmarDictionary},
     {"reportOutcomeNative", "(IIZI)V", (void*)native_reportOutcome},
-    {"requestCancellationNative", "()V", (void*)native_requestCancellation},
-    {"onCapabilityRequest", "(Ljava/lang/String;)Ljava/lang/String;", (void*)nullptr} // We'll use this for Kotlin call
+    {"requestCancellationNative", "()V", (void*)native_requestCancellation}
 };
 
 static JNINativeMethod g_worker_methods[] = {
