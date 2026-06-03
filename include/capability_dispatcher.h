@@ -27,7 +27,7 @@ public:
 private:
     CapabilityDispatcher() = default;
     
-    std::mutex m_mutex;
+    std::recursive_mutex m_mutex;
     std::unordered_map<std::string, ResponseCallback> m_pending_requests;
 };
 

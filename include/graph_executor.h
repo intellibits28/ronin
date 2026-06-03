@@ -58,7 +58,7 @@ private:
     ThompsonSampler m_sampler;
     ToolContext m_blackboard; // v7.0 Shared Memory (Blackboard)
     
-    std::mutex m_mutex;
+    std::recursive_mutex m_mutex;
     std::atomic<bool> m_is_syncing{false};
     std::thread m_sync_thread;
     
