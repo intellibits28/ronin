@@ -39,6 +39,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         drivers["LOCATION"] = LocationDriver(context)
         drivers["MAP"] = LocationDriver(context) // Re-use location driver for map display trigger
         drivers["SMS"] = SmsDriver()
+        
+        // v8.2: Pipeline Diagnostic Driver (Echo)
+        drivers["TEST"] = object : ICapabilityDriver {
+            override fun execute(request: JSONObject): JSONObject {
+                Log.i("RoninKernel_Native", "L4 Diagnostic: Pipeline Test Driver Executed.")
+                return JSONObject().put("success", true).put("message", "Pipeline Clear: OK")
+            }
+        }
     }
 
     /**

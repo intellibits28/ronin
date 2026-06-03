@@ -80,6 +80,8 @@ void AgentScheduler::workerLoop() {
                     type = CapabilityType::SMS;
                 else if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
                     type = CapabilityType::MAP;
+                else if (s_lower.find("mock_test") != std::string::npos)
+                    type = CapabilityType::TEST;
                 
                 if (type != CapabilityType::NONE) {
                     LOGI(TAG, "L8 Scheduler: Dispatching Capability %d to L10 Optimizer...", static_cast<int>(type));

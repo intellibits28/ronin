@@ -194,7 +194,7 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     if (rawInput == "/test_agent") {
         LOGI(TAG, "L3: Diagnostic /test_agent triggered. Creating mock session...");
         auto session = SessionManager::getInstance().createSession("mock_test");
-        session->setPlan({"mock_location_step", "mock_sms_step"});
+        session->setPlan({"mock_test_step_1", "mock_test_step_2"});
         AgentScheduler::getInstance().schedule(session, 10);
         return env->NewStringUTF("[DIAGNOSTIC] Mock Agent session scheduled. Watch logcat.");
     }
