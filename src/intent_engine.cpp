@@ -142,14 +142,31 @@ static std::string trim(const std::string& s) {
     auto end = s.find_last_not_of(" \t\n\r");
     return s.substr(start, end - start + 1);
 }
-
 bool IntentEngine::handleCommand(const std::string& input, std::string& output) {
     if (input.empty() || input[0] != '/') return false;
 
     std::string cmd = trim(input);
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
 
-    if (cmd == "/more" || cmd == "/next") return false;
+    if (cmd.starts_with("/debug_intent")) {
+        std::string text = (cmd.length() > 14) ? cmd.substr(14) : "";
+        auto intent = process(text, "");
+        output = "--- Intent Debug ---\nText: " + text + 
+                 "\nCategory: " + std::to_string(static_cast<int>(intent.category)) +
+                 "\nSkill ID: " + std::to_string(intent.id) +
+                 "\nPlanner Ready: " + (m_planner ? "YES" : "NO");
+        return true;
+    }
+
+    if (cmd == "/test_agent") {
+        output = "[DIAGNOSTIC] Triggering Mock Agent Sequence...\nStep 1: JNI Routing test.\nStep 2: Scheduler Test.";
+        // We'll hook this to a mock intent in JNI
+        return true;
+    }
+
+    if (cmd == "/clear") {
+        return false; // Handled elsewhere
+    }
 
     using namespace Ronin::Kernel::Capability;
 

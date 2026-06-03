@@ -596,6 +596,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             confirmButton = {
                 Button(
                     onClick = {
+                        Log.i("RoninKernel_MainActivity", "HITL: User Approved action.")
                         chatViewModel.showHITLDialog = false
                         chatViewModel.onHITLResult?.invoke(true)
                     },
@@ -604,6 +605,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             },
             dismissButton = {
                 TextButton(onClick = { 
+                    Log.i("RoninKernel_MainActivity", "HITL: User Rejected action.")
                     chatViewModel.showHITLDialog = false
                     chatViewModel.onHITLResult?.invoke(false)
                 }) { Text("Reject", color = Color.Red) }

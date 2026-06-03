@@ -175,10 +175,13 @@ void native_reportOutcome(JNIEnv *env, jobject thiz, jint sourceId, jint targetI
 }
 
 void native_setInferenceSilence(JNIEnv *env, jobject thiz, jboolean silent) {
+    LOGI(TAG, "L3 Bridge: Setting silentInference to %d", silent);
     jclass cls = env->GetObjectClass(thiz);
     jfieldID field = env->GetFieldID(cls, "silentInference", "Z");
     if (field) {
         env->SetBooleanField(thiz, field, silent);
+    } else {
+        LOGE(TAG, "L3 Bridge ERROR: Could not find silentInference field!");
     }
 }
 
@@ -186,6 +189,16 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     if (!g_intent_engine) return env->NewStringUTF("Error: Engine Not Ready.");
     
     std::string rawInput = ConvertJStringToString(env, input);
+    
+    // v8.0 Diagnostic Trigger
+    if (rawInput == "/test_agent") {
+        LOGI(TAG, "L3: Diagnostic /test_agent triggered. Creating mock session...");
+        auto session = SessionManager::getInstance().createSession("mock_test");
+        session->setPlan({"mock_location_step", "mock_sms_step"});
+        AgentScheduler::getInstance().schedule(session, 10);
+        return env->NewStringUTF("[DIAGNOSTIC] Mock Agent session scheduled. Watch logcat.");
+    }
+
     std::string customSystem = ConvertJStringToString(env, systemPrompt);
     
     if (!customSystem.empty() && g_kernel) {
