@@ -129,6 +129,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun loadMyanmarDictionaryNative(path: String): Boolean
     private external fun reportOutcomeNative(sourceId: Int, targetId: Int, success: Boolean, risk: Int)
     private external fun requestCancellationNative()
+    private external fun setInferenceSilenceNative(silent: Boolean)
 
     enum class RiskLevel(val value: Int) {
         LOW(0), MEDIUM(1), HIGH(2), EXTREME(3)
@@ -406,6 +407,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     var onSystemTiersUpdateCallback: ((Float, Float, Float) -> Unit)? = null
     var requestHITLConfirmationCallback: ((String, String, (Boolean) -> Unit) -> Unit)? = null
     var executeAgentToolCallback: ((String, Map<String, String>) -> String)? = null
+    
+    // v7.6: Flag to silence internal system tokens (Planning, Summarization) from UI
+    var silentInference = false
 
     fun setOfflineModeSafe(offline: Boolean) {
         if (isLibLoaded) try { setOfflineModeNative(offline) } catch (e: Exception) {}

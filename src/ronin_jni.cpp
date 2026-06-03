@@ -174,6 +174,14 @@ void native_reportOutcome(JNIEnv *env, jobject thiz, jint sourceId, jint targetI
     }
 }
 
+void native_setInferenceSilence(JNIEnv *env, jobject thiz, jboolean silent) {
+    jclass cls = env->GetObjectClass(thiz);
+    jfieldID field = env->GetFieldID(cls, "silentInference", "Z");
+    if (field) {
+        env->SetBooleanField(thiz, field, silent);
+    }
+}
+
 jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring systemPrompt) {
     if (!g_intent_engine) return env->NewStringUTF("Error: Engine Not Ready.");
     
@@ -190,7 +198,10 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     if (intent.category == IntentCategory::AGENT_PLAN && g_intent_engine->getPlanner()) {
         LOGI(TAG, "v7.2: Initializing Advanced Agent Planning...");
         
+        // v7.6: Suppress tokens during internal planning
+        native_setInferenceSilence(env, thiz, JNI_TRUE);
         auto plan = g_intent_engine->getPlanner()->createPlan(rawInput);
+        native_setInferenceSilence(env, thiz, JNI_FALSE);
         
         // v7.0 Layer 7: Create Agent Session
         auto session = SessionManager::getInstance().createSession(plan.intent_name);
@@ -359,7 +370,8 @@ static JNINativeMethod g_methods[] = {
     {"resetContextNativeJNI", "()V", (void*)native_resetContext},
     {"loadMyanmarDictionaryNative", "(Ljava/lang/String;)Z", (void*)native_loadMyanmarDictionary},
     {"reportOutcomeNative", "(IIZI)V", (void*)native_reportOutcome},
-    {"requestCancellationNative", "()V", (void*)native_requestCancellation}
+    {"requestCancellationNative", "()V", (void*)native_requestCancellation},
+    {"setInferenceSilenceNative", "(Z)V", (void*)native_setInferenceSilence}
 };
 
 static JNINativeMethod g_worker_methods[] = {

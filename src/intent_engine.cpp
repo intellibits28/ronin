@@ -373,14 +373,14 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     IntentCategory final_cat = IntentCategory::CHAT_QUERY;
     
     // v7.2: Enhanced Semantic Analysis for AGENT_PLAN
-    bool is_complex = (token_set.count("sms") || token_set.count("message") || token_set.count("မက်ဆေ့") || token_set.count("ပို့")) && 
+    bool is_complex = (token_set.count("sms") || token_set.count("message") || token_set.count("မက်ဆေ့") || token_set.count("ပို့") || token_set.count("send")) && 
                       (token_set.count("location") || token_set.count("တည်နေရာ") || token_set.count("နေရာ"));
     
     bool is_simple_agent = token_set.count("location") || token_set.count("တည်နေရာ") || 
                            token_set.count("မြေပုံ") || token_set.count("map") ||
                            token_set.count("show") || token_set.count("ပြ") ||
                            token_set.count("navigate") || token_set.count("open") ||
-                           token_set.count("ပို့ပေး");
+                           token_set.count("ပို့ပေး") || token_set.count("send");
 
     // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
     bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 

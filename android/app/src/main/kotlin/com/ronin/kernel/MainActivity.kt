@@ -217,6 +217,8 @@ class MainActivity : ComponentActivity() {
 
             launch {
                 nativeEngine.inferenceFlow.collect { packet ->
+                    if (nativeEngine.silentInference) return@collect
+                    
                     if (chatViewModel.messages.isNotEmpty()) {
                         val lastMsg = chatViewModel.messages.last()
                         if (lastMsg.sender == "Ronin") {
