@@ -12,15 +12,15 @@ CapabilityDispatcher& CapabilityDispatcher::getInstance() {
 }
 
 void CapabilityDispatcher::dispatch(const CapabilityRequest& req, ResponseCallback callback) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    
-    LOGI(TAG, "Dispatching capability request: %s (Type: %d)", req.request_id.c_str(), static_cast<int>(req.capability));
-    
-    if (callback) {
-        m_pending_requests[req.request_id] = callback;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        LOGI(TAG, "Dispatching capability request: %s (Type: %d)", req.request_id.c_str(), static_cast<int>(req.capability));
+        if (callback) {
+            m_pending_requests[req.request_id] = callback;
+        }
     }
 
-    // Layer 3 Integration: Hand off to AndroidBridge
+    // Layer 3 Integration: Hand off to AndroidBridge (OUTSIDE lock to prevent deadlocks)
     AndroidBridge::sendRequest(req);
 }
 
