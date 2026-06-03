@@ -68,7 +68,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
             // v7.8: Direct UI Delegation for MAP and SMS (Deterministic Routing)
             if (capability == "MAP" || capability == "SMS") {
-                return executeAgentTool(capability, payload)
+                val res = executeAgentTool(capability, payload)
+                return org.json.JSONObject().apply {
+                    put("success", !res.startsWith("Error"))
+                    put("message", res)
+                }.toString()
             }
 
             val driver = drivers[capability]

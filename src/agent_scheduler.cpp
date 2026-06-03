@@ -65,6 +65,7 @@ void AgentScheduler::workerLoop() {
             Capability::HardwareBridge::pushMessage("[AGENT] Starting: " + current_session->getIntent());
 
             // v7.0 Layer 10 Integration: Execute each step in the plan
+            bool all_steps_success = true;
             for (const auto& step : current_session->getPlan()) {
                 LOGI(TAG, "L8 Scheduler: Executing Step -> '%s'", step.c_str());
                 Capability::HardwareBridge::pushMessage("[AGENT] Step: " + step);
@@ -74,12 +75,13 @@ void AgentScheduler::workerLoop() {
                 std::string s_lower = step;
                 std::transform(s_lower.begin(), s_lower.end(), s_lower.begin(), ::tolower);
 
-                if (s_lower.find("location") != std::string::npos || s_lower.find("တည်နေရာ") != std::string::npos || s_lower.find("နေရာ") != std::string::npos || s_lower.find("mock_location") != std::string::npos) 
-                    type = CapabilityType::LOCATION;
+                // v8.5: Prioritize MAP and SMS over generic LOCATION
+                if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
+                    type = CapabilityType::MAP;
                 else if (s_lower.find("sms") != std::string::npos || s_lower.find("message") != std::string::npos || s_lower.find("ပို့") != std::string::npos || s_lower.find("send") != std::string::npos || s_lower.find("mock_sms") != std::string::npos) 
                     type = CapabilityType::SMS;
-                else if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
-                    type = CapabilityType::MAP;
+                else if (s_lower.find("location") != std::string::npos || s_lower.find("တည်နေရာ") != std::string::npos || s_lower.find("နေရာ") != std::string::npos || s_lower.find("mock_location") != std::string::npos) 
+                    type = CapabilityType::LOCATION;
                 else if (s_lower.find("mock_test") != std::string::npos)
                     type = CapabilityType::TEST;
                 
@@ -96,10 +98,12 @@ void AgentScheduler::workerLoop() {
                             LOGE(TAG, "L8 Scheduler: Step '%s' failed. Stopping chain.", step.c_str());
                             Capability::HardwareBridge::pushMessage("[AGENT] Step failed: " + step);
                             current_session->setState(AgentState::FAILED);
+                            all_steps_success = false;
                             break;
                         }
                     } catch (const std::exception& e) {
                         LOGE(TAG, "L8 Scheduler: Exception during step '%s': %s", step.c_str(), e.what());
+                        all_steps_success = false;
                         break;
                     }
                 }
@@ -107,9 +111,11 @@ void AgentScheduler::workerLoop() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
             
-            current_session->setState(AgentState::COMPLETED);
-            Capability::HardwareBridge::pushMessage("[AGENT] Task completed successfully.");
-            LOGI(TAG, "Worker session %s execution chain completed.", current_session->getSessionId().c_str());
+            if (all_steps_success) {
+                current_session->setState(AgentState::COMPLETED);
+                Capability::HardwareBridge::pushMessage("[AGENT] Task completed successfully.");
+                LOGI(TAG, "Worker session %s execution chain completed.", current_session->getSessionId().c_str());
+            }
         }
     }
 }

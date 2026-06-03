@@ -437,8 +437,19 @@ class MainActivity : ComponentActivity() {
                         }
                         
                         val body = "Ronin Agent: My location is $location"
-                        smsManager.sendTextMessage(recipient, null, body, null, null)
-                        "Sent SMS to $recipient ($recipientRaw) successfully with location context."
+                        try {
+                            smsManager.sendTextMessage(recipient, null, body, null, null)
+                            "Sent SMS to $recipient ($recipientRaw) successfully."
+                        } catch (e: Exception) {
+                            Log.w("RoninKernel_MainActivity", "Background SMS failed, falling back to Intent: ${e.message}")
+                            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                data = Uri.parse("smsto:$recipient")
+                                putExtra("sms_body", body)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            runOnUiThread { startActivity(intent) }
+                            "Opened SMS composer for $recipient (Background gateway failed)."
+                        }
                     } catch (e: Exception) {
                         "SMS Tool Error: ${e.message}"
                     }

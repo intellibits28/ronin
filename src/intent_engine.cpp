@@ -83,6 +83,7 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "Rule 1: Output ONLY valid JSON block. "
         "Rule 2: 'required_tools' and 'required_permissions' are lists of strings. "
         "Rule 3: 'plan' must be a simple array of STRINGS describing the steps. "
+        "Use explicit verbs like 'OPEN_MAP', 'GET_LOCATION', 'SEND_SMS' in steps. "
         "Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [\"step1\", \"step2\"], \"parameters\": {}}";
 
     // Requesting a reasoning cycle from the engine
