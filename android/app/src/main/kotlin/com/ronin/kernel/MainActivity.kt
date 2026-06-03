@@ -406,10 +406,25 @@ class MainActivity : ComponentActivity() {
         
         nativeEngine.executeAgentToolCallback = { toolName, params ->
             when (toolName) {
-                "send_sms", "send_sms_with_location" -> {
+                "send_sms", "send_sms_with_location", "SMS" -> {
                     try {
-                        val recipient = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: "Unknown"
-                        val location = params["location"] ?: params["current_location"] ?: "Unknown Location"
+                        val recipientRaw = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: "Unknown"
+                        
+                        // v7.5 Simple Contact Resolver Mock
+                        val recipient = if (recipientRaw.equals("Aung Aung", true)) "09123456789" else recipientRaw
+                        
+                        // Extract location from Blackboard if provided
+                        val contextJson = params["context_last_result"]
+                        var location = params["location"] ?: params["current_location"] ?: "Unknown Location"
+                        
+                        if (contextJson != null) {
+                            try {
+                                val json = JSONObject(contextJson)
+                                if (json.has("lat") && json.has("lon")) {
+                                    location = "Lat: ${json.getDouble("lat")}, Lon: ${json.getDouble("lon")}"
+                                }
+                            } catch (e: Exception) {}
+                        }
                         
                         val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                             getSystemService(android.telephony.SmsManager::class.java)
@@ -417,13 +432,14 @@ class MainActivity : ComponentActivity() {
                             android.telephony.SmsManager.getDefault()
                         }
                         
-                        smsManager.sendTextMessage(recipient, null, "Ronin Agent: My location is $location", null, null)
-                        "Sent SMS to $recipient successfully."
+                        val body = "Ronin Agent: My location is $location"
+                        smsManager.sendTextMessage(recipient, null, body, null, null)
+                        "Sent SMS to $recipient ($recipientRaw) successfully with location context."
                     } catch (e: Exception) {
                         "SMS Tool Error: ${e.message}"
                     }
                 }
-                "show_map", "show_location" -> {
+                "show_map", "show_location", "LOCATION", "MAP" -> {
                     try {
                         val locationResult = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token))
                         if (locationResult != null) {

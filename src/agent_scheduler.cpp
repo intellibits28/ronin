@@ -77,6 +77,8 @@ void AgentScheduler::workerLoop() {
                     type = CapabilityType::LOCATION;
                 else if (s_lower.find("sms") != std::string::npos || s_lower.find("message") != std::string::npos) 
                     type = CapabilityType::SMS;
+                else if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
+                    type = CapabilityType::MAP;
                 else if (s_lower.find("sensor") != std::string::npos) 
                     type = CapabilityType::SENSOR;
                 

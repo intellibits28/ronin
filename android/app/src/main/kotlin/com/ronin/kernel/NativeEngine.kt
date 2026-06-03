@@ -37,6 +37,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     init {
         // v7.0 Layer 4: Register Android Drivers
         drivers["LOCATION"] = LocationDriver(context)
+        drivers["MAP"] = LocationDriver(context) // Re-use location driver for map display trigger
         drivers["SMS"] = SmsDriver()
     }
 

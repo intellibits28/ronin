@@ -13,7 +13,8 @@ enum class CapabilityType {
     CAMERA = 4,
     AUDIO = 5,
     FILES = 6,
-    MEMORY = 7
+    MEMORY = 7,
+    MAP = 8
 };
 
 } // namespace Ronin::Kernel
