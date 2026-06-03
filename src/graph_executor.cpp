@@ -49,7 +49,7 @@ GraphExecutor::~GraphExecutor() {
 }
 
 GraphExecutor::TaskPlan GraphExecutor::generatePlan(const std::string& input) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     TaskPlan plan;
     
     // v6.0: Multi-step Path Exploration (Max Depth 4)
@@ -115,7 +115,7 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     auto promise = std::make_shared<std::promise<bool>>();
     std::future<bool> future = promise->get_future();
 
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     
     // v7.0 Layer 10 logic: Redundancy Optimization
     uint32_t best_node_id = 1; // Default
@@ -148,7 +148,7 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
         this->reportOutcome(0, best_node_id, res.success, RiskLevel::MEDIUM);
         
         if (res.success) {
-            std::lock_guard<std::mutex> inner_lock(m_mutex);
+            std::lock_guard<std::recursive_mutex> inner_lock(m_mutex);
             std::string cap_key = "last_result";
             m_blackboard.storage[cap_key] = res.payload_json;
             LOGI(TAG, "L10: Blackboard updated with result from Node %u", best_node_id);
@@ -162,7 +162,7 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
 
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     
     Node* source = m_graph.getNode(source_id);
     if (!source) return;
@@ -209,7 +209,7 @@ void GraphExecutor::triggerAsyncSync() {
     m_sync_thread = std::thread([this]() {
         LOGI(TAG, "GraphExecutor: Starting async weight persistence to SQLite...");
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            std::lock_guard<std::recursive_mutex> lock(m_mutex);
             m_storage.saveGraph(m_graph);
         }
         LOGI(TAG, "GraphExecutor: Successfully synced weights to L3 Deep-store.");

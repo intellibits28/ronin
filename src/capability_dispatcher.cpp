@@ -13,7 +13,7 @@ CapabilityDispatcher& CapabilityDispatcher::getInstance() {
 
 void CapabilityDispatcher::dispatch(const CapabilityRequest& req, ResponseCallback callback) {
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
         LOGI(TAG, "Dispatching capability request: %s (Type: %d)", req.request_id.c_str(), static_cast<int>(req.capability));
         if (callback) {
             m_pending_requests[req.request_id] = callback;
@@ -25,7 +25,7 @@ void CapabilityDispatcher::dispatch(const CapabilityRequest& req, ResponseCallba
 }
 
 void CapabilityDispatcher::onResponse(const CapabilityResponse& res) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     
     LOGI(TAG, "Received capability response: %s (Success: %d)", res.request_id.c_str(), res.success);
     
