@@ -442,19 +442,22 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 "show_map", "show_location", "LOCATION", "MAP" -> {
-                    try {
-                        val locationResult = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token))
-                        if (locationResult != null) {
-                            val uri = Uri.parse("geo:${locationResult.latitude},${locationResult.longitude}?q=${locationResult.latitude},${locationResult.longitude}")
-                            val mapIntent = Intent(Intent.ACTION_VIEW, uri)
-                            mapIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            startActivity(mapIntent)
-                            "Opened Map at ${locationResult.latitude}, ${locationResult.longitude}"
-                        } else {
-                            "Error: Could not retrieve location for map."
+                    // v7.8: Safe async retrieval to prevent UI deadlock
+                    runBlocking(Dispatchers.IO) {
+                        try {
+                            val locationResult = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token), 10, TimeUnit.SECONDS)
+                            if (locationResult != null) {
+                                val uri = Uri.parse("geo:${locationResult.latitude},${locationResult.longitude}?q=${locationResult.latitude},${locationResult.longitude}")
+                                val mapIntent = Intent(Intent.ACTION_VIEW, uri)
+                                mapIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(mapIntent)
+                                "Opened Map at ${locationResult.latitude}, ${locationResult.longitude}"
+                            } else {
+                                "Error: GPS Timeout or unavailable."
+                            }
+                        } catch (e: Exception) {
+                            "Error opening map: ${e.message}"
                         }
-                    } catch (e: Exception) {
-                        "Error opening map: ${e.message}"
                     }
                 }
                 else -> "Tool $toolName executed with params: $params"

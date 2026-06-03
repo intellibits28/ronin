@@ -49,8 +49,21 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return try {
             val request = org.json.JSONObject(jsonStr)
             val capability = request.getString("capability")
-            val driver = drivers[capability]
             
+            // Extract parameters from payload string
+            val params = mutableMapOf<String, String>()
+            val payload = request.optString("payload", "")
+            if (payload.isNotEmpty() && payload.startsWith("{")) {
+                val pObj = org.json.JSONObject(payload)
+                pObj.keys().forEach { params[it] = pObj.getString(it) }
+            }
+
+            // v7.8: Direct UI Delegation for MAP and SMS (Deterministic Routing)
+            if (capability == "MAP" || capability == "SMS") {
+                return executeAgentTool(capability, payload)
+            }
+
+            val driver = drivers[capability]
             val result = driver?.execute(request) 
                 ?: org.json.JSONObject().put("success", false).put("error", "Driver not found: $capability")
             
