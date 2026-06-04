@@ -462,9 +462,8 @@ class MainActivity : ComponentActivity() {
                         var recipient = params["recipient_number"] ?: params["recipient"] ?: params["recipient_name"] ?: ""
                         var lat = "0.0"; var lon = "0.0"
 
-                        if (conJson != null && conJson.startsWith("+")) recipient = conJson
-                        else if (conJson != null && conJson.startsWith("{")) {
-                             recipient = JSONObject(conJson).optString("phone_number", recipient)
+                        if (conJson != null && !conJson.startsWith("Error")) {
+                            recipient = conJson // v9.5: Use direct result from RESOLVE_CONTACT
                         }
                         if (locJson != null && locJson.startsWith("{")) {
                              val j = JSONObject(locJson); lat = j.opt("lat").toString(); lon = j.opt("lon").toString()
@@ -472,22 +471,25 @@ class MainActivity : ComponentActivity() {
 
                         val body = "📍 My Location\nLat: $lat\nLon: $lon\n\nhttps://maps.google.com/?q=$lat,$lon"
                         
-                        if (recipient.matches(Regex("^[+]?[0-9\\- ]{7,}+$"))) {
+                        // v9.5: Robust Intent Dispatch
+                        val cleanRecipient = if (recipient.matches(Regex("^[+]?[0-9\\- ]{7,}+$"))) recipient else ""
+                        
+                        runOnUiThread {
                             try {
-                                val sm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) getSystemService(android.telephony.SmsManager::class.java) else android.telephony.SmsManager.getDefault()
-                                sm.sendTextMessage(recipient, null, body, null, null)
-                                "Sent location SMS to $recipient successfully."
+                                val uri = Uri.parse("sms:$cleanRecipient")
+                                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                    putExtra("sms_body", body)
+                                    putExtra(Intent.EXTRA_TEXT, body)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                startActivity(intent)
+                                Log.i("RoninKernel_MainActivity", "v9.5 SMS Intent started for: $cleanRecipient")
                             } catch (e: Exception) {
-                                runOnUiThread { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(recipient)}")).putExtra("sms_body", body).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                                "Opened SMS composer for $recipient."
+                                Log.e("RoninKernel_MainActivity", "v9.5 SMS Intent FAILED: ${e.message}")
+                                Toast.makeText(applicationContext, "SMS Error: ${e.message}", Toast.LENGTH_LONG).show()
                             }
-                        } else {
-                            runOnUiThread { 
-                                Toast.makeText(this, "Recipient not found. Opening picker.", Toast.LENGTH_SHORT).show()
-                                startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")).putExtra("sms_body", body).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) 
-                            }
-                            "Opened SMS picker."
                         }
+                        "Opened SMS app for ${if(cleanRecipient.isEmpty()) "selection" else cleanRecipient}."
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
                 else -> "Tool $toolName executed with params: $params"

@@ -71,17 +71,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return try {
             val request = org.json.JSONObject(jsonStr)
             val capability = request.getString("capability")
-            
-            // Extract parameters from payload string
-            val params = mutableMapOf<String, String>()
-            val payload = request.optString("payload", "")
-            if (payload.isNotEmpty() && payload.startsWith("{")) {
-                val pObj = org.json.JSONObject(payload)
-                pObj.keys().forEach { params[it] = pObj.getString(it) }
-            }
+            val payload = request.optString("payload", "{}")
 
-            // v7.8: Direct UI Delegation for MAP and SMS (Deterministic Routing)
-            if (capability == "MAP" || capability == "SMS") {
+            // v9.5: Direct UI Delegation (Deterministic Routing)
+            if (capability == "MAP" || capability == "SMS" || capability == "CONTACTS") {
                 val res = executeAgentTool(capability, payload)
                 return org.json.JSONObject().apply {
                     put("success", !res.startsWith("Error"))
@@ -90,10 +83,18 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             }
 
             val driver = drivers[capability]
-            val result = driver?.execute(request) 
+            val driverRes = driver?.execute(request) 
                 ?: org.json.JSONObject().put("success", false).put("error", "Driver not found: $capability")
             
-            result.toString()
+            // v9.5: Wrap raw driver output in a standard response object
+            if (!driverRes.has("success")) {
+                org.json.JSONObject().apply {
+                    put("success", true)
+                    put("payload", driverRes.toString())
+                }.toString()
+            } else {
+                driverRes.toString()
+            }
         } catch (e: Exception) {
             org.json.JSONObject().put("success", false).put("error", "Bridge error: ${e.message}").toString()
         }
