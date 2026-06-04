@@ -75,16 +75,18 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v7.3: Strictly Formatted Task Planner Prompt
+    // v9.0: Multi-step Orchestration Prompt (Industrial-grade)
     std::string system_prompt = 
         "[INTERNAL] You are the Ronin Task Planner. Output ONLY valid JSON. "
         "Language: English or Myanmar only. No Chinese. "
-        "Identity: Local hardware agent. Full permissions GRANTED. "
-        "Rule 1: Output ONLY valid JSON block. "
-        "Rule 2: 'required_tools' and 'required_permissions' are lists of strings. "
-        "Rule 3: 'plan' must be a simple array of STRINGS describing the steps. "
-        "Use explicit verbs like 'OPEN_MAP', 'GET_LOCATION', 'SEND_SMS' in steps. "
-        "Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [\"step1\", \"step2\"], \"parameters\": {}}";
+        "Identity: Industrial hardware agent. Deterministic logic required. "
+        "Rule 1: If the user wants to send something to a name, ALWAYS include a 'RESOLVE_CONTACT' step. "
+        "Rule 2: For 'Send location' requests, use this 3-step sequence: "
+        "1. 'GET_LOCATION' to acquire GPS. "
+        "2. 'RESOLVE_CONTACT' to find the phone number from the name. "
+        "3. 'SEND_SMS' to dispatch the final payload. "
+        "Rule 3: 'plan' must be an array of simple strings using these EXACT verbs. "
+        "Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [\"GET_LOCATION\", \"RESOLVE_CONTACT\", \"SEND_SMS\"], \"parameters\": {\"recipient_name\": \"...\"}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 

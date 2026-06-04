@@ -29,6 +29,7 @@ void AndroidBridge::sendRequest(const CapabilityRequest& req) {
         case CapabilityType::AUDIO: cap_str = "AUDIO"; break;
         case CapabilityType::MAP: cap_str = "MAP"; break;
         case CapabilityType::TEST: cap_str = "TEST"; break;
+        case CapabilityType::CONTACTS: cap_str = "CONTACTS"; break;
         default: cap_str = "UNKNOWN"; break;
     }
     j["capability"] = cap_str;

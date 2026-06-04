@@ -429,10 +429,29 @@ class MainActivity : ComponentActivity() {
         
         nativeEngine.executeAgentToolCallback = { toolName, params ->
             when (toolName) {
+                "CONTACTS" -> {
+                    val name = params["recipient_name"] ?: params["recipient"] ?: params["contact_name"] ?: "Unknown"
+                    val resolved = resolveContactName(name)
+                    if (resolved.startsWith("NOT_FOUND") || resolved == "PERMISSION_DENIED") "Error: No number for $name" else resolved
+                }
                 "send_sms", "send_sms_with_location", "SMS" -> {
                     try {
+                        val contextJson = params["context_last_result"]
                         val recipientRaw = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: "Unknown"
-                        val resolved = resolveContactName(recipientRaw)
+                        
+                        // v9.0: Check blackboard for previously resolved phone number
+                        var recipient = recipientRaw
+                        if (contextJson != null) {
+                            try {
+                                val json = JSONObject(contextJson)
+                                if (json.has("phone_number")) {
+                                    recipient = json.getString("phone_number")
+                                    nativeEngine.pushKernelMessage("[DEBUG] Linked context: $recipient")
+                                }
+                            } catch (e: Exception) {}
+                        }
+
+                        val resolved = resolveContactName(recipient)
                         
                         if (resolved == "PERMISSION_DENIED") {
                             "Error: Contacts permission missing."

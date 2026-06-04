@@ -82,6 +82,8 @@ void AgentScheduler::workerLoop() {
                     type = CapabilityType::SMS;
                 else if (s_lower.find("location") != std::string::npos || s_lower.find("တည်နေရာ") != std::string::npos || s_lower.find("နေရာ") != std::string::npos || s_lower.find("mock_location") != std::string::npos) 
                     type = CapabilityType::LOCATION;
+                else if (s_lower.find("contact") != std::string::npos || s_lower.find("resolve") != std::string::npos || s_lower.find("ရှာ") != std::string::npos)
+                    type = CapabilityType::CONTACTS;
                 else if (s_lower.find("mock_test") != std::string::npos)
                     type = CapabilityType::TEST;
                 

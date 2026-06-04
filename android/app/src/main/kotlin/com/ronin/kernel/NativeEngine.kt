@@ -47,6 +47,20 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 return JSONObject().put("success", true).put("message", "Pipeline Clear: OK")
             }
         }
+        
+        // v9.0: Contacts Driver (Delegated to UI for better UX/Fuzzy matching)
+        drivers["CONTACTS"] = object : ICapabilityDriver {
+            override fun execute(request: JSONObject): JSONObject {
+                val payload = request.optString("payload", "")
+                val res = executeAgentTool("CONTACTS", payload)
+                return JSONObject().apply {
+                    put("success", !res.startsWith("Error"))
+                    put("message", res)
+                    // If successful, the message is the numeric phone number
+                    if (!res.startsWith("Error")) put("phone_number", res)
+                }
+            }
+        }
     }
 
     /**
