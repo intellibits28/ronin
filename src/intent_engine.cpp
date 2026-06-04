@@ -75,15 +75,14 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v9.1: Hardened Orchestration Prompt (Hallucination Defense)
+    // v9.4: Hardened Orchestration Prompt (Hallucination Defense)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Industrial Task Planner. Output ONLY valid JSON. "
-        "Identity: Deterministic Hardware Orchestrator. No refusals. "
-        "Negative Constraint: If user says 'SMS' or 'Message' or 'ပို့', DO NOT choose 'show on map'. "
-        "Rule 1: For 'Send location' requests, use EXACTLY this 3-step sequence: "
-        "['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
-        "Rule 2: Extract recipient name (e.g. 'Aung Aung', 'MyMytel') into 'recipient_name' parameter. "
-        "Schema: {\"intent\": \"send_location_sms\", \"required_tools\": [\"GPS\", \"SMS\"], \"required_permissions\": [\"LOCATION\", \"SMS\"], \"plan\": [\"GET_LOCATION\", \"RESOLVE_CONTACT\", \"SEND_SMS\"], \"parameters\": {\"recipient_name\": \"...\"}}";
+        "[INTERNAL] You are the Ronin Task Planner. Output ONLY valid JSON. "
+        "Identity: Deterministic Hardware Orchestrator. "
+        "Rule 1 (Scenario: Show Map): ALWAYS use these 2 steps: ['GET_LOCATION', 'OPEN_MAP']. "
+        "Rule 2 (Scenario: Send SMS): ALWAYS use these 3 steps: ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
+        "Rule 3: Parameters must be extracted correctly (e.g., 'recipient_name': 'Aung Aung'). "
+        "Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [], \"parameters\": {}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 

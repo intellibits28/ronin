@@ -429,103 +429,66 @@ class MainActivity : ComponentActivity() {
         
         nativeEngine.executeAgentToolCallback = { toolName, params ->
             when (toolName) {
-                "CONTACTS" -> {
+                "CONTACTS", "RESOLVE_CONTACT" -> {
                     val name = params["recipient_name"] ?: params["recipient"] ?: params["contact_name"] ?: "Unknown"
                     val resolved = resolveContactName(name)
-                    if (resolved.startsWith("NOT_FOUND") || resolved == "PERMISSION_DENIED") "Error: No number for $name" else resolved
+                    if (resolved == "PERMISSION_DENIED") "Error: Permission Denied"
+                    else if (resolved.startsWith("NOT_FOUND")) "Error: Contact not found: $name"
+                    else resolved
                 }
-                "send_sms", "send_sms_with_location", "SMS" -> {
+                "LOCATION", "GET_LOCATION" -> {
+                    try {
+                        val task = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
+                        val res = try { Tasks.await(task, 5, TimeUnit.SECONDS) } catch (e: Exception) { Tasks.await(fusedLocationClient.lastLocation, 2, TimeUnit.SECONDS) }
+                        res?.let { JSONObject().put("lat", it.latitude).put("lon", it.longitude).toString() } ?: "Error: GPS Unavailable"
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+                "MAP", "OPEN_MAP", "show_map" -> {
+                    try {
+                        val locJson = params["context_result_LOCATION"] ?: params["payload"]
+                        var lat = "0.0"; var lon = "0.0"
+                        if (locJson != null && locJson.startsWith("{")) {
+                            val j = JSONObject(locJson); lat = j.opt("lat").toString(); lon = j.opt("lon").toString()
+                        }
+                        val uri = Uri.parse("geo:$lat,$lon?q=$lat,$lon")
+                        runOnUiThread { startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        "Opened Map at $lat, $lon"
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+                "SMS", "SEND_SMS", "send_sms" -> {
                     try {
                         val locJson = params["context_result_LOCATION"]
                         val conJson = params["context_result_CONTACTS"]
-                        val recipientRaw = params["recipient_name"] ?: params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: "Unknown"
+                        var recipient = params["recipient_number"] ?: params["recipient"] ?: params["recipient_name"] ?: ""
+                        var lat = "0.0"; var lon = "0.0"
+
+                        if (conJson != null && conJson.startsWith("+")) recipient = conJson
+                        else if (conJson != null && conJson.startsWith("{")) {
+                             recipient = JSONObject(conJson).optString("phone_number", recipient)
+                        }
+                        if (locJson != null && locJson.startsWith("{")) {
+                             val j = JSONObject(locJson); lat = j.opt("lat").toString(); lon = j.opt("lon").toString()
+                        }
+
+                        val body = "📍 My Location\nLat: $lat\nLon: $lon\n\nhttps://maps.google.com/?q=$lat,$lon"
                         
-                        var recipient = recipientRaw
-                        var lat = "0.0"
-                        var lon = "0.0"
-
-                        // v9.2: Persistent Data Linking
-                        if (conJson != null) {
+                        if (recipient.matches(Regex("^[+]?[0-9\\- ]{7,}+$"))) {
                             try {
-                                val json = JSONObject(conJson)
-                                if (json.has("phone_number")) recipient = json.getString("phone_number")
-                            } catch (e: Exception) {}
-                        }
-                        if (locJson != null) {
-                            try {
-                                val json = JSONObject(locJson)
-                                if (json.has("lat") && json.has("lon")) {
-                                    lat = json.opt("lat").toString()
-                                    lon = json.opt("lon").toString()
-                                }
-                            } catch (e: Exception) {}
-                        }
-
-                        val resolved = resolveContactName(recipient)
-                        if (resolved == "PERMISSION_DENIED") {
-                            "Error: Contacts permission missing."
-                        } else {
-                            // v9.3: Fix 'Select Recipient' draft issue.
-                            // If resolved number is still NOT numeric, we should NOT pass it as smsto:
-                            val isNumeric = resolved.matches(Regex("^[+]?[0-9\\- ]+$"))
-                            val finalRecipient = if (isNumeric) resolved else ""
-                            
-                            val body = "📍 Current location\nLat: $lat\nLon: $lon\n\nOpen map:\nhttps://maps.google.com/?q=$lat,$lon"
-                            
-                            val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                getSystemService(android.telephony.SmsManager::class.java)
-                            } else {
-                                @Suppress("DEPRECATION")
-                                android.telephony.SmsManager.getDefault()
-                            }
-                            
-                            try {
-                                if (finalRecipient.isNotEmpty()) {
-                                    smsManager.sendTextMessage(finalRecipient, null, body, null, null)
-                                    "Sent location SMS to $finalRecipient successfully."
-                                } else {
-                                    throw Exception("No numeric recipient found for $recipientRaw")
-                                }
+                                val sm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) getSystemService(android.telephony.SmsManager::class.java) else android.telephony.SmsManager.getDefault()
+                                sm.sendTextMessage(recipient, null, body, null, null)
+                                "Sent location SMS to $recipient successfully."
                             } catch (e: Exception) {
-                                Log.w("RoninKernel_MainActivity", "Background SMS failed, falling back to Intent: ${e.message}")
-                                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                    // v9.3: If no number, let user pick. If number exists, encode it.
-                                    data = Uri.parse("smsto:${Uri.encode(finalRecipient)}")
-                                    putExtra("sms_body", body)
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                runOnUiThread { startActivity(intent) }
-                                if (finalRecipient.isEmpty()) "Opened SMS picker (Could not resolve '$recipientRaw')."
-                                else "Opened SMS composer for $finalRecipient."
+                                runOnUiThread { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(recipient)}")).putExtra("sms_body", body).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                                "Opened SMS composer for $recipient."
                             }
-                        }
-                    } catch (e: Exception) {
-                        "SMS Tool Error: ${e.message}"
-                    }
-                }
-                "show_map", "show_location", "LOCATION", "MAP" -> {
-                    // v9.3: Faster GPS retrieval (5s timeout) + lastLocation fallback
-                    try {
-                        val locationTask = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
-                        var locationResult = try {
-                            Tasks.await(locationTask, 5, TimeUnit.SECONDS)
-                        } catch (e: Exception) {
-                            Log.w("RoninKernel_MainActivity", "GPS Timeout, falling back to lastLocation")
-                            Tasks.await(fusedLocationClient.lastLocation, 2, TimeUnit.SECONDS)
-                        }
-
-                        if (locationResult != null) {
-                            val uri = Uri.parse("geo:${locationResult.latitude},${locationResult.longitude}?q=${locationResult.latitude},${locationResult.longitude}")
-                            val mapIntent = Intent(Intent.ACTION_VIEW, uri)
-                            mapIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            runOnUiThread { startActivity(mapIntent) }
-                            "Opened Map at ${locationResult.latitude}, ${locationResult.longitude}"
                         } else {
-                            "Error: GPS unavailable."
+                            runOnUiThread { 
+                                Toast.makeText(this, "Recipient not found. Opening picker.", Toast.LENGTH_SHORT).show()
+                                startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")).putExtra("sms_body", body).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) 
+                            }
+                            "Opened SMS picker."
                         }
-                    } catch (e: Exception) {
-                        "Error opening map: ${e.message}"
-                    }
+                    } catch (e: Exception) { "Error: ${e.message}" }
                 }
                 else -> "Tool $toolName executed with params: $params"
             }
