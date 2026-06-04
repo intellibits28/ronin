@@ -179,6 +179,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      */
     @Suppress("unused")
     fun pushTokenToUI(fragment: String, isFinal: Boolean) {
+        if (silentInference && !isFinal) return
         scope.launch { _inferenceFlow.emit(InferencePacket(0, fragment, isFinal)) }
     }
 

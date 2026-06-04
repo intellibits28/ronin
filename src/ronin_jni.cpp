@@ -209,13 +209,18 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     std::string result;
 
     if (intent.category == IntentCategory::AGENT_PLAN && g_intent_engine->getPlanner()) {
-        LOGI(TAG, "v7.7: Initializing Robust Agent Planning...");
+        LOGI(TAG, "v7.7: Initializing Robust Agent Planning for input: %s", rawInput.c_str());
         
-        // Suppress tokens during internal planning
+        // v7.6: Suppress tokens during internal planning
         native_setInferenceSilence(env, thiz, JNI_TRUE);
         auto plan = g_intent_engine->getPlanner()->createPlan(rawInput);
         native_setInferenceSilence(env, thiz, JNI_FALSE);
         
+        if (plan.intent_name == "fallback_chat") {
+            LOGW(TAG, "L1 Planner: Falling back to chat due to failure.");
+            return env->NewStringUTF("Agent planning failed. Please try a different request.");
+        }
+
         auto session = SessionManager::getInstance().createSession(plan.intent_name);
         session->setPlan(plan.plan_steps);
         for (const auto& [k, v] : plan.parameters) session->setParameter(k, v);

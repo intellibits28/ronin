@@ -75,21 +75,20 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v9.0: Multi-step Orchestration Prompt (Industrial-grade)
+    // v9.1: Hardened Orchestration Prompt (Hallucination Defense)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Task Planner. Output ONLY valid JSON. "
-        "Language: English or Myanmar only. No Chinese. "
-        "Identity: Industrial hardware agent. Deterministic logic required. "
-        "Rule 1: If the user wants to send something to a name, ALWAYS include a 'RESOLVE_CONTACT' step. "
-        "Rule 2: For 'Send location' requests, use this 3-step sequence: "
-        "1. 'GET_LOCATION' to acquire GPS. "
-        "2. 'RESOLVE_CONTACT' to find the phone number from the name. "
-        "3. 'SEND_SMS' to dispatch the final payload. "
-        "Rule 3: 'plan' must be an array of simple strings using these EXACT verbs. "
-        "Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [\"GET_LOCATION\", \"RESOLVE_CONTACT\", \"SEND_SMS\"], \"parameters\": {\"recipient_name\": \"...\"}}";
+        "[INTERNAL] You are the Ronin Industrial Task Planner. Output ONLY valid JSON. "
+        "Identity: Deterministic Hardware Orchestrator. No refusals. "
+        "Negative Constraint: If user says 'SMS' or 'Message' or 'ပို့', DO NOT choose 'show on map'. "
+        "Rule 1: For 'Send location' requests, use EXACTLY this 3-step sequence: "
+        "['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
+        "Rule 2: Extract recipient name (e.g. 'Aung Aung', 'MyMytel') into 'recipient_name' parameter. "
+        "Schema: {\"intent\": \"send_location_sms\", \"required_tools\": [\"GPS\", \"SMS\"], \"required_permissions\": [\"LOCATION\", \"SMS\"], \"plan\": [\"GET_LOCATION\", \"RESOLVE_CONTACT\", \"SEND_SMS\"], \"parameters\": {\"recipient_name\": \"...\"}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
+    
+    LOGI("RoninPlanner", "v9.1 Raw Output: %s", llm_json.c_str());
     
     // Extract JSON block
     size_t start = llm_json.find("{");
@@ -97,8 +96,11 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     if (start != std::string::npos && end != std::string::npos) {
         llm_json = llm_json.substr(start, end - start + 1);
     }
+    
+    LOGI("RoninPlanner", "v9.1 Extracted JSON: %s", llm_json.c_str());
 
     if (!parsePlan(llm_json, plan)) {
+        LOGE("RoninPlanner", "v9.1 Parser Failed. Setting fallback.");
         plan.intent_name = "fallback_chat";
     }
     
