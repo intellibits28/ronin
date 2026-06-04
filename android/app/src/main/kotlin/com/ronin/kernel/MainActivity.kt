@@ -438,12 +438,13 @@ class MainActivity : ComponentActivity() {
                     try {
                         val locJson = params["context_result_LOCATION"]
                         val conJson = params["context_result_CONTACTS"]
-                        val recipientRaw = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: params["recipient_name"] ?: "Unknown"
+                        val recipientRaw = params["recipient_name"] ?: params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: "Unknown"
                         
                         var recipient = recipientRaw
                         var lat = "0.0"
                         var lon = "0.0"
 
+                        // v9.2: Persistent Data Linking
                         if (conJson != null) {
                             try {
                                 val json = JSONObject(conJson)
@@ -464,7 +465,11 @@ class MainActivity : ComponentActivity() {
                         if (resolved == "PERMISSION_DENIED") {
                             "Error: Contacts permission missing."
                         } else {
-                            val finalRecipient = if (resolved.startsWith("NOT_FOUND")) recipientRaw else resolved
+                            // v9.3: Fix 'Select Recipient' draft issue.
+                            // If resolved number is still NOT numeric, we should NOT pass it as smsto:
+                            val isNumeric = resolved.matches(Regex("^[+]?[0-9\\- ]+$"))
+                            val finalRecipient = if (isNumeric) resolved else ""
+                            
                             val body = "📍 Current location\nLat: $lat\nLon: $lon\n\nOpen map:\nhttps://maps.google.com/?q=$lat,$lon"
                             
                             val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -475,18 +480,23 @@ class MainActivity : ComponentActivity() {
                             }
                             
                             try {
-                                smsManager.sendTextMessage(finalRecipient, null, body, null, null)
-                                "Sent location SMS to $finalRecipient successfully."
+                                if (finalRecipient.isNotEmpty()) {
+                                    smsManager.sendTextMessage(finalRecipient, null, body, null, null)
+                                    "Sent location SMS to $finalRecipient successfully."
+                                } else {
+                                    throw Exception("No numeric recipient found for $recipientRaw")
+                                }
                             } catch (e: Exception) {
                                 Log.w("RoninKernel_MainActivity", "Background SMS failed, falling back to Intent: ${e.message}")
-                                val cleanNumber = if (finalRecipient.startsWith("NOT_FOUND")) finalRecipient.substringAfter(":") else finalRecipient
                                 val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                    data = Uri.parse("smsto:${Uri.encode(cleanNumber)}")
+                                    // v9.3: If no number, let user pick. If number exists, encode it.
+                                    data = Uri.parse("smsto:${Uri.encode(finalRecipient)}")
                                     putExtra("sms_body", body)
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
                                 runOnUiThread { startActivity(intent) }
-                                "Opened SMS composer for $cleanNumber (Background gateway failed)."
+                                if (finalRecipient.isEmpty()) "Opened SMS picker (Could not resolve '$recipientRaw')."
+                                else "Opened SMS composer for $finalRecipient."
                             }
                         }
                     } catch (e: Exception) {
@@ -494,9 +504,16 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 "show_map", "show_location", "LOCATION", "MAP" -> {
-                    // v7.9: Direct execution on background thread, post UI actions to Main
+                    // v9.3: Faster GPS retrieval (5s timeout) + lastLocation fallback
                     try {
-                        val locationResult = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token), 15, TimeUnit.SECONDS)
+                        val locationTask = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
+                        var locationResult = try {
+                            Tasks.await(locationTask, 5, TimeUnit.SECONDS)
+                        } catch (e: Exception) {
+                            Log.w("RoninKernel_MainActivity", "GPS Timeout, falling back to lastLocation")
+                            Tasks.await(fusedLocationClient.lastLocation, 2, TimeUnit.SECONDS)
+                        }
+
                         if (locationResult != null) {
                             val uri = Uri.parse("geo:${locationResult.latitude},${locationResult.longitude}?q=${locationResult.latitude},${locationResult.longitude}")
                             val mapIntent = Intent(Intent.ACTION_VIEW, uri)
@@ -504,7 +521,7 @@ class MainActivity : ComponentActivity() {
                             runOnUiThread { startActivity(mapIntent) }
                             "Opened Map at ${locationResult.latitude}, ${locationResult.longitude}"
                         } else {
-                            "Error: GPS Timeout or unavailable."
+                            "Error: GPS unavailable."
                         }
                     } catch (e: Exception) {
                         "Error opening map: ${e.message}"
