@@ -2,9 +2,9 @@ name: Ronin Kernel Build & Test
 
 on:
   push:
-    branches: [ main, develop, 'feature/**' ]
+    branches: [ 'feature/agent-planner-core' ]
   pull_request:
-    branches: [ main ]
+    branches: [ 'feature/agent-planner-core' ]
   workflow_dispatch:
 
 permissions:

@@ -389,18 +389,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun resolveContactName(name: String): String {
-        if (name.matches(Regex("^[+]?[0-9\\- ]+$"))) return name
-        if (checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return name
+        if (name.isEmpty() || name == "Unknown") return ""
+        if (name.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) return name
+        if (checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return "PERMISSION_DENIED"
         try {
             val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
             val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
-            val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-            val selectionArgs = arrayOf("%$name%")
-            contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
-                if (cursor.moveToFirst()) return cursor.getString(0)
+            val selections = listOf("${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ?", "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?")
+            for (selection in selections) {
+                val arg = if (selection.contains("LIKE")) "%$name%" else name
+                contentResolver.query(uri, projection, selection, arrayOf(arg), null)?.use { cursor ->
+                    if (cursor.moveToFirst()) return cursor.getString(0)
+                }
             }
-        } catch (e: Exception) { Log.e("RoninKernel_MainActivity", "Contact Error: ${e.message}") }
-        return name
+        } catch (e: Exception) { Log.e("RoninKernel_MainActivity", "Resolver Error: ${e.message}") }
+        return "NOT_FOUND:$name"
     }
 
     private fun setupHardwareCallbacks() {
@@ -429,9 +432,17 @@ class MainActivity : ComponentActivity() {
                 "send_sms", "send_sms_with_location", "SMS" -> {
                     try {
                         val recipientRaw = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: "Unknown"
+                        val resolved = resolveContactName(recipientRaw)
                         
-                        // v8.6: Real Contact Resolver (Resolves names to numbers)
-                        val recipient = resolveContactName(recipientRaw)
+                        if (resolved == "PERMISSION_DENIED") return@executeAgentToolCallback "Error: Contacts permission missing."
+                        
+                        val recipient = if (resolved.startsWith("NOT_FOUND")) {
+                            nativeEngine.pushKernelMessage("[DEBUG] Warning: No number found for '$recipientRaw'. Trying raw name.")
+                            recipientRaw
+                        } else {
+                            nativeEngine.pushKernelMessage("[DEBUG] Resolved '$recipientRaw' to: $resolved")
+                            resolved
+                        }
                         
                         // Extract location from Blackboard if provided
                         val contextJson = params["context_last_result"]
