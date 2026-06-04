@@ -436,73 +436,63 @@ class MainActivity : ComponentActivity() {
                 }
                 "send_sms", "send_sms_with_location", "SMS" -> {
                     try {
-                        val contextJson = params["context_last_result"]
-                        val recipientRaw = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: "Unknown"
+                        val locJson = params["context_result_LOCATION"]
+                        val conJson = params["context_result_CONTACTS"]
+                        val recipientRaw = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: params["recipient_name"] ?: "Unknown"
                         
-                        // v9.0: Check blackboard for previously resolved phone number
                         var recipient = recipientRaw
-                        if (contextJson != null) {
+                        var lat = "0.0"
+                        var lon = "0.0"
+
+                        if (conJson != null) {
                             try {
-                                val json = JSONObject(contextJson)
-                                if (json.has("phone_number")) {
-                                    recipient = json.getString("phone_number")
-                                    nativeEngine.pushKernelMessage("[DEBUG] Linked context: $recipient")
+                                val json = JSONObject(conJson)
+                                if (json.has("phone_number")) recipient = json.getString("phone_number")
+                            } catch (e: Exception) {}
+                        }
+                        if (locJson != null) {
+                            try {
+                                val json = JSONObject(locJson)
+                                if (json.has("lat") && json.has("lon")) {
+                                    lat = json.opt("lat").toString()
+                                    lon = json.opt("lon").toString()
                                 }
                             } catch (e: Exception) {}
                         }
 
                         val resolved = resolveContactName(recipient)
-                        
                         if (resolved == "PERMISSION_DENIED") {
                             "Error: Contacts permission missing."
                         } else {
-                            val recipient = if (resolved.startsWith("NOT_FOUND")) {
-                                nativeEngine.pushKernelMessage("[DEBUG] Warning: No number found for '$recipientRaw'. Trying raw name.")
-                                recipientRaw
+                            val finalRecipient = if (resolved.startsWith("NOT_FOUND")) recipientRaw else resolved
+                            val body = "📍 Current location\nLat: $lat\nLon: $lon\n\nOpen map:\nhttps://maps.google.com/?q=$lat,$lon"
+                            
+                            val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                getSystemService(android.telephony.SmsManager::class.java)
                             } else {
-                                nativeEngine.pushKernelMessage("[DEBUG] Resolved '$recipientRaw' to: $resolved")
-                                resolved
+                                @Suppress("DEPRECATION")
+                                android.telephony.SmsManager.getDefault()
                             }
                             
-                            // Extract location from Blackboard if provided
-                        val contextJson = params["context_last_result"]
-                        var location = params["location"] ?: params["current_location"] ?: "Unknown Location"
-                        
-                        if (contextJson != null) {
                             try {
-                                val json = JSONObject(contextJson)
-                                if (json.has("lat") && json.has("lon")) {
-                                    location = "Lat: ${json.getDouble("lat")}, Lon: ${json.getDouble("lon")}"
+                                smsManager.sendTextMessage(finalRecipient, null, body, null, null)
+                                "Sent location SMS to $finalRecipient successfully."
+                            } catch (e: Exception) {
+                                Log.w("RoninKernel_MainActivity", "Background SMS failed, falling back to Intent: ${e.message}")
+                                val cleanNumber = if (finalRecipient.startsWith("NOT_FOUND")) finalRecipient.substringAfter(":") else finalRecipient
+                                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("smsto:${Uri.encode(cleanNumber)}")
+                                    putExtra("sms_body", body)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
-                            } catch (e: Exception) {}
-                        }
-                        
-                        val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            getSystemService(android.telephony.SmsManager::class.java)
-                        } else {
-                            android.telephony.SmsManager.getDefault()
-                        }
-                        
-                        val body = "Ronin Agent: My location is $location"
-                        try {
-                            smsManager.sendTextMessage(recipient, null, body, null, null)
-                            "Sent SMS to $recipient ($recipientRaw) successfully."
-                        } catch (e: Exception) {
-                            Log.w("RoninKernel_MainActivity", "Background SMS failed, falling back to Intent: ${e.message}")
-                            val cleanNumber = if (recipient.startsWith("NOT_FOUND")) recipient.substringAfter(":") else recipient
-                            val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                data = Uri.parse("smsto:${Uri.encode(cleanNumber)}")
-                                putExtra("sms_body", body)
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                runOnUiThread { startActivity(intent) }
+                                "Opened SMS composer for $cleanNumber (Background gateway failed)."
                             }
-                            runOnUiThread { startActivity(intent) }
-                            "Opened SMS composer for $cleanNumber (Background gateway failed)."
                         }
+                    } catch (e: Exception) {
+                        "SMS Tool Error: ${e.message}"
                     }
-                } catch (e: Exception) {
-                    "SMS Tool Error: ${e.message}"
                 }
-            }
                 "show_map", "show_location", "LOCATION", "MAP" -> {
                     // v7.9: Direct execution on background thread, post UI actions to Main
                     try {

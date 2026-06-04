@@ -1,145 +1,84 @@
-@Composable
-fun SettingsDialog(
-    chatViewModel: ChatViewModel,
-    modelPicker: androidx.activity.result.ActivityResultLauncher<Array<String>>,
-    onSaveOfflineMode: (Boolean) -> Unit,
-    onDeleteModel: (String) -> Unit,
-    onSelectModel: (String) -> Unit
-) {
-    val context = LocalContext.current
-    AlertDialog(
-        onDismissRequest = { chatViewModel.showSettings = false },
-        title = { Text("Ronin Kernel Configuration", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Divider()
-                Spacer(Modifier.height(16.dp))
-                
-                Text("Reasoning Brains (Internal)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                chatViewModel.discoveredModels.forEach { path ->
-                    val filename = path.substringAfterLast("/")
-                    val isActive = path == chatViewModel.localModelPath && chatViewModel.isKernelHydrated
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        RadioButton(
-                            selected = path == chatViewModel.localModelPath,
-                            onClick = { onSelectModel(path) },
-                            colors = androidx.compose.material.RadioButtonDefaults.colors(
-                                selectedColor = if (isActive) Color.Green else Color(0xFF64B5F6)
-                            )
-                        )
-                        Text(filename, modifier = Modifier.weight(1f), color = if (isActive) Color.Green else Color.White)
-                        IconButton(onClick = { onDeleteModel(path) }) {
-                            Icon(Icons.Default.Delete, "Delete", tint = Color.Gray)
-                        }
-                    }
+        nativeEngine.executeAgentToolCallback = { toolName, params ->
+            when (toolName) {
+                "CONTACTS" -> {
+                    val name = params["recipient_name"] ?: params["recipient"] ?: params["contact_name"] ?: "Unknown"
+                    val resolved = resolveContactName(name)
+                    if (resolved.startsWith("NOT_FOUND") || resolved == "PERMISSION_DENIED") "Error: No number for $name" else resolved
                 }
-                
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = { modelPicker.launch(arrayOf("*/*")) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.CloudDownload, "Import")
-                    Spacer(Modifier.width(8.dp))
-                    Text("Import .litertlm / .bin")
-                }
-                
-                Spacer(Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("Offline-Only Mode", modifier = Modifier.weight(1f))
-                    Switch(checked = chatViewModel.offlineMode, onCheckedChange = { 
-                        chatViewModel.offlineMode = it 
-                        onSaveOfflineMode(it)
-                    })
-                }
-                Text("Disables Cloud Fallback for maximum data sovereignty.", fontSize = 10.sp, color = Color.Gray)
+                "send_sms", "send_sms_with_location", "SMS" -> {
+                    try {
+                        val locJson = params["context_result_LOCATION"]
+                        val conJson = params["context_result_CONTACTS"]
+                        val recipientRaw = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: params["recipient_name"] ?: "Unknown"
+                        
+                        var recipient = recipientRaw
+                        var lat = "0.0"
+                        var lon = "0.0"
 
-                Spacer(Modifier.height(16.dp))
-                Text("Cloud Provider", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                var expanded by remember { mutableStateOf(false) }
-                Box {
-                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(chatViewModel.primaryCloudProvider)
-                        Icon(Icons.Default.ArrowDropDown, "Expand")
-                    }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        chatViewModel.cloudProviders.forEach { provider ->
-                            DropdownMenuItem(onClick = {
-                                chatViewModel.primaryCloudProvider = provider.name
-                                expanded = false
-                                val existingKey = (context as MainActivity).getApiKey(provider.name)
-                                if (existingKey.isEmpty()) {
-                                    chatViewModel.pendingProvider = provider.name
-                                    chatViewModel.showApiKeyDialog = true
-                                } else {
-                                    (context as MainActivity).savePrimaryCloudProvider(provider.name)
+                        if (conJson != null) {
+                            try {
+                                val json = JSONObject(conJson)
+                                if (json.has("phone_number")) recipient = json.getString("phone_number")
+                            } catch (e: Exception) {}
+                        }
+                        if (locJson != null) {
+                            try {
+                                val json = JSONObject(locJson)
+                                if (json.has("lat") && json.has("lon")) {
+                                    lat = json.getString("lat"); lon = json.getString("lon")
                                 }
-                            }) {
-                                Text(provider.name)
+                            } catch (e: Exception) {}
+                        }
+
+                        val resolved = resolveContactName(recipient)
+                        if (resolved == "PERMISSION_DENIED") {
+                            "Error: Contacts permission missing."
+                        } else {
+                            val finalRecipient = if (resolved.startsWith("NOT_FOUND")) resolved.substringAfter(":") else resolved
+                            val body = "📍 Current location\nLat: $lat\nLon: $lon\n\nOpen map:\nhttps://maps.google.com/?q=$lat,$lon"
+                            
+                            val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                getSystemService(android.telephony.SmsManager::class.java)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                android.telephony.SmsManager.getDefault()
+                            }
+                            
+                            try {
+                                smsManager.sendTextMessage(finalRecipient, null, body, null, null)
+                                "Sent location SMS to $finalRecipient successfully."
+                            } catch (e: Exception) {
+                                Log.w("RoninKernel_MainActivity", "Background SMS failed, falling back to Intent: ${e.message}")
+                                val cleanNumber = if (finalRecipient.startsWith("NOT_FOUND")) finalRecipient.substringAfter(":") else finalRecipient
+                                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("smsto:${Uri.encode(cleanNumber)}")
+                                    putExtra("sms_body", body)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                runOnUiThread { startActivity(intent) }
+                                "Opened SMS composer for $finalRecipient (Background gateway failed)."
                             }
                         }
+                    } catch (e: Exception) {
+                        "SMS Tool Error: ${e.message}"
                     }
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { chatViewModel.showSettings = false }) {
-                Text("CLOSE")
-            }
-        }
-    )
-
-    if (chatViewModel.showApiKeyDialog) {
-        ApiKeyDialog(
-            provider = chatViewModel.pendingProvider,
-            onDismiss = { chatViewModel.showApiKeyDialog = false },
-            onSave = { key ->
-                (context as MainActivity).saveApiKey(chatViewModel.pendingProvider, key)
-                (context as MainActivity).savePrimaryCloudProvider(chatViewModel.pendingProvider)
-                chatViewModel.showApiKeyDialog = false
-            }
-        )
-    }
-}
-
-@Composable
-fun ApiKeyDialog(provider: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    var key by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Enter API Key for $provider", fontWeight = FontWeight.Bold) },
-        text = {
-            Column {
-                Text("Your key will be stored securely in Android KeyStore.", fontSize = 12.sp, color = Color.Gray)
-                Spacer(Modifier.height(8.dp))
-                TextField(
-                    value = key,
-                    onValueChange = { key = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Paste API Key here...") },
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onSave(key) }) {
-                Text("SAVE")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("CANCEL")
+                "show_map", "show_location", "LOCATION", "MAP" -> {
+                    try {
+                        val locationResult = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token), 15, TimeUnit.SECONDS)
+                        if (locationResult != null) {
+                            val uri = Uri.parse("geo:${locationResult.latitude},${locationResult.longitude}?q=${locationResult.latitude},${locationResult.longitude}")
+                            val mapIntent = Intent(Intent.ACTION_VIEW, uri)
+                            mapIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            runOnUiThread { startActivity(mapIntent) }
+                            "Opened Map at ${locationResult.latitude}, ${locationResult.longitude}"
+                        } else {
+                            "Error: GPS Timeout or unavailable."
+                        }
+                    } catch (e: Exception) {
+                        "Error opening map: ${e.message}"
+                    }
+                }
+                else -> "Tool $toolName executed with params: $params"
             }
         }
-    )
-}
-
-@Composable
-private fun Text(text: String, size: androidx.compose.ui.unit.TextUnit, color: Color, fontWeight: FontWeight = FontWeight.Normal) {
-    androidx.compose.material.Text(text = text, fontSize = size, color = color, fontWeight = fontWeight)
-}
-
-@Composable
-fun Divider(color: Color = Color.Gray.copy(alpha = 0.2f), modifier: Modifier = Modifier) {
-    androidx.compose.material.Divider(color = color, modifier = modifier)
-}

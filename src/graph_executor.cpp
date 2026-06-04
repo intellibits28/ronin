@@ -143,15 +143,24 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     LOGI(TAG, "L10 Optimizer: Selected Node %u for Capability %d. Dispatching...", 
          best_node_id, static_cast<int>(type));
          
-    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise](const CapabilityResponse& res) {
+    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise, type](const CapabilityResponse& res) {
         // v7.4: Feedback + Blackboard Storage
         this->reportOutcome(0, best_node_id, res.success, RiskLevel::MEDIUM);
         
         if (res.success) {
             std::lock_guard<std::recursive_mutex> inner_lock(m_mutex);
-            std::string cap_key = "last_result";
-            m_blackboard.storage[cap_key] = res.payload_json;
-            LOGI(TAG, "L10: Blackboard updated with result from Node %u", best_node_id);
+            // v9.2: Key results by capability name to avoid overwrites
+            std::string cap_str = "UNKNOWN";
+            switch(type) {
+                case CapabilityType::LOCATION: cap_str = "LOCATION"; break;
+                case CapabilityType::CONTACTS: cap_str = "CONTACTS"; break;
+                case CapabilityType::SMS: cap_str = "SMS"; break;
+                case CapabilityType::MAP: cap_str = "MAP"; break;
+                case CapabilityType::TEST: cap_str = "TEST"; break;
+                default: break;
+            }
+            m_blackboard.storage["result_" + cap_str] = res.payload_json;
+            LOGI(TAG, "L10: Blackboard updated with result from %s", cap_str.c_str());
         }
         
         promise->set_value(res.success);

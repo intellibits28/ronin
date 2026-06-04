@@ -89,8 +89,13 @@ void AgentScheduler::workerLoop() {
                 
                 if (type != CapabilityType::NONE) {
                     LOGI(TAG, "L8 Scheduler: Dispatching Capability %d to L10 Optimizer...", static_cast<int>(type));
+                    
+                    // v9.2: Pass all session parameters to every step
+                    nlohmann::json jParams;
+                    for (const auto& [k, v] : current_session->getParameters()) jParams[k] = v;
+                    
                     // Call Layer 10 Optimizer and WAIT for completion (v7.4)
-                    auto future = m_executor->optimizeAndDispatch(type, current_session->getSessionId(), "");
+                    auto future = m_executor->optimizeAndDispatch(type, current_session->getSessionId(), jParams.dump());
                     
                     try {
                         LOGI(TAG, "L8 Scheduler: Waiting for Driver response (future.get)...");
