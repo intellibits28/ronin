@@ -54,6 +54,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import android.provider.ContactsContract
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -387,6 +388,21 @@ class MainActivity : ComponentActivity() {
         requestPermissionLauncher.launch(permissions.toTypedArray())
     }
 
+    private fun resolveContactName(name: String): String {
+        if (name.matches(Regex("^[+]?[0-9\\- ]+$"))) return name
+        if (checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return name
+        try {
+            val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+            val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("%$name%")
+            contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
+                if (cursor.moveToFirst()) return cursor.getString(0)
+            }
+        } catch (e: Exception) { Log.e("RoninKernel_MainActivity", "Contact Error: ${e.message}") }
+        return name
+    }
+
     private fun setupHardwareCallbacks() {
         val vm = ViewModelProvider(this)[ChatViewModel::class.java]
         nativeEngine.getSecureApiKeyProvider = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
@@ -414,8 +430,8 @@ class MainActivity : ComponentActivity() {
                     try {
                         val recipientRaw = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: "Unknown"
                         
-                        // v7.5 Simple Contact Resolver Mock
-                        val recipient = if (recipientRaw.equals("Aung Aung", true)) "09123456789" else recipientRaw
+                        // v8.6: Real Contact Resolver (Resolves names to numbers)
+                        val recipient = resolveContactName(recipientRaw)
                         
                         // Extract location from Blackboard if provided
                         val contextJson = params["context_last_result"]
