@@ -3,6 +3,7 @@
 #include "ronin_log.h"
 #include "capabilities/hardware_bridge.h"
 #include <chrono>
+#include <nlohmann/json.hpp>
 
 #define TAG "RoninScheduler"
 

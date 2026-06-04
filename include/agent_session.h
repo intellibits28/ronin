@@ -24,6 +24,7 @@ public:
     // Parameter management
     void setParameter(const std::string& key, const std::string& value);
     std::string getParameter(const std::string& key) const;
+    const std::unordered_map<std::string, std::string>& getParameters() const { return m_parameters; }
 
     // Plan steps management
     void setPlan(const std::vector<std::string>& steps);
