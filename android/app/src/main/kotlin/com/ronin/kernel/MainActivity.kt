@@ -434,17 +434,18 @@ class MainActivity : ComponentActivity() {
                         val recipientRaw = params["recipient"] ?: params["contact_name"] ?: params["recipient_number"] ?: "Unknown"
                         val resolved = resolveContactName(recipientRaw)
                         
-                        if (resolved == "PERMISSION_DENIED") return@executeAgentToolCallback "Error: Contacts permission missing."
-                        
-                        val recipient = if (resolved.startsWith("NOT_FOUND")) {
-                            nativeEngine.pushKernelMessage("[DEBUG] Warning: No number found for '$recipientRaw'. Trying raw name.")
-                            recipientRaw
+                        if (resolved == "PERMISSION_DENIED") {
+                            "Error: Contacts permission missing."
                         } else {
-                            nativeEngine.pushKernelMessage("[DEBUG] Resolved '$recipientRaw' to: $resolved")
-                            resolved
-                        }
-                        
-                        // Extract location from Blackboard if provided
+                            val recipient = if (resolved.startsWith("NOT_FOUND")) {
+                                nativeEngine.pushKernelMessage("[DEBUG] Warning: No number found for '$recipientRaw'. Trying raw name.")
+                                recipientRaw
+                            } else {
+                                nativeEngine.pushKernelMessage("[DEBUG] Resolved '$recipientRaw' to: $resolved")
+                                resolved
+                            }
+                            
+                            // Extract location from Blackboard if provided
                         val contextJson = params["context_last_result"]
                         var location = params["location"] ?: params["current_location"] ?: "Unknown Location"
                         
@@ -478,10 +479,11 @@ class MainActivity : ComponentActivity() {
                             runOnUiThread { startActivity(intent) }
                             "Opened SMS composer for $cleanNumber (Background gateway failed)."
                         }
-                    } catch (e: Exception) {
-                        "SMS Tool Error: ${e.message}"
                     }
+                } catch (e: Exception) {
+                    "SMS Tool Error: ${e.message}"
                 }
+            }
                 "show_map", "show_location", "LOCATION", "MAP" -> {
                     // v7.9: Direct execution on background thread, post UI actions to Main
                     try {
