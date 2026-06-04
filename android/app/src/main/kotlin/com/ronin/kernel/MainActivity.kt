@@ -469,13 +469,14 @@ class MainActivity : ComponentActivity() {
                             "Sent SMS to $recipient ($recipientRaw) successfully."
                         } catch (e: Exception) {
                             Log.w("RoninKernel_MainActivity", "Background SMS failed, falling back to Intent: ${e.message}")
+                            val cleanNumber = if (recipient.startsWith("NOT_FOUND")) recipient.substringAfter(":") else recipient
                             val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                data = Uri.parse("smsto:$recipient")
+                                data = Uri.parse("smsto:${Uri.encode(cleanNumber)}")
                                 putExtra("sms_body", body)
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             runOnUiThread { startActivity(intent) }
-                            "Opened SMS composer for $recipient (Background gateway failed)."
+                            "Opened SMS composer for $cleanNumber (Background gateway failed)."
                         }
                     } catch (e: Exception) {
                         "SMS Tool Error: ${e.message}"
