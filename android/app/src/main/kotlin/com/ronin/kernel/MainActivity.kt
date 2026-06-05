@@ -546,7 +546,7 @@ class MainActivity : FragmentActivity() {
                                 
                                 // Try to find the most likely 'value'
                                 val value = params["value"] ?: params["content"] ?: params.keys.find { 
-                                    val k = it.toLowerCase()
+                                    val k = it.lowercase()
                                     k.contains("plate") || k.contains("medicine") || k.contains("number") || k.contains("result") || k.contains("val")
                                 }?.let { params[it] } ?: ""
                                 
@@ -566,7 +566,7 @@ class MainActivity : FragmentActivity() {
                                 val title = params["vault_title"] ?: params["title"] ?: params.keys.find { it.contains("name", true) || it.contains("title", true) }?.let { params[it] } ?: "Secret"
                                 
                                 val content = params["vault_content"] ?: params["content"] ?: params.keys.find {
-                                    val k = it.toLowerCase()
+                                    val k = it.lowercase()
                                     k.contains("key") || k.contains("token") || k.contains("password") || k.contains("secret") || k.contains("pin")
                                 }?.let { params[it] } ?: ""
                                 
