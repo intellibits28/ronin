@@ -31,6 +31,14 @@ LongTermMemory::~LongTermMemory() {
 }
 
 bool LongTermMemory::initSchema() {
+    // v13.0 Migration: Drop legacy facts table if it exists (checks for old 'key' column)
+    sqlite3_stmt* check_stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, "SELECT key FROM facts LIMIT 1;", -1, &check_stmt, nullptr) == SQLITE_OK) {
+        sqlite3_finalize(check_stmt);
+        sqlite3_exec(m_db, "DROP TABLE facts;", nullptr, nullptr, nullptr);
+        LOGI(TAG, "v13.0 Migration: Dropped legacy facts table.");
+    }
+
     const char* schema = 
         "CREATE TABLE IF NOT EXISTS notes ("
         "  id INTEGER PRIMARY KEY AUTOINCREMENT, "

@@ -465,31 +465,36 @@ class MainActivity : FragmentActivity() {
         var result = "Error: Authentication failed."
         
         runOnUiThread {
-            val executor = ContextCompat.getMainExecutor(this)
-            val biometricPrompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(authResult: BiometricPrompt.AuthenticationResult) {
-                    super.onAuthenticationSucceeded(authResult)
-                    result = onAuthSuccess()
-                    latch.countDown()
-                }
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    super.onAuthenticationError(errorCode, errString)
-                    result = "Error: $errString"
-                    latch.countDown()
-                }
-                override fun onAuthenticationFailed() {
-                    super.onAuthenticationFailed()
-                    // Keep waiting for success or explicit error
-                }
-            })
+            try {
+                val executor = ContextCompat.getMainExecutor(this)
+                val biometricPrompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(authResult: BiometricPrompt.AuthenticationResult) {
+                        super.onAuthenticationSucceeded(authResult)
+                        result = onAuthSuccess()
+                        latch.countDown()
+                    }
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        super.onAuthenticationError(errorCode, errString)
+                        result = "Error: $errString"
+                        latch.countDown()
+                    }
+                    override fun onAuthenticationFailed() {
+                        super.onAuthenticationFailed()
+                        // Keep waiting for success or explicit error
+                    }
+                })
 
-            val promptInfo = BiometricPrompt.PromptInfo.Builder()
-                .setTitle(title)
-                .setSubtitle(subtitle)
-                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-                .build()
+                val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle(title)
+                    .setSubtitle(subtitle)
+                    .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                    .build()
 
-            biometricPrompt.authenticate(promptInfo)
+                biometricPrompt.authenticate(promptInfo)
+            } catch (e: Exception) {
+                result = "Error: Biometric UI failed - ${e.message}"
+                latch.countDown()
+            }
         }
         
         latch.await(30, TimeUnit.SECONDS)
