@@ -167,13 +167,16 @@ bool LongTermMemory::storeNote(const std::string& title, const std::string& cont
 }
 
 bool LongTermMemory::storeFact(const std::string& entity, const std::string& attr, const std::string& value, SourceType source, float confidence) {
-    if (!m_db) return false;
+    if (!m_db) { LOGE(TAG, "storeFact failed: DB is null."); return false; }
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO facts (entity, attribute, value, source_type, confidence, last_verified_at, created_at, updated_at) "
                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
     uint64_t now = std::time(nullptr);
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "storeFact prepare failed: %s", sqlite3_errmsg(m_db));
+        return false;
+    }
     sqlite3_bind_text(stmt, 1, entity.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, attr.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, value.c_str(), -1, SQLITE_STATIC);
@@ -183,12 +186,13 @@ bool LongTermMemory::storeFact(const std::string& entity, const std::string& att
     sqlite3_bind_int64(stmt, 7, now);
     sqlite3_bind_int64(stmt, 8, now);
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (!success) { LOGE(TAG, "storeFact step failed: %s", sqlite3_errmsg(m_db)); }
     sqlite3_finalize(stmt);
     return success;
 }
 
 bool LongTermMemory::storeVault(const std::string& title, const std::string& encrypted_blob) {
-    if (!m_db) return false;
+    if (!m_db) { LOGE(TAG, "storeVault failed: DB is null."); return false; }
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO vault (title, encrypted_blob, created_at) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
@@ -197,8 +201,11 @@ bool LongTermMemory::storeVault(const std::string& title, const std::string& enc
         sqlite3_bind_text(stmt, 2, encrypted_blob.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_int64(stmt, 3, std::time(nullptr));
         bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+        if (!success) { LOGE(TAG, "storeVault step failed: %s", sqlite3_errmsg(m_db)); }
         sqlite3_finalize(stmt);
         return success;
+    } else {
+        LOGE(TAG, "storeVault prepare failed: %s", sqlite3_errmsg(m_db));
     }
     return false;
 }
