@@ -520,13 +520,13 @@ class MainActivity : FragmentActivity() {
         nativeEngine.executeAgentToolCallback = { toolName, params ->
             Log.i("RoninKernel_MainActivity", "Executing Tool: $toolName with params: $params")
             when (toolName) {
-                "MEMORY", "SAVE_NOTE", "SAVE_FACT", "QUERY_FACT", "SAVE_VAULT", "SEARCH_NOTES" -> {
+                "MEMORY", "SAVE_NOTE", "SAVE_FACT", "QUERY_FACT", "SAVE_VAULT", "SEARCH_NOTES", "SEARCH_EPISODES" -> {
                     try {
                         when (toolName) {
                             "SAVE_NOTE" -> {
                                 val title = params["note_title"] ?: params["title"] ?: "Untitled Note"
                                 val content = params["note_content"] ?: params["content"] ?: ""
-                                if (content.isEmpty()) "Error: Note content is empty."
+                                if (content.isEmpty()) "Error: Note content is empty. Params: $params"
                                 else if (nativeEngine.storeNote(title, content, "")) "Note saved: $title" 
                                 else "Error: Database failure during SAVE_NOTE."
                             }
@@ -534,7 +534,7 @@ class MainActivity : FragmentActivity() {
                                 val entity = params["entity"] ?: "Unknown"
                                 val attr = params["attribute"] ?: "Unknown"
                                 val value = params["value"] ?: ""
-                                if (value.isEmpty()) "Error: Fact value is empty."
+                                if (value.isEmpty()) "Error: Fact value is empty. Params: $params"
                                 else if (nativeEngine.storeFact(entity, attr, value)) {
                                     "Fact saved: $entity.$attr = $value (Source: User)"
                                 } else "Error: Database failure during SAVE_FACT."
@@ -542,7 +542,7 @@ class MainActivity : FragmentActivity() {
                             "SAVE_VAULT" -> {
                                 val title = params["vault_title"] ?: params["title"] ?: "Secret"
                                 val content = params["vault_content"] ?: params["content"] ?: ""
-                                if (content.isEmpty()) "Error: Vault content is empty."
+                                if (content.isEmpty()) "Error: Vault content is empty. Params: $params"
                                 else authenticateAndExecute("Store Secret", "Authenticate to encrypt and store in Vault") {
                                     val encrypted = nativeEngine.encryptSecret(content)
                                     if (nativeEngine.storeVault(title, encrypted)) "Vault entry saved: $title" 

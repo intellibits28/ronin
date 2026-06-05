@@ -86,6 +86,7 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "Rule 4 (Facts): Structured info (e.g. car plate, medicine) -> 'ADD_FACT', steps ['SAVE_FACT']. Params: 'entity', 'attribute', 'value'. "
         "Rule 5 (Notes): General thoughts -> 'ADD_NOTE', steps ['SAVE_NOTE']. Params: 'note_title', 'note_content'. "
         "Rule 6 (Planning): Use exact steps. Show Map -> ['GET_LOCATION', 'OPEN_MAP']. Send SMS -> ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
+        "Rule 7 (Mandatory): You MUST extract and populate the required parameters from the user's input. Never leave 'value' or 'content' empty if the user provided it. "
         "Parameters: 'note_title', 'note_content', 'entity', 'attribute', 'value', 'vault_title', 'vault_content', 'query', 'recipient_name'. "
         "Schema: {\"intent\": \"...\", \"required_tools\": [], \"plan\": [], \"parameters\": {}}";
 
@@ -413,7 +414,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("plate") || token_set.count("license") ||
                            token_set.count("car") || token_set.count("ကား") ||
                            token_set.count("key") || token_set.count("api") ||
-                           token_set.count("token") || token_set.count("password");
+                           token_set.count("token") || token_set.count("password") ||
+                           token_set.count("သတိပေး") || token_set.count("remind");
 
     // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
     bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
