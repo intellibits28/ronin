@@ -462,34 +462,48 @@ class MainActivity : ComponentActivity() {
                         var recipient = params["recipient_number"] ?: params["recipient"] ?: params["recipient_name"] ?: ""
                         var lat = "0.0"; var lon = "0.0"
 
-                        if (conJson != null && !conJson.startsWith("Error")) {
-                            recipient = conJson // v9.5: Use direct result from RESOLVE_CONTACT
+                        // v9.6: Correctly parse Blackboard data for recipient
+                        if (conJson != null && conJson.startsWith("{")) {
+                            try {
+                                val j = JSONObject(conJson)
+                                recipient = j.optString("phone_number", j.optString("message", recipient))
+                            } catch (e: Exception) {}
+                        } else if (conJson != null && !conJson.startsWith("Error")) {
+                            recipient = conJson
                         }
+
                         if (locJson != null && locJson.startsWith("{")) {
                              val j = JSONObject(locJson); lat = j.opt("lat").toString(); lon = j.opt("lon").toString()
                         }
 
                         val body = "📍 My Location\nLat: $lat\nLon: $lon\n\nhttps://maps.google.com/?q=$lat,$lon"
                         
-                        // v9.5: Robust Intent Dispatch
+                        // Final attempt to resolve name to number if still alphabetic
+                        if (!recipient.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) {
+                             val resolved = resolveContactName(recipient)
+                             if (!resolved.startsWith("NOT_FOUND") && resolved != "PERMISSION_DENIED") {
+                                 recipient = resolved
+                             }
+                        }
+
                         val cleanRecipient = if (recipient.matches(Regex("^[+]?[0-9\\- ]{7,}+$"))) recipient else ""
                         
                         runOnUiThread {
                             try {
-                                val uri = Uri.parse("sms:$cleanRecipient")
-                                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                // v9.6: Use ACTION_SENDTO with smsto: for reliable pre-filling
+                                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("smsto:${Uri.encode(cleanRecipient)}")
                                     putExtra("sms_body", body)
-                                    putExtra(Intent.EXTRA_TEXT, body)
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
                                 startActivity(intent)
-                                Log.i("RoninKernel_MainActivity", "v9.5 SMS Intent started for: $cleanRecipient")
+                                Log.i("RoninKernel_MainActivity", "v9.6 SMS Intent pre-filled for: $cleanRecipient")
                             } catch (e: Exception) {
-                                Log.e("RoninKernel_MainActivity", "v9.5 SMS Intent FAILED: ${e.message}")
+                                Log.e("RoninKernel_MainActivity", "v9.6 SMS Intent FAILED: ${e.message}")
                                 Toast.makeText(applicationContext, "SMS Error: ${e.message}", Toast.LENGTH_LONG).show()
                             }
                         }
-                        "Opened SMS app for ${if(cleanRecipient.isEmpty()) "selection" else cleanRecipient}."
+                        "Opened SMS composer for ${if(cleanRecipient.isEmpty()) "selection" else cleanRecipient}."
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
                 else -> "Tool $toolName executed with params: $params"
