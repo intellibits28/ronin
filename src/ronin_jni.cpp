@@ -318,6 +318,11 @@ jobjectArray native_searchEpisodes(JNIEnv *env, jobject thiz, jstring query) {
     return res;
 }
 
+jboolean native_storeVault(JNIEnv *env, jobject thiz, jstring title, jstring encrypted_blob) {
+    if (!g_ltm) return JNI_FALSE;
+    return g_ltm->storeVault(ConvertJStringToString(env, title), ConvertJStringToString(env, encrypted_blob)) ? JNI_TRUE : JNI_FALSE;
+}
+
 jboolean native_storePrediction(JNIEnv *env, jobject thiz, jstring goalId, jstring nodeId, jstring predicted, jstring actual, jfloat error) {
     if (!g_ltm) return JNI_FALSE;
     return g_ltm->storePrediction(ConvertJStringToString(env, goalId), ConvertJStringToString(env, nodeId), 
