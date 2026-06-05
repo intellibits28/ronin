@@ -40,7 +40,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         // v7.0 Layer 4: Register Android Drivers
         drivers["LOCATION"] = LocationDriver(context)
         drivers["MAP"] = LocationDriver(context) // Re-use location driver for map display trigger
-        drivers["SMS"] = SmsDriver()
+        drivers["SMS"] = SmsDriver(context)
         
         // v8.2: Pipeline Diagnostic Driver (Echo)
         drivers["TEST"] = object : ICapabilityDriver {
