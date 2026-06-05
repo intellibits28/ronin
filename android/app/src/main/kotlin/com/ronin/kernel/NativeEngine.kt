@@ -33,6 +33,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private val dbHelper = DatabaseHelper(context)
     private val drivers = mutableMapOf<String, ICapabilityDriver>()
+    private val securityProvider = SecurityProvider()
 
     init {
         // v7.0 Layer 4: Register Android Drivers
@@ -62,6 +63,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             }
         }
     }
+
+    @Keep
+    @Suppress("unused")
+    fun encryptSecret(data: String): String = securityProvider.encrypt(data)
+
+    @Keep
+    @Suppress("unused")
+    fun decryptSecret(encrypted: String): String = securityProvider.decrypt(encrypted)
 
     /**
      * v7.0 Layer 3: JNI entry point for capability requests from C++.
