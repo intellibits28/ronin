@@ -151,10 +151,6 @@ class MainActivity : FragmentActivity() {
     // ... rest of the class remains same but I need to include the modified methods
     // I will replace larger blocks to be safe.
 
-    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-        if (permissions.entries.all { it.value }) scanLocalModels()
-    }
-
     private val brainPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importModelFromUri(it) }
     }
@@ -424,7 +420,21 @@ class MainActivity : FragmentActivity() {
             android.Manifest.permission.READ_CONTACTS
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
-        requestPermissionLauncher.launch(permissions.toTypedArray())
+        
+        // v11.3: Use manual request to avoid 16-bit requestCode crash in FragmentActivity
+        val needed = permissions.filter { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
+        if (needed.isNotEmpty()) {
+            requestPermissions(needed.toTypedArray(), 101)
+        } else {
+            scanLocalModels()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 101 && grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }) {
+            scanLocalModels()
+        }
     }
 
     private fun resolveContactName(name: String): String {
