@@ -218,7 +218,9 @@ class MainActivity : FragmentActivity() {
             nativeEngine.updateSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP)
 
             chatViewModel.kernelStatus = "Neural Bridge Active"
-            checkAndRequestPermissions(); scanLocalModels()
+            checkAndRequestPermissions()
+            startWorldStateInjection() // v11.3: Start cognitive telemetry
+            scanLocalModels()
             val savedModelPath = sharedPreferences.getString("local_model_path", "")
             if (!savedModelPath.isNullOrEmpty() && File(savedModelPath).exists()) hydrateModel(savedModelPath)
 
@@ -377,6 +379,39 @@ class MainActivity : FragmentActivity() {
                 }
             } else { Toast.makeText(this@MainActivity, "Fetch Failed: ${result.error}", Toast.LENGTH_SHORT).show() }
             chatViewModel.isFetchingModels = false
+        }
+    }
+
+    private fun startWorldStateInjection() {
+        lifecycleScope.launch(Dispatchers.Default) {
+            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val memoryInfo = ActivityManager.MemoryInfo()
+            
+            while (true) {
+                try {
+                    val batteryStatus = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                    val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                    val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                    val batteryPct = level * 100 / scale.toFloat()
+                    val isCharging = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) == BatteryManager.BATTERY_STATUS_CHARGING
+
+                    activityManager.getMemoryInfo(memoryInfo)
+                    val availableRamGB = memoryInfo.availMem / (1024f * 1024f * 1024f)
+                    
+                    val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                    val netInfo = connectivityManager.activeNetworkInfo
+                    val netAvailable = netInfo != null && netInfo.isConnected
+
+                    nativeEngine.injectWorldState(
+                        batteryPct, 
+                        availableRamGB * 1024f, // Send in MB as per blueprint struct
+                        true, // GPS available placeholder
+                        netAvailable,
+                        isCharging
+                    )
+                } catch (e: Exception) { Log.e("RoninWorldState", "Injection error: ${e.message}") }
+                delay(1000) // 1Hz injection rate (Thermal safe)
+            }
         }
     }
 

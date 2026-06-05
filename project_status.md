@@ -1,50 +1,51 @@
 # Ronin Kernel: Project Status & Strategic Roadmap
 
 ## 1. Project Overview
-**Name:** Ronin Kernel (Phase 11.2 Hardening)
-**Current Version:** v4.7.27.05.27 (Hardened v4.0 CalVer)
-**Active Branch:** main
-**Objective:** A sovereign AI kernel utilizing the **Hardened v4.0 Production Architecture**. Optimized for mid-range Android hardware and precise Myanmar text handling.
+**Name:** Ronin Kernel (Phase 11.3 Memory Mastery)
+**Current Version:** v10.1.7 (Hardened v1.3 CalVer Ready)
+**Active Branch:** feature/agent-planner-core
+**Objective:** A deterministic, self-evaluating agent runtime platform utilizing the **Hardened v1.3 Cognitive Systems Architecture**. Optimized for mid-range Android hardware (Mi 11 Lite 5G NE).
 
 ---
 
-## 2. Hardened Break-throughs (v4.0 SUCCESS)
-*   **Linguistic Precision:** ✅ SUCCESS - Pure C++ Trie Segmenter (23k+ words) integrated with FTS5.
-*   **Mid-range Optimization:** ✅ SUCCESS - Restored `:inference_core` isolation and increased token limit to 1024.
-*   **Reliable Networking:** ✅ SUCCESS - Migrated Cloud Provider setup and inference to **OkHttp**.
-*   **Security & Safety:** ✅ SUCCESS - Implemented `@Keep` for reflection protection and enhanced JNI resource cleanup.
+## 2. Recent breakthroughs (v10.x Agent Mastery)
+*   **Agent-first Memory:** ✅ SUCCESS - Refactored LTM to NOTE, FACT, VAULT, and EPISODE tiers.
+*   **Hardware-Backed Vault:** ✅ SUCCESS - Implemented AES-256-GCM encryption with Android Keystore & Biometric protection.
+*   **Deterministic Planning:** ✅ SUCCESS - Multi-step orchestration for SMS, Location, and Knowledge management.
+*   **Episodic Logging:** ✅ SUCCESS - Automated summary generation and FTS5 indexing of past agent activities.
 
 ---
 
-## 3. Current Status: Phase 11.2 (Production Hardening)
-- **Status:** v4.0 finalized. Multi-process stability verified.
-- **Diagnostics:**
-    - [x] **Token Truncation:** Fixed by defaulting to 1024 tokens and allowing up to 2048.
-    - [x] **Network Exceptions:** Resolved by migrating to OkHttp and async IO.
-    - [x] **UI Freeze:** Eliminated via AIDL process isolation.
+## 3. Current Status: Phase 11.3 (Memory Mastery)
+- **Status:** Phase 2 in active development. Storage foundation v13.0 schema finalized.
+- **Active Tasks:**
+    - [x] **v13.0 Schema Evolution:** Indexed EAV facts and FTS5 episodes implemented.
+    - [x] **Biometric HITL:** Secure biometric prompt integrated for sensitive memory access.
+    - [ ] **Memory Classifier:** Building logic to route data to NOTE vs FACT vs VAULT.
+    - [ ] **World State Injection:** Periodic environment telemetry from Kotlin to C++.
 - **Audit Trail:**
-    - Validated Myanmar reasoning and reply enforcement in `PromptFactory`.
-    - Verified real-time streaming UI with tag-stripped bubbles.
+    - Validated SMS recipient pre-fill fix (v9.6).
+    - Verified JNI reflection safety with @Keep and FragmentActivity.
 
 ---
 
 ## 4. Completed Milestones
-- [x] **Hardened v3.0 Blueprint Integration:** Fully aligned with the sovereign architecture vision.
-- [x] **Zero-SHM Production Flow:** Direct JNI callbacks verified as performance-equivalent to SHM.
-- [x] **Lexical Persistence v2.1:** FTS5-only search active. Embeddings removed to save RAM.
+- [x] **Hardened v1.3 Blueprint:** Transitioned from toy AI app to cognitive runtime platform.
+- [x] **Lexical Long-Term Memory (LTM):** Pure lexical search (FTS5) for performance stability.
+- [x] **Secure Native Bridge:** High-frequency, lock-free communication between C++ and Kotlin.
 
 ---
 
 ## 5. Future Roadmap
-- **Phase 12.0 (Sensor Intelligence):** DSP/NPU offloading for high-frequency IMU/Bio processing.
-- **Phase 13.0 (Social Mesh):** Integration of sovereign identity and encrypted contacts/messaging.
-- **Phase 14.0 (Multi-Modal Hub):** Real-time Vision/Audio processing nodes.
+- **Phase 3 (Cognitive Runtime):** Thompson Sampling with Symmetric Decay and Goal-directed DAG execution.
+- **Phase 4 (Autonomous Cognition):** Multi-step goal decomposition and self-evaluation loops.
+- **Phase 5 (Observability):** 1Hz Developer HUD with Real-time Bayesian Visualizations.
 
 ---
 
-## 6. Compliance & Design Standards (HARDENED v3.0)
-- **Single Process Mandate:** Inference and UI must share a process to ensure Direct JNI Bridge reliability.
-- **Instruction Isolation:** System prompt must be sent ONCE per conversation session.
-- **Thinking Filter:** Reasoning tokens MUST NOT persist in the chat history database.
+## 6. Compliance & Design Standards (HARDENED v1.3)
+- **Memory Ownership:** Classifier MUST route data based on explicit/inferred intent.
+- **Security First:** Sensitive facts (keys/passwords) MUST require biometric unlock.
+- **Thermal Preservation:** UI refresh rates MUST be throttled (1Hz) to preserve Mi 11 Lite thermal budget.
 
-*Last Updated: May 25, 2026*
+*Last Updated: June 5, 2026*
