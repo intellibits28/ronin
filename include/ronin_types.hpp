@@ -124,6 +124,28 @@ struct CognitiveState {
   AgentPlan current_plan;
 };
 
+/**
+ * v13.0 World State: Represents the current physical environment understanding.
+ */
+struct WorldState {
+    float battery_percent;
+    float ram_available_mb;
+    bool gps_available;
+    bool network_available;
+    bool charging;
+    uint64_t timestamp;
+};
+
+/**
+ * v13.0 Belief: Represents current confidence-weighted assumptions.
+ */
+struct Belief {
+    std::string key;
+    std::string value;
+    float confidence;
+    uint64_t updated_at;
+};
+
 } // namespace Ronin::Kernel
 
 #endif // RONIN_TYPES_HPP

@@ -54,9 +54,17 @@ public:
     void triggerAsyncSync();
 
     /**
-     * v11.3: Records a task execution in episodic memory.
+     * v13.0: Records a task execution in episodic memory with cognitive context.
      */
-    void recordEpisode(const std::string& intent, const std::string& summary, const std::string& payload, bool success);
+    void recordEpisode(const std::string& intent, const std::string& summary, const std::string& payload, 
+                       bool success, const std::string& goal_id = "", const std::string& node_id = "",
+                       int64_t latency_ms = 0, float conf_before = 0.0f, float conf_after = 0.0f);
+
+    /**
+     * v13.0: Records a prediction (Expectation vs Reality) for reflection.
+     */
+    void recordPrediction(const std::string& goal_id, const std::string& node_id,
+                          const std::string& predicted_json, const std::string& actual_json, float error_score);
 
 private:
     CapabilityGraph& m_graph;

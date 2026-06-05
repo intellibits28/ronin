@@ -1,92 +1,133 @@
 # Ronin Cognitive Systems Blueprint v1.3 (Hardened)
 
-Industrial-grade evolution of Ronin into a deterministic agent runtime platform.
+Industrial-grade evolution of Ronin into a deterministic, self-evaluating cognitive runtime platform.
 
 ---
 
-## 1. Multi-Tier Memory Architecture (Sovereign Storage)
+## 1. Core Cognitive Architecture
 
-### 1.1 Memory Classifier & Ownership
-The **MemoryClassifier** determines the destination tier based on input intent:
-*   **VAULT:** Secrets, API Keys (Hardware encrypted).
-*   **FACT:** Concise, structured knowledge (EAV Model).
-*   **NOTE:** Narrative or fuzzy context (FTS5 enabled).
-*   **EPISODE:** Automatic logs of past actions and results (FTS5 enabled).
+Ronin is a persistent cognitive runtime that:
+*   **Observes** the environment.
+*   **Maintains Beliefs** about the world.
+*   **Executes Goals** via directed actions.
+*   **Predicts Outcomes** and evaluates error.
+*   **Updates Models** via reflection.
 
-### 1.2 Schema (v13.0 - Lifecycle-Aware)
+**Core Loop:**
+`Observe` → `Update World State` → `Update Belief State` → `Goal Selection` → `Planning` → `Prediction` → `Execution` → `Reflection` → `Memory Consolidation`.
+
+---
+
+## 2. Multi-Tier Memory Architecture (Sovereign Storage)
+
+### 2.1 Memory Ownership Model
+Before storage, the **MemoryClassifier** determines the destination tier:
+*   **VAULT:** Explicit secrets (API keys, Tokens). Hardware-backed encryption.
+*   **FACT:** Structured, durable knowledge (EAV Model). High-precision.
+*   **NOTE:** Narrative or fuzzy context. FTS5/Semantic search.
+*   **EPISODE:** Historical actions, outcomes, and task logs.
+*   **PREDICTION:** Expected future outcomes. Used for belief calibration.
+
+---
+
+## 3. World & Belief State Layers
+
+### 3.1 World State (Transient)
+Represents the current physical environment:
+```cpp
+struct WorldState {
+    float battery_percent;
+    float ram_available_mb;
+    bool gps_available;
+    bool network_available;
+    bool charging;
+    uint64_t timestamp;
+};
+```
+
+### 3.2 Belief State (Confidence-Weighted)
+Represents current assumptions derived from Facts and World State:
+```cpp
+struct Belief {
+    std::string key;
+    std::string value;
+    float confidence;
+    uint64_t updated_at;
+};
+```
+
+---
+
+## 4. Memory Schema (v13.0 Hardened)
+
 ```sql
--- FACTS (EAV with Source Tracking)
+-- FACTS (Deterministic Knowledge)
 CREATE TABLE facts (
     id INTEGER PRIMARY KEY,
     entity TEXT,
     attribute TEXT,
     value TEXT,
-    source_type INTEGER, -- 0:USER_EXPLICIT, 1:USER_INFERRED, 2:OCR
     confidence REAL,
-    last_verified_at INTEGER,
     created_at INTEGER,
     updated_at INTEGER
 );
 CREATE INDEX idx_facts_lookup ON facts(entity, attribute);
 
--- EPISODES (Searchable Task Logs)
+-- EPISODES (Task Logs with Confidence Delta)
 CREATE TABLE episodes (
     id INTEGER PRIMARY KEY,
     timestamp INTEGER,
     intent TEXT,
+    goal_id TEXT,
+    node_id TEXT,
     summary TEXT,
     payload_json TEXT,
-    outcome_enum INTEGER -- 0:FAIL, 1:SUCCESS
+    outcome_enum INTEGER,
+    latency_ms INTEGER,
+    confidence_before REAL,
+    confidence_after REAL
 );
-CREATE VIRTUAL TABLE episodes_fts USING fts5(summary, content='episodes', content_rowid='id');
+
+-- PREDICTIONS (Expectation vs Reality)
+CREATE TABLE predictions (
+    id INTEGER PRIMARY KEY,
+    timestamp INTEGER,
+    goal_id TEXT,
+    node_id TEXT,
+    predicted_json TEXT,
+    actual_json TEXT,
+    error_score REAL
+);
 ```
 
-### 1.3 Memory Consolidator (The Lifecycle Service)
-A background worker responsible for data health:
-*   **Conflict Resolution:** Detects multiple values for a single fact (e.g. `Father:Medication`) and promotes the newest/most verified.
-*   **Deduplication:** Merges redundant notes and expires old, failed episodes.
+---
+
+## 5. Bayesian Reasoning Layer
+
+### 5.1 Thompson Sampling & Decay
+*   **Sampling:** `Sample ~ Beta(effective_success + 1, effective_failure + 1)`.
+*   **Confidence Decay:** `effective_val = current_val * 0.99^weeks_since_update`.
+*   **Reflection Engine:** Calculates `Prediction Error = |Actual - Predicted|` to update Beliefs.
 
 ---
 
-## 2. Reasoning Layer: The Bayesian Brain
+## 6. Implementation Roadmap
 
-### 2.1 Symmetric Confidence Decay
-*   To prevent bias, both success and failure weights are aged:
-    *   `effective_success = current_success * aging_factor`
-    *   `effective_failure = current_failure * aging_factor`
-*   **Thompson Selection:** `Sample ~ Beta(effective_success + 1, effective_failure + 1)`.
+### Phase 1: Interaction & Security (Done)
+*   SMS, Location, Hardware Vault.
 
----
+### Phase 2: Memory Foundation (Active)
+*   [ ] Refactor Fact/Episode tables (v13.0).
+*   [ ] Implement Prediction storage.
+*   [ ] Build Memory Classifier.
 
-## 3. Presentation Layer: Developer HUD (Mi 11 Lite 5G NE Optimized)
-
-### 3.1 Tiered Metrics (1 Hz Refresh Rate)
-*   **Runtime:** Active Sessions, Queue Depth.
-*   **LLM:** Latency, Token Budget.
-*   **Bayesian:** Belief Scores, Thompson Samples.
-
----
-
-## 4. Implementation Roadmap (Revised)
-
-### Phase 1: Interaction Foundation (Active)
-*   [x] SMS, Location, Vault.
-
-### Phase 2: Memory Mastery
-*   [ ] Refactor Fact Store (Source Tracking + EAV).
-*   [ ] Implement Searchable Episodic Memory (FTS5).
-*   [ ] Build Memory Classifier (Intent -> Tier).
-
-### Phase 3: Memory Lifecycle
-*   [ ] Memory Consolidator Service (Conflict/Deduplication).
-*   [ ] Advanced Memory Search (Exact/Episodic/FTS).
-
-### Phase 4: Bayesian Reasoning
+### Phase 3: Cognitive Runtime (Next)
+*   [ ] Belief State & Goal Stack.
+*   [ ] DAG Graph Executor with Reflection Engine.
 *   [ ] Thompson Sampling with Symmetric Decay.
-*   [ ] TaskNode DAG Executor.
 
-### Phase 5: Observability
-*   [ ] 1Hz Developer HUD & Visualization.
+### Phase 4: Autonomous Cognition
+*   [ ] Long Horizon Planning & Self-Evaluation.
 
 ---
-*Revised: 2026-06-04 | Ronin Kernel Engineering Standards*
+*Revised: 2026-06-05 | Ronin Kernel Engineering Standards v1.3*

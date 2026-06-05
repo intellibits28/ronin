@@ -23,7 +23,8 @@ enum class MemoryTier : int {
     NOTE = 0,
     FACT = 1,
     VAULT = 2,
-    EPISODE = 3
+    EPISODE = 3,
+    PREDICTION = 4
 };
 
 /**
@@ -56,12 +57,19 @@ public:
         EXPLICIT  // Include everything including Forgotten
     };
 
-    // Agent-first Notes Architecture (v10.1 / v11.3 refactored)
+    // Agent-first Notes Architecture (v10.1 / v13.0 refactored)
     bool storeNote(const std::string& title, const std::string& content, const std::string& tags = "");
     bool storeFact(const std::string& entity, const std::string& attr, const std::string& value, 
                   SourceType source = SourceType::USER_EXPLICIT, float confidence = 1.0f);
     bool storeVault(const std::string& title, const std::string& encrypted_blob);
-    bool storeEpisode(const std::string& intent, const std::string& summary, const std::string& payload_json, bool success);
+    
+    // v13.0: Enhanced Episodic and Prediction Storage
+    bool storeEpisode(const std::string& intent, const std::string& summary, const std::string& payload_json, 
+                      bool success, const std::string& goal_id = "", const std::string& node_id = "",
+                      int64_t latency_ms = 0, float conf_before = 0.0f, float conf_after = 0.0f);
+                      
+    bool storePrediction(const std::string& goal_id, const std::string& node_id, 
+                         const std::string& predicted_json, const std::string& actual_json, float error_score);
     
     std::string lookupFact(const std::string& entity, const std::string& attr);
     std::vector<std::string> searchNotes(const std::string& query);

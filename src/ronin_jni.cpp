@@ -318,9 +318,17 @@ jobjectArray native_searchEpisodes(JNIEnv *env, jobject thiz, jstring query) {
     return res;
 }
 
-jboolean native_storeVault(JNIEnv *env, jobject thiz, jstring title, jstring encrypted_blob) {
+jboolean native_storePrediction(JNIEnv *env, jobject thiz, jstring goalId, jstring nodeId, jstring predicted, jstring actual, jfloat error) {
     if (!g_ltm) return JNI_FALSE;
-    return g_ltm->storeVault(ConvertJStringToString(env, title), ConvertJStringToString(env, encrypted_blob)) ? JNI_TRUE : JNI_FALSE;
+    return g_ltm->storePrediction(ConvertJStringToString(env, goalId), ConvertJStringToString(env, nodeId), 
+                                  ConvertJStringToString(env, predicted), ConvertJStringToString(env, actual), error) ? JNI_TRUE : JNI_FALSE;
+}
+
+void native_injectWorldState(JNIEnv *env, jobject thiz, jfloat battery, jfloat ram, jboolean gps, jboolean net, jboolean charging) {
+    // Blueprint v1.3: World State is transient. We can log it or pass it to intent engine.
+    if (g_intent_engine) {
+        // g_intent_engine->updateWorldState(...) // Needs implementation in IntentEngine
+    }
 }
 
 jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
@@ -430,7 +438,9 @@ static JNINativeMethod g_methods[] = {
     {"storeVaultNative", "(Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeVault},
     {"lookupFactNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", (void*)native_lookupFact},
     {"searchNotesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchNotes},
-    {"searchEpisodesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchEpisodes}
+    {"searchEpisodesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchEpisodes},
+    {"storePredictionNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;F)Z", (void*)native_storePrediction},
+    {"injectWorldStateNative", "(FFZZZ)V", (void*)native_injectWorldState}
 };
 
 static JNINativeMethod g_worker_methods[] = {

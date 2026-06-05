@@ -91,6 +91,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Keep
     @Suppress("unused")
+    fun storePrediction(goalId: String, nodeId: String, predicted: String, actual: String, error: Float): Boolean = 
+        if (isLibLoaded) storePredictionNative(goalId, nodeId, predicted, actual, error) else false
+
+    @Keep
+    @Suppress("unused")
+    fun injectWorldState(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean) {
+        if (isLibLoaded) injectWorldStateNative(battery, ram, gps, net, charging)
+    }
+
+    @Keep
+    @Suppress("unused")
     fun encryptSecret(data: String): String = securityProvider.encrypt(data)
 
     @Keep
@@ -210,6 +221,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun searchNotesNative(query: String): Array<String>
     private external fun searchEpisodesNative(query: String): Array<String>
     private external fun storeVaultNative(title: String, encryptedBlob: String): Boolean
+    private external fun storePredictionNative(goalId: String, nodeId: String, predicted: String, actual: String, error: Float): Boolean
+    private external fun injectWorldStateNative(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean)
 
     enum class RiskLevel(val value: Int) {
         LOW(0), MEDIUM(1), HIGH(2), EXTREME(3)

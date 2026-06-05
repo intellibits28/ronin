@@ -170,10 +170,20 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
 }
 
 
-void GraphExecutor::recordEpisode(const std::string& intent, const std::string& summary, const std::string& payload, bool success) {
+void GraphExecutor::recordEpisode(const std::string& intent, const std::string& summary, const std::string& payload, 
+                                  bool success, const std::string& goal_id, const std::string& node_id,
+                                  int64_t latency_ms, float conf_before, float conf_after) {
     if (m_ltm) {
-        m_ltm->storeEpisode(intent, summary, payload, success);
-        LOGI(TAG, "L10: Episodic memory recorded for intent: %s", intent.c_str());
+        m_ltm->storeEpisode(intent, summary, payload, success, goal_id, node_id, latency_ms, conf_before, conf_after);
+        LOGI(TAG, "L10: Episodic memory recorded (v13.0) for intent: %s", intent.c_str());
+    }
+}
+
+void GraphExecutor::recordPrediction(const std::string& goal_id, const std::string& node_id,
+                                     const std::string& predicted_json, const std::string& actual_json, float error_score) {
+    if (m_ltm) {
+        m_ltm->storePrediction(goal_id, node_id, predicted_json, actual_json, error_score);
+        LOGI(TAG, "L10: Prediction recorded (v13.0) for node: %s", node_id.c_str());
     }
 }
 

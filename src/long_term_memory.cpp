@@ -69,14 +69,28 @@ bool LongTermMemory::initSchema() {
         "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
         "  timestamp INTEGER, "
         "  intent TEXT, "
+        "  goal_id TEXT, "
+        "  node_id TEXT, "
         "  summary TEXT, "
         "  payload_json TEXT, "
-        "  outcome_enum INTEGER);"
+        "  outcome_enum INTEGER, "
+        "  latency_ms INTEGER, "
+        "  confidence_before REAL, "
+        "  confidence_after REAL);"
         "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5("
         "  summary, "
         "  content='episodes', "
         "  content_rowid='id'"
         ");"
+        
+        "CREATE TABLE IF NOT EXISTS predictions ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "  timestamp INTEGER, "
+        "  goal_id TEXT, "
+        "  node_id TEXT, "
+        "  predicted_json TEXT, "
+        "  actual_json TEXT, "
+        "  error_score REAL);"
         
         "CREATE TABLE IF NOT EXISTS chat_history ("
         "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -116,6 +130,13 @@ bool LongTermMemory::initSchema() {
     sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN confidence REAL DEFAULT 1.0;", nullptr, nullptr, nullptr);
     sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN last_verified_at INTEGER;", nullptr, nullptr, nullptr);
     sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN updated_at INTEGER;", nullptr, nullptr, nullptr);
+
+    // v13.0 Episode migrations
+    sqlite3_exec(m_db, "ALTER TABLE episodes ADD COLUMN goal_id TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "ALTER TABLE episodes ADD COLUMN node_id TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "ALTER TABLE episodes ADD COLUMN latency_ms INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "ALTER TABLE episodes ADD COLUMN confidence_before REAL DEFAULT 0.0;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "ALTER TABLE episodes ADD COLUMN confidence_after REAL DEFAULT 0.0;", nullptr, nullptr, nullptr);
 
     return true;
 }
@@ -174,17 +195,46 @@ bool LongTermMemory::storeVault(const std::string& title, const std::string& enc
     return false;
 }
 
-bool LongTermMemory::storeEpisode(const std::string& intent, const std::string& summary, const std::string& payload_json, bool success) {
+bool LongTermMemory::storeEpisode(const std::string& intent, const std::string& summary, const std::string& payload_json, 
+                                  bool success, const std::string& goal_id, const std::string& node_id,
+                                  int64_t latency_ms, float conf_before, float conf_after) {
     if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = "INSERT INTO episodes (timestamp, intent, summary, payload_json, outcome_enum) VALUES (?, ?, ?, ?, ?);";
+    const char* sql = "INSERT INTO episodes (timestamp, intent, goal_id, node_id, summary, payload_json, outcome_enum, latency_ms, confidence_before, confidence_after) "
+                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_int64(stmt, 1, std::time(nullptr));
         sqlite3_bind_text(stmt, 2, intent.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 3, summary.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 4, payload_json.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_int(stmt, 5, success ? 1 : 0);
+        sqlite3_bind_text(stmt, 3, goal_id.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, node_id.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 5, summary.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 6, payload_json.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 7, success ? 1 : 0);
+        sqlite3_bind_int64(stmt, 8, latency_ms);
+        sqlite3_bind_double(stmt, 9, conf_before);
+        sqlite3_bind_double(stmt, 10, conf_after);
+        bool res = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+        return res;
+    }
+    return false;
+}
+
+bool LongTermMemory::storePrediction(const std::string& goal_id, const std::string& node_id, 
+                                     const std::string& predicted_json, const std::string& actual_json, float error_score) {
+    if (!m_db) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "INSERT INTO predictions (timestamp, goal_id, node_id, predicted_json, actual_json, error_score) "
+                      "VALUES (?, ?, ?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(stmt, 1, std::time(nullptr));
+        sqlite3_bind_text(stmt, 2, goal_id.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, node_id.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, predicted_json.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 5, actual_json.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_double(stmt, 6, error_score);
         bool res = (sqlite3_step(stmt) == SQLITE_DONE);
         sqlite3_finalize(stmt);
         return res;
