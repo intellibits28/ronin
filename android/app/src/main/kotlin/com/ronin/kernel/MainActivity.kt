@@ -518,29 +518,36 @@ class MainActivity : FragmentActivity() {
         }
         
         nativeEngine.executeAgentToolCallback = { toolName, params ->
+            Log.i("RoninKernel_MainActivity", "Executing Tool: $toolName with params: $params")
             when (toolName) {
                 "MEMORY", "SAVE_NOTE", "SAVE_FACT", "QUERY_FACT", "SAVE_VAULT", "SEARCH_NOTES" -> {
                     try {
                         when (toolName) {
                             "SAVE_NOTE" -> {
-                                val title = params["note_title"] ?: "Untitled Note"
-                                val content = params["note_content"] ?: ""
-                                if (nativeEngine.storeNote(title, content, "")) "Note saved: $title" else "Error: Failed to save note."
+                                val title = params["note_title"] ?: params["title"] ?: "Untitled Note"
+                                val content = params["note_content"] ?: params["content"] ?: ""
+                                if (content.isEmpty()) "Error: Note content is empty."
+                                else if (nativeEngine.storeNote(title, content, "")) "Note saved: $title" 
+                                else "Error: Database failure during SAVE_NOTE."
                             }
                             "SAVE_FACT" -> {
                                 val entity = params["entity"] ?: "Unknown"
                                 val attr = params["attribute"] ?: "Unknown"
-                                val value = params["value"] ?: "Unknown"
-                                // v11.3: User-explicit fact with high confidence
-                                if (nativeEngine.storeFact(entity, attr, value)) {
+                                val value = params["value"] ?: ""
+                                if (value.isEmpty()) "Error: Fact value is empty."
+                                else if (nativeEngine.storeFact(entity, attr, value)) {
                                     "Fact saved: $entity.$attr = $value (Source: User)"
-                                } else "Error: Failed to save fact."
+                                } else "Error: Database failure during SAVE_FACT."
                             }
                             "SAVE_VAULT" -> {
-                                val title = params["vault_title"] ?: "Secret"
-                                val content = params["vault_content"] ?: ""
-                                val encrypted = nativeEngine.encryptSecret(content)
-                                if (nativeEngine.storeVault(title, encrypted)) "Vault entry saved: $title" else "Error: Failed to save vault entry."
+                                val title = params["vault_title"] ?: params["title"] ?: "Secret"
+                                val content = params["vault_content"] ?: params["content"] ?: ""
+                                if (content.isEmpty()) "Error: Vault content is empty."
+                                else authenticateAndExecute("Store Secret", "Authenticate to encrypt and store in Vault") {
+                                    val encrypted = nativeEngine.encryptSecret(content)
+                                    if (nativeEngine.storeVault(title, encrypted)) "Vault entry saved: $title" 
+                                    else "Error: Database failure during SAVE_VAULT."
+                                }
                             }
                             "SEARCH_NOTES" -> {
                                 val query = params["query"] ?: ""

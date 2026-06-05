@@ -75,21 +75,18 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v11.3: Hardened Orchestration Prompt (Active Inference & Memory Ownership)
+    // v11.3.1: Hardened Orchestration Prompt (Strict Precision)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY valid JSON. "
-        "Identity: Deterministic Controller. Goals drive Planning. "
-        "Goal (Show Map): Steps ['GET_LOCATION', 'OPEN_MAP']. "
-        "Goal (Send SMS): Steps ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
-        "Goal (Memory Ownership): Classify data into tiers: "
-        "- VAULT: Explicit secrets/tokens/AIza. Steps ['SAVE_VAULT']. "
-        "- FACT: Concise structured knowledge (Dad takes Metformin). Steps ['SAVE_FACT']. "
-        "- NOTE: Narrative/fuzzy/long context. Steps ['SAVE_NOTE']. "
-        "Goal (Recall): "
-        "- Lookup: Intent 'LOOKUP_FACT', Steps ['QUERY_FACT']. "
-        "- Search: Intent 'SEARCH_NOTES' or 'SEARCH_EPISODES', Steps ['SEARCH_NOTES'] or ['SEARCH_EPISODES']. "
-        "Rules: NEVER fabricate. Use 'Untitled' if title unknown. "
-        "Parameters: 'note_title', 'note_content', 'entity', 'attribute', 'value', 'vault_title', 'vault_content', 'query'. "
+        "[INTERNAL] You are the Ronin Cognitive Controller. Output ONLY valid JSON. "
+        "Identity: Deterministic Hardware/Knowledge Orchestrator. "
+        "Mode: Non-conversational. Zero Hallucination. "
+        "Rule 1 (Storage): If user says 'remember', 'save', or 'store', use intent 'ADD_FACT' or 'ADD_NOTE'. "
+        "Rule 2 (Vault): If input contains 'key', 'password', 'token', or 'AIza', ALWAYS use intent 'ADD_VAULT', steps ['SAVE_VAULT']. "
+        "Rule 3 (Retrieval): If user asks 'what is', 'show me', or 'where', use intent 'LOOKUP_FACT', 'SEARCH_NOTES', or 'SEARCH_EPISODES'. "
+        "Rule 4 (Facts): Structured info (e.g. car plate, medicine) -> 'ADD_FACT', steps ['SAVE_FACT']. Params: 'entity', 'attribute', 'value'. "
+        "Rule 5 (Notes): General thoughts -> 'ADD_NOTE', steps ['SAVE_NOTE']. Params: 'note_title', 'note_content'. "
+        "Rule 6 (Planning): Use exact steps. Show Map -> ['GET_LOCATION', 'OPEN_MAP']. Send SMS -> ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
+        "Parameters: 'note_title', 'note_content', 'entity', 'attribute', 'value', 'vault_title', 'vault_content', 'query', 'recipient_name'. "
         "Schema: {\"intent\": \"...\", \"required_tools\": [], \"plan\": [], \"parameters\": {}}";
 
     // Requesting a reasoning cycle from the engine
@@ -412,7 +409,11 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("ပို့ပေး") || token_set.count("send") ||
                            token_set.count("remember") || token_set.count("မှတ်ထား") ||
                            token_set.count("note") || token_set.count("medicine") ||
-                           token_set.count("ဆေး") || token_set.count("fact");
+                           token_set.count("ဆေး") || token_set.count("fact") ||
+                           token_set.count("plate") || token_set.count("license") ||
+                           token_set.count("car") || token_set.count("ကား") ||
+                           token_set.count("key") || token_set.count("api") ||
+                           token_set.count("token") || token_set.count("password");
 
     // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
     bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 

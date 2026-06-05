@@ -1,12 +1,14 @@
 package com.ronin.kernel
 
+import android.content.Context
 import android.telephony.SmsManager
+import android.os.Build
 import org.json.JSONObject
 
 /**
  * v7.0 Driver: Handles SMS composition and sending.
  */
-class SmsDriver : ICapabilityDriver {
+class SmsDriver(private val context: Context) : ICapabilityDriver {
     override fun execute(request: JSONObject): JSONObject {
         val response = JSONObject()
         return try {
@@ -20,8 +22,14 @@ class SmsDriver : ICapabilityDriver {
             }
 
             // Using modern SmsManager (requires SEND_SMS permission)
-            val smsManager = SmsManager.getDefault()
-            smsManager.sendTextMessage(recipient, null, message, null, null)
+            val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(SmsManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            }
+            
+            smsManager?.sendTextMessage(recipient, null, message, null, null)
             
             response.put("success", true)
             response.put("status", "SMS sent successfully")
