@@ -429,6 +429,48 @@ class MainActivity : ComponentActivity() {
         
         nativeEngine.executeAgentToolCallback = { toolName, params ->
             when (toolName) {
+                "MEMORY", "SAVE_NOTE", "SAVE_FACT", "QUERY_FACT", "SAVE_VAULT", "SEARCH_NOTES" -> {
+                    try {
+                        when (toolName) {
+                            "SAVE_NOTE" -> {
+                                val title = params["note_title"] ?: "Untitled Note"
+                                val content = params["note_content"] ?: ""
+                                if (nativeEngine.storeNote(title, content, "")) "Note saved: $title" else "Error: Failed to save note."
+                            }
+                            "SAVE_FACT" -> {
+                                val entity = params["entity"] ?: "Unknown"
+                                val attr = params["attribute"] ?: "Unknown"
+                                val value = params["value"] ?: "Unknown"
+                                if (nativeEngine.storeFact(entity, attr, value)) "Fact saved: $entity.$attr = $value" else "Error: Failed to save fact."
+                            }
+                            "SAVE_VAULT" -> {
+                                val title = params["vault_title"] ?: "Secret"
+                                val content = params["vault_content"] ?: ""
+                                val encrypted = nativeEngine.encryptSecret(content)
+                                if (nativeEngine.storeVault(title, encrypted)) "Vault entry saved: $title" else "Error: Failed to save vault entry."
+                            }
+                            "SEARCH_NOTES" -> {
+                                val query = params["query"] ?: ""
+                                val results = nativeEngine.searchNotes(query)
+                                if (results.isNotEmpty()) {
+                                    val formatted = results.joinToString("\n---\n")
+                                    nativeEngine.pushKernelMessage("[AGENT] Found Notes:\n$formatted")
+                                    "Found ${results.size} notes matching '$query'."
+                                } else "Error: No notes found matching '$query'."
+                            }
+                            "QUERY_FACT", "MEMORY" -> {
+                                val entity = params["entity"] ?: "Unknown"
+                                val attr = params["attribute"] ?: "Unknown"
+                                val res = nativeEngine.lookupFact(entity, attr)
+                                if (res.isNotEmpty()) {
+                                    nativeEngine.pushKernelMessage("[AGENT] Fact Found: $entity's $attr is $res")
+                                    res 
+                                } else "Error: No information found for $entity's $attr."
+                            }
+                            else -> "Error: Unknown memory action $toolName"
+                        }
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
                 "CONTACTS", "RESOLVE_CONTACT" -> {
                     val name = params["recipient_name"] ?: params["recipient"] ?: params["contact_name"] ?: "Unknown"
                     val resolved = resolveContactName(name)

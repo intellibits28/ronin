@@ -286,6 +286,30 @@ void native_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) 
     if (g_intent_engine) g_intent_engine->updateLocation(lat, lon);
 }
 
+jboolean native_storeNote(JNIEnv *env, jobject thiz, jstring title, jstring content, jstring tags) {
+    if (!g_ltm) return JNI_FALSE;
+    return g_ltm->storeNote(ConvertJStringToString(env, title), ConvertJStringToString(env, content), ConvertJStringToString(env, tags)) ? JNI_TRUE : JNI_FALSE;
+}
+
+jboolean native_storeFact(JNIEnv *env, jobject thiz, jstring entity, jstring attr, jstring value) {
+    if (!g_ltm) return JNI_FALSE;
+    return g_ltm->storeFact(ConvertJStringToString(env, entity), ConvertJStringToString(env, attr), ConvertJStringToString(env, value)) ? JNI_TRUE : JNI_FALSE;
+}
+
+jstring native_lookupFact(JNIEnv *env, jobject thiz, jstring entity, jstring attr) {
+    if (!g_ltm) return env->NewStringUTF("");
+    std::string val = g_ltm->lookupFact(ConvertJStringToString(env, entity), ConvertJStringToString(env, attr));
+    return env->NewStringUTF(val.c_str());
+}
+
+jobjectArray native_searchNotes(JNIEnv *env, jobject thiz, jstring query) {
+    if (!g_ltm) return nullptr;
+    auto results = g_ltm->searchNotes(ConvertJStringToString(env, query));
+    jobjectArray res = (jobjectArray)env->NewObjectArray(results.size(), env->FindClass("java/lang/String"), env->NewStringUTF(""));
+    for (size_t i = 0; i < results.size(); ++i) env->SetObjectArrayElement(res, i, env->NewStringUTF(results[i].c_str()));
+    return res;
+}
+
 jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
     HardwareBridge::reportSystemHealth(temp, used, total);
     return JNI_TRUE;
@@ -387,7 +411,11 @@ static JNINativeMethod g_methods[] = {
     {"loadMyanmarDictionaryNative", "(Ljava/lang/String;)Z", (void*)native_loadMyanmarDictionary},
     {"reportOutcomeNative", "(IIZI)V", (void*)native_reportOutcome},
     {"requestCancellationNative", "()V", (void*)native_requestCancellation},
-    {"setInferenceSilenceNative", "(Z)V", (void*)native_setInferenceSilence}
+    {"setInferenceSilenceNative", "(Z)V", (void*)native_setInferenceSilence},
+    {"storeNoteNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeNote},
+    {"storeFactNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeFact},
+    {"lookupFactNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", (void*)native_lookupFact},
+    {"searchNotesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchNotes}
 };
 
 static JNINativeMethod g_worker_methods[] = {

@@ -75,13 +75,19 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v9.4: Hardened Orchestration Prompt (Hallucination Defense)
+    // v10.1: Hardened Orchestration Prompt (Agent-first Notes)
     std::string system_prompt = 
         "[INTERNAL] You are the Ronin Task Planner. Output ONLY valid JSON. "
-        "Identity: Deterministic Hardware Orchestrator. "
-        "Rule 1 (Scenario: Show Map): ALWAYS use these 2 steps: ['GET_LOCATION', 'OPEN_MAP']. "
-        "Rule 2 (Scenario: Send SMS): ALWAYS use these 3 steps: ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
-        "Rule 3: Parameters must be extracted correctly (e.g., 'recipient_name': 'Aung Aung'). "
+        "Identity: Deterministic Hardware/Knowledge Orchestrator. "
+        "Rule 1 (Show Map): Steps ['GET_LOCATION', 'OPEN_MAP']. "
+        "Rule 2 (Send SMS): Steps ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
+        "Rule 3 (Add Note): Intent 'ADD_NOTE', Steps ['SAVE_NOTE']. Parameters: 'note_title', 'note_content'. "
+        "Rule 4 (Add Fact): Intent 'ADD_FACT', Steps ['SAVE_FACT']. Parameters: 'entity', 'attribute', 'value'. "
+        "Rule 5 (Add Vault): Intent 'ADD_VAULT', Steps ['SAVE_VAULT']. Parameters: 'vault_title', 'vault_content'. "
+        "Rule 6 (Lookup Fact): Intent 'LOOKUP_FACT', Steps ['QUERY_FACT']. Parameters: 'entity', 'attribute'. "
+        "Rule 7 (Search Notes): Intent 'SEARCH_NOTES', Steps ['SEARCH_NOTES']. Parameters: 'query'. "
+        "Rule 8: If unsure about name, use 'RESOLVE_CONTACT' before 'SEND_SMS'. "
+        "Parameters: 'note_title', 'note_content', 'entity', 'attribute', 'value', 'vault_title', 'vault_content', 'query'. "
         "Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [], \"parameters\": {}}";
 
     // Requesting a reasoning cycle from the engine
@@ -401,7 +407,10 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("မြေပုံ") || token_set.count("map") ||
                            token_set.count("show") || token_set.count("ပြ") ||
                            token_set.count("navigate") || token_set.count("open") ||
-                           token_set.count("ပို့ပေး") || token_set.count("send");
+                           token_set.count("ပို့ပေး") || token_set.count("send") ||
+                           token_set.count("remember") || token_set.count("မှတ်ထား") ||
+                           token_set.count("note") || token_set.count("medicine") ||
+                           token_set.count("ဆေး") || token_set.count("fact");
 
     // v6.0 Semantic Guard-rail: Detect Inquiries (Information seeking vs Action)
     bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 

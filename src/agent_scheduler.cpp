@@ -85,6 +85,10 @@ void AgentScheduler::workerLoop() {
                     type = CapabilityType::LOCATION;
                 else if (s_lower.find("contact") != std::string::npos || s_lower.find("resolve") != std::string::npos || s_lower.find("ရှာ") != std::string::npos)
                     type = CapabilityType::CONTACTS;
+                else if (s_lower.find("save_note") != std::string::npos || s_lower.find("save_fact") != std::string::npos || 
+                         s_lower.find("query_fact") != std::string::npos || s_lower.find("save_vault") != std::string::npos ||
+                         s_lower.find("search_notes") != std::string::npos || s_lower.find("memory") != std::string::npos)
+                    type = CapabilityType::MEMORY;
                 else if (s_lower.find("mock_test") != std::string::npos)
                     type = CapabilityType::TEST;
                 

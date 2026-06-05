@@ -66,6 +66,26 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Keep
     @Suppress("unused")
+    fun storeNote(title: String, content: String, tags: String): Boolean = if (isLibLoaded) storeNoteNative(title, content, tags) else false
+
+    @Keep
+    @Suppress("unused")
+    fun storeFact(entity: String, attr: String, value: String): Boolean = if (isLibLoaded) storeFactNative(entity, attr, value) else false
+
+    @Keep
+    @Suppress("unused")
+    fun lookupFact(entity: String, attr: String): String = if (isLibLoaded) lookupFactNative(entity, attr) else ""
+
+    @Keep
+    @Suppress("unused")
+    fun searchNotes(query: String): Array<String> = if (isLibLoaded) searchNotesNative(query) else emptyArray()
+
+    @Keep
+    @Suppress("unused")
+    fun storeVault(title: String, encryptedBlob: String): Boolean = if (isLibLoaded) storeVaultNative(title, encryptedBlob) else false
+
+    @Keep
+    @Suppress("unused")
     fun encryptSecret(data: String): String = securityProvider.encrypt(data)
 
     @Keep
@@ -179,6 +199,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun reportOutcomeNative(sourceId: Int, targetId: Int, success: Boolean, risk: Int)
     private external fun requestCancellationNative()
     private external fun setInferenceSilenceNative(silent: Boolean)
+    private external fun storeNoteNative(title: String, content: String, tags: String): Boolean
+    private external fun storeFactNative(entity: String, attr: String, value: String): Boolean
+    private external fun lookupFactNative(entity: String, attr: String): String
+    private external fun searchNotesNative(query: String): Array<String>
 
     enum class RiskLevel(val value: Int) {
         LOW(0), MEDIUM(1), HIGH(2), EXTREME(3)

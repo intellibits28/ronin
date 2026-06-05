@@ -45,11 +45,15 @@ public:
         EXPLICIT  // Include everything including Forgotten
     };
 
-    // Classified Storage (v10.0)
-    bool storeNote(const std::string& content);
+    // Agent-first Notes Architecture (v10.1)
+    bool storeNote(const std::string& title, const std::string& content, const std::string& tags = "");
     bool storeFact(const std::string& entity, const std::string& attr, const std::string& value);
-    bool storeVault(const std::string& key, const std::string& encrypted_value);
-    std::string retrieveFact(const std::string& entity, const std::string& attr);
+    bool storeVault(const std::string& title, const std::string& encrypted_blob);
+    
+    std::string lookupFact(const std::string& entity, const std::string& attr);
+    std::vector<std::string> searchNotes(const std::string& query);
+    std::vector<std::string> getNotesList();
+    std::vector<std::pair<std::string, std::string>> getFactsList();
 
     // Message History
     bool storeMessage(const std::string& role, const std::string& content, int64_t timestamp = 0);
