@@ -17,6 +17,15 @@ enum class MemoryPriority : int {
 };
 
 /**
+ * v10.0 Memory Tiers for classified storage.
+ */
+enum class MemoryTier : int {
+    NOTE = 0,
+    FACT = 1,
+    VAULT = 2
+};
+
+/**
  * Phase 11.0 Hardening: Lexical Long-Term Memory (LTM)
  * Aligned with Single Gemma 4 Architecture. 
  * All E5/ONNX vector dependencies have been removed.
@@ -36,9 +45,11 @@ public:
         EXPLICIT  // Include everything including Forgotten
     };
 
-    // Fact Storage (Key-Value)
-    bool storeFact(const std::string& key, const std::string& value, MemoryPriority priority = MemoryPriority::MEDIUM);
-    std::string retrieveFact(const std::string& key);
+    // Classified Storage (v10.0)
+    bool storeNote(const std::string& content);
+    bool storeFact(const std::string& entity, const std::string& attr, const std::string& value);
+    bool storeVault(const std::string& key, const std::string& encrypted_value);
+    std::string retrieveFact(const std::string& entity, const std::string& attr);
 
     // Message History
     bool storeMessage(const std::string& role, const std::string& content, int64_t timestamp = 0);

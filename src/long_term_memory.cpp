@@ -31,17 +31,12 @@ LongTermMemory::~LongTermMemory() {
 
 bool LongTermMemory::initSchema() {
     const char* schema = 
-        "CREATE TABLE IF NOT EXISTS facts ("
-        "  key TEXT PRIMARY KEY, "
-        "  value TEXT, "
-        "  stability REAL DEFAULT 1.0, "
-        "  last_accessed INTEGER, "
-        "  priority INTEGER DEFAULT 1);"
-        
         "CREATE TABLE IF NOT EXISTS memories ("
         "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
         "  original_text_mm TEXT, "
         "  segmented_text_mm TEXT, "
+        "  tier_enum INTEGER DEFAULT 0, " // 0:NOTE, 1:FACT, 2:VAULT
+        "  entity_attr TEXT, "            // For FACT mapping
         "  importance_score REAL DEFAULT 1.0, "
         "  recall_count INTEGER DEFAULT 0, "
         "  last_accessed_time INTEGER, "
@@ -76,62 +71,104 @@ bool LongTermMemory::initSchema() {
         LOGE(TAG, "Failed to create SQLite schema: %s", sqlite3_errmsg(m_db));
         return false;
     }
+
+    // Migration: Add columns for v10.0 if upgrading from legacy build
+    sqlite3_exec(m_db, "ALTER TABLE memories ADD COLUMN tier_enum INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "ALTER TABLE memories ADD COLUMN entity_attr TEXT;", nullptr, nullptr, nullptr);
+
     return true;
 }
 
-bool LongTermMemory::storeFact(const std::string& key, const std::string& value, MemoryPriority priority) {
+bool LongTermMemory::storeNote(const std::string& content) {
     if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = "INSERT OR REPLACE INTO facts (key, value, last_accessed, priority) VALUES (?, ?, ?, ?);";
+    
+    std::string segmented = content;
+    if (m_segmenter) segmented = m_segmenter->segment(content);
+
+    sqlite3_exec(m_db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+    const char* sql = "INSERT INTO memories (original_text_mm, segmented_text_mm, tier_enum, creation_time, last_accessed_time) VALUES (?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
+    uint64_t now = std::time(nullptr);
+
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, content.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, segmented.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 3, static_cast<int>(MemoryTier::NOTE));
+        sqlite3_bind_int64(stmt, 4, now);
+        sqlite3_bind_int64(stmt, 5, now);
+        sqlite3_step(stmt);
+        sqlite3_int64 row_id = sqlite3_last_insert_rowid(m_db);
+        sqlite3_finalize(stmt);
+
+        const char* fts_sql = "INSERT INTO memories_fts (original_text_mm, content_id) VALUES (?, ?);";
+        sqlite3_stmt* fts_stmt = nullptr;
+        if (sqlite3_prepare_v2(m_db, fts_sql, -1, &fts_stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(fts_stmt, 1, segmented.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_int64(fts_stmt, 2, row_id);
+            sqlite3_step(fts_stmt);
+            sqlite3_finalize(fts_stmt);
+        }
+    }
     
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
-    
-    sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 3, std::time(nullptr));
-    sqlite3_bind_int(stmt, 4, static_cast<int>(priority));
-    
-    bool success = sqlite3_step(stmt) == SQLITE_DONE;
-    sqlite3_finalize(stmt);
-    return success;
+    sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
+    return true;
 }
 
-int LongTermMemory::runMaintenance(bool is_charging) {
-    if (!is_charging || !m_db) return 0;
-
+bool LongTermMemory::storeFact(const std::string& entity, const std::string& attr, const std::string& value) {
+    if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     uint64_t now = std::time(nullptr);
-    int modified_count = 0;
+    std::string entity_attr = entity + ":" + attr;
 
-    // Prune low stability facts
-    sqlite3_exec(m_db, "DELETE FROM facts WHERE priority = 0 AND stability < 0.1;", nullptr, nullptr, nullptr);
-    
-    // Cycle memories: Active -> Cold (3 days) -> Forgotten (7 days)
-    const char* up_sql = "UPDATE memories SET state_enum = 1 WHERE state_enum = 0 AND (? - last_accessed_time) > 259200;";
-    sqlite3_stmt* up_stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, up_sql, -1, &up_stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_int64(up_stmt, 1, now);
-        sqlite3_step(up_stmt);
-        modified_count += sqlite3_changes(m_db);
-        sqlite3_finalize(up_stmt);
+    const char* sql = "INSERT INTO memories (original_text_mm, entity_attr, tier_enum, creation_time, last_accessed_time) VALUES (?, ?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, value.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, entity_attr.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 3, static_cast<int>(MemoryTier::FACT));
+        sqlite3_bind_int64(stmt, 4, now);
+        sqlite3_bind_int64(stmt, 5, now);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return true;
     }
-
-    return modified_count;
+    return false;
 }
 
-std::string LongTermMemory::retrieveFact(const std::string& key) {
+bool LongTermMemory::storeVault(const std::string& key, const std::string& encrypted_value) {
+    if (!m_db) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    uint64_t now = std::time(nullptr);
+
+    const char* sql = "INSERT INTO memories (original_text_mm, entity_attr, tier_enum, creation_time, last_accessed_time) VALUES (?, ?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, encrypted_value.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, key.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 3, static_cast<int>(MemoryTier::VAULT));
+        sqlite3_bind_int64(stmt, 4, now);
+        sqlite3_bind_int64(stmt, 5, now);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return true;
+    }
+    return false;
+}
+
+std::string LongTermMemory::retrieveFact(const std::string& entity, const std::string& attr) {
     if (!m_db) return "";
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = "SELECT value FROM facts WHERE key = ?;";
+    std::string entity_attr = entity + ":" + attr;
+    const char* sql = "SELECT original_text_mm FROM memories WHERE entity_attr = ? AND tier_enum = 1 ORDER BY last_accessed_time DESC LIMIT 1;";
     sqlite3_stmt* stmt = nullptr;
     std::string result = "";
 
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 1, entity_attr.c_str(), -1, SQLITE_STATIC);
         if (sqlite3_step(stmt) == SQLITE_ROW) {
-            const unsigned char* val_ptr = sqlite3_column_text(stmt, 0);
-            if (val_ptr) result = reinterpret_cast<const char*>(val_ptr);
+            const unsigned char* val = sqlite3_column_text(stmt, 0);
+            if (val) result = reinterpret_cast<const char*>(val);
         }
     }
     sqlite3_finalize(stmt);

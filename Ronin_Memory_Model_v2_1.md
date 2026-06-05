@@ -11,6 +11,13 @@ The Ronin Memory Model operates on a **Single Gemma 4 (E2B-it) Architecture**.
 
 ---
 
+## ⚠️ UPGRADE NOTICE (v10.0 Hardened)
+As of June 2026, this memory model is integrated into the broader **Ronin Cognitive Systems Architecture**. 
+For the expanded tiering logic (NOTE, FACT, VAULT) and Bayesian reasoning integration, please refer to:
+👉 **[Ronin_Cognitive_Systems_Blueprint_v1_0.md](./Ronin_Cognitive_Systems_Blueprint_v1_0.md)**
+
+---
+
 ## 2. Core SQLite Schema (E5-Free & State-Aware)
 
 The schema is optimized for internal rowid mapping and cognitive state management.
