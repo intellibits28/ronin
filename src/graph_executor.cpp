@@ -39,8 +39,9 @@ static std::string trim(const std::string& s) {
 
 // --- GraphExecutor Implementation ---
 
-GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage) 
-    : m_graph(graph), m_storage(storage) {}
+GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage, Memory::LongTermMemory* ltm) 
+    : m_graph(graph), m_storage(storage), m_ltm(ltm), m_sampler() {
+
 
 GraphExecutor::~GraphExecutor() {
     if (m_sync_thread.joinable()) {
@@ -169,6 +170,13 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     return future;
 }
 
+
+void GraphExecutor::recordEpisode(const std::string& intent, const std::string& summary, const std::string& payload, bool success) {
+    if (m_ltm) {
+        m_ltm->storeEpisode(intent, summary, payload, success);
+        LOGI(TAG, "L10: Episodic memory recorded for intent: %s", intent.c_str());
+    }
+}
 
 void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);

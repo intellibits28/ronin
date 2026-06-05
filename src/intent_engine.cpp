@@ -86,7 +86,8 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "Rule 5 (Add Vault): Intent 'ADD_VAULT', Steps ['SAVE_VAULT']. Parameters: 'vault_title', 'vault_content'. "
         "Rule 6 (Lookup Fact): Intent 'LOOKUP_FACT', Steps ['QUERY_FACT']. Parameters: 'entity', 'attribute'. "
         "Rule 7 (Search Notes): Intent 'SEARCH_NOTES', Steps ['SEARCH_NOTES']. Parameters: 'query'. "
-        "Rule 8: If unsure about name, use 'RESOLVE_CONTACT' before 'SEND_SMS'. "
+        "Rule 8 (Search History): Intent 'SEARCH_EPISODES', Steps ['SEARCH_EPISODES']. Parameters: 'query'. "
+        "Rule 9: If unsure about name, use 'RESOLVE_CONTACT' before 'SEND_SMS'. "
         "Parameters: 'note_title', 'note_content', 'entity', 'attribute', 'value', 'vault_title', 'vault_content', 'query'. "
         "Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [], \"parameters\": {}}";
 

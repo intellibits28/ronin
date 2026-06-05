@@ -98,7 +98,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
         g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
         g_cap_graph = std::make_unique<CapabilityGraph>();
         g_graph_storage->loadGraph(*g_cap_graph);
-        g_graph_executor = std::make_unique<GraphExecutor>(*g_cap_graph, *g_graph_storage);
+        g_graph_executor = std::make_unique<GraphExecutor>(*g_cap_graph, *g_graph_storage, g_ltm.get());
         
         AgentScheduler::getInstance().setExecutor(g_graph_executor.get());
 

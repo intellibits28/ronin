@@ -5,6 +5,7 @@
 #include "graph_storage.h"
 #include "ronin_types.hpp"
 #include "capability_dispatcher.h"
+#include "long_term_memory.h"
 #include <future>
 #include <atomic>
 #include <mutex>
@@ -22,7 +23,7 @@ enum class RiskLevel {
 
 class GraphExecutor {
 public:
-    GraphExecutor(CapabilityGraph& graph, GraphStorage& storage);
+    GraphExecutor(CapabilityGraph& graph, GraphStorage& storage, Memory::LongTermMemory* ltm = nullptr);
     ~GraphExecutor();
 
     // Execution Plan for multi-step tasks
@@ -52,9 +53,15 @@ public:
     // Forces an async sync to the L3 Deep-store
     void triggerAsyncSync();
 
+    /**
+     * v11.3: Records a task execution in episodic memory.
+     */
+    void recordEpisode(const std::string& intent, const std::string& summary, const std::string& payload, bool success);
+
 private:
     CapabilityGraph& m_graph;
     GraphStorage& m_storage;
+    Memory::LongTermMemory* m_ltm;
     ThompsonSampler m_sampler;
     ToolContext m_blackboard; // v7.0 Shared Memory (Blackboard)
     

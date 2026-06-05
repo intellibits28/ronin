@@ -52,13 +52,31 @@ bool LongTermMemory::initSchema() {
         "  entity TEXT, "
         "  attribute TEXT, "
         "  value TEXT, "
-        "  created_at INTEGER);"
+        "  source_type INTEGER DEFAULT 0, "
+        "  confidence REAL DEFAULT 1.0, "
+        "  last_verified_at INTEGER, "
+        "  created_at INTEGER, "
+        "  updated_at INTEGER);"
+        "CREATE INDEX IF NOT EXISTS idx_facts_lookup ON facts(entity, attribute);"
         
         "CREATE TABLE IF NOT EXISTS vault ("
         "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
         "  title TEXT, "
         "  encrypted_blob TEXT, "
         "  created_at INTEGER);"
+        
+        "CREATE TABLE IF NOT EXISTS episodes ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "  timestamp INTEGER, "
+        "  intent TEXT, "
+        "  summary TEXT, "
+        "  payload_json TEXT, "
+        "  outcome_enum INTEGER);"
+        "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5("
+        "  summary, "
+        "  content='episodes', "
+        "  content_rowid='id'"
+        ");"
         
         "CREATE TABLE IF NOT EXISTS chat_history ("
         "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -84,20 +102,21 @@ bool LongTermMemory::initSchema() {
         return false;
     }
 
-    // FTS5 External Content Triggers for 'notes'
-    const char* triggers = 
-        "CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN "
-        "  INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content); "
-        "END;"
-        "CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN "
-        "  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content); "
-        "END;"
-        "CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN "
-        "  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content); "
-        "  INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content); "
-        "END;";
+    // FTS5 Triggers for 'notes'
+    sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content); END;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content); END;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content); INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content); END;", nullptr, nullptr, nullptr);
 
-    sqlite3_exec(m_db, triggers, nullptr, nullptr, nullptr);
+    // FTS5 Triggers for 'episodes'
+    sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS episodes_ai AFTER INSERT ON episodes BEGIN INSERT INTO episodes_fts(rowid, summary) VALUES (new.id, new.summary); END;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS episodes_ad AFTER DELETE ON episodes BEGIN INSERT INTO episodes_fts(episodes_fts, rowid, summary) VALUES('delete', old.id, old.summary); END;", nullptr, nullptr, nullptr);
+    
+    // v13.0 Migration Check
+    sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN source_type INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN confidence REAL DEFAULT 1.0;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN last_verified_at INTEGER;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN updated_at INTEGER;", nullptr, nullptr, nullptr);
+
     return true;
 }
 
@@ -113,23 +132,28 @@ bool LongTermMemory::storeNote(const std::string& title, const std::string& cont
     sqlite3_bind_text(stmt, 3, tags.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int64(stmt, 4, now);
     sqlite3_bind_int64(stmt, 5, now);
-    bool success = sqlite3_step(stmt) == SQLITE_DONE;
+    bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
     return success;
 }
 
-bool LongTermMemory::storeFact(const std::string& entity, const std::string& attr, const std::string& value) {
+bool LongTermMemory::storeFact(const std::string& entity, const std::string& attr, const std::string& value, SourceType source, float confidence) {
     if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = "INSERT INTO facts (entity, attribute, value, created_at) VALUES (?, ?, ?, ?);";
+    const char* sql = "INSERT INTO facts (entity, attribute, value, source_type, confidence, last_verified_at, created_at, updated_at) "
+                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
     uint64_t now = std::time(nullptr);
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
     sqlite3_bind_text(stmt, 1, entity.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, attr.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, value.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 4, now);
-    bool success = sqlite3_step(stmt) == SQLITE_DONE;
+    sqlite3_bind_int(stmt, 4, static_cast<int>(source));
+    sqlite3_bind_double(stmt, 5, confidence);
+    sqlite3_bind_int64(stmt, 6, now);
+    sqlite3_bind_int64(stmt, 7, now);
+    sqlite3_bind_int64(stmt, 8, now);
+    bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
     return success;
 }
@@ -139,20 +163,39 @@ bool LongTermMemory::storeVault(const std::string& title, const std::string& enc
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO vault (title, encrypted_blob, created_at) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
-    uint64_t now = std::time(nullptr);
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
-    sqlite3_bind_text(stmt, 1, title.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, encrypted_blob.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 3, now);
-    bool success = sqlite3_step(stmt) == SQLITE_DONE;
-    sqlite3_finalize(stmt);
-    return success;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, title.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, encrypted_blob.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 3, std::time(nullptr));
+        bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+        return success;
+    }
+    return false;
+}
+
+bool LongTermMemory::storeEpisode(const std::string& intent, const std::string& summary, const std::string& payload_json, bool success) {
+    if (!m_db) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "INSERT INTO episodes (timestamp, intent, summary, payload_json, outcome_enum) VALUES (?, ?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(stmt, 1, std::time(nullptr));
+        sqlite3_bind_text(stmt, 2, intent.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, summary.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, payload_json.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 5, success ? 1 : 0);
+        bool res = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+        return res;
+    }
+    return false;
 }
 
 std::string LongTermMemory::lookupFact(const std::string& entity, const std::string& attr) {
     if (!m_db) return "";
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = "SELECT value FROM facts WHERE entity = ? AND attribute = ? ORDER BY created_at DESC LIMIT 1;";
+    const char* sql = "SELECT value FROM facts WHERE entity = ? AND attribute = ? ORDER BY confidence DESC, created_at DESC LIMIT 1;";
     sqlite3_stmt* stmt = nullptr;
     std::string result;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
@@ -171,7 +214,7 @@ std::vector<std::string> LongTermMemory::searchNotes(const std::string& query) {
     if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
-    const char* sql = "SELECT title, content FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT 10;";
+    const char* sql = "SELECT title, content FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT 5;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
@@ -185,13 +228,29 @@ std::vector<std::string> LongTermMemory::searchNotes(const std::string& query) {
     return results;
 }
 
+std::vector<std::string> LongTermMemory::searchEpisodes(const std::string& query) {
+    if (!m_db) return {};
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::string> results;
+    const char* sql = "SELECT summary FROM episodes_fts WHERE episodes_fts MATCH ? ORDER BY rank LIMIT 5;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* summary = sqlite3_column_text(stmt, 0);
+            if (summary) results.push_back(reinterpret_cast<const char*>(summary));
+        }
+    }
+    sqlite3_finalize(stmt);
+    return results;
+}
+
 std::vector<std::string> LongTermMemory::getNotesList() {
     if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
-    const char* sql = "SELECT title FROM notes ORDER BY updated_at DESC;";
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+    if (sqlite3_prepare_v2(m_db, "SELECT title FROM notes ORDER BY updated_at DESC LIMIT 20;", -1, &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             results.push_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
         }
@@ -204,13 +263,13 @@ std::vector<std::pair<std::string, std::string>> LongTermMemory::getFactsList() 
     if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::pair<std::string, std::string>> results;
-    const char* sql = "SELECT entity, attribute || ' -> ' || value FROM facts ORDER BY created_at DESC;";
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+    if (sqlite3_prepare_v2(m_db, "SELECT entity, attribute || ' -> ' || value FROM facts ORDER BY created_at DESC LIMIT 20;", -1, &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            std::string entity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-            std::string detail = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-            results.push_back({entity, detail});
+            results.push_back({
+                reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)),
+                reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))
+            });
         }
     }
     sqlite3_finalize(stmt);
@@ -222,13 +281,15 @@ bool LongTermMemory::storeMessage(const std::string& role, const std::string& co
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO chat_history (role, content, timestamp) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
-    sqlite3_bind_text(stmt, 1, role.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, content.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 3, (timestamp == 0) ? std::time(nullptr) : timestamp);
-    bool success = sqlite3_step(stmt) == SQLITE_DONE;
-    sqlite3_finalize(stmt);
-    return success;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, role.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, content.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 3, (timestamp == 0) ? std::time(nullptr) : timestamp);
+        bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+        return success;
+    }
+    return false;
 }
 
 std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int limit, int offset) {
@@ -266,14 +327,16 @@ bool LongTermMemory::indexFile(const std::string& name, const std::string& path,
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT OR REPLACE INTO file_index (name, path, extension, last_modified) VALUES (?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
-    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, path.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, ext.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(modified));
-    bool success = sqlite3_step(stmt) == SQLITE_DONE;
-    sqlite3_finalize(stmt);
-    return success;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, path.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, ext.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(modified));
+        bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+        return success;
+    }
+    return false;
 }
 
 std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
@@ -294,15 +357,8 @@ std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
     return results;
 }
 
-// Legacy search method kept for compatibility
-std::vector<std::string> LongTermMemory::search(const std::string& query) {
-    return searchNotes(query);
-}
-
-bool LongTermMemory::consolidate(const std::string& summary) {
-    return storeNote("Consolidated Summary", summary, "auto");
-}
-
+std::vector<std::string> LongTermMemory::search(const std::string& query) { return searchNotes(query); }
+bool LongTermMemory::consolidate(const std::string& summary) { return storeNote("Consolidated Summary", summary, "auto"); }
 void LongTermMemory::applyDecay(uint64_t) {}
 int LongTermMemory::runMaintenance(bool) { return 0; }
 bool LongTermMemory::storeAuditLog(const std::string& action, const std::string& details) { return true; }

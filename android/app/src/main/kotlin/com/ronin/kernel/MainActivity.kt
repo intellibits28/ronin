@@ -441,7 +441,10 @@ class MainActivity : ComponentActivity() {
                                 val entity = params["entity"] ?: "Unknown"
                                 val attr = params["attribute"] ?: "Unknown"
                                 val value = params["value"] ?: "Unknown"
-                                if (nativeEngine.storeFact(entity, attr, value)) "Fact saved: $entity.$attr = $value" else "Error: Failed to save fact."
+                                // v11.3: User-explicit fact with high confidence
+                                if (nativeEngine.storeFact(entity, attr, value)) {
+                                    "Fact saved: $entity.$attr = $value (Source: User)"
+                                } else "Error: Failed to save fact."
                             }
                             "SAVE_VAULT" -> {
                                 val title = params["vault_title"] ?: "Secret"
@@ -457,6 +460,15 @@ class MainActivity : ComponentActivity() {
                                     nativeEngine.pushKernelMessage("[AGENT] Found Notes:\n$formatted")
                                     "Found ${results.size} notes matching '$query'."
                                 } else "Error: No notes found matching '$query'."
+                            }
+                            "SEARCH_EPISODES" -> {
+                                val query = params["query"] ?: ""
+                                val results = nativeEngine.searchEpisodes(query)
+                                if (results.isNotEmpty()) {
+                                    val formatted = results.joinToString("\n---\n")
+                                    nativeEngine.pushKernelMessage("[AGENT] Found Episodes:\n$formatted")
+                                    "Found ${results.size} episodes matching '$query'."
+                                } else "Error: No history found matching '$query'."
                             }
                             "QUERY_FACT", "MEMORY" -> {
                                 val entity = params["entity"] ?: "Unknown"

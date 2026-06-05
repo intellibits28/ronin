@@ -125,6 +125,18 @@ void AgentScheduler::workerLoop() {
                 current_session->setState(AgentState::COMPLETED);
                 Capability::HardwareBridge::pushMessage("[AGENT] Task completed successfully.");
                 LOGI(TAG, "Worker session %s execution chain completed.", current_session->getSessionId().c_str());
+                
+                // v11.3: Automatic Episodic Memory Logging
+                if (m_executor) {
+                    nlohmann::json jPayload;
+                    for (const auto& [k, v] : current_session->getParameters()) jPayload[k] = v;
+                    std::string summary = "Successfully executed " + current_session->getIntent();
+                    m_executor->recordEpisode(current_session->getIntent(), summary, jPayload.dump(), true);
+                }
+            } else {
+                if (m_executor) {
+                    m_executor->recordEpisode(current_session->getIntent(), "Failed task: " + current_session->getIntent(), "{}", false);
+                }
             }
         }
     }

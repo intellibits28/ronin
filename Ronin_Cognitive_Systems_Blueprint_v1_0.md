@@ -1,74 +1,92 @@
-# Ronin Cognitive Systems Blueprint v1.0 (Hardened)
+# Ronin Cognitive Systems Blueprint v1.3 (Hardened)
 
-This document outlines the implementation of the industrial-grade AI agent runtime, focusing on deterministic memory management, Bayesian reasoning, and optimized observability for mid-range hardware (Mi 11 Lite 5G NE).
+Industrial-grade evolution of Ronin into a deterministic agent runtime platform.
 
 ---
 
-## 1. Multi-Layer Memory Architecture (Sovereign Storage)
+## 1. Multi-Tier Memory Architecture (Sovereign Storage)
 
-Memory is no longer a simple text store; it is a classified cognitive hierarchy.
+### 1.1 Memory Classifier & Ownership
+The **MemoryClassifier** determines the destination tier based on input intent:
+*   **VAULT:** Secrets, API Keys (Hardware encrypted).
+*   **FACT:** Concise, structured knowledge (EAV Model).
+*   **NOTE:** Narrative or fuzzy context (FTS5 enabled).
+*   **EPISODE:** Automatic logs of past actions and results (FTS5 enabled).
 
-### 1.1 Data Tiers & Storage Strategy
-| Tier | Description | Storage Engine | Security |
-| :--- | :--- | :--- | :--- |
-| **NOTE** | Long-form narratives, general context, and logs. | SQLite FTS5 | Plaintext (Internal) |
-| **FACT** | Structured "Ground Truth" (EAV Model). | SQLite (Relational) | Plaintext (Internal) |
-| **VAULT** | API Keys, Passwords, Sensitive Data. | Android Keystore | AES-256-GCM |
-
-### 1.2 Schema Evolution (v10.0)
-The `memories` table is extended to support these tiers:
+### 1.2 Schema (v13.0 - Lifecycle-Aware)
 ```sql
-ALTER TABLE memories ADD COLUMN tier_enum INTEGER DEFAULT 0; -- 0:NOTE, 1:FACT, 2:VAULT
-ALTER TABLE memories ADD COLUMN entity_attr TEXT; -- For FACT mapping (e.g. "Car:Plate")
+-- FACTS (EAV with Source Tracking)
+CREATE TABLE facts (
+    id INTEGER PRIMARY KEY,
+    entity TEXT,
+    attribute TEXT,
+    value TEXT,
+    source_type INTEGER, -- 0:USER_EXPLICIT, 1:USER_INFERRED, 2:OCR
+    confidence REAL,
+    last_verified_at INTEGER,
+    created_at INTEGER,
+    updated_at INTEGER
+);
+CREATE INDEX idx_facts_lookup ON facts(entity, attribute);
+
+-- EPISODES (Searchable Task Logs)
+CREATE TABLE episodes (
+    id INTEGER PRIMARY KEY,
+    timestamp INTEGER,
+    intent TEXT,
+    summary TEXT,
+    payload_json TEXT,
+    outcome_enum INTEGER -- 0:FAIL, 1:SUCCESS
+);
+CREATE VIRTUAL TABLE episodes_fts USING fts5(summary, content='episodes', content_rowid='id');
 ```
 
----
-
-## 2. Reasoning Layer: The Bayesian Brain (GraphExecutor)
-
-Decision making uses probabilistic modeling to choose the best action path.
-
-### 2.1 Thompson Sampling Logic
-*   **Bayesian Belief:** Calculated as `Belief = (Success + 1) / (Success + Failure + 2)`.
-*   **Dynamic Weighting:** Every edge in the Graph holds a weight that updates based on tool execution outcome (`reportOutcomeNative`).
-
-### 2.2 Hierarchical DAG Layout
-The system organizes capabilities in a directed acyclic graph:
-`ROOT` → `Intent Detection` → `Capability Selection` → `Execution`.
+### 1.3 Memory Consolidator (The Lifecycle Service)
+A background worker responsible for data health:
+*   **Conflict Resolution:** Detects multiple values for a single fact (e.g. `Father:Medication`) and promotes the newest/most verified.
+*   **Deduplication:** Merges redundant notes and expires old, failed episodes.
 
 ---
 
-## 3. Presentation Layer: Observable UI (Mi 11 Lite 5G NE Optimized)
+## 2. Reasoning Layer: The Bayesian Brain
 
-To prevent thermal throttling and screen clutter, the UI follows a "Minimalist-Instrumentation" approach.
-
-### 3.1 Device Constraints (Xiaomi Mi 11 Lite 5G NE)
-*   **Thermal Budget:** Low (Slim build). LLM activities must minimize concurrent GPU load.
-*   **Display:** AMOLED. Uses Pure Black (#000000) for battery saving and burn-in protection.
-*   **Refresh Rate:** Adaptive. System metrics update every 5s instead of every frame.
-
-### 3.2 UI Component Strategy
-1.  **Instrumentation Top Bar:** Real-time RAM/Temp/JNI stats (Togglable).
-2.  **Live Reasoning Overlay:** A bottom sheet showing the current step (e.g., "[AGENT] Resolving Contact...").
-3.  **Bayesian Graph View:** Accessed via a "System Info" icon. Uses static line art instead of heavy glow effects to save GPU cycles.
-4.  **HITL Dialogs:** Standardized safety prompts for sensitive actions (SMS/Vault).
+### 2.1 Symmetric Confidence Decay
+*   To prevent bias, both success and failure weights are aged:
+    *   `effective_success = current_success * aging_factor`
+    *   `effective_failure = current_failure * aging_factor`
+*   **Thompson Selection:** `Sample ~ Beta(effective_success + 1, effective_failure + 1)`.
 
 ---
 
-## 4. Implementation Roadmap
+## 3. Presentation Layer: Developer HUD (Mi 11 Lite 5G NE Optimized)
 
-### Phase 1: Memory Tiering (Alpha)
-*   [ ] Implement SQL schema updates for NOTE/FACT/VAULT.
-*   [ ] Add `storeFact` and `storeNote` functions to `LongTermMemory.cpp`.
-*   [ ] Integrate Android Keystore for VAULT encryption.
-
-### Phase 2: Graph Logic (Beta)
-*   [ ] Build `BetaDistribution` helper in C++.
-*   [ ] Hook `GraphExecutor` to Thompson Sampler for real node selection.
-
-### Phase 3: Optimized UI (Stable)
-*   [ ] Implement pure-black Compose theme.
-*   [ ] Create the "Developer Overlay" for real-time cognitive tracking.
+### 3.1 Tiered Metrics (1 Hz Refresh Rate)
+*   **Runtime:** Active Sessions, Queue Depth.
+*   **LLM:** Latency, Token Budget.
+*   **Bayesian:** Belief Scores, Thompson Samples.
 
 ---
-*Created on: 2026-06-04 | Ronin Kernel Engineering Standards*
+
+## 4. Implementation Roadmap (Revised)
+
+### Phase 1: Interaction Foundation (Active)
+*   [x] SMS, Location, Vault.
+
+### Phase 2: Memory Mastery
+*   [ ] Refactor Fact Store (Source Tracking + EAV).
+*   [ ] Implement Searchable Episodic Memory (FTS5).
+*   [ ] Build Memory Classifier (Intent -> Tier).
+
+### Phase 3: Memory Lifecycle
+*   [ ] Memory Consolidator Service (Conflict/Deduplication).
+*   [ ] Advanced Memory Search (Exact/Episodic/FTS).
+
+### Phase 4: Bayesian Reasoning
+*   [ ] Thompson Sampling with Symmetric Decay.
+*   [ ] TaskNode DAG Executor.
+
+### Phase 5: Observability
+*   [ ] 1Hz Developer HUD & Visualization.
+
+---
+*Revised: 2026-06-04 | Ronin Kernel Engineering Standards*

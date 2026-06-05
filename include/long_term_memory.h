@@ -22,7 +22,18 @@ enum class MemoryPriority : int {
 enum class MemoryTier : int {
     NOTE = 0,
     FACT = 1,
-    VAULT = 2
+    VAULT = 2,
+    EPISODE = 3
+};
+
+/**
+ * v11.3 Fact Source Tracking.
+ */
+enum class SourceType : int {
+    USER_EXPLICIT = 0,
+    USER_INFERRED = 1,
+    OCR = 2,
+    IMPORTED = 3
 };
 
 /**
@@ -45,13 +56,16 @@ public:
         EXPLICIT  // Include everything including Forgotten
     };
 
-    // Agent-first Notes Architecture (v10.1)
+    // Agent-first Notes Architecture (v10.1 / v11.3 refactored)
     bool storeNote(const std::string& title, const std::string& content, const std::string& tags = "");
-    bool storeFact(const std::string& entity, const std::string& attr, const std::string& value);
+    bool storeFact(const std::string& entity, const std::string& attr, const std::string& value, 
+                  SourceType source = SourceType::USER_EXPLICIT, float confidence = 1.0f);
     bool storeVault(const std::string& title, const std::string& encrypted_blob);
+    bool storeEpisode(const std::string& intent, const std::string& summary, const std::string& payload_json, bool success);
     
     std::string lookupFact(const std::string& entity, const std::string& attr);
     std::vector<std::string> searchNotes(const std::string& query);
+    std::vector<std::string> searchEpisodes(const std::string& query);
     std::vector<std::string> getNotesList();
     std::vector<std::pair<std::string, std::string>> getFactsList();
 
