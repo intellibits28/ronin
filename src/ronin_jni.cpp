@@ -310,6 +310,11 @@ jobjectArray native_searchNotes(JNIEnv *env, jobject thiz, jstring query) {
     return res;
 }
 
+jboolean native_storeVault(JNIEnv *env, jobject thiz, jstring title, jstring encrypted_blob) {
+    if (!g_ltm) return JNI_FALSE;
+    return g_ltm->storeVault(ConvertJStringToString(env, title), ConvertJStringToString(env, encrypted_blob)) ? JNI_TRUE : JNI_FALSE;
+}
+
 jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
     HardwareBridge::reportSystemHealth(temp, used, total);
     return JNI_TRUE;
@@ -414,6 +419,7 @@ static JNINativeMethod g_methods[] = {
     {"setInferenceSilenceNative", "(Z)V", (void*)native_setInferenceSilence},
     {"storeNoteNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeNote},
     {"storeFactNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeFact},
+    {"storeVaultNative", "(Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeVault},
     {"lookupFactNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", (void*)native_lookupFact},
     {"searchNotesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchNotes}
 };

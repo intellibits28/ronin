@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.RemoteException
+import androidx.annotation.Keep
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -203,6 +204,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun storeFactNative(entity: String, attr: String, value: String): Boolean
     private external fun lookupFactNative(entity: String, attr: String): String
     private external fun searchNotesNative(query: String): Array<String>
+    private external fun storeVaultNative(title: String, encryptedBlob: String): Boolean
 
     enum class RiskLevel(val value: Int) {
         LOW(0), MEDIUM(1), HIGH(2), EXTREME(3)
