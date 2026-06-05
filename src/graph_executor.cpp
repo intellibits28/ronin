@@ -40,8 +40,7 @@ static std::string trim(const std::string& s) {
 // --- GraphExecutor Implementation ---
 
 GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage, Memory::LongTermMemory* ltm) 
-    : m_graph(graph), m_storage(storage), m_ltm(ltm), m_sampler() {
-
+    : m_graph(graph), m_storage(storage), m_ltm(ltm), m_sampler() {}
 
 GraphExecutor::~GraphExecutor() {
     if (m_sync_thread.joinable()) {
