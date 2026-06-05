@@ -310,6 +310,14 @@ jobjectArray native_searchNotes(JNIEnv *env, jobject thiz, jstring query) {
     return res;
 }
 
+jobjectArray native_searchEpisodes(JNIEnv *env, jobject thiz, jstring query) {
+    if (!g_ltm) return nullptr;
+    auto results = g_ltm->searchEpisodes(ConvertJStringToString(env, query));
+    jobjectArray res = (jobjectArray)env->NewObjectArray(results.size(), env->FindClass("java/lang/String"), env->NewStringUTF(""));
+    for (size_t i = 0; i < results.size(); ++i) env->SetObjectArrayElement(res, i, env->NewStringUTF(results[i].c_str()));
+    return res;
+}
+
 jboolean native_storeVault(JNIEnv *env, jobject thiz, jstring title, jstring encrypted_blob) {
     if (!g_ltm) return JNI_FALSE;
     return g_ltm->storeVault(ConvertJStringToString(env, title), ConvertJStringToString(env, encrypted_blob)) ? JNI_TRUE : JNI_FALSE;
@@ -421,7 +429,8 @@ static JNINativeMethod g_methods[] = {
     {"storeFactNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeFact},
     {"storeVaultNative", "(Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeVault},
     {"lookupFactNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", (void*)native_lookupFact},
-    {"searchNotesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchNotes}
+    {"searchNotesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchNotes},
+    {"searchEpisodesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchEpisodes}
 };
 
 static JNINativeMethod g_worker_methods[] = {

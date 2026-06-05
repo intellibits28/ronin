@@ -83,6 +83,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Keep
     @Suppress("unused")
+    fun searchEpisodes(query: String): Array<String> = if (isLibLoaded) searchEpisodesNative(query) else emptyArray()
+
+    @Keep
+    @Suppress("unused")
     fun storeVault(title: String, encryptedBlob: String): Boolean = if (isLibLoaded) storeVaultNative(title, encryptedBlob) else false
 
     @Keep
@@ -204,6 +208,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun storeFactNative(entity: String, attr: String, value: String): Boolean
     private external fun lookupFactNative(entity: String, attr: String): String
     private external fun searchNotesNative(query: String): Array<String>
+    private external fun searchEpisodesNative(query: String): Array<String>
     private external fun storeVaultNative(title: String, encryptedBlob: String): Boolean
 
     enum class RiskLevel(val value: Int) {
