@@ -23,6 +23,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -143,7 +144,7 @@ class ChatViewModel : ViewModel() {
     var isGenerating by mutableStateOf(false)
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     internal lateinit var nativeEngine: NativeEngine
     private lateinit var sharedPreferences: android.content.SharedPreferences
     private lateinit var fusedLocationClient: FusedLocationProviderClient
