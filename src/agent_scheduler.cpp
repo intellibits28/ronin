@@ -108,7 +108,7 @@ void AgentScheduler::workerLoop() {
                         LOGI(TAG, "L8 Scheduler: Driver responded with Success: %d", step_success);
                         if (!step_success) {
                             LOGE(TAG, "L8 Scheduler: Step '%s' failed. Stopping chain.", step.c_str());
-                            Capability::HardwareBridge::pushMessage("[AGENT] Step failed: " + step);
+                            Capability::HardwareBridge::pushMessage("[AGENT] Step failed: " + step + ". Check console for details.");
                             current_session->setState(AgentState::FAILED);
                             all_steps_success = false;
                             break;

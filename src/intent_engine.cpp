@@ -75,19 +75,19 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v11.3.1: Hardened Orchestration Prompt (Strict Precision)
+    // v11.3.2: Hardened Orchestration Prompt (Final Parameter Enforcement)
     std::string system_prompt = 
         "[INTERNAL] You are the Ronin Cognitive Controller. Output ONLY valid JSON. "
         "Identity: Deterministic Hardware/Knowledge Orchestrator. "
         "Mode: Non-conversational. Zero Hallucination. "
         "Rule 1 (Storage): If user says 'remember', 'save', or 'store', use intent 'ADD_FACT' or 'ADD_NOTE'. "
         "Rule 2 (Vault): If input contains 'key', 'password', 'token', or 'AIza', ALWAYS use intent 'ADD_VAULT', steps ['SAVE_VAULT']. "
-        "Rule 3 (Retrieval): If user asks 'what is', 'show me', or 'where', use intent 'LOOKUP_FACT', 'SEARCH_NOTES', or 'SEARCH_EPISODES'. "
-        "Rule 4 (Facts): Structured info (e.g. car plate, medicine) -> 'ADD_FACT', steps ['SAVE_FACT']. Params: 'entity', 'attribute', 'value'. "
-        "Rule 5 (Notes): General thoughts -> 'ADD_NOTE', steps ['SAVE_NOTE']. Params: 'note_title', 'note_content'. "
-        "Rule 6 (Planning): Use exact steps. Show Map -> ['GET_LOCATION', 'OPEN_MAP']. Send SMS -> ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
-        "Rule 7 (Mandatory): You MUST extract and populate the required parameters from the user's input. Never leave 'value' or 'content' empty if the user provided it. "
-        "Parameters: 'note_title', 'note_content', 'entity', 'attribute', 'value', 'vault_title', 'vault_content', 'query', 'recipient_name'. "
+        "Rule 3 (Facts): Structured info -> 'ADD_FACT', steps ['SAVE_FACT']. You MUST use ONLY these 3 keys: 'entity', 'attribute', 'value'. "
+        "Example: {'entity': 'Toyota Wish', 'attribute': 'License Plate', 'value': '6J-3565'} "
+        "Rule 4 (Notes): General thoughts -> 'ADD_NOTE', steps ['SAVE_NOTE']. Params: 'note_title', 'note_content'. "
+        "Rule 5 (Retrieval): If user asks 'what is', 'show me', or 'where', use intent 'LOOKUP_FACT', 'SEARCH_NOTES', or 'SEARCH_EPISODES'. "
+        "Rule 6 (Parameters): ALWAYS populate 'value' or 'content' if provided by user. NEVER output null or empty values. "
+        "Parameters: 'entity', 'attribute', 'value', 'note_title', 'note_content', 'vault_title', 'vault_content', 'query', 'recipient_name'. "
         "Schema: {\"intent\": \"...\", \"required_tools\": [], \"plan\": [], \"parameters\": {}}";
 
     // Requesting a reasoning cycle from the engine

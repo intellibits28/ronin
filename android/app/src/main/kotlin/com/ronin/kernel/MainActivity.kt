@@ -536,22 +536,38 @@ class MainActivity : FragmentActivity() {
                                 else "Error: Database failure during SAVE_NOTE."
                             }
                             "SAVE_FACT" -> {
-                                val entity = params["entity"] ?: "Unknown"
-                                val attr = params["attribute"] ?: "Unknown"
-                                val value = params["value"] ?: ""
-                                if (value.isEmpty()) "Error: Fact value is empty. Params: $params"
-                                else if (nativeEngine.storeFact(entity, attr, value)) {
+                                val entity = params["entity"] ?: params["item"] ?: params["car"] ?: params["person"] ?: "Unknown"
+                                val attr = params["attribute"] ?: params["property"] ?: params["type"] ?: params["field"] ?: "General"
+                                val value = params["value"] ?: params["content"] ?: params["plate"] ?: params["medicine"] ?: ""
+                                
+                                if (value.isEmpty()) {
+                                    val err = "Error: Fact value is empty. Extraction failed for params: $params"
+                                    nativeEngine.pushKernelMessage("[AGENT] $err")
+                                    err
+                                } else if (nativeEngine.storeFact(entity, attr, value)) {
                                     "Fact saved: $entity.$attr = $value (Source: User)"
-                                } else "Error: Database failure during SAVE_FACT."
+                                } else {
+                                    val err = "Error: Database failure during SAVE_FACT. Check C++ logs."
+                                    nativeEngine.pushKernelMessage("[AGENT] $err")
+                                    err
+                                }
                             }
                             "SAVE_VAULT" -> {
-                                val title = params["vault_title"] ?: params["title"] ?: "Secret"
-                                val content = params["vault_content"] ?: params["content"] ?: ""
-                                if (content.isEmpty()) "Error: Vault content is empty. Params: $params"
-                                else authenticateAndExecute("Store Secret", "Authenticate to encrypt and store in Vault") {
+                                val title = params["vault_title"] ?: params["title"] ?: params["key_name"] ?: "Secret"
+                                val content = params["vault_content"] ?: params["content"] ?: params["key"] ?: params["token"] ?: params["password"] ?: ""
+                                
+                                if (content.isEmpty()) {
+                                    val err = "Error: Vault content is empty. Extraction failed for params: $params"
+                                    nativeEngine.pushKernelMessage("[AGENT] $err")
+                                    err
+                                } else authenticateAndExecute("Store Secret", "Authenticate to encrypt and store in Vault") {
                                     val encrypted = nativeEngine.encryptSecret(content)
                                     if (nativeEngine.storeVault(title, encrypted)) "Vault entry saved: $title" 
-                                    else "Error: Database failure during SAVE_VAULT."
+                                    else {
+                                        val err = "Error: Database failure during SAVE_VAULT."
+                                        nativeEngine.pushKernelMessage("[AGENT] $err")
+                                        err
+                                    }
                                 }
                             }
                             "SEARCH_NOTES" -> {
