@@ -529,35 +529,49 @@ class MainActivity : FragmentActivity() {
                     try {
                         when (toolName) {
                             "SAVE_NOTE" -> {
-                                val title = params["note_title"] ?: params["title"] ?: "Untitled Note"
-                                val content = params["note_content"] ?: params["content"] ?: ""
-                                if (content.isEmpty()) "Error: Note content is empty. Params: $params"
-                                else if (nativeEngine.storeNote(title, content, "")) "Note saved: $title" 
+                                val title = params["note_title"] ?: params["title"] ?: params.keys.find { it.contains("title", true) }?.let { params[it] } ?: "Untitled Note"
+                                val content = params["note_content"] ?: params["content"] ?: params["text"] ?: params.values.find { it.length > 5 } ?: ""
+                                
+                                if (content.isEmpty()) {
+                                    val err = "Error: Note content is empty. Params: $params"
+                                    nativeEngine.pushKernelMessage("[AGENT] $err")
+                                    err
+                                } else if (nativeEngine.storeNote(title, content, "")) "Note saved: $title" 
                                 else "Error: Database failure during SAVE_NOTE."
                             }
                             "SAVE_FACT" -> {
-                                val entity = params["entity"] ?: params["item"] ?: params["car"] ?: params["person"] ?: "Unknown"
-                                val attr = params["attribute"] ?: params["property"] ?: params["type"] ?: params["field"] ?: "General"
-                                val value = params["value"] ?: params["content"] ?: params["plate"] ?: params["medicine"] ?: ""
+                                // v10.1.16: Intelligent parameter matching
+                                val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) || it.contains("person", true) }?.let { params[it] } ?: "Unknown"
+                                val attr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) }?.let { params[it] } ?: "General"
+                                
+                                // Try to find the most likely 'value'
+                                val value = params["value"] ?: params["content"] ?: params.keys.find { 
+                                    val k = it.toLowerCase()
+                                    k.contains("plate") || k.contains("medicine") || k.contains("number") || k.contains("result") || k.contains("val")
+                                }?.let { params[it] } ?: ""
                                 
                                 if (value.isEmpty()) {
-                                    val err = "Error: Fact value is empty. Extraction failed for params: $params"
+                                    val err = "Error: Fact value is empty. Params: $params"
                                     nativeEngine.pushKernelMessage("[AGENT] $err")
                                     err
                                 } else if (nativeEngine.storeFact(entity, attr, value)) {
                                     "Fact saved: $entity.$attr = $value (Source: User)"
                                 } else {
-                                    val err = "Error: Database failure during SAVE_FACT. Check C++ logs."
+                                    val err = "Error: Database failure during SAVE_FACT."
                                     nativeEngine.pushKernelMessage("[AGENT] $err")
                                     err
                                 }
                             }
                             "SAVE_VAULT" -> {
-                                val title = params["vault_title"] ?: params["title"] ?: params["key_name"] ?: "Secret"
-                                val content = params["vault_content"] ?: params["content"] ?: params["key"] ?: params["token"] ?: params["password"] ?: ""
+                                val title = params["vault_title"] ?: params["title"] ?: params.keys.find { it.contains("name", true) || it.contains("title", true) }?.let { params[it] } ?: "Secret"
+                                
+                                val content = params["vault_content"] ?: params["content"] ?: params.keys.find {
+                                    val k = it.toLowerCase()
+                                    k.contains("key") || k.contains("token") || k.contains("password") || k.contains("secret") || k.contains("pin")
+                                }?.let { params[it] } ?: ""
                                 
                                 if (content.isEmpty()) {
-                                    val err = "Error: Vault content is empty. Extraction failed for params: $params"
+                                    val err = "Error: Vault content is empty. Params: $params"
                                     nativeEngine.pushKernelMessage("[AGENT] $err")
                                     err
                                 } else authenticateAndExecute("Store Secret", "Authenticate to encrypt and store in Vault") {
