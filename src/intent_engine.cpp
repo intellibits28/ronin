@@ -83,11 +83,11 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "Rule 2 (Send SMS): Steps ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
         "Rule 3 (Add Note): Intent 'ADD_NOTE', Steps ['SAVE_NOTE']. Parameters: 'note_title', 'note_content'. "
         "Rule 4 (Add Fact): Intent 'ADD_FACT', Steps ['SAVE_FACT']. Parameters: 'entity', 'attribute', 'value'. "
-        "Rule 5 (Add Vault): Intent 'ADD_VAULT', Steps ['SAVE_VAULT']. Parameters: 'vault_title', 'vault_content'. "
+        "Rule 5 (Add Vault): If input contains 'key', 'password', 'token', or 'AIza', ALWAYS use intent 'ADD_VAULT', steps ['SAVE_VAULT']. Parameters: 'vault_title', 'vault_content'. "
         "Rule 6 (Lookup Fact): Intent 'LOOKUP_FACT', Steps ['QUERY_FACT']. Parameters: 'entity', 'attribute'. "
         "Rule 7 (Search Notes): Intent 'SEARCH_NOTES', Steps ['SEARCH_NOTES']. Parameters: 'query'. "
         "Rule 8 (Search History): Intent 'SEARCH_EPISODES', Steps ['SEARCH_EPISODES']. Parameters: 'query'. "
-        "Rule 9: If unsure about name, use 'RESOLVE_CONTACT' before 'SEND_SMS'. "
+        "Rule 9: NEVER fabricate parameters. If title is unknown, use 'Untitled'. "
         "Parameters: 'note_title', 'note_content', 'entity', 'attribute', 'value', 'vault_title', 'vault_content', 'query'. "
         "Schema: {\"intent\": \"...\", \"required_tools\": [], \"required_permissions\": [], \"plan\": [], \"parameters\": {}}";
 

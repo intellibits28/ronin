@@ -82,6 +82,7 @@ dependencies {
     // Hardware & Security
     implementation 'com.google.android.gms:play-services-location:21.1.0'
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+    implementation 'androidx.biometric:biometric:1.1.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3'
 
     // Network Stack

@@ -55,6 +55,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import android.provider.ContactsContract
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -406,6 +409,47 @@ class MainActivity : ComponentActivity() {
         return "NOT_FOUND:$name"
     }
 
+    private fun authenticateAndExecute(title: String, subtitle: String, onAuthSuccess: () -> String): String {
+        val biometricManager = BiometricManager.from(this)
+        if (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL) != BiometricManager.BIOMETRIC_SUCCESS) {
+            return onAuthSuccess() // Fallback if no biometric set up
+        }
+
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var result = "Error: Authentication failed."
+        
+        runOnUiThread {
+            val executor = ContextCompat.getMainExecutor(this)
+            val biometricPrompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(authResult: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(authResult)
+                    result = onAuthSuccess()
+                    latch.countDown()
+                }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    result = "Error: $errString"
+                    latch.countDown()
+                }
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    // Keep waiting for success or explicit error
+                }
+            })
+
+            val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                .setTitle(title)
+                .setSubtitle(subtitle)
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                .build()
+
+            biometricPrompt.authenticate(promptInfo)
+        }
+        
+        latch.await(30, TimeUnit.SECONDS)
+        return result
+    }
+
     private fun setupHardwareCallbacks() {
         val vm = ViewModelProvider(this)[ChatViewModel::class.java]
         nativeEngine.getSecureApiKeyProvider = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
@@ -470,14 +514,32 @@ class MainActivity : ComponentActivity() {
                                     "Found ${results.size} episodes matching '$query'."
                                 } else "Error: No history found matching '$query'."
                             }
+                            "SAVE_VAULT" -> {
+                                val title = params["vault_title"] ?: "Secret"
+                                val content = params["vault_content"] ?: ""
+                                authenticateAndExecute("Store Secret", "Authenticate to encrypt and store in Vault") {
+                                    val encrypted = nativeEngine.encryptSecret(content)
+                                    if (nativeEngine.storeVault(title, encrypted)) "Vault entry saved: $title" else "Error: Failed to save vault entry."
+                                }
+                            }
                             "QUERY_FACT", "MEMORY" -> {
                                 val entity = params["entity"] ?: "Unknown"
                                 val attr = params["attribute"] ?: "Unknown"
-                                val res = nativeEngine.lookupFact(entity, attr)
-                                if (res.isNotEmpty()) {
-                                    nativeEngine.pushKernelMessage("[AGENT] Fact Found: $entity's $attr is $res")
-                                    res 
-                                } else "Error: No information found for $entity's $attr."
+                                if (attr.contains("key", true) || attr.contains("password", true) || attr.contains("pin", true)) {
+                                    authenticateAndExecute("Access Sensitive Fact", "Authenticate to retrieve $entity's $attr") {
+                                        val res = nativeEngine.lookupFact(entity, attr)
+                                        if (res.isNotEmpty()) {
+                                            nativeEngine.pushKernelMessage("[AGENT] Fact Found: $entity's $attr is $res")
+                                            res 
+                                        } else "Error: No information found for $entity's $attr."
+                                    }
+                                } else {
+                                    val res = nativeEngine.lookupFact(entity, attr)
+                                    if (res.isNotEmpty()) {
+                                        nativeEngine.pushKernelMessage("[AGENT] Fact Found: $entity's $attr is $res")
+                                        res 
+                                    } else "Error: No information found for $entity's $attr."
+                                }
                             }
                             else -> "Error: Unknown memory action $toolName"
                         }
