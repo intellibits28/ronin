@@ -1,6 +1,7 @@
 #include "intent_engine.h"
 #include <algorithm>
 #include <sstream>
+#include <fstream>
 #include <iomanip>
 #include <nlohmann/json.hpp>
 #include "ronin_log.h"
