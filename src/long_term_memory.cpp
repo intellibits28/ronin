@@ -39,113 +39,31 @@ bool LongTermMemory::initSchema() {
         LOGI(TAG, "v13.0 Migration: Dropped legacy facts table.");
     }
 
-    const char* schema = 
-        "CREATE TABLE IF NOT EXISTS notes ("
-        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "  title TEXT, "
-        "  content TEXT, "
-        "  tags TEXT, "
-        "  created_at INTEGER, "
-        "  updated_at INTEGER);"
-        
-        "CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5("
-        "  title, "
-        "  content, "
-        "  content='notes', "
-        "  content_rowid='id'"
-        ");"
-        
-        "CREATE TABLE IF NOT EXISTS facts ("
-        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "  entity TEXT, "
-        "  attribute TEXT, "
-        "  value TEXT, "
-        "  source_type INTEGER DEFAULT 0, "
-        "  confidence REAL DEFAULT 1.0, "
-        "  last_verified_at INTEGER, "
-        "  created_at INTEGER, "
-        "  updated_at INTEGER);"
-        "CREATE INDEX IF NOT EXISTS idx_facts_lookup ON facts(entity, attribute);"
-        
-        "CREATE TABLE IF NOT EXISTS vault ("
-        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "  title TEXT, "
-        "  encrypted_blob TEXT, "
-        "  created_at INTEGER);"
-        
-        "CREATE TABLE IF NOT EXISTS episodes ("
-        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "  timestamp INTEGER, "
-        "  intent TEXT, "
-        "  goal_id TEXT, "
-        "  node_id TEXT, "
-        "  summary TEXT, "
-        "  payload_json TEXT, "
-        "  outcome_enum INTEGER, "
-        "  latency_ms INTEGER, "
-        "  confidence_before REAL, "
-        "  confidence_after REAL);"
-        "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5("
-        "  summary, "
-        "  content='episodes', "
-        "  content_rowid='id'"
-        ");"
-        
-        "CREATE TABLE IF NOT EXISTS predictions ("
-        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "  timestamp INTEGER, "
-        "  goal_id TEXT, "
-        "  node_id TEXT, "
-        "  predicted_json TEXT, "
-        "  actual_json TEXT, "
-        "  error_score REAL);"
-        
-        "CREATE TABLE IF NOT EXISTS chat_history ("
-        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "  role TEXT, "
-        "  content TEXT, "
-        "  timestamp INTEGER);"
-        
-        "CREATE VIRTUAL TABLE IF NOT EXISTS file_index USING fts5("
-        "  name, "
-        "  path, "
-        "  extension, "
-        "  last_modified UNINDEXED"
-        ");"
-        
-        "CREATE TABLE IF NOT EXISTS audit ("
-        "  id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "  action TEXT, "
-        "  details TEXT, "
-        "  timestamp INTEGER);";
+    std::vector<const char*> statements = {
+        "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, tags TEXT, created_at INTEGER, updated_at INTEGER);",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, content, content='notes', content_rowid='id');",
+        "CREATE TABLE IF NOT EXISTS facts (id INTEGER PRIMARY KEY AUTOINCREMENT, entity TEXT, attribute TEXT, value TEXT, source_type INTEGER DEFAULT 0, confidence REAL DEFAULT 1.0, last_verified_at INTEGER, created_at INTEGER, updated_at INTEGER);",
+        "CREATE INDEX IF NOT EXISTS idx_facts_lookup ON facts(entity, attribute);",
+        "CREATE TABLE IF NOT EXISTS vault (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, encrypted_blob TEXT, created_at INTEGER);",
+        "CREATE TABLE IF NOT EXISTS episodes (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, intent TEXT, goal_id TEXT, node_id TEXT, summary TEXT, payload_json TEXT, outcome_enum INTEGER, latency_ms INTEGER, confidence_before REAL, confidence_after REAL);",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(summary, content='episodes', content_rowid='id');",
+        "CREATE TABLE IF NOT EXISTS predictions (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, goal_id TEXT, node_id TEXT, predicted_json TEXT, actual_json TEXT, error_score REAL);",
+        "CREATE TABLE IF NOT EXISTS chat_history (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT, content TEXT, timestamp INTEGER);",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS file_index USING fts5(name, path, extension, last_modified UNINDEXED);",
+        "CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, details TEXT, timestamp INTEGER);"
+    };
 
-    if (sqlite3_exec(m_db, schema, nullptr, nullptr, nullptr) != SQLITE_OK) {
-        LOGE(TAG, "Failed to create SQLite schema: %s", sqlite3_errmsg(m_db));
-        return false;
+    for (const char* sql : statements) {
+        if (sqlite3_exec(m_db, sql, nullptr, nullptr, nullptr) != SQLITE_OK) {
+            LOGE(TAG, "Schema error on [%s]: %s", sql, sqlite3_errmsg(m_db));
+            // Don't return false yet, try to create as much as possible
+        }
     }
 
-    // FTS5 Triggers for 'notes'
+    // FTS5 Triggers
     sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content); END;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content); END;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content); INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content); END;", nullptr, nullptr, nullptr);
-
-    // FTS5 Triggers for 'episodes'
     sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS episodes_ai AFTER INSERT ON episodes BEGIN INSERT INTO episodes_fts(rowid, summary) VALUES (new.id, new.summary); END;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS episodes_ad AFTER DELETE ON episodes BEGIN INSERT INTO episodes_fts(episodes_fts, rowid, summary) VALUES('delete', old.id, old.summary); END;", nullptr, nullptr, nullptr);
     
-    // v13.0 Migration Check
-    sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN source_type INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN confidence REAL DEFAULT 1.0;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN last_verified_at INTEGER;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN updated_at INTEGER;", nullptr, nullptr, nullptr);
-
-    // v13.0 Episode migrations
-    sqlite3_exec(m_db, "ALTER TABLE episodes ADD COLUMN goal_id TEXT;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "ALTER TABLE episodes ADD COLUMN node_id TEXT;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "ALTER TABLE episodes ADD COLUMN latency_ms INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "ALTER TABLE episodes ADD COLUMN confidence_before REAL DEFAULT 0.0;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "ALTER TABLE episodes ADD COLUMN confidence_after REAL DEFAULT 0.0;", nullptr, nullptr, nullptr);
-
     return true;
 }
 

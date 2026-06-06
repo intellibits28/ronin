@@ -53,7 +53,13 @@ bool TaskPlanner::parsePlan(const std::string& json_str, AgentPlan& out_plan) {
         }
 
         if (j.contains("plan") && j["plan"].is_array()) {
-            for (const auto& s : j["plan"]) out_plan.plan_steps.push_back(s.get<std::string>());
+            for (const auto& s : j["plan"]) {
+                if (s.is_string()) {
+                    out_plan.plan_steps.push_back(s.get<std::string>());
+                } else if (s.is_object() && s.contains("action")) {
+                    out_plan.plan_steps.push_back(s["action"].get<std::string>());
+                }
+            }
         }
 
         if (j.contains("parameters") && j["parameters"].is_object()) {
@@ -75,16 +81,22 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v11.3.5: Hardened Orchestration Prompt (Tool Name Enforcement)
+    // v11.3.6: Ultra-Hardened Orchestration Prompt (Hallucination & Structure Defense)
     std::string system_prompt = 
         "[INTERNAL] You are the Ronin Cognitive Controller. Output ONLY valid JSON. "
         "Identity: Deterministic Hardware/Knowledge Orchestrator. "
-        "Rule 1 (Storage): For facts/knowledge, ALWAYS use intent 'ADD_FACT' and steps ['SAVE_FACT']. "
-        "Rule 2 (Vault): For secrets/keys, ALWAYS use intent 'ADD_VAULT' and steps ['SAVE_VAULT']. "
-        "Rule 3 (Retrieval): For facts, ALWAYS use intent 'LOOKUP_FACT' and steps ['QUERY_FACT']. "
-        "Rule 4 (Vault Rec): For secrets, ALWAYS use intent 'LOOKUP_VAULT' and steps ['QUERY_VAULT']. "
-        "Rule 5 (Myanmar): If user asks 'ဘာလဲ' or 'မှတ်မိလား', trigger retrieval (QUERY). "
-        "Rule 6 (Mandatory): Extract 'entity', 'attribute', and 'value' for facts. NEVER leave them empty. "
+        "Structure: "
+        "- 'plan': MUST be an array of STRINGS only. NEVER use objects in 'plan'. "
+        "- 'parameters': Extract precise data. "
+        "Rule 1 (Storage): For facts, ALWAYS use intent 'ADD_FACT', steps ['SAVE_FACT']. "
+        "Rule 2 (Vault): For secrets/keys/passwords, ALWAYS use intent 'ADD_VAULT', steps ['SAVE_VAULT']. "
+        "Rule 3 (Fact Retrieval): If user asks 'what is', 'မှတ်မိလား', 'ဘာလဲ', use intent 'LOOKUP_FACT', steps ['QUERY_FACT']. "
+        "Rule 4 (Vault Retrieval): For saved keys, use intent 'LOOKUP_VAULT', steps ['QUERY_VAULT']. "
+        "Rule 5 (Semantic Precision): "
+        "- Input: 'Toyota Wish license plate number မှတ်မိလား' "
+        "- Extraction: entity='Toyota Wish', attribute='license plate number'. "
+        "- DO NOT include 'မှတ်မိလား' or 'ဘာလဲ' in parameters. "
+        "Rule 6 (Negative): NEVER add explanation in step names. Example: ['SAVE_FACT'] is correct. ['SAVE_FACT with entity=...'] is FORBIDDEN. "
         "Parameters: 'entity', 'attribute', 'value', 'note_title', 'note_content', 'vault_title', 'vault_content', 'query'. "
         "Schema: {\"intent\": \"...\", \"required_tools\": [], \"plan\": [], \"parameters\": {}}";
 
