@@ -591,7 +591,9 @@ class MainActivity : FragmentActivity() {
                                     val encrypted = nativeEngine.lookupVault(title)
                                     if (encrypted.isNotEmpty()) {
                                         val decrypted = nativeEngine.decryptSecret(encrypted)
-                                        nativeEngine.pushKernelMessage("[AGENT] Vault Found: $title -> $decrypted")
+                                        val uiMsg = "\n[VAULT] $title: $decrypted"
+                                        nativeEngine.pushTokenToUI(uiMsg, true)
+                                        nativeEngine.pushKernelMessage("[AGENT] Vault Found: $title")
                                         decrypted
                                     } else "Error: No vault entry found for '$title'."
                                 }
@@ -601,7 +603,9 @@ class MainActivity : FragmentActivity() {
                                 val results = nativeEngine.searchNotes(query)
                                 if (results.isNotEmpty()) {
                                     val formatted = results.joinToString("\n---\n")
-                                    nativeEngine.pushKernelMessage("[AGENT] Found Notes:\n$formatted")
+                                    val uiMsg = "\n[NOTES FOUND]\n$formatted"
+                                    nativeEngine.pushTokenToUI(uiMsg, true)
+                                    nativeEngine.pushKernelMessage("[AGENT] Found Notes")
                                     "Found ${results.size} notes matching '$query'."
                                 } else "Error: No notes found matching '$query'."
                             }
@@ -610,7 +614,9 @@ class MainActivity : FragmentActivity() {
                                 val results = nativeEngine.searchEpisodes(query)
                                 if (results.isNotEmpty()) {
                                     val formatted = results.joinToString("\n---\n")
-                                    nativeEngine.pushKernelMessage("[AGENT] Found Episodes:\n$formatted")
+                                    val uiMsg = "\n[HISTORY FOUND]\n$formatted"
+                                    nativeEngine.pushTokenToUI(uiMsg, true)
+                                    nativeEngine.pushKernelMessage("[AGENT] Found Episodes")
                                     "Found ${results.size} episodes matching '$query'."
                                 } else "Error: No history found matching '$query'."
                             }
@@ -618,20 +624,22 @@ class MainActivity : FragmentActivity() {
                                 val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) || it.contains("person", true) }?.let { params[it] } ?: "Unknown"
                                 val attr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) || it.contains("attribute", true) }?.let { params[it] } ?: "General"
                                 
-                                if (attr.lowercase().let { it.contains("key") || it.contains("password") || it.contains("pin") || it.contains("secret") }) {
-                                    authenticateAndExecute("Access Sensitive Fact", "Authenticate to retrieve $entity's $attr") {
-                                        val res = nativeEngine.lookupFact(entity, attr)
-                                        if (res.isNotEmpty()) {
-                                            nativeEngine.pushKernelMessage("[AGENT] Fact Found: $entity's $attr is $res")
-                                            res 
-                                        } else "Error: No information found for $entity's $attr."
-                                    }
-                                } else {
+                                val isSensitive = attr.lowercase().let { it.contains("key") || it.contains("password") || it.contains("pin") || it.contains("secret") }
+                                
+                                val executeLookup = {
                                     val res = nativeEngine.lookupFact(entity, attr)
                                     if (res.isNotEmpty()) {
-                                        nativeEngine.pushKernelMessage("[AGENT] Fact Found: $entity's $attr is $res")
+                                        val uiMsg = "\n[FACT] $entity's $attr is $res"
+                                        nativeEngine.pushTokenToUI(uiMsg, true)
+                                        nativeEngine.pushKernelMessage("[AGENT] Fact Found: $entity's $attr")
                                         res 
                                     } else "Error: No information found for $entity's $attr."
+                                }
+
+                                if (isSensitive) {
+                                    authenticateAndExecute("Access Sensitive Fact", "Authenticate to retrieve $entity's $attr", executeLookup)
+                                } else {
+                                    executeLookup()
                                 }
                             }
                             else -> "Error: Unknown memory action $toolName"
