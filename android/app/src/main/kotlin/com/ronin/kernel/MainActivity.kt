@@ -584,6 +584,18 @@ class MainActivity : FragmentActivity() {
                                     }
                                 }
                             }
+                            "QUERY_VAULT" -> {
+                                val title = params["vault_title"] ?: params["title"] ?: params["query"] ?: params.keys.find { it.contains("name", true) || it.contains("title", true) }?.let { params[it] } ?: ""
+                                if (title.isEmpty()) "Error: Vault search title is empty."
+                                else authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $title") {
+                                    val encrypted = nativeEngine.lookupVault(title)
+                                    if (encrypted.isNotEmpty()) {
+                                        val decrypted = nativeEngine.decryptSecret(encrypted)
+                                        nativeEngine.pushKernelMessage("[AGENT] Vault Found: $title -> $decrypted")
+                                        decrypted
+                                    } else "Error: No vault entry found for '$title'."
+                                }
+                            }
                             "SEARCH_NOTES" -> {
                                 val query = params["query"] ?: ""
                                 val results = nativeEngine.searchNotes(query)
@@ -602,18 +614,11 @@ class MainActivity : FragmentActivity() {
                                     "Found ${results.size} episodes matching '$query'."
                                 } else "Error: No history found matching '$query'."
                             }
-                            "SAVE_VAULT" -> {
-                                val title = params["vault_title"] ?: "Secret"
-                                val content = params["vault_content"] ?: ""
-                                authenticateAndExecute("Store Secret", "Authenticate to encrypt and store in Vault") {
-                                    val encrypted = nativeEngine.encryptSecret(content)
-                                    if (nativeEngine.storeVault(title, encrypted)) "Vault entry saved: $title" else "Error: Failed to save vault entry."
-                                }
-                            }
                             "QUERY_FACT", "MEMORY" -> {
-                                val entity = params["entity"] ?: "Unknown"
-                                val attr = params["attribute"] ?: "Unknown"
-                                if (attr.contains("key", true) || attr.contains("password", true) || attr.contains("pin", true)) {
+                                val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) || it.contains("person", true) }?.let { params[it] } ?: "Unknown"
+                                val attr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) || it.contains("attribute", true) }?.let { params[it] } ?: "General"
+                                
+                                if (attr.lowercase().let { it.contains("key") || it.contains("password") || it.contains("pin") || it.contains("secret") }) {
                                     authenticateAndExecute("Access Sensitive Fact", "Authenticate to retrieve $entity's $attr") {
                                         val res = nativeEngine.lookupFact(entity, attr)
                                         if (res.isNotEmpty()) {

@@ -79,6 +79,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Keep
     @Suppress("unused")
+    fun lookupVault(title: String): String = if (isLibLoaded) lookupVaultNative(title) else ""
+
+    @Keep
+    @Suppress("unused")
     fun searchNotes(query: String): Array<String> = if (isLibLoaded) searchNotesNative(query) else emptyArray()
 
     @Keep
@@ -220,6 +224,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun storeNoteNative(title: String, content: String, tags: String): Boolean
     private external fun storeFactNative(entity: String, attr: String, value: String): Boolean
     private external fun lookupFactNative(entity: String, attr: String): String
+    private external fun lookupVaultNative(title: String): String
     private external fun searchNotesNative(query: String): Array<String>
     private external fun searchEpisodesNative(query: String): Array<String>
     private external fun storeVaultNative(title: String, encryptedBlob: String): Boolean

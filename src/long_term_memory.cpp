@@ -210,6 +210,24 @@ bool LongTermMemory::storeVault(const std::string& title, const std::string& enc
     return false;
 }
 
+std::string LongTermMemory::lookupVault(const std::string& title) {
+    if (!m_db) return "";
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "SELECT encrypted_blob FROM vault WHERE title LIKE ? ORDER BY created_at DESC LIMIT 1;";
+    sqlite3_stmt* stmt = nullptr;
+    std::string result;
+    std::string title_query = "%" + title + "%";
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, title_query.c_str(), -1, SQLITE_STATIC);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* val = sqlite3_column_text(stmt, 0);
+            if (val) result = reinterpret_cast<const char*>(val);
+        }
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
 bool LongTermMemory::storeEpisode(const std::string& intent, const std::string& summary, const std::string& payload_json, 
                                   bool success, const std::string& goal_id, const std::string& node_id,
                                   int64_t latency_ms, float conf_before, float conf_after) {

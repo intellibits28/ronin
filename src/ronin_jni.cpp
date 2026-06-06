@@ -302,6 +302,12 @@ jstring native_lookupFact(JNIEnv *env, jobject thiz, jstring entity, jstring att
     return env->NewStringUTF(val.c_str());
 }
 
+jstring native_lookupVault(JNIEnv *env, jobject thiz, jstring title) {
+    if (!g_ltm) return env->NewStringUTF("");
+    std::string val = g_ltm->lookupVault(ConvertJStringToString(env, title));
+    return env->NewStringUTF(val.c_str());
+}
+
 jobjectArray native_searchNotes(JNIEnv *env, jobject thiz, jstring query) {
     if (!g_ltm) return nullptr;
     auto results = g_ltm->searchNotes(ConvertJStringToString(env, query));
@@ -442,6 +448,7 @@ static JNINativeMethod g_methods[] = {
     {"storeFactNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeFact},
     {"storeVaultNative", "(Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeVault},
     {"lookupFactNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", (void*)native_lookupFact},
+    {"lookupVaultNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_lookupVault},
     {"searchNotesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchNotes},
     {"searchEpisodesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchEpisodes},
     {"storePredictionNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;F)Z", (void*)native_storePrediction},

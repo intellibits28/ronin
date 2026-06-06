@@ -62,6 +62,7 @@ public:
     bool storeFact(const std::string& entity, const std::string& attr, const std::string& value, 
                   SourceType source = SourceType::USER_EXPLICIT, float confidence = 1.0f);
     bool storeVault(const std::string& title, const std::string& encrypted_blob);
+    std::string lookupVault(const std::string& title);
     
     // v13.0: Enhanced Episodic and Prediction Storage
     bool storeEpisode(const std::string& intent, const std::string& summary, const std::string& payload_json, 
