@@ -435,6 +435,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     if ((is_complex || is_simple_agent) && !is_inquiry) {
         final_cat = IntentCategory::AGENT_PLAN;
         LOGI(TAG, "v7.0 Agent Request Detected -> Category AGENT_PLAN");
+        return {1, 1.0f, true, final_cat}; // Return early to prevent VTable override
     } else {
         // Check for Memory Query (e.g. "မှတ်မိလား", "အရင်က")
         if (token_set.count("မှတ်မိလား") || token_set.count("အရင်က") || token_set.count("မှတ်ဉာဏ်")) {
