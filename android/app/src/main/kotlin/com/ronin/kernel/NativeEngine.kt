@@ -120,7 +120,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
             // v9.5: Direct UI Delegation (Deterministic Routing)
             if (capability == "MAP" || capability == "SMS" || capability == "CONTACTS" || capability == "MEMORY" || capability == "TEST") {
-                val res = executeAgentTool(capability, payload)
+                // v10.1.22: Extract specific action if available (e.g. SAVE_FACT instead of generic MEMORY)
+                val action = try { org.json.JSONObject(payload).optString("action", capability) } catch (e: Exception) { capability }
+                val res = executeAgentTool(action, payload)
                 return org.json.JSONObject().apply {
                     put("success", !res.startsWith("Error"))
                     put("message", res)

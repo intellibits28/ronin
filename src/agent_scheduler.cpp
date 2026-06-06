@@ -99,6 +99,9 @@ void AgentScheduler::workerLoop() {
                     nlohmann::json jParams;
                     for (const auto& [k, v] : current_session->getParameters()) jParams[k] = v;
                     
+                    // v10.1.22: Inject current step as 'action' for accurate Kotlin tool routing
+                    jParams["action"] = step;
+                    
                     // Call Layer 10 Optimizer and WAIT for completion (v7.4)
                     auto future = m_executor->optimizeAndDispatch(type, current_session->getSessionId(), jParams.dump());
                     
