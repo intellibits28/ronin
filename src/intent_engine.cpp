@@ -145,6 +145,36 @@ static std::string trim(const std::string& s) {
     auto end = s.find_last_not_of(" \t\n\r");
     return s.substr(start, end - start + 1);
 }
+void IntentEngine::loadCapabilities(const std::string& json_path) {
+    try {
+        std::ifstream f(json_path);
+        if (!f.is_open()) return;
+        auto j = nlohmann::json::parse(f);
+        m_capabilities.clear();
+        for (const auto& item : j) {
+            CapabilityEntry cap;
+            cap.id = item["id"];
+            cap.name = item["name"];
+            for (const auto& s : item["subjects"]) cap.subjects.push_back(s);
+            for (const auto& a : item["actions"]) cap.actions.push_back(a);
+            cap.confidence_threshold = item["confidence_threshold"];
+            m_capabilities.push_back(cap);
+        }
+        LOGI(TAG, "Loaded %zu capabilities from manifest.", m_capabilities.size());
+    } catch (const std::exception& e) {
+        LOGE(TAG, "Failed to parse capabilities: %s", e.what());
+    }
+}
+
+std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param, ToolContext* context) {
+    auto it = m_skill_registry.find(nodeId);
+    if (it != m_skill_registry.end()) {
+        LOGI(TAG, "v4.0 Execution: Triggering modular skill ID %u", nodeId);
+        return it->second->execute(param, context);
+    }
+    return "Error: Modular skill not found.";
+}
+
 void IntentEngine::setInferenceEngine(std::unique_ptr<Model::InferenceEngine> engine) {
     m_inference_engine = std::move(engine);
     m_planner = std::make_unique<TaskPlanner>(m_inference_engine.get());
