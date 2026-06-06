@@ -523,7 +523,7 @@ class MainActivity : FragmentActivity() {
             when (toolName) {
                 "MEMORY", "SAVE_NOTE", "SAVE_FACT", "QUERY_FACT", "SAVE_VAULT", "QUERY_VAULT", 
                 "SEARCH_NOTES", "SEARCH_EPISODES", "ADD_FACT", "STORE_FACT", "ADD_NOTE", "STORE_NOTE",
-                "LOOKUP_FACT", "LOOKUP_VAULT" -> {
+                "LOOKUP_FACT", "LOOKUP_VAULT", "ADD_VAULT", "STORE_VAULT" -> {
                     try {
                         when (toolName) {
                             "SAVE_NOTE", "ADD_NOTE", "STORE_NOTE" -> {
@@ -560,7 +560,7 @@ class MainActivity : FragmentActivity() {
                                     err
                                 }
                             }
-                            "SAVE_VAULT" -> {
+                            "SAVE_VAULT", "ADD_VAULT", "STORE_VAULT" -> {
                                 val title = params["vault_title"] ?: params["title"] ?: params.keys.find { it.contains("name", true) || it.contains("title", true) }?.let { params[it] } ?: "Secret"
                                 
                                 val content = params["vault_content"] ?: params["content"] ?: params.keys.find {
