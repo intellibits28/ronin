@@ -63,6 +63,16 @@ public:
     void setInferenceEngine(std::unique_ptr<Model::InferenceEngine> engine) {
         m_inference_engine = std::move(engine);
         m_planner = std::make_unique<TaskPlanner>(m_inference_engine.get());
+        
+        // v10.2.7: Update ChatSkill engine if it's already registered
+        auto skill = getSkill(8); // Node 8 is ChatSkill
+        if (skill) {
+            auto chat = std::dynamic_pointer_cast<Ronin::Kernel::Capability::ChatSkill>(skill);
+            if (chat) {
+                // We need a setEngine method in ChatSkill or we can just re-register
+                registerSkill(8, std::make_shared<Ronin::Kernel::Capability::ChatSkill>(m_inference_engine.get(), m_ltm));
+            }
+        }
     }
 
     /**

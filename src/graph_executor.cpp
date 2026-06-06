@@ -120,7 +120,7 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     // v10.1.19: Targeted Node Selection
     uint32_t best_node_id = 1; // Default
     float max_sample = -1.0f;
-    std::string type_str = CapabilityTypeToString(type);
+    std::string type_str = Ronin::Kernel::CapabilityTypeToString(type);
     
     bool found_match = false;
     for (auto& [id, node] : m_graph.getNodes()) {
@@ -163,7 +163,7 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
         if (res.success) {
             std::lock_guard<std::recursive_mutex> inner_lock(m_mutex);
             // v9.2: Key results by capability name to avoid overwrites
-            std::string cap_str = CapabilityTypeToString(type);
+            std::string cap_str = Ronin::Kernel::CapabilityTypeToString(type);
             m_blackboard.storage["result_" + cap_str] = res.payload_json;
             LOGI(TAG, "L10: Blackboard updated with result from %s", cap_str.c_str());
         }

@@ -46,7 +46,7 @@ static CognitiveIntent parsePlan(const std::string& llm_json, AgentPlan& out_pla
         return {1, 1.0f, true, IntentCategory::AGENT_PLAN};
     } catch (const std::exception& e) {
         LOGE("RoninPlanner", "JSON Parse Error: %s", e.what());
-        return {1, 1.0f, true, IntentCategory::CHAT};
+        return {1, 1.0f, true, IntentCategory::CHAT_QUERY};
     }
 }
 
@@ -207,7 +207,7 @@ IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     m_skill_registry[5] = std::make_shared<LocationNode>();
     m_skill_registry[6] = std::make_shared<WifiNode>();
     m_skill_registry[7] = std::make_shared<BluetoothNode>();
-    m_skill_registry[8] = std::make_shared<ChatSkill>();
+    m_skill_registry[8] = std::make_shared<ChatSkill>(nullptr, m_ltm);
     m_planner = std::make_unique<TaskPlanner>(nullptr); 
 }
 
@@ -220,7 +220,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     std::set<std::string> token_set;
     while (ss >> t) token_set.insert(t);
 
-    IntentCategory final_cat = IntentCategory::CHAT;
+    IntentCategory final_cat = IntentCategory::CHAT_QUERY;
 
     bool is_complex = (token_set.count("sms") || token_set.count("message") || token_set.count("မက်ဆေ့") || token_set.count("ပို့") || token_set.count("send")) && 
                       (token_set.count("location") || token_set.count("တည်နေရာ") || token_set.count("နေရာ"));
