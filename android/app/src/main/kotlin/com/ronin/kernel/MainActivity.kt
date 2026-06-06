@@ -222,49 +222,43 @@ class MainActivity : FragmentActivity() {
 
             launch {
                 nativeEngine.inferenceFlow.collect { packet ->
-                    if (nativeEngine.silentInference) return@collect
-                    
-                    if (chatViewModel.messages.isNotEmpty()) {
-                        val lastMsg = chatViewModel.messages.last()
-                        if (lastMsg.sender == "Ronin") {
-                            val frag = packet.fragment
+                    // v10.2.3: Process fragments even if final, and ensure UI thread safety
+                    withContext(Dispatchers.Main) {
+                        if (chatViewModel.messages.isNotEmpty()) {
+                            val lastMsg = chatViewModel.messages.last()
+                            if (lastMsg.sender == "Ronin") {
+                                val frag = packet.fragment
+                                if (frag.isNotEmpty()) {
+                                    var processedFrag = frag
+                                    if (processedFrag.contains("[THINK]")) {
+                                        lastMsg.isThinking = true
+                                        processedFrag = processedFrag.replace("[THINK]", "")
+                                    }
 
-                            // v6.1: Robust Tag Splitting Logic
-                            var processedFrag = frag
-
-                            if (processedFrag.contains("[THINK]")) {
-                                lastMsg.isThinking = true
-                                processedFrag = processedFrag.replace("[THINK]", "")
-                            }
-
-                            if (lastMsg.isThinking) {
-                                if (processedFrag.contains("[/THINK]") || processedFrag.contains("[REPLY]")) {
-                                    val splitTag = if (processedFrag.contains("[REPLY]")) "[REPLY]" else "[/THINK]"
-                                    val thoughtPart = processedFrag.substringBefore(splitTag)
-                                    val replyPart = processedFrag.substringAfter(splitTag)
-
-                                    lastMsg.thoughtContent += thoughtPart
-                                    if (chatViewModel.isThinkingEnabled) chatViewModel.reasoningLogsText += thoughtPart
-
-                                    lastMsg.isThinking = false
-                                    lastMsg.content += replyPart.replace("[/REPLY]", "")
-                                } else {
-                                    lastMsg.thoughtContent += processedFrag
-                                    if (chatViewModel.isThinkingEnabled) chatViewModel.reasoningLogsText += processedFrag
+                                    if (lastMsg.isThinking) {
+                                        if (processedFrag.contains("[/THINK]") || processedFrag.contains("[REPLY]")) {
+                                            val splitTag = if (processedFrag.contains("[REPLY]")) "[REPLY]" else "[/THINK]"
+                                            val thoughtPart = processedFrag.substringBefore(splitTag)
+                                            val replyPart = processedFrag.substringAfter(splitTag)
+                                            lastMsg.thoughtContent += thoughtPart
+                                            if (chatViewModel.isThinkingEnabled) chatViewModel.reasoningLogsText += thoughtPart
+                                            lastMsg.isThinking = false
+                                            lastMsg.content += replyPart.replace("[/REPLY]", "")
+                                        } else {
+                                            lastMsg.thoughtContent += processedFrag
+                                            if (chatViewModel.isThinkingEnabled) chatViewModel.reasoningLogsText += processedFrag
+                                        }
+                                    } else {
+                                        val cleanReply = processedFrag.replace("[REPLY]", "").replace("[/REPLY]", "").replace("[/THINK]", "")
+                                        lastMsg.content += cleanReply
+                                    }
                                 }
-                            } else {
-                                val cleanReply = processedFrag.replace("[REPLY]", "").replace("[/REPLY]", "").replace("[/THINK]", "")
-                                lastMsg.content += cleanReply
-                            }
-                            if (packet.isFinal) {
-                                val text = lastMsg.content.trim()
-                                // v5.4: Extended end markers to prevent false Continue button triggers
-                                val endMarkers = listOf("။", ".", "?", "!", "\"", ")", "]", "}", "*", "_", ">", "`", ":", ";", "၊", "}")
-                                if (text.isNotEmpty() && endMarkers.none { text.endsWith(it) }) {
-                                    // Additional check: If it ends with a Myanmar consonant but no vowel/vowel-killer, it might be truncated.
-                                    lastMsg.isTruncated = true
-                                } else {
-                                    lastMsg.isTruncated = false
+                                
+                                if (packet.isFinal) {
+                                    chatViewModel.isGenerating = false
+                                    val text = lastMsg.content.trim()
+                                    val endMarkers = listOf("။", ".", "?", "!", "\"", ")", "]", "}", "*", "_", ">", "`", ":", ";", "၊", "}")
+                                    lastMsg.isTruncated = text.isNotEmpty() && endMarkers.none { text.endsWith(it) }
                                 }
                             }
                         }
@@ -511,7 +505,9 @@ class MainActivity : FragmentActivity() {
             vm.ramUsedGB = used; vm.ramTotalGB = total 
         }
         nativeEngine.onKernelMessageCallback = { msg -> 
-            vm.reasoningLogsText += "\n> $msg"
+            runOnUiThread {
+                vm.reasoningLogsText += "\n> $msg"
+            }
         }
         
         // v7.0: Agent Mode Callbacks
