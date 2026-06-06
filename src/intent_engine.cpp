@@ -143,6 +143,20 @@ static std::string trim(const std::string& s) {
     auto end = s.find_last_not_of(" \t\n\r");
     return s.substr(start, end - start + 1);
 }
+void IntentEngine::setInferenceEngine(std::unique_ptr<Model::InferenceEngine> engine) {
+    m_inference_engine = std::move(engine);
+    m_planner = std::make_unique<TaskPlanner>(m_inference_engine.get());
+    
+    // v10.2.7: Update ChatSkill engine if it's already registered
+    auto skill = getSkill(8); // Node 8 is ChatSkill
+    if (skill) {
+        auto chat = std::dynamic_pointer_cast<Ronin::Kernel::Capability::ChatSkill>(skill);
+        if (chat) {
+            registerSkill(8, std::make_shared<Ronin::Kernel::Capability::ChatSkill>(m_inference_engine.get(), m_ltm));
+        }
+    }
+}
+
 bool IntentEngine::handleCommand(const std::string& input, std::string& output) {
     if (input.empty() || input[0] != '/') return false;
 
