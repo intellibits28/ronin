@@ -163,15 +163,7 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
         if (res.success) {
             std::lock_guard<std::recursive_mutex> inner_lock(m_mutex);
             // v9.2: Key results by capability name to avoid overwrites
-            std::string cap_str = "UNKNOWN";
-            switch(type) {
-                case CapabilityType::LOCATION: cap_str = "LOCATION"; break;
-                case CapabilityType::CONTACTS: cap_str = "CONTACTS"; break;
-                case CapabilityType::SMS: cap_str = "SMS"; break;
-                case CapabilityType::MAP: cap_str = "MAP"; break;
-                case CapabilityType::TEST: cap_str = "TEST"; break;
-                default: break;
-            }
+            std::string cap_str = CapabilityTypeToString(type);
             m_blackboard.storage["result_" + cap_str] = res.payload_json;
             LOGI(TAG, "L10: Blackboard updated with result from %s", cap_str.c_str());
         }

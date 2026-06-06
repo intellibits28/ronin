@@ -19,21 +19,7 @@ void AndroidBridge::sendRequest(const CapabilityRequest& req) {
     nlohmann::json j;
     j["request_id"] = req.request_id;
     j["session_id"] = req.session_id;
-    
-    std::string cap_str = "NONE";
-    switch(req.capability) {
-        case CapabilityType::LOCATION: cap_str = "LOCATION"; break;
-        case CapabilityType::SMS: cap_str = "SMS"; break;
-        case CapabilityType::SENSOR: cap_str = "SENSOR"; break;
-        case CapabilityType::CAMERA: cap_str = "CAMERA"; break;
-        case CapabilityType::AUDIO: cap_str = "AUDIO"; break;
-        case CapabilityType::MAP: cap_str = "MAP"; break;
-        case CapabilityType::TEST: cap_str = "TEST"; break;
-        case CapabilityType::CONTACTS: cap_str = "CONTACTS"; break;
-        case CapabilityType::MEMORY: cap_str = "MEMORY"; break;
-        default: cap_str = "UNKNOWN"; break;
-    }
-    j["capability"] = cap_str;
+    j["capability"] = CapabilityTypeToString(req.capability);
     j["payload"] = req.payload_json;
 
     std::string json_str = j.dump();

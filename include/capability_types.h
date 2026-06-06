@@ -19,4 +19,20 @@ enum class CapabilityType {
     CONTACTS = 10
 };
 
+inline const char* CapabilityTypeToString(CapabilityType type) {
+    switch (type) {
+        case CapabilityType::LOCATION: return "LOCATION";
+        case CapabilityType::SMS: return "SMS";
+        case CapabilityType::SENSOR: return "SENSOR";
+        case CapabilityType::CAMERA: return "CAMERA";
+        case CapabilityType::AUDIO: return "AUDIO";
+        case CapabilityType::FILES: return "FILES";
+        case CapabilityType::MEMORY: return "MEMORY";
+        case CapabilityType::MAP: return "MAP";
+        case CapabilityType::TEST: return "TEST";
+        case CapabilityType::CONTACTS: return "CONTACTS";
+        default: return "NONE";
+    }
+}
+
 } // namespace Ronin::Kernel
