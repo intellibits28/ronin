@@ -113,13 +113,21 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
 }
 
 CapabilityType TaskPlanner::mapIntentToCapability(const std::string& intent_name) {
-    if (intent_name == "show_location" || intent_name == "get_location" || intent_name == "where_am_i") {
+    std::string i_lower = intent_name;
+    std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
+
+    if (i_lower.find("location") != std::string::npos || i_lower.find("map") != std::string::npos) {
         return CapabilityType::LOCATION;
     }
-    if (intent_name == "send_sms" || intent_name == "send_message" || intent_name == "sms_location") {
+    if (i_lower.find("sms") != std::string::npos || i_lower.find("message") != std::string::npos) {
         return CapabilityType::SMS;
     }
-    if (intent_name == "measure_resonance" || intent_name == "vibration_analysis") {
+    if (i_lower.find("note") != std::string::npos || i_lower.find("fact") != std::string::npos || 
+        i_lower.find("vault") != std::string::npos || i_lower.find("lookup") != std::string::npos ||
+        i_lower.find("search") != std::string::npos || i_lower.find("remember") != std::string::npos) {
+        return CapabilityType::MEMORY;
+    }
+    if (i_lower.find("resonance") != std::string::npos || i_lower.find("vibration") != std::string::npos) {
         return CapabilityType::SENSOR;
     }
     return CapabilityType::NONE;
