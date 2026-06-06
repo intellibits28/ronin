@@ -119,7 +119,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             val payload = request.optString("payload", "{}")
 
             // v9.5: Direct UI Delegation (Deterministic Routing)
-            if (capability == "MAP" || capability == "SMS" || capability == "CONTACTS") {
+            if (capability == "MAP" || capability == "SMS" || capability == "CONTACTS" || capability == "MEMORY" || capability == "TEST") {
                 val res = executeAgentTool(capability, payload)
                 return org.json.JSONObject().apply {
                     put("success", !res.startsWith("Error"))

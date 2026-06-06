@@ -117,16 +117,29 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     
-    // v7.0 Layer 10 logic: Redundancy Optimization
+    // v10.1.19: Targeted Node Selection
     uint32_t best_node_id = 1; // Default
     float max_sample = -1.0f;
+    std::string type_str = CapabilityTypeToString(type);
     
+    bool found_match = false;
     for (auto& [id, node] : m_graph.getNodes()) {
-        float sample = m_sampler.sampleBeta(10, 1);
-        if (sample > max_sample) {
-            max_sample = sample;
-            best_node_id = id;
+        // v11.3: Match node name to capability type (e.g. MemoryNode matches MEMORY)
+        std::string n_upper = node.capability_name;
+        std::transform(n_upper.begin(), n_upper.end(), n_upper.begin(), ::toupper);
+        
+        if (n_upper.find(type_str) != std::string::npos || (type == CapabilityType::NONE)) {
+            float sample = m_sampler.sampleBeta(node.outgoing_edges.empty() ? 10 : 0, 1); // Mock weights for now
+            if (sample > max_sample) {
+                max_sample = sample;
+                best_node_id = id;
+                found_match = true;
+            }
         }
+    }
+
+    if (!found_match) {
+        LOGW(TAG, "L10: No specialized node found for capability %s. Using default Node 1.", type_str.c_str());
     }
 
     // v7.0: Construct Request with Blackboard data injection

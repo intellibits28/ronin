@@ -40,5 +40,19 @@
     "subjects": ["bluetooth", "bt", "ဘလူးတု"],
     "actions": ["on", "off", "enable", "disable", "turn", "switch", "ဖွင့်", "ပိတ်", "stop", "toggle"],
     "confidence_threshold": 0.8
+  },
+  {
+    "id": 11,
+    "name": "MemoryNode",
+    "subjects": ["memory", "fact", "note", "vault", "remember", "မှတ်", "သိမ်း"],
+    "actions": ["save", "lookup", "search", "store", "မှတ်ထား", "ရှာ"],
+    "confidence_threshold": 0.5
+  },
+  {
+    "id": 12,
+    "name": "TestNode",
+    "subjects": ["test", "debug"],
+    "actions": ["run", "verify"],
+    "confidence_threshold": 0.0
   }
 ]
