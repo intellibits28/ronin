@@ -12,7 +12,9 @@
 
 namespace Ronin::Kernel::Intent {
 
-static CognitiveIntent parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
+TaskPlanner::TaskPlanner(Model::InferenceEngine* engine) : m_engine(engine) {}
+
+bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
     try {
         auto j = nlohmann::json::parse(llm_json);
         out_plan.intent_name = j.value("intent", "fallback_chat");
@@ -43,10 +45,10 @@ static CognitiveIntent parsePlan(const std::string& llm_json, AgentPlan& out_pla
         
         LOGI("RoninPlanner", "v7.2 Plan parsed: %s with %zu tools and %zu steps.", 
              out_plan.intent_name.c_str(), out_plan.required_tools.size(), out_plan.plan_steps.size());
-        return {1, 1.0f, true, IntentCategory::AGENT_PLAN};
+        return true;
     } catch (const std::exception& e) {
         LOGE("RoninPlanner", "JSON Parse Error: %s", e.what());
-        return {1, 1.0f, true, IntentCategory::CHAT_QUERY};
+        return false;
     }
 }
 
