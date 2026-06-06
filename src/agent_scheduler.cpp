@@ -86,11 +86,11 @@ void AgentScheduler::workerLoop() {
                 else if (s_lower.find("contact") != std::string::npos || s_lower.find("resolve") != std::string::npos || s_lower.find("ရှာ") != std::string::npos)
                     type = CapabilityType::CONTACTS;
                 else if (s_lower.find("save") != std::string::npos || s_lower.find("store") != std::string::npos || 
-                         s_lower.find("record") != std::string::npos || s_lower.find("query") != std::string::npos || 
-                         s_lower.find("lookup") != std::string::npos || s_lower.find("find") != std::string::npos ||
-                         s_lower.find("get") != std::string::npos || s_lower.find("search") != std::string::npos || 
-                         s_lower.find("memory") != std::string::npos || s_lower.find("မှတ်") != std::string::npos ||
-                         s_lower.find("ရှာ") != std::string::npos)
+                         s_lower.find("add") != std::string::npos || s_lower.find("record") != std::string::npos || 
+                         s_lower.find("query") != std::string::npos || s_lower.find("lookup") != std::string::npos || 
+                         s_lower.find("find") != std::string::npos || s_lower.find("get") != std::string::npos || 
+                         s_lower.find("search") != std::string::npos || s_lower.find("memory") != std::string::npos || 
+                         s_lower.find("မှတ်") != std::string::npos || s_lower.find("ရှာ") != std::string::npos)
                     type = CapabilityType::MEMORY;
                 else if (s_lower.find("mock_test") != std::string::npos)
                     type = CapabilityType::TEST;

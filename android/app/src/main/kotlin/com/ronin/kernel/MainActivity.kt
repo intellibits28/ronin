@@ -525,10 +525,12 @@ class MainActivity : FragmentActivity() {
         nativeEngine.executeAgentToolCallback = { toolName, params ->
             Log.i("RoninKernel_MainActivity", "Executing Tool: $toolName with params: $params")
             when (toolName) {
-                "MEMORY", "SAVE_NOTE", "SAVE_FACT", "QUERY_FACT", "SAVE_VAULT", "SEARCH_NOTES", "SEARCH_EPISODES" -> {
+                "MEMORY", "SAVE_NOTE", "SAVE_FACT", "QUERY_FACT", "SAVE_VAULT", "QUERY_VAULT", 
+                "SEARCH_NOTES", "SEARCH_EPISODES", "ADD_FACT", "STORE_FACT", "ADD_NOTE", "STORE_NOTE",
+                "LOOKUP_FACT", "LOOKUP_VAULT" -> {
                     try {
                         when (toolName) {
-                            "SAVE_NOTE" -> {
+                            "SAVE_NOTE", "ADD_NOTE", "STORE_NOTE" -> {
                                 val title = params["note_title"] ?: params["title"] ?: params.keys.find { it.contains("title", true) }?.let { params[it] } ?: "Untitled Note"
                                 val content = params["note_content"] ?: params["content"] ?: params["text"] ?: params.values.find { it.length > 5 } ?: ""
                                 
@@ -539,7 +541,7 @@ class MainActivity : FragmentActivity() {
                                 } else if (nativeEngine.storeNote(title, content, "")) "Note saved: $title" 
                                 else "Error: Database failure during SAVE_NOTE."
                             }
-                            "SAVE_FACT" -> {
+                            "SAVE_FACT", "ADD_FACT", "STORE_FACT" -> {
                                 // v10.1.16: Intelligent parameter matching
                                 val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) || it.contains("person", true) }?.let { params[it] } ?: "Unknown"
                                 val attr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) }?.let { params[it] } ?: "General"
@@ -584,7 +586,7 @@ class MainActivity : FragmentActivity() {
                                     }
                                 }
                             }
-                            "QUERY_VAULT" -> {
+                            "QUERY_VAULT", "LOOKUP_VAULT" -> {
                                 val title = params["vault_title"] ?: params["title"] ?: params["query"] ?: params.keys.find { it.contains("name", true) || it.contains("title", true) }?.let { params[it] } ?: ""
                                 if (title.isEmpty()) "Error: Vault search title is empty."
                                 else authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $title") {
@@ -620,7 +622,7 @@ class MainActivity : FragmentActivity() {
                                     "Found ${results.size} episodes matching '$query'."
                                 } else "Error: No history found matching '$query'."
                             }
-                            "QUERY_FACT", "MEMORY" -> {
+                            "QUERY_FACT", "MEMORY", "LOOKUP_FACT" -> {
                                 val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) || it.contains("person", true) }?.let { params[it] } ?: "Unknown"
                                 val attr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) || it.contains("attribute", true) }?.let { params[it] } ?: "General"
                                 
