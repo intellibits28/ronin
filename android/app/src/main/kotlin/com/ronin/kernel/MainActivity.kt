@@ -563,8 +563,8 @@ class MainActivity : FragmentActivity() {
                                     val k = it.lowercase()
                                     // v10.2.14: Exclude title/entity keys from value search to prevent corruption
                                     !k.contains("title") && !k.contains("entity") && !k.contains("name") && !k.contains("attribute") &&
-                                    (k.contains("plate") || k.contains("medicine") || k.contains("number") || k.contains("result") || k.contains("val") || k.contains("data"))
-                                }?.let { params[it] } ?: ""
+                                    (k.contains("plate") || k.contains("medicine") || k.contains("number") || k.contains("result") || k.contains("val") || k.contains("data") || k.contains("content"))
+                                }?.let { params[it] } ?: params.values.firstOrNull { it != entity && it != rawAttr && it.length > 2 } ?: ""
                                 
                                 if (value.isEmpty()) {
                                     val err = "Error: Fact value is empty. Params: $params"
