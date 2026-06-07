@@ -603,10 +603,10 @@ class MainActivity : FragmentActivity() {
                                 }
                             }
                             "QUERY_VAULT", "LOOKUP_VAULT" -> {
-                                val title = params["vault_title"] ?: params["title"] ?: params["query"] ?: 
+                                val title = params["vault_title"] ?: params["title"] ?: params["entity"] ?: params["query"] ?: 
                                             params.keys.find { 
                                                 val k = it.lowercase()
-                                                k.contains("name") || k.contains("title") || k.contains("key") || k.contains("type") || k.contains("subject") || k.contains("item")
+                                                k.contains("name") || k.contains("title") || k.contains("subject") || k.contains("item")
                                             }?.let { params[it] } ?: ""
                                 if (title.isEmpty()) "Error: Vault search title is empty. Params: $params"
                                 else authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $title") {
