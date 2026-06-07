@@ -116,10 +116,12 @@ CREATE TABLE predictions (
 ### Phase 1: Interaction & Security (Done)
 *   SMS, Location, Hardware Vault.
 
-### Phase 2: Memory Foundation (Active)
-*   [ ] Refactor Fact/Episode tables (v13.0).
-*   [ ] Implement Prediction storage.
-*   [ ] Build Memory Classifier.
+### Phase 2: Memory Foundation (Done)
+*   [x] Refactor Fact/Episode tables (v13.0).
+*   [x] Implement Prediction storage.
+*   [x] Build Memory Classifier (Intent -> Tier).
+*   [x] 1Hz World State Telemetry Injection.
+*   [x] Hardware-backed Vault with Biometric HITL.
 
 ### Phase 3: Cognitive Runtime (Next)
 *   [ ] Belief State & Goal Stack.

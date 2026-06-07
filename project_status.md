@@ -17,12 +17,12 @@
 ---
 
 ## 3. Current Status: Phase 11.3 (Memory Mastery)
-- **Status:** Phase 2 in active development. Storage foundation v13.0 schema finalized.
+- **Status:** Phase 2 COMPLETED. Storage foundation v13.0 schema and telemetry active.
 - **Active Tasks:**
     - [x] **v13.0 Schema Evolution:** Indexed EAV facts and FTS5 episodes implemented.
     - [x] **Biometric HITL:** Secure biometric prompt integrated for sensitive memory access.
-    - [ ] **Memory Classifier:** Building logic to route data to NOTE vs FACT vs VAULT.
-    - [ ] **World State Injection:** Periodic environment telemetry from Kotlin to C++.
+    - [x] **Memory Classifier:** Logic to route data to NOTE vs FACT vs VAULT active.
+    - [x] **World State Injection:** 1Hz environment telemetry from Kotlin to C++.
 - **Audit Trail:**
     - Validated SMS recipient pre-fill fix (v9.6).
     - Verified JNI reflection safety with @Keep and FragmentActivity.
