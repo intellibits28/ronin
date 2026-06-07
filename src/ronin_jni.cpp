@@ -190,13 +190,13 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     
     std::string rawInput = ConvertJStringToString(env, input);
     
-    // v8.0 Diagnostic Trigger
-    if (rawInput == "/test_agent") {
-        LOGI(TAG, "L3: Diagnostic /test_agent triggered. Creating mock session...");
-        auto session = SessionManager::getInstance().createSession("mock_test");
-        session->setPlan({"mock_test_step_1", "mock_test_step_2"});
-        AgentScheduler::getInstance().schedule(session, 10);
-        return env->NewStringUTF("[DIAGNOSTIC] Mock Agent session scheduled. Watch logcat.");
+    // v10.2.10: Integrated Command Handler (/status, /skills, /model, /reset)
+    std::string cmdOutput;
+    if (g_intent_engine->handleCommand(rawInput, cmdOutput)) {
+        if (rawInput == "/reset" && g_llm_context.engine) {
+            g_llm_context.engine->purgeKVCache();
+        }
+        return env->NewStringUTF(cmdOutput.c_str());
     }
 
     std::string customSystem = ConvertJStringToString(env, systemPrompt);

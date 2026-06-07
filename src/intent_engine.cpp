@@ -18,23 +18,28 @@ TaskPlanner::TaskPlanner(Model::InferenceEngine* engine) : m_engine(engine) {}
 bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
     try {
         auto j = nlohmann::json::parse(llm_json);
-        out_plan.intent_name = j.value("intent", "fallback_chat");
         
-        if (j.contains("required_tools") && j["required_tools"].is_array()) {
-            for (const auto& t : j["required_tools"]) out_plan.required_tools.push_back(t.get<std::string>());
+        // v10.2.10: Handle array output if Gemma wraps the object
+        nlohmann::json root;
+        if (j.is_array() && !j.empty()) root = j[0];
+        else root = j;
+
+        out_plan.intent_name = root.value("intent", "fallback_chat");
+        
+        if (root.contains("required_tools") && root["required_tools"].is_array()) {
+            for (const auto& t : root["required_tools"]) out_plan.required_tools.push_back(t.get<std::string>());
         }
         
-        if (j.contains("required_permissions") && j["required_permissions"].is_array()) {
-            for (const auto& p : j["required_permissions"]) out_plan.required_permissions.push_back(p.get<std::string>());
+        if (root.contains("required_permissions") && root["required_permissions"].is_array()) {
+            for (const auto& p : root["required_permissions"]) out_plan.required_permissions.push_back(p.get<std::string>());
         }
 
-        if (j.contains("plan") && j["plan"].is_array()) {
-            for (const auto& s : j["plan"]) {
+        if (root.contains("plan") && root["plan"].is_array()) {
+            for (const auto& s : root["plan"]) {
                 if (s.is_string()) {
                     out_plan.plan_steps.push_back(s.get<std::string>());
                 } else if (s.is_object() && s.contains("action")) {
                     out_plan.plan_steps.push_back(s["action"].get<std::string>());
-                    // v10.2.9: Merge step-specific parameters into global map
                     if (s.contains("parameters") && s["parameters"].is_object()) {
                         for (auto& [key, value] : s["parameters"].items()) {
                             if (value.is_string()) out_plan.parameters[key] = value.get<std::string>();
@@ -44,8 +49,8 @@ bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
             }
         }
 
-        if (j.contains("parameters") && j["parameters"].is_object()) {
-            for (auto& [key, value] : j["parameters"].items()) {
+        if (root.contains("parameters") && root["parameters"].is_object()) {
+            for (auto& [key, value] : root["parameters"].items()) {
                 if (value.is_string()) out_plan.parameters[key] = value.get<std::string>();
             }
         }
@@ -63,21 +68,18 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v11.3.8: Optimized Multi-Modal Prompt (Speed & Accuracy Restoration)
+    // v11.3.10: Final Multi-Modal Prompt (Security & Precision Mastery)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY JSON. "
+        "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY valid JSON. Skip thinking tags. "
         "Rules: "
-        "- Map: steps ['GET_LOCATION', 'OPEN_MAP']. "
-        "- SMS: steps ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
-        "- Fact Save: intent 'ADD_FACT', steps ['SAVE_FACT']. "
-        "- Fact Find: intent 'LOOKUP_FACT', steps ['QUERY_FACT']. "
-        "- Vault Save: intent 'ADD_VAULT', steps ['SAVE_VAULT']. "
-        "- Vault Find: intent 'LOOKUP_VAULT', steps ['QUERY_VAULT']. "
-        "Extraction: entity=Subject, attribute=Property, value=Data. "
-        "Example (Myanmar): 'Aung Aung မွေးနေ့ မှတ်မိလား' -> entity='Aung Aung', attribute='မွေးနေ့'. "
-        "Constraint: 'plan' MUST be a flat array of STRINGS. No objects. "
-        "Parameters: 'entity', 'attribute', 'value', 'note_title', 'note_content', 'vault_title', 'vault_content', 'query', 'recipient_name'. "
-        "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {}}";
+        "- Map/SMS: steps ['GET_LOCATION', 'OPEN_MAP'] / ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
+        "- Fact/Vault Save: intent 'ADD_FACT' / 'ADD_VAULT'. Steps ['SAVE_FACT'] / ['SAVE_VAULT']. "
+        "- Vault Keywords: ALWAYS use Vault for PIN, API key, password, token, or secret. "
+        "- Fact/Vault Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
+        "Semantic Precision: "
+        "- Input: 'Aung Aung ရဲ့ မွေးနေ့ မှတ်မိလား' -> entity='Aung Aung', attribute='မွေးနေ့'. "
+        "- Constraint: Strip 'ရဲ့', 'မှတ်မိလား', 'ဘာလဲ' from parameters. "
+        "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {\"entity\": \"...\", \"attribute\": \"...\", \"value\": \"...\"}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
@@ -183,12 +185,12 @@ void IntentEngine::setInferenceEngine(std::unique_ptr<Model::InferenceEngine> en
     m_inference_engine = std::move(engine);
     m_planner = std::make_unique<TaskPlanner>(m_inference_engine.get());
     
-    // v10.2.7: Update ChatSkill engine if it's already registered
-    auto skill = getSkill(8); // Node 8 is ChatSkill
+    // v10.2.10: Update ChatSkill engine if it's already registered
+    auto skill = getSkill(1); // Node 1 is ChatSkill
     if (skill) {
         auto chat = std::dynamic_pointer_cast<Ronin::Kernel::Capability::ChatSkill>(skill);
         if (chat) {
-            registerSkill(8, std::make_shared<Ronin::Kernel::Capability::ChatSkill>(m_inference_engine.get(), m_ltm));
+            registerSkill(1, std::make_shared<Ronin::Kernel::Capability::ChatSkill>(m_inference_engine.get(), m_ltm));
         }
     }
 }
@@ -216,23 +218,33 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
 
     if (cmd == "/status") {
         std::stringstream ss;
-        ss << (m_inference_engine ? m_inference_engine->getRuntimeInfo() : "Runtime: LiteRT-LM / Backend: Unknown") << " | ";
-        ss << "Health: " << std::fixed << std::setprecision(1) << Ronin::Kernel::Capability::HardwareBridge::getTemperature() << "deg C | ";
-        ss << std::setprecision(2) << Ronin::Kernel::Capability::HardwareBridge::getRamUsed() << "/" << Ronin::Kernel::Capability::HardwareBridge::getRamTotal() << "GB | ";
+        ss << (m_inference_engine ? m_inference_engine->getRuntimeInfo() : "Runtime: LiteRT-LM") << " | ";
+        ss << "Health: " << std::fixed << std::setprecision(1) << Ronin::Kernel::Capability::HardwareBridge::getTemperature() << "°C | ";
+        ss << std::setprecision(2) << Ronin::Kernel::Capability::HardwareBridge::getRamUsed() << "/" << Ronin::Kernel::Capability::HardwareBridge::getRamTotal() << "GB";
         output = ss.str();
         return true;
     } 
 
     if (cmd == "/skills") {
         std::stringstream ss;
-        ss << "Registered Skills: ";
+        ss << "Active Nodes: ";
         bool first = true;
         for (auto const& [id, skill] : m_skill_registry) {
             if (!first) ss << ", ";
-            ss << skill->getName() << " (ID " << id << ")";
+            ss << skill->getName() << " (" << id << ")";
             first = false;
         }
         output = ss.str();
+        return true;
+    }
+
+    if (cmd == "/model") {
+        output = "Active Brain: " + (m_inference_engine ? m_inference_engine->getModelPath() : "None");
+        return true;
+    }
+
+    if (cmd == "/reset") {
+        output = "[SYSTEM] Internal State Reset requested.";
         return true;
     }
 
@@ -257,7 +269,7 @@ IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     m_skill_registry[5] = std::make_shared<LocationNode>();
     m_skill_registry[6] = std::make_shared<WifiNode>();
     m_skill_registry[7] = std::make_shared<BluetoothNode>();
-    m_skill_registry[8] = std::make_shared<ChatSkill>(nullptr, m_ltm);
+    m_skill_registry[1] = std::make_shared<ChatSkill>(nullptr, m_ltm);
     m_planner = std::make_unique<TaskPlanner>(nullptr); 
 }
 
