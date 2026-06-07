@@ -240,9 +240,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      */
     @Suppress("unused")
     fun pushTokenToUI(fragment: String, isFinal: Boolean) {
-        // v10.2.3: Fragments in final packets must be delivered even if silenced, 
-        // as they often contain critical tool results (Facts/Vault).
-        if (silentInference && !isFinal && fragment.isEmpty()) return
+        // v10.2.9: Correct silence logic. Only allow final packets or unsilenced tokens.
+        if (silentInference && !isFinal) return
         scope.launch { _inferenceFlow.emit(InferencePacket(0, fragment, isFinal)) }
     }
 

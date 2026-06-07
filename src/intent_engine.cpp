@@ -34,6 +34,12 @@ bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
                     out_plan.plan_steps.push_back(s.get<std::string>());
                 } else if (s.is_object() && s.contains("action")) {
                     out_plan.plan_steps.push_back(s["action"].get<std::string>());
+                    // v10.2.9: Merge step-specific parameters into global map
+                    if (s.contains("parameters") && s["parameters"].is_object()) {
+                        for (auto& [key, value] : s["parameters"].items()) {
+                            if (value.is_string()) out_plan.parameters[key] = value.get<std::string>();
+                        }
+                    }
                 }
             }
         }
@@ -57,24 +63,21 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v11.3.7: Multi-Modal Orchestration Prompt (Memory + Hardware Restoration)
+    // v11.3.8: Optimized Multi-Modal Prompt (Speed & Accuracy Restoration)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Cognitive Controller. Output ONLY valid JSON. "
-        "Identity: Deterministic Hardware/Knowledge Orchestrator. "
-        "Structure: "
-        "- 'plan': MUST be an array of STRINGS only. NEVER use objects in 'plan'. "
-        "Rule 1 (Map): For 'show location' or 'map', ALWAYS use steps ['GET_LOCATION', 'OPEN_MAP']. "
-        "Rule 2 (SMS): For 'send location' or 'message', ALWAYS use steps ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
-        "Rule 3 (Fact Storage): For facts, ALWAYS use intent 'ADD_FACT', steps ['SAVE_FACT']. Params: 'entity', 'attribute', 'value'. "
-        "Rule 4 (Vault Storage): For keys/passwords, ALWAYS use intent 'ADD_VAULT', steps ['SAVE_VAULT']. Params: 'vault_title', 'vault_content'. "
-        "Rule 5 (Fact Retrieval): For 'what is', 'မှတ်မိလား', use intent 'LOOKUP_FACT', steps ['QUERY_FACT']. "
-        "Rule 6 (Vault Retrieval): For saved keys, use intent 'LOOKUP_VAULT', steps ['QUERY_VAULT']. "
-        "Rule 7 (Semantic Precision): "
-        "- Input: 'Toyota Wish license plate number မှတ်မိလား' "
-        "- Extraction: entity='Toyota Wish', attribute='license plate number'. "
-        "Rule 8 (Negative): NEVER add explanation in step names. Example: ['SAVE_FACT'] is correct. ['SAVE_FACT with...'] is FORBIDDEN. "
+        "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY JSON. "
+        "Rules: "
+        "- Map: steps ['GET_LOCATION', 'OPEN_MAP']. "
+        "- SMS: steps ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
+        "- Fact Save: intent 'ADD_FACT', steps ['SAVE_FACT']. "
+        "- Fact Find: intent 'LOOKUP_FACT', steps ['QUERY_FACT']. "
+        "- Vault Save: intent 'ADD_VAULT', steps ['SAVE_VAULT']. "
+        "- Vault Find: intent 'LOOKUP_VAULT', steps ['QUERY_VAULT']. "
+        "Extraction: entity=Subject, attribute=Property, value=Data. "
+        "Example (Myanmar): 'Aung Aung မွေးနေ့ မှတ်မိလား' -> entity='Aung Aung', attribute='မွေးနေ့'. "
+        "Constraint: 'plan' MUST be a flat array of STRINGS. No objects. "
         "Parameters: 'entity', 'attribute', 'value', 'note_title', 'note_content', 'vault_title', 'vault_content', 'query', 'recipient_name'. "
-        "Schema: {\"intent\": \"...\", \"required_tools\": [], \"plan\": [], \"parameters\": {}}";
+        "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 

@@ -128,8 +128,11 @@ CREATE TABLE predictions (
 *   [ ] DAG Graph Executor with Reflection Engine.
 *   [ ] Thompson Sampling with Symmetric Decay.
 
-### Phase 4: Autonomous Cognition
-*   [ ] Long Horizon Planning & Self-Evaluation.
+### Phase 4: Expanded Capabilities & Autonomous Cognition
+*   [ ] **Native Alarm Integration:** Setting and managing Android alarms via intents.
+*   [ ] **Native Calendar Integration:** Event creation and schedule awareness.
+*   [ ] **Long Horizon Planning:** Multi-step goal decomposition (e.g. Calendar-aware Alarms).
+*   [ ] **Self-Evaluation Loops:** Continuous strategy optimization.
 
 ---
 *Revised: 2026-06-05 | Ronin Kernel Engineering Standards v1.3*
