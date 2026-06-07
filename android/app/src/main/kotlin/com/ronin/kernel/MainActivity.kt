@@ -449,6 +449,19 @@ class MainActivity : FragmentActivity() {
         return "NOT_FOUND:$name"
     }
 
+    private fun normalizeAttribute(attr: String): String {
+        val lower = attr.lowercase()
+        return when {
+            lower.contains("birthday") || lower.contains("မွေးနေ့") -> "မွေးနေ့"
+            lower.contains("plate") || lower.contains("လိုင်စင်") || lower.contains("ကားနံပါတ်") -> "ကားနံပါတ်"
+            lower.contains("medicine") || lower.contains("ဆေး") -> "ဆေးအချက်အလက်"
+            lower.contains("phone") || lower.contains("ဖုန်း") -> "ဖုန်းနံပါတ်"
+            lower.contains("address") || lower.contains("လိပ်စာ") -> "လိပ်စာ"
+            lower.contains("key") || lower.contains("api") || lower.contains("token") -> "API/Key"
+            else -> attr
+        }
+    }
+
     private fun authenticateAndExecute(title: String, subtitle: String, onAuthSuccess: () -> String): String {
         val biometricManager = BiometricManager.from(this)
         if (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL) != BiometricManager.BIOMETRIC_SUCCESS) {
@@ -540,12 +553,17 @@ class MainActivity : FragmentActivity() {
                             "SAVE_FACT", "ADD_FACT", "STORE_FACT" -> {
                                 // v10.1.16: Intelligent parameter matching
                                 val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) || it.contains("person", true) }?.let { params[it] } ?: "Unknown"
-                                val attr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) }?.let { params[it] } ?: "General"
+                                val rawAttr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) }?.let { params[it] } ?: "General"
                                 
+                                // v10.2.14: Semantic Attribute Normalization
+                                val attr = normalizeAttribute(rawAttr)
+
                                 // Try to find the most likely 'value'
                                 val value = params["value"] ?: params["content"] ?: params.keys.find { 
                                     val k = it.lowercase()
-                                    k.contains("plate") || k.contains("medicine") || k.contains("number") || k.contains("result") || k.contains("val")
+                                    // v10.2.14: Exclude title/entity keys from value search to prevent corruption
+                                    !k.contains("title") && !k.contains("entity") && !k.contains("name") && !k.contains("attribute") &&
+                                    (k.contains("plate") || k.contains("medicine") || k.contains("number") || k.contains("result") || k.contains("val") || k.contains("data"))
                                 }?.let { params[it] } ?: ""
                                 
                                 if (value.isEmpty()) {
@@ -563,9 +581,11 @@ class MainActivity : FragmentActivity() {
                             "SAVE_VAULT", "ADD_VAULT", "STORE_VAULT" -> {
                                 val title = params["vault_title"] ?: params["title"] ?: params.keys.find { it.contains("name", true) || it.contains("title", true) }?.let { params[it] } ?: "Secret"
                                 
-                                val content = params["vault_content"] ?: params["content"] ?: params.keys.find {
+                                val content = params["vault_content"] ?: params["content"] ?: params["value"] ?: params.keys.find {
                                     val k = it.lowercase()
-                                    k.contains("key") || k.contains("token") || k.contains("password") || k.contains("secret") || k.contains("pin")
+                                    // v10.2.14: Exclude title keys from content search to prevent corruption
+                                    !k.contains("title") && !k.contains("name") &&
+                                    (k.contains("key") || k.contains("token") || k.contains("password") || k.contains("secret") || k.contains("pin"))
                                 }?.let { params[it] } ?: ""
                                 
                                 if (content.isEmpty()) {
@@ -624,8 +644,11 @@ class MainActivity : FragmentActivity() {
                             }
                             "QUERY_FACT", "MEMORY", "LOOKUP_FACT" -> {
                                 val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) || it.contains("person", true) }?.let { params[it] } ?: "Unknown"
-                                val attr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) || it.contains("attribute", true) }?.let { params[it] } ?: "General"
+                                val rawAttr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) || it.contains("attribute", true) }?.let { params[it] } ?: "General"
                                 
+                                // v10.2.14: Semantic Attribute Normalization
+                                val attr = normalizeAttribute(rawAttr)
+
                                 val isSensitive = attr.lowercase().let { it.contains("key") || it.contains("password") || it.contains("pin") || it.contains("secret") }
                                 
                                 val executeLookup = {

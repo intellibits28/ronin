@@ -68,18 +68,18 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v11.3.12: Hardened Prompt (Vault Focus & Noise Stripping)
+    // v11.3.13: Final Multi-Modal Prompt (Semantic & Security Integrity)
     std::string system_prompt = 
         "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY valid JSON. Skip thinking tags. "
         "Rules: "
         "- Map/SMS: steps ['GET_LOCATION', 'OPEN_MAP'] / ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
-        "- Vault Save/Find: For PIN, API key, password, token, or secret, ALWAYS use intent 'ADD_VAULT'/'LOOKUP_VAULT', steps ['SAVE_VAULT']/'QUERY_VAULT'. "
-        "- Vault Param: Use 'vault_title' and 'vault_content'. "
-        "- Fact Save/Find: intent 'ADD_FACT'/'LOOKUP_FACT', steps ['SAVE_FACT']/'QUERY_FACT'. "
+        "- Fact/Vault Save: intent 'ADD_FACT' / 'ADD_VAULT'. Steps ['SAVE_FACT'] / ['SAVE_VAULT']. "
+        "- Vault Keywords: ALWAYS use Vault for PIN, API key, password, token, or secret. "
+        "- Fact/Vault Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
         "Semantic Precision: "
-        "- Input: 'Aung Aung ရဲ့ မွေးနေ့ မှတ်မိလား' -> entity='Aung Aung', attribute='မွေးနေ့'. "
-        "- Noise: Strip 'ရဲ့', '၏', 'က', 'ကို', 'မှတ်မိလား', 'ဘာလဲ' from parameters. "
-        "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {\"entity\": \"...\", \"attribute\": \"...\", \"vault_title\": \"...\"}}";
+        "- Attribute names MUST be in Myanmar if user uses it (e.g. 'မွေးနေ့', 'ကားနံပါတ်'). "
+        "- Strip 'ရဲ့', '၏', 'က', 'ကို' from entity/attribute names. "
+        "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {\"entity\": \"...\", \"attribute\": \"...\", \"value\": \"...\"}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
@@ -208,11 +208,13 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
                  "\nCategory: " + std::to_string(static_cast<int>(intent.category)) +
                  "\nSkill ID: " + std::to_string(intent.id) +
                  "\nPlanner Ready: " + (m_planner ? "YES" : "NO");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(output);
         return true;
     }
 
     if (cmd == "/test_agent") {
         output = "[DIAGNOSTIC] Triggering Mock Agent Sequence...\nStep 1: JNI Routing test.\nStep 2: Scheduler Test.";
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(output);
         return true;
     }
 
@@ -222,6 +224,7 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
         ss << "Health: " << std::fixed << std::setprecision(1) << Ronin::Kernel::Capability::HardwareBridge::getTemperature() << "°C | ";
         ss << std::setprecision(2) << Ronin::Kernel::Capability::HardwareBridge::getRamUsed() << "/" << Ronin::Kernel::Capability::HardwareBridge::getRamTotal() << "GB";
         output = ss.str();
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[STATUS] " + output);
         return true;
     } 
 
@@ -235,16 +238,19 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
             first = false;
         }
         output = ss.str();
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[SKILLS] " + output);
         return true;
     }
 
     if (cmd == "/model") {
         output = "Active Brain: " + (m_inference_engine ? m_inference_engine->getModelPath() : "None");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[MODEL] " + output);
         return true;
     }
 
     if (cmd == "/reset") {
         output = "[SYSTEM] Internal State Reset requested.";
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(output);
         return true;
     }
 

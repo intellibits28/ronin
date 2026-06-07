@@ -16,31 +16,8 @@
 
 namespace Ronin::Kernel::Reasoning {
 
-// --- Helpers for String Normalization ---
-
-static std::string lowercase(const std::string& s) {
-    std::string out = s;
-    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return std::tolower(c); });
-    return out;
-}
-
-static std::string trim(const std::string& s) {
-    auto start = s.begin();
-    while (start != s.end() && std::isspace(*start)) {
-        start++;
-    }
-    if (start == s.end()) return "";
-    auto end = s.end();
-    do {
-        end--;
-    } while (std::distance(start, end) > 0 && std::isspace(*end));
-    return std::string(start, end + 1);
-}
-
-// --- GraphExecutor Implementation ---
-
-GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage, Memory::LongTermMemory* ltm) 
-    : m_graph(graph), m_storage(storage), m_ltm(ltm), m_sampler() {}
+GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage, Memory::LongTermMemory* ltm)
+    : m_graph(graph), m_storage(storage), m_ltm(ltm) {}
 
 GraphExecutor::~GraphExecutor() {
     if (m_sync_thread.joinable()) {
@@ -48,26 +25,23 @@ GraphExecutor::~GraphExecutor() {
     }
 }
 
-GraphExecutor::TaskPlan GraphExecutor::generatePlan(const std::string& input) {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+GraphExecutor::TaskPlan GraphExecutor::generatePlan(const std::string& input_text) {
     TaskPlan plan;
-    
-    // v6.0: Multi-step Path Exploration (Max Depth 4)
-    uint32_t current_id = 1; 
-    
-    for (int i = 0; i < 4; ++i) {
-        Node* current = m_graph.getNode(current_id);
-        if (!current || current->outgoing_edges.empty()) break;
+    uint32_t current_id = 1; // Always start at Root/Chat
+    plan.steps.push_back(current_id);
+
+    // v7.0 Layer 10: Deep-Path Projection (Recursive strategy discovery)
+    for (int i = 0; i < 5; ++i) {
+        Node* current_node = m_graph.getNode(current_id);
+        if (!current_node || current_node->outgoing_edges.empty()) break;
 
         uint32_t best_next = current_id;
         float max_sample = -1.0f;
 
-        for (auto& edge : current->outgoing_edges) {
-            float sample = m_sampler.sampleBeta(edge.success_count, edge.failure_count);
-            float score = sample * edge.base_weight;
-
-            if (score > max_sample) {
-                max_sample = score;
+        for (const auto& edge : current_node->outgoing_edges) {
+            float sample = m_sampler.sampleBeta(edge.success_count + 1, edge.failure_count + 1);
+            if (sample > max_sample) {
+                max_sample = sample;
                 best_next = edge.target_node_id;
             }
         }
@@ -77,45 +51,44 @@ GraphExecutor::TaskPlan GraphExecutor::generatePlan(const std::string& input) {
         current_id = best_next;
     }
     
-    // Default to Chat (1) if no steps found
-    if (plan.steps.empty()) plan.steps.push_back(1);
-    
-    LOGI(TAG, "Adaptive Plan Generated: %zu steps.", plan.steps.size());
     return plan;
 }
 
-std::string GraphExecutor::executeChain(const std::vector<uint32_t>& steps, 
-                                       const std::string& input,
-                                       std::function<std::string(uint32_t, const std::string&, ToolContext*)> skill_executor) {
-    std::string final_result;
-    m_blackboard.storage.clear(); // Fresh start for each chain
-    
-    LOGI(TAG, "v7.0: Starting dynamic tool chain execution (%zu steps).", steps.size());
-    
-    for (uint32_t nodeId : steps) {
-        LOGI(TAG, "> Executing Node ID %u in chain.", nodeId);
-        std::string result = skill_executor(nodeId, input, &m_blackboard);
-        
-        // Append result to final output
-        if (!final_result.empty()) final_result += "\n";
-        final_result += result;
-        
-        // Optional: Termination logic if a critical node fails
-        if (result.find("Error:") != std::string::npos) {
-            LOGW(TAG, "Node ID %u failed. Breaking chain.", nodeId);
-            break;
+void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    Node* source = m_graph.getNode(source_id);
+    if (!source) return;
+
+    float eta = calculateLearningRate(risk);
+    const float decay = 0.95f; // Forgetting factor to keep sampling fresh
+
+    for (auto& edge : source->outgoing_edges) {
+        // Apply global decay
+        edge.success_count = static_cast<uint32_t>(edge.success_count * decay);
+        edge.failure_count = static_cast<uint32_t>(edge.failure_count * decay);
+
+        if (edge.target_node_id == target_id) {
+            if (success) {
+                edge.success_count += static_cast<uint32_t>(1.0f * eta);
+                edge.base_weight += (0.1f * eta);
+            } else {
+                edge.failure_count += static_cast<uint32_t>(1.0f * eta);
+                edge.base_weight -= (0.05f * eta);
+            }
         }
     }
-    
-    return final_result;
-}
 
+    triggerAsyncSync();
+}
 
 std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const std::string& session_id, const std::string& payload) {
     auto promise = std::make_shared<std::promise<bool>>();
     std::future<bool> future = promise->get_future();
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    
+    // v10.2.14: Update active session tracking
+    m_current_session_id = session_id;
     
     // v10.1.19: Targeted Node Selection
     uint32_t best_node_id = 1; // Default
@@ -156,16 +129,22 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     LOGI(TAG, "L10 Optimizer: Selected Node %u for Capability %d. Dispatching...", 
          best_node_id, static_cast<int>(type));
          
-    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise, type](const CapabilityResponse& res) {
+    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise, type, session_id](const CapabilityResponse& res) {
         // v7.4: Feedback + Blackboard Storage
         this->reportOutcome(0, best_node_id, res.success, RiskLevel::MEDIUM);
         
         if (res.success) {
             std::lock_guard<std::recursive_mutex> inner_lock(m_mutex);
-            // v9.2: Key results by capability name to avoid overwrites
-            std::string cap_str = Ronin::Kernel::CapabilityTypeToString(type);
-            m_blackboard.storage["result_" + cap_str] = res.payload_json;
-            LOGI(TAG, "L10: Blackboard updated with result from %s", cap_str.c_str());
+            
+            // v10.2.14: Isolation guard - only update blackboard if session is still active
+            if (session_id != m_current_session_id) {
+                LOGW(TAG, "L10: Tool result arrived for STALE session %s. Dropping.", session_id.c_str());
+            } else {
+                // v9.2: Key results by capability name to avoid overwrites
+                std::string cap_str = Ronin::Kernel::CapabilityTypeToString(type);
+                m_blackboard.storage["result_" + cap_str] = res.payload_json;
+                LOGI(TAG, "L10: Blackboard updated with result from %s", cap_str.c_str());
+            }
         }
         
         promise->set_value(res.success);
@@ -174,13 +153,11 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     return future;
 }
 
-
 void GraphExecutor::recordEpisode(const std::string& intent, const std::string& summary, const std::string& payload, 
                                   bool success, const std::string& goal_id, const std::string& node_id,
                                   int64_t latency_ms, float conf_before, float conf_after) {
     if (m_ltm) {
         m_ltm->storeEpisode(intent, summary, payload, success, goal_id, node_id, latency_ms, conf_before, conf_after);
-        LOGI(TAG, "L10: Episodic memory recorded (v13.0) for intent: %s", intent.c_str());
     }
 }
 
@@ -188,36 +165,7 @@ void GraphExecutor::recordPrediction(const std::string& goal_id, const std::stri
                                      const std::string& predicted_json, const std::string& actual_json, float error_score) {
     if (m_ltm) {
         m_ltm->storePrediction(goal_id, node_id, predicted_json, actual_json, error_score);
-        LOGI(TAG, "L10: Prediction recorded (v13.0) for node: %s", node_id.c_str());
     }
-}
-
-void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool success, RiskLevel risk) {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    
-    Node* source = m_graph.getNode(source_id);
-    if (!source) return;
-
-    float eta = calculateLearningRate(risk);
-    const float decay = 0.95f; // Forgetting factor to keep sampling fresh
-
-    for (auto& edge : source->outgoing_edges) {
-        // Apply global decay
-        edge.success_count = static_cast<uint32_t>(edge.success_count * decay);
-        edge.failure_count = static_cast<uint32_t>(edge.failure_count * decay);
-
-        if (edge.target_node_id == target_id) {
-            if (success) {
-                edge.success_count += static_cast<uint32_t>(1.0f * eta);
-                edge.base_weight += (0.1f * eta);
-            } else {
-                edge.failure_count += static_cast<uint32_t>(1.0f * eta);
-                edge.base_weight -= (0.05f * eta);
-            }
-        }
-    }
-
-    triggerAsyncSync();
 }
 
 float GraphExecutor::calculateLearningRate(RiskLevel risk) {

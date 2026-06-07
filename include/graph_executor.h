@@ -79,6 +79,7 @@ private:
     std::recursive_mutex m_mutex;
     std::atomic<bool> m_is_syncing{false};
     std::thread m_sync_thread;
+    std::string m_current_session_id; // v10.2.14: Session isolation
     
     // Dynamic learning rate helper
     float calculateLearningRate(RiskLevel risk);
