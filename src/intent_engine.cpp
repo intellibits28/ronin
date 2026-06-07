@@ -57,23 +57,23 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v11.3.6: Ultra-Hardened Orchestration Prompt (Hallucination & Structure Defense)
+    // v11.3.7: Multi-Modal Orchestration Prompt (Memory + Hardware Restoration)
     std::string system_prompt = 
         "[INTERNAL] You are the Ronin Cognitive Controller. Output ONLY valid JSON. "
         "Identity: Deterministic Hardware/Knowledge Orchestrator. "
         "Structure: "
         "- 'plan': MUST be an array of STRINGS only. NEVER use objects in 'plan'. "
-        "- 'parameters': Extract precise data. "
-        "Rule 1 (Storage): For facts, ALWAYS use intent 'ADD_FACT', steps ['SAVE_FACT']. "
-        "Rule 2 (Vault): For secrets/keys/passwords, ALWAYS use intent 'ADD_VAULT', steps ['SAVE_VAULT']. "
-        "Rule 3 (Fact Retrieval): If user asks 'what is', 'မှတ်မိလား', 'ဘာလဲ', use intent 'LOOKUP_FACT', steps ['QUERY_FACT']. "
-        "Rule 4 (Vault Retrieval): For saved keys, use intent 'LOOKUP_VAULT', steps ['QUERY_VAULT']. "
-        "Rule 5 (Semantic Precision): "
+        "Rule 1 (Map): For 'show location' or 'map', ALWAYS use steps ['GET_LOCATION', 'OPEN_MAP']. "
+        "Rule 2 (SMS): For 'send location' or 'message', ALWAYS use steps ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
+        "Rule 3 (Fact Storage): For facts, ALWAYS use intent 'ADD_FACT', steps ['SAVE_FACT']. Params: 'entity', 'attribute', 'value'. "
+        "Rule 4 (Vault Storage): For keys/passwords, ALWAYS use intent 'ADD_VAULT', steps ['SAVE_VAULT']. Params: 'vault_title', 'vault_content'. "
+        "Rule 5 (Fact Retrieval): For 'what is', 'မှတ်မိလား', use intent 'LOOKUP_FACT', steps ['QUERY_FACT']. "
+        "Rule 6 (Vault Retrieval): For saved keys, use intent 'LOOKUP_VAULT', steps ['QUERY_VAULT']. "
+        "Rule 7 (Semantic Precision): "
         "- Input: 'Toyota Wish license plate number မှတ်မိလား' "
         "- Extraction: entity='Toyota Wish', attribute='license plate number'. "
-        "- DO NOT include 'မှတ်မိလား' or 'ဘာလဲ' in parameters. "
-        "Rule 6 (Negative): NEVER add explanation in step names. Example: ['SAVE_FACT'] is correct. ['SAVE_FACT with entity=...'] is FORBIDDEN. "
-        "Parameters: 'entity', 'attribute', 'value', 'note_title', 'note_content', 'vault_title', 'vault_content', 'query'. "
+        "Rule 8 (Negative): NEVER add explanation in step names. Example: ['SAVE_FACT'] is correct. ['SAVE_FACT with...'] is FORBIDDEN. "
+        "Parameters: 'entity', 'attribute', 'value', 'note_title', 'note_content', 'vault_title', 'vault_content', 'query', 'recipient_name'. "
         "Schema: {\"intent\": \"...\", \"required_tools\": [], \"plan\": [], \"parameters\": {}}";
 
     // Requesting a reasoning cycle from the engine
