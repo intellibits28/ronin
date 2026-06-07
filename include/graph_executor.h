@@ -53,6 +53,9 @@ public:
     // Forces an async sync to the L3 Deep-store
     void triggerAsyncSync();
 
+    // v10.2.13: Isolation logic
+    void clearContext();
+
     /**
      * v13.0: Records a task execution in episodic memory with cognitive context.
      */

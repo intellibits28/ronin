@@ -190,6 +190,9 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     
     std::string rawInput = ConvertJStringToString(env, input);
     
+    // v10.2.13: Isolation logic - Clear previous results before starting new plan
+    if (g_graph_executor) g_graph_executor->clearContext();
+
     // v10.2.10: Integrated Command Handler (/status, /skills, /model, /reset)
     std::string cmdOutput;
     if (g_intent_engine->handleCommand(rawInput, cmdOutput)) {

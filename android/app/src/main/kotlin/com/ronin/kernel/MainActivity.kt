@@ -822,7 +822,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 roninMsg.content = res
                                             } else { 
                                                 val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
-                                                if (roninMsg.content.isEmpty()) {
+                                                if (isCommand || roninMsg.content.isEmpty()) {
                                                     roninMsg.content = result
                                                 }
                                             }

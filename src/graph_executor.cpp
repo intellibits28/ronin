@@ -248,4 +248,10 @@ void GraphExecutor::triggerAsyncSync() {
     });
 }
 
+void GraphExecutor::clearContext() {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    m_blackboard.storage.clear();
+    LOGI(TAG, "L10: Blackboard cleared (Session Isolation).");
+}
+
 } // namespace Ronin::Kernel::Reasoning
