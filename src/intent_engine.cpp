@@ -68,11 +68,12 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v11.3.10: Final Multi-Modal Prompt (Security & Precision Mastery)
+    // v11.3.11: Multi-Modal Prompt (Intent Decoupling & Semantic Guard)
     std::string system_prompt = 
         "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY valid JSON. Skip thinking tags. "
         "Rules: "
-        "- Map/SMS: steps ['GET_LOCATION', 'OPEN_MAP'] / ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
+        "- Map: intent 'SHOW_MAP', steps ['GET_LOCATION', 'OPEN_MAP']. "
+        "- SMS: intent 'SEND_SMS', steps ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
         "- Fact/Vault Save: intent 'ADD_FACT' / 'ADD_VAULT'. Steps ['SAVE_FACT'] / ['SAVE_VAULT']. "
         "- Vault Keywords: ALWAYS use Vault for PIN, API key, password, token, or secret. "
         "- Fact/Vault Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
