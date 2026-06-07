@@ -583,8 +583,12 @@ class MainActivity : FragmentActivity() {
                                 }
                             }
                             "QUERY_VAULT", "LOOKUP_VAULT" -> {
-                                val title = params["vault_title"] ?: params["title"] ?: params["query"] ?: params.keys.find { it.contains("name", true) || it.contains("title", true) }?.let { params[it] } ?: ""
-                                if (title.isEmpty()) "Error: Vault search title is empty."
+                                val title = params["vault_title"] ?: params["title"] ?: params["query"] ?: 
+                                            params.keys.find { 
+                                                val k = it.lowercase()
+                                                k.contains("name") || k.contains("title") || k.contains("key") || k.contains("type") || k.contains("subject") || k.contains("item")
+                                            }?.let { params[it] } ?: ""
+                                if (title.isEmpty()) "Error: Vault search title is empty. Params: $params"
                                 else authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $title") {
                                     val encrypted = nativeEngine.lookupVault(title)
                                     if (encrypted.isNotEmpty()) {
