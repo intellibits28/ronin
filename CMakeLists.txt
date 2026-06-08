@@ -81,6 +81,8 @@ set(RONIN_CORE_SOURCES
     src/graph_storage.cpp
     src/memory_manager.cpp
     src/long_term_memory.cpp
+    src/belief_state.cpp
+    src/reflection_engine.cpp
     src/capability_graph.cpp
     src/capability_dispatcher.cpp
     src/android_bridge.cpp
