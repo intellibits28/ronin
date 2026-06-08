@@ -21,6 +21,9 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Agent Mode: System Integrations -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+
     <!-- Agent Mode: Communication & Contacts -->
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
