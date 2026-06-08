@@ -121,16 +121,16 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     }
     
     auto intent = g_intent_engine->process(rawInput, "");
-    std::string result;
+    std::string result = "";
     std::string sid = "";
 
     if (intent.category == IntentCategory::AGENT_PLAN && g_intent_engine->getPlanner()) {
         LOGI(TAG, "v7.7: Initializing Robust Agent Planning for input: %s", rawInput.c_str());
         
         // v7.6: Suppress tokens during internal planning
-        native_setInferenceSilence(env, thiz, JNI_TRUE);
+        HardwareBridge::setInferenceSilence(true);
         auto plan = g_intent_engine->getPlanner()->createPlan(rawInput);
-        native_setInferenceSilence(env, thiz, JNI_FALSE);
+        HardwareBridge::setInferenceSilence(false);
         
         if (plan.intent_name == "fallback_chat") {
             LOGW(TAG, "L1 Planner: Falling back to chat due to failure.");
@@ -248,7 +248,8 @@ jstring native_lookupVault(JNIEnv *env, jobject thiz, jstring title) {
 jobjectArray native_searchNotes(JNIEnv *env, jobject thiz, jstring query) {
     if (!g_ltm) return nullptr;
     auto results = g_ltm->searchNotes(ConvertJStringToString(env, query));
-    jobjectArray res = (jobjectArray)env->NewObjectArray(results.size(), env->FindClass("java/lang/String"), env->NewStringUTF(""));
+    jclass stringClass = env->FindClass("java/lang/String");
+    jobjectArray res = env->NewObjectArray(results.size(), stringClass, env->NewStringUTF(""));
     for (size_t i = 0; i < results.size(); ++i) env->SetObjectArrayElement(res, i, env->NewStringUTF(results[i].c_str()));
     return res;
 }
@@ -256,7 +257,8 @@ jobjectArray native_searchNotes(JNIEnv *env, jobject thiz, jstring query) {
 jobjectArray native_searchEpisodes(JNIEnv *env, jobject thiz, jstring query) {
     if (!g_ltm) return nullptr;
     auto results = g_ltm->searchEpisodes(ConvertJStringToString(env, query));
-    jobjectArray res = (jobjectArray)env->NewObjectArray(results.size(), env->FindClass("java/lang/String"), env->NewStringUTF(""));
+    jclass stringClass = env->FindClass("java/lang/String");
+    jobjectArray res = env->NewObjectArray(results.size(), stringClass, env->NewStringUTF(""));
     for (size_t i = 0; i < results.size(); ++i) env->SetObjectArrayElement(res, i, env->NewStringUTF(results[i].c_str()));
     return res;
 }
@@ -273,7 +275,7 @@ jboolean native_storePrediction(JNIEnv *env, jobject thiz, jstring goalId, jstri
 }
 
 void native_injectWorldState(JNIEnv *env, jobject thiz, jfloat battery, jfloat ram, jboolean gps, jboolean net, jboolean charging) {
-    // Blueprint v1.3: World State is transient.
+    // World state processing...
 }
 
 void native_applyHumanFeedback(JNIEnv *env, jobject thiz, jstring sessionId, jboolean wasHelpful) {
@@ -282,13 +284,21 @@ void native_applyHumanFeedback(JNIEnv *env, jobject thiz, jstring sessionId, jbo
     }
 }
 
+jfloat native_getFreeRamGB(JNIEnv *env, jobject thiz) {
+    return HardwareBridge::getRamTotal() - HardwareBridge::getRamUsed();
+}
+
+void native_shutdownKernel(JNIEnv *env, jobject thiz) {
+    if (g_kernel) g_kernel->Shutdown();
+}
+
 jint native_getLMKPressure(JNIEnv *env, jobject thiz) {
     return g_memory_manager ? g_memory_manager->getPressureScore() : 0;
 }
 
-jboolean native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring path) {
+jboolean native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring json) {
     if (g_intent_engine) {
-        g_intent_engine->loadCapabilities(ConvertJStringToString(env, path));
+        g_intent_engine->loadCapabilities(ConvertJStringToString(env, json));
         return JNI_TRUE;
     }
     return JNI_FALSE;

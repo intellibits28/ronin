@@ -74,13 +74,12 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY valid JSON. Skip thinking tags. "
         "Rules: "
         "- Map/SMS: steps ['GET_LOCATION', 'OPEN_MAP'] / ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
-        "- Fact Save/Find: intent 'ADD_FACT'/'LOOKUP_FACT', steps ['SAVE_FACT']/'QUERY_FACT'. "
-        "- Vault Save/Find: PIN, API key, password, secret -> intent 'ADD_VAULT'/'LOOKUP_VAULT', steps ['SAVE_VAULT']/'QUERY_VAULT'. "
-        "Semantic Rules: "
-        "- Use 'entity', 'attribute', 'value' for Facts. "
-        "- Use 'vault_title', 'vault_content' for Vault. "
-        "- Myanmar: Aung Aung ရဲ့ မွေးနေ့ မှတ်မိလား -> entity='Aung Aung', attribute='မွေးနေ့'. "
-        "- Noise: Strip 'ရဲ့', '၏', 'က', 'ကို' from parameters. "
+        "- Fact Save/Find: intent 'ADD_FACT' / 'ADD_VAULT'. Steps ['SAVE_FACT'] / ['SAVE_VAULT']. "
+        "- Vault Keywords: ALWAYS use Vault for PIN, API key, password, token, or secret. "
+        "- Fact/Vault Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
+        "Semantic Precision: "
+        "- Attribute names MUST be in Myanmar if user uses it (e.g. 'မွေးနေ့', 'ကားနံပါတ်'). "
+        "- Strip 'ရဲ့', '၏', 'က', 'ကို' from entity/attribute names. "
         "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {\"entity\": \"...\", \"attribute\": \"...\", \"value\": \"...\", \"vault_title\": \"...\", \"vault_content\": \"...\"}}";
 
     // Requesting a reasoning cycle from the engine
@@ -153,6 +152,7 @@ static std::string trim(const std::string& s) {
     auto end = s.find_last_not_of(" \t\n\r");
     return s.substr(start, end - start + 1);
 }
+
 void IntentEngine::loadCapabilities(const std::string& json_path) {
     try {
         std::ifstream f(json_path);
@@ -185,7 +185,7 @@ std::string IntentEngine::executeSkill(uint32_t nodeId, const std::string& param
 
 void IntentEngine::setInferenceEngine(std::unique_ptr<Model::InferenceEngine> engine) {
     m_inference_engine = std::move(engine);
-    m_planner = std::make_unique<TaskPlanner>(m_inference_engine.get());
+    m_planner = std::make_unique<TaskPlanner>(m_inference_engine.get(), m_belief_state);
     
     // v10.2.10: Update ChatSkill engine if it's already registered
     auto skill = getSkill(1); // Node 1 is ChatSkill
