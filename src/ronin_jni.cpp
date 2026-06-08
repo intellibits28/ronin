@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <algorithm>
 #include <nlohmann/json.hpp>
 #include "ronin_kernel.hpp"
 #include "ronin_log.h"
@@ -32,7 +33,7 @@ static std::shared_ptr<Memory::LongTermMemory> g_ltm = nullptr;
 static std::unique_ptr<GraphStorage> g_graph_storage = nullptr;
 static std::unique_ptr<CapabilityGraph> g_cap_graph = nullptr;
 static std::unique_ptr<GraphExecutor> g_graph_executor = nullptr;
-static std::unique_ptr<MemoryManager> g_memory_manager = nullptr;
+static std::unique_ptr<Memory::MemoryManager> g_memory_manager = nullptr;
 static jobject g_instance = nullptr;
 static JavaVM* g_vm = nullptr;
 
@@ -70,7 +71,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
         AgentScheduler::getInstance().setExecutor(g_graph_executor.get());
 
         // Fix MemoryManager initialization
-        g_memory_manager = std::make_unique<MemoryManager>(2048);
+        g_memory_manager = std::make_unique<Memory::MemoryManager>(2048);
         g_memory_manager->setLongTermMemory(g_ltm.get());
         
         g_intent_engine = std::make_shared<IntentEngine>(g_ltm.get());
@@ -84,20 +85,18 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
         // Initialize HardwareBridge
         HardwareBridge::initialize(g_vm, g_instance);
 
+        struct DummyCapManager : public CapabilityManager {
+            bool canExecute(uint32_t nodeId) const override { return true; }
+        };
+        static DummyCapManager dummyCap;
+
         HandlerRegistry registry;
         registry.intentProcessor = [](const Input &input) -> CognitiveIntent {
             if (g_intent_engine) return g_intent_engine->process(std::string(input.data, input.length), "");
             return {0, 0.0f, false, IntentCategory::UNKNOWN};
         };
         registry.execProcessor = exec_handler;
-        registry.shutdownProcessor = []() {
-            // Global shutdown logic
-        };
-
-        struct DummyCapManager : public CapabilityManager {
-            bool canExecute(uint32_t nodeId) const override { return true; }
-        };
-        static DummyCapManager dummyCap;
+        registry.shutdownProcessor = nullptr;
 
         g_kernel = std::make_shared<RoninKernel>(registry, dummyCap);
         LOGI(TAG, "Ronin Kernel UI Core Active.");
@@ -108,6 +107,10 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
 
 void native_setEngineInstance(JNIEnv *env, jobject thiz) {
     // This will be called from the worker process to register the inference engine
+}
+
+void native_stopLowPriorityTasks(JNIEnv *env, jobject thiz) {
+    if (g_intent_engine) g_intent_engine->stopLowPriorityTasks();
 }
 
 jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring systemPrompt) {
@@ -346,12 +349,8 @@ jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint o
     return result;
 }
 
-void native_resetContext(JNIEnv *env, jobject thiz) {
-    if (g_kernel) g_kernel->clearSuggestedSubject();
-}
-
 jboolean native_loadMyanmarDictionary(JNIEnv *env, jobject thiz, jstring path) {
-    if (g_ltm) return g_ltm->loadMyanmarDictionary(ConvertJStringToString(env, path)) ? JNI_TRUE : JNI_FALSE;
+    if (g_ltm) return g_ltm->loadSegmenter(ConvertJStringToString(env, path)) ? JNI_TRUE : JNI_FALSE;
     return JNI_FALSE;
 }
 
