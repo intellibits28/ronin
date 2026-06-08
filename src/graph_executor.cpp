@@ -14,21 +14,34 @@
 
 #define TAG "RoninGraphExecutor"
 
+constexpr float MIN_CAPABILITY_CONFIDENCE = 0.5f;
+constexpr float MIN_ENTITY_CONFIDENCE = 0.3f;
+
 namespace Ronin::Kernel::Reasoning {
 
 GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage, Memory::LongTermMemory* ltm)
     : m_graph(graph), m_storage(storage), m_ltm(ltm), m_belief_state(ltm), m_reflection_engine(ltm, &m_sampler) {
     
     // Wire up RLHF feedback from UI back into the DAG Edge Weights
+    // Using [this] is safe here because m_reflection_engine is a member of GraphExecutor and its lifetime is tied to it.
     m_reflection_engine.setWeightUpdateCallback([this](const std::string& session_id, bool was_helpful) {
         LOGI(TAG, "Applying RLHF weight update for session %s (Helpful: %d)", session_id.c_str(), was_helpful);
-        // Phase 3.3: In a full deployment, this queries LTM for the node_id and calls reportOutcome.
-        // For demonstration, we boost Node 1 (Root) -> Node 1 (Root) based on general satisfaction.
-        this->reportOutcome(1, 1, was_helpful, RiskLevel::LOW);
+        
+        uint32_t target_node_id = 1; // Default to Root/Chat
+        if (m_ltm) {
+            // TODO (Production): Implement a specific query in LTM to fetch the node_id for the given session_id.
+            // Example: target_node_id = m_ltm->getEpisodeNodeId(session_id);
+            // For now, we keep the fallback demonstration logic.
+        }
+        
+        // Boost Root -> Target Node based on user satisfaction.
+        this->reportOutcome(1, target_node_id, was_helpful, RiskLevel::LOW);
     });
 }
 
 GraphExecutor::~GraphExecutor() {
+    // Clear callback to prevent dangling pointer access just in case
+    m_reflection_engine.setWeightUpdateCallback(nullptr);
     if (m_sync_thread.joinable()) {
         m_sync_thread.join();
     }
@@ -139,7 +152,7 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
 
     // Phase 3 (Task 4): Integrate Belief State to allow world-knowledge-aware planning
     auto capability_belief = m_belief_state.getBelief(type_str);
-    if (capability_belief.confidence > 0.5f && !capability_belief.value.empty()) {
+    if (capability_belief.confidence > MIN_CAPABILITY_CONFIDENCE && !capability_belief.value.empty()) {
         jPayload["belief_context"] = capability_belief.value;
     }
     
@@ -147,7 +160,7 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     if (jPayload.contains("target_entity")) {
         std::string entity = jPayload["target_entity"].get<std::string>();
         auto entity_belief = m_belief_state.getBelief(entity);
-        if (entity_belief.confidence > 0.3f && !entity_belief.value.empty()) {
+        if (entity_belief.confidence > MIN_ENTITY_CONFIDENCE && !entity_belief.value.empty()) {
             jPayload["belief_" + entity] = entity_belief.value;
         }
     }
