@@ -57,6 +57,7 @@ extern "C" {
 
 JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstring libDir, jboolean isWorker) {
     std::string base_path = ConvertJStringToString(env, filesDir);
+    std::string native_lib_path = ConvertJStringToString(env, libDir);
     if (!isWorker) {
         g_instance = env->NewGlobalRef(thiz);
         g_ltm = std::make_shared<LongTermMemory>(base_path + "/ronin_cognitive.db");
