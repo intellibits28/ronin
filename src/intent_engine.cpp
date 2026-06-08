@@ -114,6 +114,15 @@ CapabilityType TaskPlanner::mapIntentToCapability(const std::string& intent_name
     if (i_lower.find("sms") != std::string::npos || i_lower.find("message") != std::string::npos) {
         return CapabilityType::SMS;
     }
+    if (i_lower.find("alarm") != std::string::npos || i_lower.find("wake") != std::string::npos || i_lower.find("နှိုး") != std::string::npos) {
+        return CapabilityType::ALARM;
+    }
+    if (i_lower.find("calendar") != std::string::npos || i_lower.find("event") != std::string::npos || i_lower.find("meeting") != std::string::npos || i_lower.find("schedule") != std::string::npos || i_lower.find("မှတ်") != std::string::npos) {
+        // Handle overlap with MEMORY ("မှတ်") by prioritizing CALENDAR if other keywords exist
+        if (i_lower.find("meeting") != std::string::npos || i_lower.find("event") != std::string::npos || i_lower.find("calendar") != std::string::npos) {
+            return CapabilityType::CALENDAR;
+        }
+    }
     if (i_lower.find("note") != std::string::npos || i_lower.find("fact") != std::string::npos || 
         i_lower.find("vault") != std::string::npos || i_lower.find("lookup") != std::string::npos ||
         i_lower.find("search") != std::string::npos || i_lower.find("remember") != std::string::npos) {

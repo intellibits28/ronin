@@ -37,4 +37,20 @@ public:
     std::string execute(const std::string& param, ToolContext* context = nullptr) override;
 };
 
+class AlarmNode : public BaseSkill {
+public:
+    uint32_t getId() const { return 8; }
+    std::string getName() const override { return "AlarmNode"; }
+    uint32_t getLoraId() const override { return 3; }
+    std::string execute(const std::string& param, ToolContext* context = nullptr) override;
+};
+
+class CalendarNode : public BaseSkill {
+public:
+    uint32_t getId() const { return 9; }
+    std::string getName() const override { return "CalendarNode"; }
+    uint32_t getLoraId() const override { return 3; }
+    std::string execute(const std::string& param, ToolContext* context = nullptr) override;
+};
+
 } // namespace Ronin::Kernel::Capability

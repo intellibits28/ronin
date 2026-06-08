@@ -699,6 +699,38 @@ class MainActivity : FragmentActivity() {
                         "Opened Map at $lat, $lon"
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
+                "ALARM", "SET_ALARM", "alarm" -> {
+                    try {
+                        val timeStr = params["time"] ?: params["hour"] ?: "06:00"
+                        val message = params["message"] ?: params["label"] ?: "Ronin Alarm"
+                        val parts = timeStr.split(":")
+                        val hour = parts.getOrNull(0)?.toIntOrNull() ?: 6
+                        val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                        val intent = Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
+                            putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, message)
+                            putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
+                            putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
+                            putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        runOnUiThread { startActivity(intent) }
+                        "Set alarm for $hour:$minute with message: $message"
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+                "CALENDAR", "ADD_EVENT", "event", "set_calendar" -> {
+                    try {
+                        val title = params["title"] ?: params["event"] ?: "Ronin Event"
+                        val desc = params["description"] ?: params["details"] ?: ""
+                        val intent = Intent(Intent.ACTION_INSERT).apply {
+                            data = android.provider.CalendarContract.Events.CONTENT_URI
+                            putExtra(android.provider.CalendarContract.Events.TITLE, title)
+                            putExtra(android.provider.CalendarContract.Events.DESCRIPTION, desc)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        runOnUiThread { startActivity(intent) }
+                        "Opened Calendar to add event: $title"
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
                 "SMS", "SEND_SMS", "send_sms" -> {
                     try {
                         val locJson = params["context_result_LOCATION"]

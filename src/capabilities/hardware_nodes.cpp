@@ -40,5 +40,15 @@ std::string BluetoothNode::execute(const std::string& param, ToolContext* contex
     return intent_param ? "Success: Action Initiated - Bluetooth ENABLE" : "Success: Action Initiated - Bluetooth DISABLE";
 }
 
+std::string AlarmNode::execute(const std::string& param, ToolContext* context) {
+    (void)context;
+    // Direct skill execution (legacy fallback). Most execution goes via CapabilityDispatcher.
+    return "Action Scheduled: Alarm";
+}
+
+std::string CalendarNode::execute(const std::string& param, ToolContext* context) {
+    (void)context;
+    return "Action Scheduled: Calendar Event";
+}
 
 } // namespace Ronin::Kernel::Capability

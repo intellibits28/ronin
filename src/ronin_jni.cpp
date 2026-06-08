@@ -125,6 +125,7 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
         std::string i_lower = plan.intent_name;
         std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
         bool needs_sms_hitl = (i_lower.find("sms") != std::string::npos || i_lower.find("message") != std::string::npos || i_lower.find("ပို့") != std::string::npos);
+        bool needs_cal_hitl = (i_lower.find("calendar") != std::string::npos || i_lower.find("event") != std::string::npos || i_lower.find("meeting") != std::string::npos);
         if (i_lower.find("map") != std::string::npos && !plan.plan_steps.empty()) {
             bool has_send_sms = false;
             for (const auto& step : plan.plan_steps) {
@@ -135,12 +136,13 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
             if (!has_send_sms) needs_sms_hitl = false;
         }
 
-        if (needs_sms_hitl) {
+        if (needs_sms_hitl || needs_cal_hitl) {
             jclass cls = env->GetObjectClass(thiz);
             jmethodID mid = env->GetMethodID(cls, "requestHITLConfirmation", "(Ljava/lang/String;Ljava/lang/String;)Z");
             if (mid) {
                 jstring ji = env->NewStringUTF(plan.intent_name.c_str());
-                jstring jm = env->NewStringUTF("Allow SMS?");
+                std::string msg = needs_sms_hitl ? "Allow SMS?" : "Allow Calendar Event?";
+                jstring jm = env->NewStringUTF(msg.c_str());
                 if (env->CallBooleanMethod(thiz, mid, ji, jm) == JNI_FALSE) { is_safe = false; result = "Cancelled."; }
             }
         }
