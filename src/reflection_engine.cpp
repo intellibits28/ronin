@@ -12,8 +12,10 @@ ReflectionEngine::ReflectionEngine(Memory::LongTermMemory* ltm, ThompsonSampler*
 void ReflectionEngine::applyHumanFeedback(const std::string& session_id, bool was_helpful) {
     LOGI(TAG, "RLHF: Received manual feedback for session %s. Helpful: %d", session_id.c_str(), was_helpful);
     
-    // Phase 3.3: This will update the GraphExecutor weights via a callback or shared pointer
-    // For now, we log the human signal.
+    // Phase 3.3: Trigger graph executor weight update if callback is configured
+    if (m_weight_update_cb) {
+        m_weight_update_cb(session_id, was_helpful);
+    }
 }
 
 void ReflectionEngine::reflectOnRecentTasks() {

@@ -17,7 +17,16 @@
 namespace Ronin::Kernel::Reasoning {
 
 GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage, Memory::LongTermMemory* ltm)
-    : m_graph(graph), m_storage(storage), m_ltm(ltm), m_belief_state(ltm), m_reflection_engine(ltm, &m_sampler) {}
+    : m_graph(graph), m_storage(storage), m_ltm(ltm), m_belief_state(ltm), m_reflection_engine(ltm, &m_sampler) {
+    
+    // Wire up RLHF feedback from UI back into the DAG Edge Weights
+    m_reflection_engine.setWeightUpdateCallback([this](const std::string& session_id, bool was_helpful) {
+        LOGI(TAG, "Applying RLHF weight update for session %s (Helpful: %d)", session_id.c_str(), was_helpful);
+        // Phase 3.3: In a full deployment, this queries LTM for the node_id and calls reportOutcome.
+        // For demonstration, we boost Node 1 (Root) -> Node 1 (Root) based on general satisfaction.
+        this->reportOutcome(1, 1, was_helpful, RiskLevel::LOW);
+    });
+}
 
 GraphExecutor::~GraphExecutor() {
     if (m_sync_thread.joinable()) {
@@ -60,12 +69,15 @@ void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool s
     if (!source) return;
 
     float eta = calculateLearningRate(risk);
-    const float decay = 0.95f; // Forgetting factor to keep sampling fresh
+    const uint32_t DECAY_THRESHOLD = 10; // Prevent premature integer collapse
 
     for (auto& edge : source->outgoing_edges) {
-        // Apply global decay
-        edge.success_count = static_cast<uint32_t>(edge.success_count * decay);
-        edge.failure_count = static_cast<uint32_t>(edge.failure_count * decay);
+        // Phase 3 (Task 5): Symmetric Decay to prevent "history prison" in Thompson Sampling.
+        // Applies a gentle 10% decay only when counts build up, ensuring dynamic exploration over time.
+        if (edge.success_count + edge.failure_count > DECAY_THRESHOLD) {
+            edge.success_count = static_cast<uint32_t>(std::ceil(edge.success_count * 0.9f));
+            edge.failure_count = static_cast<uint32_t>(std::ceil(edge.failure_count * 0.9f));
+        }
 
         if (edge.target_node_id == target_id) {
             if (success) {
@@ -124,6 +136,22 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     // Inject all blackboard data into payload
     nlohmann::json jPayload = nlohmann::json::parse(payload.empty() ? "{}" : payload);
     for (const auto& [key, val] : m_blackboard.storage) jPayload["context_" + key] = val;
+
+    // Phase 3 (Task 4): Integrate Belief State to allow world-knowledge-aware planning
+    auto capability_belief = m_belief_state.getBelief(type_str);
+    if (capability_belief.confidence > 0.5f && !capability_belief.value.empty()) {
+        jPayload["belief_context"] = capability_belief.value;
+    }
+    
+    // Check if the payload specifies any named entity to resolve from beliefs
+    if (jPayload.contains("target_entity")) {
+        std::string entity = jPayload["target_entity"].get<std::string>();
+        auto entity_belief = m_belief_state.getBelief(entity);
+        if (entity_belief.confidence > 0.3f && !entity_belief.value.empty()) {
+            jPayload["belief_" + entity] = entity_belief.value;
+        }
+    }
+
     req.payload_json = jPayload.dump();
 
     LOGI(TAG, "L10 Optimizer: Selected Node %u for Capability %d. Dispatching...", 
