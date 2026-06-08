@@ -34,7 +34,8 @@ enum class SourceType : int {
     USER_EXPLICIT = 0,
     USER_INFERRED = 1,
     OCR = 2,
-    IMPORTED = 3
+    IMPORTED = 3,
+    BELIEF = 4
 };
 
 /**
