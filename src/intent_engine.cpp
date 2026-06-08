@@ -77,10 +77,12 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "- Fact Save/Find: intent 'ADD_FACT' / 'ADD_VAULT'. Steps ['SAVE_FACT'] / ['SAVE_VAULT']. "
         "- Vault Keywords: ALWAYS use Vault for PIN, API key, password, token, or secret. "
         "- Fact/Vault Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
+        "- Alarm: intent 'ALARM'. Steps ['SET_ALARM']. parameters: time, message. "
+        "- Calendar/Meeting: intent 'CALENDAR'. Steps ['ADD_EVENT']. parameters: title, description, time, timezone, share_via (optional, e.g. 'sms' or 'email'), attendees (optional). "
         "Semantic Precision: "
         "- Attribute names MUST be in Myanmar if user uses it (e.g. 'မွေးနေ့', 'ကားနံပါတ်'). "
         "- Strip 'ရဲ့', '၏', 'က', 'ကို' from entity/attribute names. "
-        "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {\"entity\": \"...\", \"attribute\": \"...\", \"value\": \"...\", \"vault_title\": \"...\", \"vault_content\": \"...\"}}";
+        "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {\"entity\": \"...\", \"attribute\": \"...\", \"value\": \"...\", \"vault_title\": \"...\", \"vault_content\": \"...\", \"time\": \"...\", \"title\": \"...\", \"description\": \"...\", \"timezone\": \"...\", \"share_via\": \"...\", \"attendees\": \"...\"}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 

@@ -720,14 +720,45 @@ class MainActivity : FragmentActivity() {
                 "CALENDAR", "ADD_EVENT", "event", "set_calendar" -> {
                     try {
                         val title = params["title"] ?: params["event"] ?: "Ronin Event"
-                        val desc = params["description"] ?: params["details"] ?: ""
+                        var desc = params["description"] ?: params["details"] ?: ""
+                        val time = params["time"] ?: ""
+                        val timezone = params["timezone"] ?: ""
+                        val attendees = params["attendees"] ?: ""
+                        val shareVia = params["share_via"] ?: ""
+
+                        if (time.isNotEmpty()) desc += "\nTime: $time"
+                        if (timezone.isNotEmpty()) desc += " ($timezone)"
+                        if (attendees.isNotEmpty()) desc += "\nAttendees: $attendees"
+
                         val intent = Intent(Intent.ACTION_INSERT).apply {
                             data = android.provider.CalendarContract.Events.CONTENT_URI
                             putExtra(android.provider.CalendarContract.Events.TITLE, title)
                             putExtra(android.provider.CalendarContract.Events.DESCRIPTION, desc)
+                            if (timezone.isNotEmpty()) {
+                                putExtra(android.provider.CalendarContract.Events.EVENT_TIMEZONE, timezone)
+                            }
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
-                        runOnUiThread { startActivity(intent) }
+                        
+                        runOnUiThread { 
+                            startActivity(intent) 
+                            if (shareVia.contains("sms", true)) {
+                                val smsIntent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("smsto:")
+                                    putExtra("sms_body", "Meeting: $title\nDetails: $desc")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                try { startActivity(smsIntent) } catch (e: Exception) {}
+                            } else if (shareVia.contains("email", true)) {
+                                val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("mailto:")
+                                    putExtra(Intent.EXTRA_SUBJECT, "Meeting: $title")
+                                    putExtra(Intent.EXTRA_TEXT, desc)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                try { startActivity(emailIntent) } catch (e: Exception) {}
+                            }
+                        }
                         "Opened Calendar to add event: $title"
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
