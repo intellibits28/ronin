@@ -124,7 +124,18 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
         bool is_safe = true;
         std::string i_lower = plan.intent_name;
         std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
-        if (i_lower.find("sms") != std::string::npos) {
+        bool needs_sms_hitl = (i_lower.find("sms") != std::string::npos || i_lower.find("message") != std::string::npos || i_lower.find("ပို့") != std::string::npos);
+        if (i_lower.find("map") != std::string::npos && !plan.plan_steps.empty()) {
+            bool has_send_sms = false;
+            for (const auto& step : plan.plan_steps) {
+                std::string s_step = step;
+                std::transform(s_step.begin(), s_step.end(), s_step.begin(), ::tolower);
+                if (s_step.find("send_sms") != std::string::npos) { has_send_sms = true; break; }
+            }
+            if (!has_send_sms) needs_sms_hitl = false;
+        }
+
+        if (needs_sms_hitl) {
             jclass cls = env->GetObjectClass(thiz);
             jmethodID mid = env->GetMethodID(cls, "requestHITLConfirmation", "(Ljava/lang/String;Ljava/lang/String;)Z");
             if (mid) {
