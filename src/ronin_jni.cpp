@@ -22,6 +22,8 @@ using namespace Ronin::Kernel;
 using namespace Ronin::Kernel::Intent;
 using namespace Ronin::Kernel::Reasoning;
 using namespace Ronin::Kernel::Capability;
+using namespace Ronin::Kernel::Memory;
+using namespace Ronin::Kernel::JNI;
 
 // --- Global Contexts ---
 static std::shared_ptr<RoninKernel> g_kernel = nullptr;
@@ -82,9 +84,22 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
         // Initialize HardwareBridge
         HardwareBridge::initialize(g_vm, g_instance);
 
-        KernelRegistry registry;
-        registry.executeNode = exec_handler;
-        g_kernel = std::make_shared<RoninKernel>(registry);
+        HandlerRegistry registry;
+        registry.intentProcessor = [](const Input &input) -> CognitiveIntent {
+            if (g_intent_engine) return g_intent_engine->process(std::string(input.data, input.length), "");
+            return {0, 0.0f, false, IntentCategory::UNKNOWN};
+        };
+        registry.execProcessor = exec_handler;
+        registry.shutdownProcessor = []() {
+            // Global shutdown logic
+        };
+
+        struct DummyCapManager : public CapabilityManager {
+            bool canExecute(uint32_t nodeId) const override { return true; }
+        };
+        static DummyCapManager dummyCap;
+
+        g_kernel = std::make_shared<RoninKernel>(registry, dummyCap);
         LOGI(TAG, "Ronin Kernel UI Core Active.");
     } else {
         LOGI(TAG, "Ronin Kernel Worker Node Active.");
@@ -216,7 +231,7 @@ jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloa
 }
 
 void native_requestCancellation(JNIEnv *env, jobject thiz) {
-    if (g_kernel) g_kernel->requestCancellation();
+    if (g_llm_context.engine) g_llm_context.engine->requestCancellation();
 }
 
 void native_setInferenceSilence(JNIEnv *env, jobject thiz, jboolean silent) {
@@ -285,11 +300,11 @@ void native_applyHumanFeedback(JNIEnv *env, jobject thiz, jstring sessionId, jbo
 }
 
 jfloat native_getFreeRamGB(JNIEnv *env, jobject thiz) {
-    return HardwareBridge::getRamTotal() - HardwareBridge::getRamUsed();
+    return HardwareBridge::getFreeRamGB();
 }
 
 void native_shutdownKernel(JNIEnv *env, jobject thiz) {
-    if (g_kernel) g_kernel->Shutdown();
+    if (g_kernel) g_kernel->shutdown();
 }
 
 jint native_getLMKPressure(JNIEnv *env, jobject thiz) {
@@ -332,7 +347,7 @@ jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint o
 }
 
 void native_resetContext(JNIEnv *env, jobject thiz) {
-    if (g_kernel) g_kernel->clearContext();
+    if (g_kernel) g_kernel->clearSuggestedSubject();
 }
 
 jboolean native_loadMyanmarDictionary(JNIEnv *env, jobject thiz, jstring path) {

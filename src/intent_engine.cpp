@@ -309,7 +309,10 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("token") || token_set.count("password") ||
                            token_set.count("သတိပေး") || token_set.count("remind") ||
                            token_set.count("မွေးနေ့") || token_set.count("birthday") ||
-                           token_set.count("မှတ်မိ") || token_set.count("သိမ်းထား");
+                           token_set.count("မှတ်မိ") || token_set.count("သိမ်းထား") ||
+                           token_set.count("retrieve") || token_set.count("find") ||
+                           token_set.count("search") || token_set.count("lookup") ||
+                           token_set.count("ရှာ") || token_set.count("ပြန်ရှာ");
 
     bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
                       token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||

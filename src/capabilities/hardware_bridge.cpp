@@ -15,6 +15,7 @@ jclass HardwareBridge::s_clazz = nullptr;
 float HardwareBridge::s_last_temp = 0.0f;
 float HardwareBridge::s_last_ram_used = 0.0f;
 float HardwareBridge::s_last_ram_total = 0.0f;
+bool HardwareBridge::s_silent = false;
 
 void HardwareBridge::initialize(JavaVM* vm, jobject instance) {
 #ifdef __ANDROID__
@@ -229,6 +230,7 @@ std::string HardwareBridge::runNeuralReasoning(const std::string& input) {
 void HardwareBridge::pushToken(const std::string& token, bool isFinal) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return;
+    if (s_silent && !isFinal) return; // v10.2.9 Fix: Always deliver final packet
 
     Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninTokenThread");
     JNIEnv* env = scopedEnv.env();

@@ -69,6 +69,12 @@ public:
      */
     static void pushToken(const std::string& token, bool isFinal);
 
+    /**
+     * suppress/allow inference token streaming to the UI.
+     */
+    static void setInferenceSilence(bool silent) { s_silent = silent; }
+    static bool isInferenceSilenced() { return s_silent; }
+
 private:
     static JavaVM* s_vm;
     static jobject s_instance;
@@ -77,6 +83,7 @@ private:
     static float s_last_temp;
     static float s_last_ram_used;
     static float s_last_ram_total;
+    static bool s_silent;
 };
 
 } // namespace Ronin::Kernel::Capability
