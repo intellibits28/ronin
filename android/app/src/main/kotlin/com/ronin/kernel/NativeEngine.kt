@@ -106,6 +106,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Keep
     @Suppress("unused")
+    fun applyHumanFeedback(sessionId: String, wasHelpful: Boolean) {
+        if (isLibLoaded) applyHumanFeedbackNative(sessionId, wasHelpful)
+    }
+
+    @Keep
+    @Suppress("unused")
     fun encryptSecret(data: String): String = securityProvider.encrypt(data)
 
     @Keep
@@ -230,6 +236,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun storeVaultNative(title: String, encryptedBlob: String): Boolean
     private external fun storePredictionNative(goalId: String, nodeId: String, predicted: String, actual: String, error: Float): Boolean
     private external fun injectWorldStateNative(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean)
+    private external fun applyHumanFeedbackNative(sessionId: String, wasHelpful: Boolean)
 
     enum class RiskLevel(val value: Int) {
         LOW(0), MEDIUM(1), HIGH(2), EXTREME(3)
@@ -289,27 +296,31 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return currentModelPath
     }
 
-    suspend fun processInputAsync(input: String, systemPrompt: String = ""): String = withContext(Dispatchers.Default) {
-        if (!isLibLoaded) return@withContext "Error: Lib not loaded."
+    data class ProcessResult(val result: String, val sessionId: String = "")
+
+    suspend fun processInputAsync(input: String, systemPrompt: String = ""): ProcessResult = withContext(Dispatchers.Default) {
+        if (!isLibLoaded) return@withContext ProcessResult("Error: Lib not loaded.")
         
         // v6.3: Automatic Context Optimization (Thinking Stripper)
         try {
             val history = getChatHistoryAsync(20, 0)
-            
-            // Tier 1: Full Summarization (Long history)
             if (history.size >= 12) {
                 Log.i(TAG, "v6.3 Context Reset: High turn count (${history.size}). Summarizing...")
                 inferenceService?.summarizeAndReset()
-            } 
-            // Tier 2: Thinking Stripper (Intermediate turns)
-            else if (history.size >= 2) {
+            } else if (history.size >= 2) {
                 val cleanContext = trimHistoryToContext(history, 2500)
                 Log.d(TAG, "v6.3 Hybrid History: Injected ${cleanContext.length} clean chars.")
-                // The C++ processInputNative will combine this clean history with the new input
             }
         } catch (e: Exception) { Log.w(TAG, "Context optimization failed: ${e.message}") }
 
-        try { processInputNative(input, systemPrompt) } catch (e: Exception) { "Error: Kernel failure." }
+        try { 
+            val jsonStr = processInputNative(input, systemPrompt)
+            val json = org.json.JSONObject(jsonStr)
+            ProcessResult(json.getString("result"), json.optString("session_id", ""))
+        } catch (e: Exception) { 
+            Log.e(TAG, "Process Input failed: ${e.message}")
+            ProcessResult("Error: Kernel failure.") 
+        }
     }
 
     fun stopInference() {

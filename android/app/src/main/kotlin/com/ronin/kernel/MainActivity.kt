@@ -76,13 +76,15 @@ class ChatMessage(
     val sender: String,
     initialContent: String,
     initialIsThinking: Boolean = false,
-    initialThoughtContent: String = ""
+    initialThoughtContent: String = "",
+    var sessionId: String = "" // v10.2.17
 ) {
     var content by mutableStateOf(initialContent)
     var isThinking by mutableStateOf(initialIsThinking)
     var thoughtContent by mutableStateOf(initialThoughtContent)
     var isTruncated by mutableStateOf(false)
     var isContinuing by mutableStateOf(false)
+    var feedbackGiven by mutableStateOf(false) // v10.2.17
 
     fun copy(
         content: String = this.content,
@@ -810,14 +812,17 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         scope.launch {
                                             val continuePrompt = "ဆက်ရေးပေးပါ။"
                                             val result = engine.processInputAsync(continuePrompt, chatViewModel.systemPrompt)
-                                            msg.content += result
-                                            msg.isTruncated = result.isNotEmpty() && !result.trim().let { it.endsWith("။") || it.endsWith(".") || it.endsWith("?") || it.endsWith("!") }
+                                            msg.content += result.result
+                                            msg.isTruncated = result.result.isNotEmpty() && !result.result.trim().let { it.endsWith("။") || it.endsWith(".") || it.endsWith("?") || it.endsWith("!") }
                                             msg.isContinuing = false
                                             chatViewModel.isGenerating = false
                                         }
                                     }
+                                }, onFeedback = { helpful ->
+                                    engine.applyHumanFeedback(msg.sessionId, helpful)
                                 }) 
-                            } 
+                            }
+ 
                         } 
                         if (chatViewModel.showCommandSuggestions) {
                             val suggestions = listOf("/status", "/skills", "/model", "/reset").filter { it.startsWith(currentInput.lowercase()) }
@@ -846,7 +851,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             } else { 
                                                 val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
                                                 if (isCommand || roninMsg.content.isEmpty()) {
-                                                    roninMsg.content = result
+                                                    roninMsg.content = result.result
+                                                    roninMsg.sessionId = result.sessionId
                                                 }
                                             }
                                         } finally {
@@ -1108,7 +1114,7 @@ fun BootstrapWizard(chatViewModel: ChatViewModel, brainPicker: ActivityResultLau
 }
 
 @Composable
-fun ChatBubble(msg: ChatMessage, onContinue: () -> Unit = {}) {
+fun ChatBubble(msg: ChatMessage, onContinue: () -> Unit = {}, onFeedback: (Boolean) -> Unit = {}) {
     val isUser = msg.sender == "User"
     var isThoughtExpanded by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
@@ -1140,6 +1146,25 @@ fun ChatBubble(msg: ChatMessage, onContinue: () -> Unit = {}) {
                     }
                     if (msg.content.isNotEmpty()) {
                         Text(msg.content, color = Color.White, fontSize = 15.sp, lineHeight = 20.sp)
+                    }
+
+                    // v10.2.17: RLHF Feedback Row
+                    if (!isUser && msg.content.isNotEmpty() && !msg.isThinking && !msg.feedbackGiven) {
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Helpful?", color = Color.Gray, fontSize = 10.sp)
+                            Spacer(Modifier.width(8.dp))
+                            IconButton(onClick = { msg.feedbackGiven = true; onFeedback(true) }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.ThumbUp, null, tint = Color.Gray.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            IconButton(onClick = { msg.feedbackGiven = true; onFeedback(false) }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.ThumbDown, null, tint = Color.Gray.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    } else if (!isUser && msg.feedbackGiven) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Thanks for the feedback!", color = Color(0xFF64B5F6), fontSize = 9.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                     }
                     
                     if (!isUser && msg.isTruncated) {

@@ -1,83 +1,48 @@
 #include "ronin_jni.h"
-#include <memory>
+#include <jni.h>
 #include <string>
-#include <cstring>
-#include <fstream>
-#include <algorithm>
-#include <thread>
-#include <chrono>
-#include "jni_utils.h"
-#include "ronin_kernel.hpp"
-#include "intent_engine.h"
-#include "graph_executor.h"
-#include "capability_graph.h"
-#include "graph_storage.h"
-#include "memory_manager.h"
-#include "long_term_memory.h"
-#include "agent_scheduler.h"
-#include "session_manager.h"
-#include "capabilities/hardware_bridge.h"
-#include "capabilities/chat_skill.h"
-#include "models/inference_engine.h"
-#include "ronin_log.h"
+#include <vector>
+#include <memory>
+#include <mutex>
 #include <nlohmann/json.hpp>
-
-#ifdef __ANDROID__
+#include "ronin_kernel.hpp"
+#include "ronin_log.h"
+#include "jni_utils.h"
+#include "intent_engine.h"
+#include "session_manager.h"
+#include "agent_scheduler.h"
+#include "graph_executor.h"
+#include "long_term_memory.h"
+#include "memory_manager.h"
+#include "capabilities/hardware_bridge.h"
 
 #define TAG "RoninKernel_JNI"
 
 using namespace Ronin::Kernel;
 using namespace Ronin::Kernel::Intent;
-using namespace Ronin::Kernel::Memory;
-using namespace Ronin::Kernel::Model;
-using namespace Ronin::Kernel::Capability;
 using namespace Ronin::Kernel::Reasoning;
+using namespace Ronin::Kernel::Capability;
 
-// Concrete implementation of CapabilityManager to resolve abstract class error
-class DefaultCapabilityManager : public CapabilityManager {
-public:
-    bool canExecute(uint32_t nodeId) const override { return true; }
-};
-
-static std::unique_ptr<RoninKernel> g_kernel = nullptr;
-static std::shared_ptr<LongTermMemory> g_ltm = nullptr;
+// --- Global Contexts ---
+static std::shared_ptr<RoninKernel> g_kernel = nullptr;
 static std::shared_ptr<IntentEngine> g_intent_engine = nullptr;
+static std::shared_ptr<Memory::LongTermMemory> g_ltm = nullptr;
+static std::unique_ptr<GraphStorage> g_graph_storage = nullptr;
+static std::unique_ptr<CapabilityGraph> g_cap_graph = nullptr;
+static std::unique_ptr<GraphExecutor> g_graph_executor = nullptr;
 static std::unique_ptr<MemoryManager> g_memory_manager = nullptr;
-
-// v6.0 Adaptive Agent Core
-static std::unique_ptr<Ronin::Kernel::Reasoning::GraphStorage> g_graph_storage = nullptr;
-static std::unique_ptr<Ronin::Kernel::Reasoning::CapabilityGraph> g_cap_graph = nullptr;
-static std::unique_ptr<Ronin::Kernel::Reasoning::GraphExecutor> g_graph_executor = nullptr;
-
-JavaVM* g_vm = nullptr;
-jobject g_instance = nullptr;
+static jobject g_instance = nullptr;
+static JavaVM* g_vm = nullptr;
 
 struct LLMContext {
-    InferenceEngine* engine = nullptr;
-} g_llm_context;
+    Model::InferenceEngine* engine = nullptr;
+};
+static LLMContext g_llm_context;
 
-// --- Helper Functions ---
-
-static std::string ConvertJStringToString(JNIEnv* env, jstring jstr) {
-    if (!jstr) return "";
-    const char* cstr = env->GetStringUTFChars(jstr, nullptr);
-    if (!cstr) return "";
-    std::string str(cstr);
-    env->ReleaseStringUTFChars(jstr, cstr);
-    return str;
-}
-
-// --- v6.0 Registry Handlers ---
-
-static CognitiveIntent intent_handler(const Input& input) {
-    if (!g_intent_engine) return {1, 0.6f, true, IntentCategory::CHAT_QUERY};
-    return g_intent_engine->process(std::string(input.data, input.length), "");
-}
-
+// --- Helper: exec_handler to bridge Kernel to JNI ---
 static Result exec_handler(uint32_t nodeId, const CognitiveState& state) {
-    // v6.0 execution via IntentEngine registry
     if (g_intent_engine) {
-        g_intent_engine->executeSkill(nodeId, ""); // Param handling needs expansion
+        g_intent_engine->executeSkill(nodeId, ""); 
         return {true, 200};
     }
     return {false, 500};
@@ -92,7 +57,7 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
     if (!isWorker) {
         g_instance = env->NewGlobalRef(thiz);
         // UI Process Initialization
-        g_ltm = std::make_shared<LongTermMemory>(base_path + "/ronin_cognitive.db");
+        g_ltm = std::make_shared<Memory::LongTermMemory>(base_path + "/ronin_cognitive.db");
         
         // v6.0 Adaptive Agent Core Initialization
         g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
@@ -109,84 +74,29 @@ void native_initializeKernel(JNIEnv *env, jobject thiz, jstring filesDir, jstrin
         g_intent_engine = std::make_shared<IntentEngine>(g_ltm.get());
         g_intent_engine->setMemoryManager(g_memory_manager.get()); 
         
-        HardwareBridge::initialize(g_vm, thiz);
+        // v10.2.17: Link BeliefState to IntentEngine
+        if (g_graph_executor) {
+            g_intent_engine->setBeliefState(&g_graph_executor->getBeliefState());
+        }
         
-        HandlerRegistry registry;
-        registry.intentProcessor = intent_handler;
-        registry.execProcessor = exec_handler;
-        registry.shutdownProcessor = []() {
-            LOGI(TAG, "Cleaning up JNI Global Kernel components.");
-        };
+        // Initialize HardwareBridge
+        HardwareBridge::initialize(g_vm, g_instance);
 
-        static DefaultCapabilityManager cap_manager; 
-        g_kernel = std::make_unique<RoninKernel>(registry, cap_manager);
-        auto engine = std::make_unique<InferenceEngine>("hybrid_mode");
-        engine->setLibPath(native_lib_path);
-        engine->setBasePath(base_path);
-        
-        auto chatSkill = std::make_shared<ChatSkill>(engine.get(), g_ltm.get());
-        chatSkill->setKernel(g_kernel.get()); // Pass kernel for system prompt
-        g_intent_engine->registerSkill(1, chatSkill);
-
-        g_llm_context.engine = engine.get();
-        g_intent_engine->setInferenceEngine(std::move(engine));
-        
+        KernelRegistry registry;
+        registry.executeNode = exec_handler;
+        g_kernel = std::make_shared<RoninKernel>(registry);
         LOGI(TAG, "Ronin Kernel UI Core Active.");
     } else {
         LOGI(TAG, "Ronin Kernel Worker Node Active.");
     }
 }
 
-void native_setEngineInstance(JNIEnv *env, jobject thiz) {}
-
-void native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
-    if (g_llm_context.engine) {
-        // Use loadModel instead of notifyModelLoaded
-        g_llm_context.engine->loadModel(ConvertJStringToString(env, path));
-    }
-}
-
-void native_stopLowPriorityTasks(JNIEnv *env, jobject thiz) {
-    if (g_intent_engine) g_intent_engine->stopLowPriorityTasks();
-}
-
-void native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {}
-void native_setPriority(JNIEnv *env, jobject thiz, jint priority) {}
-
-jstring native_checkFileAccess(JNIEnv *env, jobject thiz, jstring path) {
-    std::string p = ConvertJStringToString(env, path);
-    std::ifstream f(p);
-    return env->NewStringUTF(f.good() ? "OK" : "DENIED");
-}
-
-jfloat native_getFreeRamGB(JNIEnv *env, jobject thiz) {
-    return HardwareBridge::getFreeRamGB();
-}
-
-void native_reportOutcome(JNIEnv *env, jobject thiz, jint sourceId, jint targetId, jboolean success, jint risk) {
-    if (g_graph_executor) {
-        g_graph_executor->reportOutcome(
-            static_cast<uint32_t>(sourceId),
-            static_cast<uint32_t>(targetId),
-            success == JNI_TRUE,
-            static_cast<Ronin::Kernel::Reasoning::RiskLevel>(risk)
-        );
-    }
-}
-
-void native_setInferenceSilence(JNIEnv *env, jobject thiz, jboolean silent) {
-    LOGI(TAG, "L3 Bridge: Setting silentInference to %d", silent);
-    jclass cls = env->GetObjectClass(thiz);
-    jfieldID field = env->GetFieldID(cls, "silentInference", "Z");
-    if (field) {
-        env->SetBooleanField(thiz, field, silent);
-    } else {
-        LOGE(TAG, "L3 Bridge ERROR: Could not find silentInference field!");
-    }
+void native_setEngineInstance(JNIEnv *env, jobject thiz) {
+    // This will be called from the worker process to register the inference engine
 }
 
 jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring systemPrompt) {
-    if (!g_intent_engine) return env->NewStringUTF("Error: Engine Not Ready.");
+    if (!g_intent_engine) return env->NewStringUTF("{\"result\":\"Error: Engine Not Ready.\"}");
     
     std::string rawInput = ConvertJStringToString(env, input);
     
@@ -199,7 +109,9 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
         if (rawInput == "/reset" && g_llm_context.engine) {
             g_llm_context.engine->purgeKVCache();
         }
-        return env->NewStringUTF(cmdOutput.c_str());
+        nlohmann::json cmdRes;
+        cmdRes["result"] = cmdOutput;
+        return env->NewStringUTF(cmdRes.dump().c_str());
     }
 
     std::string customSystem = ConvertJStringToString(env, systemPrompt);
@@ -210,6 +122,7 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
     
     auto intent = g_intent_engine->process(rawInput, "");
     std::string result;
+    std::string sid = "";
 
     if (intent.category == IntentCategory::AGENT_PLAN && g_intent_engine->getPlanner()) {
         LOGI(TAG, "v7.7: Initializing Robust Agent Planning for input: %s", rawInput.c_str());
@@ -221,10 +134,11 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
         
         if (plan.intent_name == "fallback_chat") {
             LOGW(TAG, "L1 Planner: Falling back to chat due to failure.");
-            return env->NewStringUTF("Agent planning failed. Please try a different request.");
+            return env->NewStringUTF("{\"result\":\"Agent planning failed. Please try a different request.\"}");
         }
 
         auto session = SessionManager::getInstance().createSession(plan.intent_name);
+        sid = session->getSessionId();
         session->setPlan(plan.plan_steps);
         for (const auto& [k, v] : plan.parameters) session->setParameter(k, v);
 
@@ -235,7 +149,6 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
         // --- v10.2.11: Precise HITL Safety Check ---
         bool needs_sms_hitl = (i_lower.find("sms") != std::string::npos || i_lower.find("message") != std::string::npos || i_lower.find("ပို့") != std::string::npos);
         
-        // Final guard: If it's a map request, don't trigger SMS HITL even if Gemma hallucinated 'MAP/SMS'
         if (i_lower.find("map") != std::string::npos && plan.plan_steps.size() > 0) {
             bool has_send_sms = false;
             for (const auto& step : plan.plan_steps) {
@@ -247,16 +160,10 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
         }
 
         if (needs_sms_hitl) {
-            
-            session->setState(AgentState::ASK_CONFIRMATION);
+            std::string hitl_msg = "Ronin wants to perform an action: " + plan.intent_name + ". Allow?";
             jclass cls = env->GetObjectClass(thiz);
             jmethodID hitlMethod = env->GetMethodID(cls, "requestHITLConfirmation", "(Ljava/lang/String;Ljava/lang/String;)Z");
             if (hitlMethod) {
-                std::string recipient = "Someone";
-                if (plan.parameters.count("recipient")) recipient = plan.parameters["recipient"];
-                else if (plan.parameters.count("contact_name")) recipient = plan.parameters["contact_name"];
-                
-                std::string hitl_msg = "Do you want to send your location to " + recipient + " via SMS?";
                 jstring jIntentName = env->NewStringUTF(plan.intent_name.c_str());
                 jstring jMessage = env->NewStringUTF(hitl_msg.c_str());
                 jboolean approved = env->CallBooleanMethod(thiz, hitlMethod, jIntentName, jMessage);
@@ -272,7 +179,7 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
         }
         
         if (is_safe) {
-            LOGI(TAG, "v7.7: Scheduling session %s. Intent: %s", session->getSessionId().c_str(), i_lower.c_str());
+            LOGI(TAG, "v7.7: Scheduling session %s. Intent: %s", sid.c_str(), i_lower.c_str());
             AgentScheduler::getInstance().schedule(session, 5); 
             result = "Agent is executing the plan: " + plan.intent_name;
         }
@@ -280,7 +187,10 @@ jstring native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring sy
         result = g_intent_engine->executeSkill(intent.id, rawInput);
     }
 
-    return env->NewStringUTF(result.c_str());
+    nlohmann::json finalRes;
+    finalRes["result"] = result;
+    finalRes["session_id"] = sid;
+    return env->NewStringUTF(finalRes.dump().c_str());
 }
 
 jboolean native_isLoaded(JNIEnv *env, jobject thiz) {
@@ -298,6 +208,19 @@ jstring native_getActiveModelPath(JNIEnv *env, jobject thiz) {
 
 void native_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) {
     if (g_intent_engine) g_intent_engine->updateLocation(lat, lon);
+}
+
+jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
+    HardwareBridge::reportSystemHealth(temp, used, total);
+    return JNI_TRUE;
+}
+
+void native_requestCancellation(JNIEnv *env, jobject thiz) {
+    if (g_kernel) g_kernel->requestCancellation();
+}
+
+void native_setInferenceSilence(JNIEnv *env, jobject thiz, jboolean silent) {
+    HardwareBridge::setInferenceSilence(silent == JNI_TRUE);
 }
 
 jboolean native_storeNote(JNIEnv *env, jobject thiz, jstring title, jstring content, jstring tags) {
@@ -345,24 +268,19 @@ jboolean native_storeVault(JNIEnv *env, jobject thiz, jstring title, jstring enc
 
 jboolean native_storePrediction(JNIEnv *env, jobject thiz, jstring goalId, jstring nodeId, jstring predicted, jstring actual, jfloat error) {
     if (!g_ltm) return JNI_FALSE;
-    return g_ltm->storePrediction(ConvertJStringToString(env, goalId), ConvertJStringToString(env, nodeId), 
+    return g_ltm->storePrediction(ConvertJStringToString(env, goalId), ConvertJStringToString(env, nodeId),
                                   ConvertJStringToString(env, predicted), ConvertJStringToString(env, actual), error) ? JNI_TRUE : JNI_FALSE;
 }
 
 void native_injectWorldState(JNIEnv *env, jobject thiz, jfloat battery, jfloat ram, jboolean gps, jboolean net, jboolean charging) {
-    // Blueprint v1.3: World State is transient. We can log it or pass it to intent engine.
-    if (g_intent_engine) {
-        // g_intent_engine->updateWorldState(...) // Needs implementation in IntentEngine
+    // Blueprint v1.3: World State is transient.
+}
+
+void native_applyHumanFeedback(JNIEnv *env, jobject thiz, jstring sessionId, jboolean wasHelpful) {
+    if (g_graph_executor) {
+        g_graph_executor->getReflectionEngine().applyHumanFeedback(ConvertJStringToString(env, sessionId), wasHelpful == JNI_TRUE);
     }
 }
-
-jboolean native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) {
-    HardwareBridge::reportSystemHealth(temp, used, total);
-    return JNI_TRUE;
-}
-
-void native_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) {}
-void native_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) {}
 
 jint native_getLMKPressure(JNIEnv *env, jobject thiz) {
     return g_memory_manager ? g_memory_manager->getPressureScore() : 0;
@@ -375,6 +293,7 @@ jboolean native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring path) {
     }
     return JNI_FALSE;
 }
+
 jboolean native_updateCloudProviders(JNIEnv *env, jobject thiz, jstring json) { return JNI_TRUE; }
 jboolean native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring path) { return JNI_TRUE; }
 
@@ -385,13 +304,8 @@ jboolean native_isValidModel(JNIEnv *env, jobject thiz, jstring path) {
     char header[4];
     size_t read = fread(header, 1, 4, f);
     fclose(f);
-    
     if (read == 4 && memcmp(header, "TFL3", 4) == 0) return JNI_TRUE;
-    
-    if (p.find(".litertlm") != std::string::npos || p.find(".bin") != std::string::npos) {
-        return JNI_TRUE;
-    }
-    
+    if (p.find(".litertlm") != std::string::npos || p.find(".bin") != std::string::npos) return JNI_TRUE;
     return JNI_FALSE;
 }
 
@@ -408,36 +322,23 @@ jobjectArray native_getChatHistory(JNIEnv *env, jobject thiz, jint limit, jint o
 }
 
 void native_resetContext(JNIEnv *env, jobject thiz) {
-    if (g_ltm) g_ltm->clearHistory();
-    if (g_memory_manager) g_memory_manager->clearContext();
+    if (g_kernel) g_kernel->clearContext();
 }
 
 jboolean native_loadMyanmarDictionary(JNIEnv *env, jobject thiz, jstring path) {
-    if (g_ltm) {
-        return g_ltm->loadSegmenter(ConvertJStringToString(env, path)) ? JNI_TRUE : JNI_FALSE;
-    }
+    if (g_ltm) return g_ltm->loadMyanmarDictionary(ConvertJStringToString(env, path)) ? JNI_TRUE : JNI_FALSE;
     return JNI_FALSE;
 }
 
-void native_requestCancellation(JNIEnv *env, jobject thiz) {
-    if (g_llm_context.engine) g_llm_context.engine->requestCancellation();
+void native_reportOutcome(JNIEnv *env, jobject thiz, jint sourceId, jint targetId, jboolean success, jint risk) {
+    if (g_graph_executor) g_graph_executor->reportOutcome(sourceId, targetId, success, static_cast<RiskLevel>(risk));
 }
-
-void native_shutdownKernel(JNIEnv *env, jobject thiz) {
-    if (g_kernel) g_kernel->shutdown();
-    HardwareBridge::release(env);
-}
-
-// --- JNI Registration ---
 
 static JNINativeMethod g_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
     {"setEngineInstanceNative", "()V", (void*)native_setEngineInstance},
-    {"notifyModelLoadedNative", "(Ljava/lang/String;)V", (void*)native_notifyModelLoaded},
+    {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory},
     {"stopLowPriorityTasksNative", "()V", (void*)native_stopLowPriorityTasks},
-    {"setSafeModeNative", "(Z)V", (void*)native_setSafeMode},
-    {"setPriorityNative", "(I)V", (void*)native_setPriority},
-    {"checkFileAccessNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_checkFileAccess},
     {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB},
     {"processInputNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
     {"isLoadedNative", "()Z", (void*)native_isLoaded},
@@ -445,14 +346,11 @@ static JNINativeMethod g_methods[] = {
     {"getActiveModelPathNative", "()Ljava/lang/String;", (void*)native_getActiveModelPath},
     {"injectLocationNative", "(DD)V", (void*)native_injectLocation},
     {"updateSystemHealthNative", "(FFF)Z", (void*)native_updateSystemHealth},
-    {"setOfflineModeNative", "(Z)V", (void*)native_setOfflineMode},
-    {"setPrimaryCloudProviderNative", "(Ljava/lang/String;)V", (void*)native_setPrimaryCloudProvider},
     {"getLMKPressureNative", "()I", (void*)native_getLMKPressure},
     {"updateModelRegistryNative", "(Ljava/lang/String;)Z", (void*)native_updateModelRegistry},
     {"updateCloudProvidersNative", "(Ljava/lang/String;)Z", (void*)native_updateCloudProviders},
     {"scanSpecificPathNative", "(Ljava/lang/String;)Z", (void*)native_scanSpecificPath},
     {"isValidModelNative", "(Ljava/lang/String;)Z", (void*)native_isValidModel},
-    {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory},
     {"resetContextNativeJNI", "()V", (void*)native_resetContext},
     {"loadMyanmarDictionaryNative", "(Ljava/lang/String;)Z", (void*)native_loadMyanmarDictionary},
     {"reportOutcomeNative", "(IIZI)V", (void*)native_reportOutcome},
@@ -466,7 +364,8 @@ static JNINativeMethod g_methods[] = {
     {"searchNotesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchNotes},
     {"searchEpisodesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchEpisodes},
     {"storePredictionNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;F)Z", (void*)native_storePrediction},
-    {"injectWorldStateNative", "(FFZZZ)V", (void*)native_injectWorldState}
+    {"injectWorldStateNative", "(FFZZZ)V", (void*)native_injectWorldState},
+    {"applyHumanFeedbackNative", "(Ljava/lang/String;Z)V", (void*)native_applyHumanFeedback}
 };
 
 static JNINativeMethod g_worker_methods[] = {
@@ -490,5 +389,3 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
 
     return JNI_VERSION_1_6;
 }
-
-#endif // __ANDROID__

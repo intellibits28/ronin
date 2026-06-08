@@ -123,12 +123,14 @@ CREATE TABLE predictions (
 *   [x] 1Hz World State Telemetry Injection.
 *   [x] Hardware-backed Vault with Biometric HITL.
 
-### Phase 3: Cognitive Runtime (Next)
-*   [ ] Belief State & Goal Stack.
-*   [ ] DAG Graph Executor with Reflection Engine.
-*   [ ] Thompson Sampling with Symmetric Decay.
+### Phase 3: Cognitive Runtime (Active)
+*   [ ] **Belief State:** Persistent key-value store of confidence-weighted truths.
+*   [ ] **Reflection Engine (RLHF):** Self-correction loop using user feedback and episodic memory.
+*   [ ] **DAG Graph Executor:** Multi-step planning with dependency resolution.
+*   [ ] **Bayesian Reward System:** Thompson Sampling with symmetric decay for learning.
 
-### Phase 4: Expanded Capabilities & Autonomous Cognition
+### Phase 4: Expanded Capabilities & Autonomous Cognition (Next)
+
 *   [ ] **Native Alarm Integration:** Setting and managing Android alarms via intents.
 *   [ ] **Native Calendar Integration:** Event creation and schedule awareness.
 *   [ ] **Long Horizon Planning:** Multi-step goal decomposition (e.g. Calendar-aware Alarms).

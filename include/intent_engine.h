@@ -15,6 +15,7 @@
 #include "long_term_memory.h"
 #include "myanmar_segmenter.h"
 #include "capability_types.h"
+#include "belief_state.h"
 #include <nlohmann/json.hpp>
 
 namespace Ronin::Kernel::Intent {
@@ -24,7 +25,7 @@ namespace Ronin::Kernel::Intent {
  */
 class TaskPlanner {
 public:
-    explicit TaskPlanner(Model::InferenceEngine* engine);
+    explicit TaskPlanner(Model::InferenceEngine* engine, Reasoning::BeliefState* belief_state = nullptr);
     
     // Generates a structured JSON plan from raw user input
     AgentPlan createPlan(const std::string& input);
@@ -37,6 +38,7 @@ public:
 
 private:
     Model::InferenceEngine* m_engine;
+    Reasoning::BeliefState* m_belief_state;
 };
 
 enum class ThermalState {
@@ -71,6 +73,13 @@ public:
 
     TaskPlanner* getPlanner() const {
         return m_planner.get();
+    }
+
+    void setBeliefState(Reasoning::BeliefState* bs) {
+        m_belief_state = bs;
+        if (m_inference_engine) {
+            m_planner = std::make_unique<TaskPlanner>(m_inference_engine.get(), m_belief_state);
+        }
     }
 
     /**
@@ -235,6 +244,7 @@ private:
     std::string m_last_command_output;
     int m_current_tool_depth = 0;
     std::unique_ptr<TaskPlanner> m_planner;
+    Reasoning::BeliefState* m_belief_state = nullptr;
 
     // Phase 4.0: Vtable-based Skill Registry
     std::unordered_map<uint32_t, std::shared_ptr<Ronin::Kernel::Capability::BaseSkill>> m_skill_registry;

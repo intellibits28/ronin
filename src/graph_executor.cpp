@@ -17,7 +17,7 @@
 namespace Ronin::Kernel::Reasoning {
 
 GraphExecutor::GraphExecutor(CapabilityGraph& graph, GraphStorage& storage, Memory::LongTermMemory* ltm)
-    : m_graph(graph), m_storage(storage), m_ltm(ltm) {}
+    : m_graph(graph), m_storage(storage), m_ltm(ltm), m_belief_state(ltm), m_reflection_engine(ltm, &m_sampler) {}
 
 GraphExecutor::~GraphExecutor() {
     if (m_sync_thread.joinable()) {

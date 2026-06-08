@@ -13,7 +13,8 @@
 
 namespace Ronin::Kernel::Intent {
 
-TaskPlanner::TaskPlanner(Model::InferenceEngine* engine) : m_engine(engine) {}
+TaskPlanner::TaskPlanner(Model::InferenceEngine* engine, Reasoning::BeliefState* belief_state) 
+    : m_engine(engine), m_belief_state(belief_state) {}
 
 bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
     try {
@@ -277,7 +278,7 @@ IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     m_skill_registry[6] = std::make_shared<WifiNode>();
     m_skill_registry[7] = std::make_shared<BluetoothNode>();
     m_skill_registry[1] = std::make_shared<ChatSkill>(nullptr, m_ltm);
-    m_planner = std::make_unique<TaskPlanner>(nullptr); 
+    m_planner = std::make_unique<TaskPlanner>(nullptr, nullptr); 
 }
 
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& history) {

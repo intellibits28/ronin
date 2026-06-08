@@ -6,6 +6,8 @@
 #include "ronin_types.hpp"
 #include "capability_dispatcher.h"
 #include "long_term_memory.h"
+#include "belief_state.h"
+#include "reflection_engine.h"
 #include <future>
 #include <atomic>
 #include <mutex>
@@ -69,11 +71,16 @@ public:
     void recordPrediction(const std::string& goal_id, const std::string& node_id,
                           const std::string& predicted_json, const std::string& actual_json, float error_score);
 
+    BeliefState& getBeliefState() { return m_belief_state; }
+    ReflectionEngine& getReflectionEngine() { return m_reflection_engine; }
+
 private:
     CapabilityGraph& m_graph;
     GraphStorage& m_storage;
     Memory::LongTermMemory* m_ltm;
     ThompsonSampler m_sampler;
+    BeliefState m_belief_state;           // v13.0
+    ReflectionEngine m_reflection_engine; // v13.0
     ToolContext m_blackboard; // v7.0 Shared Memory (Blackboard)
     
     std::recursive_mutex m_mutex;
