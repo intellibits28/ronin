@@ -358,6 +358,10 @@ void native_reportOutcome(JNIEnv *env, jobject thiz, jint sourceId, jint targetI
     if (g_graph_executor) g_graph_executor->reportOutcome(sourceId, targetId, success, static_cast<RiskLevel>(risk));
 }
 
+void native_resetContext(JNIEnv *env, jobject thiz) {
+    if (g_kernel) g_kernel->clearSuggestedSubject();
+}
+
 static JNINativeMethod g_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
     {"setEngineInstanceNative", "()V", (void*)native_setEngineInstance},
