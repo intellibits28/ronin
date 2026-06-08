@@ -70,6 +70,13 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
         g_intent_engine = std::make_shared<IntentEngine>(g_ltm.get());
         g_intent_engine->setMemoryManager(g_memory_manager.get()); 
         if (g_graph_executor) g_intent_engine->setBeliefState(&g_graph_executor->getBeliefState());
+        
+        auto engine = std::make_unique<Model::InferenceEngine>("hybrid_mode");
+        engine->setLibPath(native_lib_path);
+        engine->setBasePath(base_path);
+        g_llm_context.engine = engine.get();
+        g_intent_engine->setInferenceEngine(std::move(engine));
+        
         HardwareBridge::initialize(g_vm, g_instance);
         HandlerRegistry registry;
         registry.intentProcessor = [](const Input &input) -> CognitiveIntent {
@@ -195,7 +202,18 @@ JNIEXPORT void JNICALL native_resetContext(JNIEnv *env, jobject thiz) { if (g_ke
 JNIEXPORT jboolean JNICALL native_loadMyanmarDictionary(JNIEnv *env, jobject thiz, jstring p) { return (g_ltm && g_ltm->loadSegmenter(ConvertJStringToString(env, p))) ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT void JNICALL native_reportOutcome(JNIEnv *env, jobject thiz, jint s, jint t, jboolean success, jint r) { if (g_graph_executor) g_graph_executor->reportOutcome(s, t, success == JNI_TRUE, static_cast<RiskLevel>(r)); }
 
-JNIEXPORT void JNICALL native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {}
+JNIEXPORT void JNICALL native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
+    std::string modelPath = ConvertJStringToString(env, path);
+    LOGI(TAG, "C++ Kernel Notified: Hybrid Model Ready at %s", modelPath.c_str());
+    
+    if (g_llm_context.engine) {
+        g_llm_context.engine->loadModel(modelPath);
+    }
+
+    if (g_intent_engine) {
+        g_intent_engine->setPriority(Ronin::Kernel::Capability::SkillPriority::HIGH);
+    }
+}
 JNIEXPORT void JNICALL native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {}
 JNIEXPORT void JNICALL native_setPriority(JNIEnv *env, jobject thiz, jint priority) {}
 JNIEXPORT jstring JNICALL native_checkFileAccess(JNIEnv *env, jobject thiz, jstring path) { return env->NewStringUTF(""); }
