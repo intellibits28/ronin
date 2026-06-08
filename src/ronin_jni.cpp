@@ -195,6 +195,13 @@ JNIEXPORT void JNICALL native_resetContext(JNIEnv *env, jobject thiz) { if (g_ke
 JNIEXPORT jboolean JNICALL native_loadMyanmarDictionary(JNIEnv *env, jobject thiz, jstring p) { return (g_ltm && g_ltm->loadSegmenter(ConvertJStringToString(env, p))) ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT void JNICALL native_reportOutcome(JNIEnv *env, jobject thiz, jint s, jint t, jboolean success, jint r) { if (g_graph_executor) g_graph_executor->reportOutcome(s, t, success == JNI_TRUE, static_cast<RiskLevel>(r)); }
 
+JNIEXPORT void JNICALL native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {}
+JNIEXPORT void JNICALL native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {}
+JNIEXPORT void JNICALL native_setPriority(JNIEnv *env, jobject thiz, jint priority) {}
+JNIEXPORT jstring JNICALL native_checkFileAccess(JNIEnv *env, jobject thiz, jstring path) { return env->NewStringUTF(""); }
+JNIEXPORT void JNICALL native_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) {}
+JNIEXPORT void JNICALL native_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) {}
+
 static JNINativeMethod g_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
     {"setEngineInstanceNative", "()V", (void*)native_setEngineInstance},
@@ -226,7 +233,13 @@ static JNINativeMethod g_methods[] = {
     {"searchEpisodesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchEpisodes},
     {"storePredictionNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;F)Z", (void*)native_storePrediction},
     {"injectWorldStateNative", "(FFZZZ)V", (void*)native_injectWorldState},
-    {"applyHumanFeedbackNative", "(Ljava/lang/String;Z)V", (void*)native_applyHumanFeedback}
+    {"applyHumanFeedbackNative", "(Ljava/lang/String;Z)V", (void*)native_applyHumanFeedback},
+    {"notifyModelLoadedNative", "(Ljava/lang/String;)V", (void*)native_notifyModelLoaded},
+    {"setSafeModeNative", "(Z)V", (void*)native_setSafeMode},
+    {"setPriorityNative", "(I)V", (void*)native_setPriority},
+    {"checkFileAccessNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_checkFileAccess},
+    {"setOfflineModeNative", "(Z)V", (void*)native_setOfflineMode},
+    {"setPrimaryCloudProviderNative", "(Ljava/lang/String;)V", (void*)native_setPrimaryCloudProvider}
 };
 
 static JNINativeMethod g_worker_methods[] = {
