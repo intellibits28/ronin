@@ -78,14 +78,16 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "- Vault Keywords: ALWAYS use Vault for PIN, API key, password, token, or secret. "
         "- Fact/Vault Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
         "- Alarm/နှိုး: intent 'ALARM'. Steps ['SET_ALARM']. parameters: time, message. "
-        "- Calendar/Meeting/မှတ်: intent 'CALENDAR'. Steps ['ADD_EVENT']. parameters: title, description, time, timezone, share_via (optional), attendees (optional). "
+        "- Calendar/Meeting/မှတ်: intent 'CALENDAR'. Steps ['ADD_EVENT'] (to save) or ['READ_CALENDAR'] (to query). parameters: title, description, time, timezone, keyword, share_via (optional), attendees (optional). "
         "- File Search/ရှာ: intent 'FILE_SEARCH'. Steps ['SEARCH_FILES']. parameters: query. "
         "Examples: "
         "User: 'မနက်ဖြန် မနက် ၆နာရီ နှိုးပေး' -> {\"intent\":\"ALARM\",\"plan\":[\"SET_ALARM\"],\"parameters\":{\"time\":\"06:00\",\"message\":\"Alarm\"}} "
+        "User: 'မနက်ဖြန် ဘာ meeting ရှိလဲ' -> {\"intent\":\"CALENDAR\",\"plan\":[\"READ_CALENDAR\"],\"parameters\":{\"keyword\":\"meeting\"}} "
+        "User: 'documents ထဲက အလုပ်ဖိုင် ရှာပေး' -> {\"intent\":\"FILE_SEARCH\",\"plan\":[\"SEARCH_FILES\"],\"parameters\":{\"query\":\"အလုပ်\"}} "
         "Semantic Precision: "
         "- Attribute names MUST be in Myanmar if user uses it. "
         "- Strip 'ရဲ့', '၏', 'က', 'ကို' from entity/attribute names. "
-        "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {\"entity\": \"...\", \"attribute\": \"...\", \"value\": \"...\", \"vault_title\": \"...\", \"vault_content\": \"...\", \"time\": \"...\", \"title\": \"...\", \"description\": \"...\", \"timezone\": \"...\", \"share_via\": \"...\", \"attendees\": \"...\"}}";
+        "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {\"entity\": \"...\", \"attribute\": \"...\", \"value\": \"...\", \"vault_title\": \"...\", \"vault_content\": \"...\", \"time\": \"...\", \"title\": \"...\", \"description\": \"...\", \"timezone\": \"...\", \"keyword\": \"...\", \"query\": \"...\", \"share_via\": \"...\", \"attendees\": \"...\"}}";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
@@ -122,7 +124,7 @@ CapabilityType TaskPlanner::mapIntentToCapability(const std::string& intent_name
     if (i_lower.find("alarm") != std::string::npos || i_lower.find("wake") != std::string::npos || i_lower.find("နှိုး") != std::string::npos) {
         return CapabilityType::ALARM;
     }
-    if (i_lower.find("calendar") != std::string::npos || i_lower.find("event") != std::string::npos || i_lower.find("meeting") != std::string::npos || i_lower.find("schedule") != std::string::npos || i_lower.find("မှတ်") != std::string::npos) {
+    if (i_lower.find("calendar") != std::string::npos || i_lower.find("event") != std::string::npos || i_lower.find("meeting") != std::string::npos || i_lower.find("schedule") != std::string::npos || i_lower.find("မှတ်") != std::string::npos || i_lower.find("ကြည့်") != std::string::npos) {
         // Handle overlap with MEMORY ("မှတ်") by prioritizing CALENDAR if other keywords exist
         if (i_lower.find("meeting") != std::string::npos || i_lower.find("event") != std::string::npos || i_lower.find("calendar") != std::string::npos) {
             return CapabilityType::CALENDAR;
