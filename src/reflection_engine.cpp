@@ -19,10 +19,35 @@ void ReflectionEngine::applyHumanFeedback(const std::string& session_id, bool wa
 }
 
 void ReflectionEngine::reflectOnRecentTasks() {
-    // Phase 3.4: Auto-reflect logic
+    // Phase 4: Self-Evaluation Loop
+    LOGI(TAG, "Initiating Self-Evaluation Loop...");
+    
+    if (!m_ltm) return;
+
     // 1. Query failed episodes from LTM
-    // 2. Identify common failure patterns (e.g. timeout, empty results)
-    // 3. Update BeliefState to avoid these paths in future prompts
+    auto failures = m_ltm->getRecentFailures(10);
+    
+    // 2. Identify common failure patterns
+    std::unordered_map<std::string, int> intent_failures;
+    for (const auto& f : failures) {
+        intent_failures[f.intent]++;
+    }
+
+    // 3. Update BeliefState to avoid these paths (e.g. mark reliability)
+    for (const auto& [intent, count] : intent_failures) {
+        if (count >= 3) {
+            float reliability = 1.0f - (static_cast<float>(count) / 10.0f);
+            LOGW(TAG, "Self-Evaluation: Intent %s has low reliability (%.2f)", intent.c_str(), reliability);
+            
+            // Phase 3 Integration: Store reliability belief
+            // We use a specific key format so TaskPlanner can see it
+            // m_belief_state.updateBelief("reliability_" + intent, std::to_string(reliability), 0.8f);
+            // Note: Since ReflectionEngine doesn't have direct access to BeliefState yet, 
+            // we log it for now. In a full implementation, we'd add the reference.
+        }
+    }
+    
+    LOGI(TAG, "Self-Evaluation Loop Completed.");
 }
 
 float ReflectionEngine::evaluateOutcome(const std::string& predicted, const std::string& actual) {

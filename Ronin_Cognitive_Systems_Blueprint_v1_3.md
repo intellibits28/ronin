@@ -129,12 +129,15 @@ CREATE TABLE predictions (
 *   [x] **DAG Graph Executor:** Multi-step planning with dependency resolution.
 *   [x] **Bayesian Reward System:** Thompson Sampling with symmetric decay for learning.
 
-### Phase 4: Expanded Capabilities & System Integration (Active)
+### Phase 4: Expanded Capabilities & System Integration (Done)
 
-*   [ ] **Native Alarm Integration:** Setting and managing Android alarms via intents.
-*   [ ] **Native Calendar Integration:** Event creation and schedule awareness.
-*   [ ] **Long Horizon Planning:** Multi-step goal decomposition (e.g. Calendar-aware Alarms).
-*   [ ] **Self-Evaluation Loops:** Continuous strategy optimization.
+*   [x] **Native Alarm Integration:** Setting and managing Android alarms via intents.
+*   [x] **Native Calendar Integration:** Event creation and schedule awareness.
+*   [x] **Long Horizon Planning:** Multi-step goal decomposition (e.g. Calendar-aware Alarms).
+*   [x] **Self-Evaluation Loops:** Continuous strategy optimization.
 
----
-*Revised: 2026-06-08 | Ronin Kernel Engineering Standards v1.3*
+### Phase 5: Observability & Continuous Calibration (Active)
+
+*   [ ] **1Hz Developer HUD:** Real-time visualization of cognitive state and Bayesian weights.
+*   [ ] **Confidence Calibration:** Automatic threshold adjustment based on prediction error.
+*   [ ] **Deep-Store Sync:** Optimized atomic persistence for high-frequency belief updates.

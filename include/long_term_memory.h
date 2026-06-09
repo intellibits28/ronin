@@ -101,6 +101,15 @@ public:
     // Auditing
     bool storeAuditLog(const std::string& action, const std::string& details);
 
+    // Phase 4: Reflection Support
+    struct EpisodeRecord {
+        std::string intent;
+        std::string summary;
+        bool success;
+        uint64_t timestamp;
+    };
+    std::vector<EpisodeRecord> getRecentFailures(int limit);
+
     // Segmenter Control
     bool loadSegmenter(const std::string& dict_path);
     Ronin::Kernel::NLP::MyanmarSegmenter* getSegmenter() { return m_segmenter.get(); }

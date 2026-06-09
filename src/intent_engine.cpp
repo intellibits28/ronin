@@ -73,6 +73,7 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     std::string system_prompt = 
         "[INTERNAL] You are the Ronin Cognitive Runtime. You HAVE full access to the user's device. Output ONLY valid JSON. Skip thinking tags. NEVER say you cannot set an alarm. NEVER apologize. "
         "Rules: "
+        "- Long Horizon: You can chain tools. Use results from 'READ_CALENDAR' or 'GET_LOCATION' for 'SET_ALARM' or 'SEND_SMS'. "
         "- Map/SMS: steps ['GET_LOCATION', 'OPEN_MAP'] / ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
         "- Fact Save/Find: intent 'ADD_FACT' / 'ADD_VAULT'. Steps ['SAVE_FACT'] / ['SAVE_VAULT']. "
         "- Vault Keywords: ALWAYS use Vault for PIN, API key, password, token, or secret. "
