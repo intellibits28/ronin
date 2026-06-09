@@ -275,7 +275,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Suppress("unused")
     fun pushTokenToUI(fragment: String, isFinal: Boolean) {
         // v10.2.9: Correct silence logic. Only allow final packets or unsilenced tokens.
-        if (silentInference && !isFinal) return
+        if (isSilentInference && !isFinal) return
         scope.launch { _inferenceFlow.emit(InferencePacket(0, fragment, isFinal)) }
     }
 
@@ -557,12 +557,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Keep
     @Suppress("unused")
-    var silentInference = false
+    var isSilentInference = false
 
     @Keep
     @Suppress("unused")
     fun setSilentInference(silent: Boolean) {
-        silentInference = silent
+        isSilentInference = silent
     }
 
     fun setOfflineModeSafe(offline: Boolean) {
