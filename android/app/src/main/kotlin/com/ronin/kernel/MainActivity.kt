@@ -973,8 +973,8 @@ class MainActivity : FragmentActivity() {
                         val noteResults = nativeEngine.searchNotes(query)
                         val epResults = nativeEngine.searchEpisodes(query)
                         val combined = mutableListOf<String>()
-                        if (noteResults != null) combined.addAll(noteResults)
-                        if (epResults != null) combined.addAll(epResults)
+                        if (noteResults != null) combined.addAll(noteResults.toList())
+                        if (epResults != null) combined.addAll(epResults.toList())
                         
                         if (combined.isEmpty()) "No files or documents found matching: $query"
                         else "Found ${combined.size} items:\n" + combined.take(5).joinToString("\n---\n")
@@ -1060,23 +1060,24 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         }
                         
                         // Phase 5: Developer HUD Overlay
-                        AnimatedVisibility(
-                            visible = chatViewModel.showDevHUD,
-                            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
-                        ) {
-                            Surface(
-                                color = Color(0xCC000000L), 
-                                shape = RoundedCornerShape(8.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF64B5F6))
+                        Box(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = chatViewModel.showDevHUD
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("COG HUD (1Hz)", color = Color.Yellow, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text("STATE: ${chatViewModel.hudState}", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                    Text("INTENT: ${chatViewModel.hudIntent}", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                    Text("CONF: ${"%.2f".format(chatViewModel.hudConfidence)}", color = if(chatViewModel.hudConfidence > 0.5f) Color.Green else Color.Red, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                    if (chatViewModel.hudPlan.isNotEmpty()) {
-                                        Text("PLAN: ${chatViewModel.hudPlan}", color = Color.Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                Surface(
+                                    color = Color(0xCC000000L), 
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF64B5F6))
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text("COG HUD (1Hz)", color = Color.Yellow, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("STATE: ${chatViewModel.hudState}", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                        Text("INTENT: ${chatViewModel.hudIntent}", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                        Text("CONF: ${"%.2f".format(chatViewModel.hudConfidence)}", color = if(chatViewModel.hudConfidence > 0.5f) Color.Green else Color.Red, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                        if (chatViewModel.hudPlan.isNotEmpty()) {
+                                            Text("PLAN: ${chatViewModel.hudPlan}", color = Color.Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                        }
                                     }
                                 }
                             }
