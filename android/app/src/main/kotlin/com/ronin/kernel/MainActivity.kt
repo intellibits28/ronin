@@ -1065,7 +1065,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
                         ) {
                             Surface(
-                                color = Color(0xCC000000), 
+                                color = Color(0xCC000000L), 
                                 shape = RoundedCornerShape(8.dp),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF64B5F6))
                             ) {
