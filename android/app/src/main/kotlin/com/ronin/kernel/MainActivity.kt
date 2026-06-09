@@ -710,7 +710,7 @@ class MainActivity : FragmentActivity() {
                             putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, message)
                             putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
                             putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
-                            putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
+                            putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, false)
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
                         runOnUiThread { startActivity(intent) }

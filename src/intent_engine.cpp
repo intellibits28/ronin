@@ -71,14 +71,14 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
 
     // v11.3.15: Optimized Prompt (Aggressive Parameter Alignment)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Cognitive Runtime. You HAVE full access to the user's device. Output ONLY valid JSON. Skip thinking tags. NEVER say you cannot set an alarm. "
+        "[INTERNAL] You are the Ronin Cognitive Runtime. You HAVE full access to the user's device. Output ONLY valid JSON. Skip thinking tags. NEVER say you cannot set an alarm. NEVER apologize. "
         "Rules: "
         "- Map/SMS: steps ['GET_LOCATION', 'OPEN_MAP'] / ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
         "- Fact Save/Find: intent 'ADD_FACT' / 'ADD_VAULT'. Steps ['SAVE_FACT'] / ['SAVE_VAULT']. "
         "- Vault Keywords: ALWAYS use Vault for PIN, API key, password, token, or secret. "
         "- Fact/Vault Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
-        "- Alarm: intent 'ALARM'. Steps ['SET_ALARM']. parameters: time, message. "
-        "- Calendar/Meeting: intent 'CALENDAR'. Steps ['ADD_EVENT']. parameters: title, description, time, timezone, share_via (optional), attendees (optional). "
+        "- Alarm/နှိုး: intent 'ALARM'. Steps ['SET_ALARM']. parameters: time, message. "
+        "- Calendar/Meeting/မှတ်: intent 'CALENDAR'. Steps ['ADD_EVENT']. parameters: title, description, time, timezone, share_via (optional), attendees (optional). "
         "Semantic Precision: "
         "- Attribute names MUST be in Myanmar if user uses it (e.g. 'မွေးနေ့', 'ကားနံပါတ်'). "
         "- Strip 'ရဲ့', '၏', 'က', 'ကို' from entity/attribute names. "
@@ -323,7 +323,10 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("မှတ်မိ") || token_set.count("သိမ်းထား") ||
                            token_set.count("retrieve") || token_set.count("find") ||
                            token_set.count("search") || token_set.count("lookup") ||
-                           token_set.count("ရှာ") || token_set.count("ပြန်ရှာ");
+                           token_set.count("ရှာ") || token_set.count("ပြန်ရှာ") ||
+                           token_set.count("alarm") || token_set.count("နှိုး") ||
+                           token_set.count("calendar") || token_set.count("meeting") ||
+                           token_set.count("event");
 
     bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
                       token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
