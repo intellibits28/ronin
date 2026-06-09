@@ -46,11 +46,11 @@ static LLMContext g_llm_context;
 static Result exec_handler(uint32_t nodeId, const CognitiveState& state) {
     if (g_intent_engine) {
         std::string param = "";
-        // Extract the most relevant parameter based on common naming
-        if (state.blackboard.storage.count("query")) param = state.blackboard.storage.at("query");
-        else if (state.blackboard.storage.count("value")) param = state.blackboard.storage.at("value");
-        else if (state.blackboard.storage.count("entity")) param = state.blackboard.storage.at("entity");
-        else if (state.blackboard.storage.count("time")) param = state.blackboard.storage.at("time");
+        // Extract the most relevant parameter based on common naming from current_plan parameters
+        if (state.current_plan.parameters.count("query")) param = state.current_plan.parameters.at("query");
+        else if (state.current_plan.parameters.count("value")) param = state.current_plan.parameters.at("value");
+        else if (state.current_plan.parameters.count("entity")) param = state.current_plan.parameters.at("entity");
+        else if (state.current_plan.parameters.count("time")) param = state.current_plan.parameters.at("time");
         
         g_intent_engine->executeSkill(nodeId, param); 
         return {true, 200};
