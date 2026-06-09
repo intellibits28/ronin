@@ -112,6 +112,7 @@ public:
 
     // Segmenter Control
     bool loadSegmenter(const std::string& dict_path);
+    std::vector<std::string> segmentText(const std::string& input);
     Ronin::Kernel::NLP::MyanmarSegmenter* getSegmenter() { return m_segmenter.get(); }
 
 private:

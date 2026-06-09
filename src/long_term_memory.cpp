@@ -325,6 +325,16 @@ bool LongTermMemory::loadSegmenter(const std::string& dict_path) {
     return m_segmenter && m_segmenter->loadDictionary(dict_path);
 }
 
+std::vector<std::string> LongTermMemory::segmentText(const std::string& input) {
+    if (!m_segmenter) return {};
+    std::string segmented = m_segmenter->segment(input);
+    std::vector<std::string> tokens;
+    std::stringstream ss(segmented);
+    std::string t;
+    while (ss >> t) tokens.push_back(t);
+    return tokens;
+}
+
 bool LongTermMemory::indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified) {
     if (!m_db) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
