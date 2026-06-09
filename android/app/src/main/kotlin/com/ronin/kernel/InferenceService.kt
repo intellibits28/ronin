@@ -214,6 +214,10 @@ class InferenceService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "LiteRT Fault: ${e.message}")
+            if (e.message?.contains("not alive", ignoreCase = true) == true || e.message?.contains("failed", ignoreCase = true) == true) {
+                Log.w(TAG, "Attempting to recover from dead conversation...")
+                resetConversationInternal()
+            }
             throw e
         }
     }.flowOn(Dispatchers.IO)
