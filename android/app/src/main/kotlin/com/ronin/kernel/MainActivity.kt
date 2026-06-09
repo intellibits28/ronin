@@ -820,35 +820,36 @@ class MainActivity : FragmentActivity() {
                         val keyword = params["keyword"] ?: params["query"] ?: params["event"] ?: ""
                         if (checkSelfPermission(android.Manifest.permission.READ_CALENDAR) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                             requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 101)
-                            return "Error: Missing READ_CALENDAR permission."
-                        }
-                        val projection = arrayOf(
-                            android.provider.CalendarContract.Events.TITLE,
-                            android.provider.CalendarContract.Events.DTSTART,
-                            android.provider.CalendarContract.Events.EVENT_LOCATION
-                        )
-                        val now = System.currentTimeMillis()
-                        val selection = "${android.provider.CalendarContract.Events.DTSTART} >= ?"
-                        val selectionArgs = arrayOf(now.toString())
-                        val cursor = contentResolver.query(
-                            android.provider.CalendarContract.Events.CONTENT_URI,
-                            projection, selection, selectionArgs, "${android.provider.CalendarContract.Events.DTSTART} ASC LIMIT 5"
-                        )
-                        val results = mutableListOf<String>()
-                        cursor?.use {
-                            val titleIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.TITLE)
-                            val timeIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.DTSTART)
-                            val locIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.EVENT_LOCATION)
-                            while (it.moveToNext()) {
-                                val t = it.getString(titleIdx)
-                                val time = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it.getLong(timeIdx)))
-                                val loc = it.getString(locIdx) ?: ""
-                                if (keyword.isEmpty() || t.contains(keyword, true)) {
-                                    results.add("Event: $t\nTime: $time\nLocation: $loc")
+                            "Error: Missing READ_CALENDAR permission."
+                        } else {
+                            val projection = arrayOf(
+                                android.provider.CalendarContract.Events.TITLE,
+                                android.provider.CalendarContract.Events.DTSTART,
+                                android.provider.CalendarContract.Events.EVENT_LOCATION
+                            )
+                            val now = System.currentTimeMillis()
+                            val selection = "${android.provider.CalendarContract.Events.DTSTART} >= ?"
+                            val selectionArgs = arrayOf(now.toString())
+                            val cursor = contentResolver.query(
+                                android.provider.CalendarContract.Events.CONTENT_URI,
+                                projection, selection, selectionArgs, "${android.provider.CalendarContract.Events.DTSTART} ASC LIMIT 5"
+                            )
+                            val results = mutableListOf<String>()
+                            cursor?.use {
+                                val titleIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.TITLE)
+                                val timeIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.DTSTART)
+                                val locIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.EVENT_LOCATION)
+                                while (it.moveToNext()) {
+                                    val t = it.getString(titleIdx)
+                                    val time = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it.getLong(timeIdx)))
+                                    val loc = it.getString(locIdx) ?: ""
+                                    if (keyword.isEmpty() || t.contains(keyword, true)) {
+                                        results.add("Event: $t\nTime: $time\nLocation: $loc")
+                                    }
                                 }
                             }
+                            if (results.isEmpty()) "No upcoming events found." else results.joinToString("\n---\n")
                         }
-                        if (results.isEmpty()) "No upcoming events found." else results.joinToString("\n---\n")
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
                 "SMS", "SEND_SMS", "send_sms" -> {
@@ -904,7 +905,7 @@ class MainActivity : FragmentActivity() {
                                 }
                                 chatViewModel.showHITLDialog = true
                             }
-                            return "[ASYNC_PENDING]"
+                            "[ASYNC_PENDING]"
                         } else {
                             // Fallback to composer
                             runOnUiThread {
