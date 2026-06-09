@@ -135,6 +135,13 @@ class ChatViewModel : ViewModel() {
     val cloudProviders = mutableStateListOf<CloudProvider>()
     val discoveredModels = mutableStateListOf<String>()
 
+    // Phase 5: Developer HUD State
+    var showDevHUD by mutableStateOf(false)
+    var hudIntent by mutableStateOf("NONE")
+    var hudConfidence by mutableStateOf(0.0f)
+    var hudPlan by mutableStateOf("")
+    var hudState by mutableStateOf("IDLE")
+
     var systemPrompt by mutableStateOf("You are Ronin. Always reason inside [THINK] [/THINK] and then reply inside [REPLY] [/REPLY] in Myanmar.")
 
     var showAddCloudDialog by mutableStateOf(false)
@@ -586,6 +593,16 @@ class MainActivity : FragmentActivity() {
             vm.hitlMessage = message
             vm.onHITLResult = callback
             vm.showHITLDialog = true
+        }
+
+        // Phase 5: Developer HUD Callback
+        nativeEngine.onDevHUDUpdateCallback = { state, intent, conf, plan ->
+            runOnUiThread {
+                vm.hudState = state
+                vm.hudIntent = intent
+                vm.hudConfidence = conf
+                vm.hudPlan = plan
+            }
         }
         
         nativeEngine.executeAgentToolCallback = { toolName, params ->
@@ -1041,6 +1058,29 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                             val suggestions = listOf("/status", "/skills", "/model", "/reset").filter { it.startsWith(currentInput.lowercase()) }
                             if (suggestions.isNotEmpty()) { Surface(color = Color(0xFF25283D), modifier = Modifier.align(Alignment.BottomStart).padding(16.dp).fillMaxWidth(0.7f).clip(RoundedCornerShape(12.dp)), elevation = 8.dp) { LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) { items(suggestions) { s -> TextButton(onClick = { currentInput = "$s "; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { Text(s, color = Color.White) } } } } }
                         }
+                        
+                        // Phase 5: Developer HUD Overlay
+                        AnimatedVisibility(
+                            visible = chatViewModel.showDevHUD,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                        ) {
+                            Surface(
+                                color = Color(0xCC000000), 
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF64B5F6))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("COG HUD (1Hz)", color = Color.Yellow, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("STATE: ${chatViewModel.hudState}", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                    Text("INTENT: ${chatViewModel.hudIntent}", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                    Text("CONF: ${"%.2f".format(chatViewModel.hudConfidence)}", color = if(chatViewModel.hudConfidence > 0.5f) Color.Green else Color.Red, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                    if (chatViewModel.hudPlan.isNotEmpty()) {
+                                        Text("PLAN: ${chatViewModel.hudPlan}", color = Color.Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                    }
+                                }
+                            }
+                        }
                     }
                     Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
                         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1132,6 +1172,7 @@ fun ModalDrawerSheet(chatViewModel: ChatViewModel, brainPicker: ActivityResultLa
         Text("Operation Mode", fontSize = 12.sp, color = Color.Gray)
         Row(verticalAlignment = Alignment.CenterVertically) { Text("Cloud Only Mode", modifier = Modifier.weight(1f), color = Color.White, fontSize = 14.sp); Switch(checked = chatViewModel.cloudOnlyMode, onCheckedChange = { chatViewModel.cloudOnlyMode = it; activity?.saveCloudOnlyMode(it) }) }
         Row(verticalAlignment = Alignment.CenterVertically) { Text("Reasoning Logs", modifier = Modifier.weight(1f), color = Color.White, fontSize = 14.sp); Switch(checked = chatViewModel.showReasoning, onCheckedChange = { chatViewModel.showReasoning = it }) }
+        Row(verticalAlignment = Alignment.CenterVertically) { Text("Developer HUD (1Hz)", modifier = Modifier.weight(1f), color = Color.White, fontSize = 14.sp); Switch(checked = chatViewModel.showDevHUD, onCheckedChange = { chatViewModel.showDevHUD = it }) }
         
         Divider(Modifier.padding(vertical = 16.dp))
         Text("Sampling Parameters (T,P,K)", fontSize = 12.sp, color = Color.Gray)

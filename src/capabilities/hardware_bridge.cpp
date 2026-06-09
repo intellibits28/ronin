@@ -259,6 +259,26 @@ void HardwareBridge::setInferenceSilence(bool silent) {
 #endif
 }
 
+void HardwareBridge::updateDevHUD(const std::string& state, const std::string& intent, float confidence, const std::string& plan) {
+#ifdef __ANDROID__
+    if (!s_vm || !s_instance || !s_clazz) return;
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninHUDThread");
+    JNIEnv* env = scopedEnv.env();
+    if (env) {
+        jmethodID mid = env->GetMethodID(s_clazz, "updateDevHUD", "(Ljava/lang/String;Ljava/lang/String;FLjava/lang/String;)V");
+        if (mid) {
+            jstring jstate = env->NewStringUTF(state.c_str());
+            jstring jintent = env->NewStringUTF(intent.c_str());
+            jstring jplan = env->NewStringUTF(plan.c_str());
+            env->CallVoidMethod(s_instance, mid, jstate, jintent, (jfloat)confidence, jplan);
+            env->DeleteLocalRef(jstate);
+            env->DeleteLocalRef(jintent);
+            env->DeleteLocalRef(jplan);
+        }
+    }
+#endif
+}
+
 bool HardwareBridge::triggerSync(uint32_t nodeId, bool state) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return state;

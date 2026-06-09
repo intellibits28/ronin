@@ -345,6 +345,15 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("calendar") || token_set.count("meeting") ||
                            token_set.count("event");
 
+    // v12.2: Raw substring fallback for robust detection
+    if (!is_simple_agent) {
+        is_simple_agent = (input_lower.find("alarm") != std::string::npos) ||
+                          (input_lower.find("နှိုး") != std::string::npos) ||
+                          (input_lower.find("meeting") != std::string::npos) ||
+                          (input_lower.find("ရှာ") != std::string::npos) ||
+                          (input_lower.find("search") != std::string::npos);
+    }
+
     bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
                       token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
                       token_set.count("ရှိလဲ") || token_set.count("သိချင်လို့") ||
@@ -355,6 +364,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     if ((is_complex || is_simple_agent) && !is_inquiry) {
         final_cat = IntentCategory::AGENT_PLAN;
         LOGI(TAG, "v7.0 Agent Request Detected -> Category AGENT_PLAN");
+        Ronin::Kernel::Capability::HardwareBridge::updateDevHUD("PLANNING", "PENDING", 0.0f, "");
         return {1, 1.0f, true, final_cat}; 
     }
 

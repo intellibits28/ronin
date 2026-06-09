@@ -101,7 +101,9 @@ void AgentScheduler::workerLoop() {
                 
                 if (type != CapabilityType::NONE) {
                     LOGI(TAG, "L8 Scheduler: Dispatching Capability %d to L10 Optimizer...", static_cast<int>(type));
-                    
+
+                    Capability::HardwareBridge::updateDevHUD("EXECUTING", current_session->getIntent(), 1.0f, step);
+
                     // v9.2: Pass all session parameters to every step
                     nlohmann::json jParams;
                     for (const auto& [k, v] : current_session->getParameters()) jParams[k] = v;
@@ -134,8 +136,9 @@ void AgentScheduler::workerLoop() {
             if (all_steps_success) {
                 current_session->setState(AgentState::COMPLETED);
                 Capability::HardwareBridge::pushMessage("[AGENT] Task completed successfully.");
+                Capability::HardwareBridge::updateDevHUD("COMPLETED", current_session->getIntent(), 1.0f, "");
                 LOGI(TAG, "Worker session %s execution chain completed.", current_session->getSessionId().c_str());
-                
+
                 // v11.3: Automatic Episodic Memory Logging
                 if (m_executor) {
                     nlohmann::json jPayload;
@@ -144,6 +147,7 @@ void AgentScheduler::workerLoop() {
                     m_executor->recordEpisode(current_session->getIntent(), summary, jPayload.dump(), true);
                 }
             } else {
+                Capability::HardwareBridge::updateDevHUD("FAILED", current_session->getIntent(), 0.0f, "");
                 if (m_executor) {
                     m_executor->recordEpisode(current_session->getIntent(), "Failed task: " + current_session->getIntent(), "{}", false);
                 }

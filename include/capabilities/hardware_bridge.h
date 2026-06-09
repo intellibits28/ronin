@@ -75,6 +75,11 @@ public:
     static void setInferenceSilence(bool silent);
     static bool isInferenceSilenced() { return s_silent; }
 
+    /**
+     * Phase 5: Pushes real-time cognitive state to the Developer HUD.
+     */
+    static void updateDevHUD(const std::string& state, const std::string& intent, float confidence, const std::string& plan);
+
 private:
     static JavaVM* s_vm;
     static jobject s_instance;
