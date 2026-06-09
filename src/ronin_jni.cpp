@@ -260,6 +260,14 @@ JNIEXPORT void JNICALL native_indexFiles(JNIEnv *env, jobject thiz, jobjectArray
     env->ReleaseLongArrayElements(dates, dates_ptr, JNI_ABORT);
 }
 
+JNIEXPORT void JNICALL native_submitCapabilityResponse(JNIEnv *env, jobject thiz, jstring request_id, jboolean success, jstring payload) {
+    Ronin::Kernel::CapabilityResponse response;
+    response.request_id = ConvertJStringToString(env, request_id);
+    response.success = (success == JNI_TRUE);
+    response.payload_json = ConvertJStringToString(env, payload);
+    Ronin::Kernel::CapabilityDispatcher::getInstance().onResponse(response);
+}
+
 static JNINativeMethod g_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
     {"setEngineInstanceNative", "()V", (void*)native_setEngineInstance},
@@ -298,7 +306,8 @@ static JNINativeMethod g_methods[] = {
     {"checkFileAccessNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_checkFileAccess},
     {"setOfflineModeNative", "(Z)V", (void*)native_setOfflineMode},
     {"setPrimaryCloudProviderNative", "(Ljava/lang/String;)V", (void*)native_setPrimaryCloudProvider},
-    {"indexFilesNative", "([Ljava/lang/String;[Ljava/lang/String;[J)V", (void*)native_indexFiles}
+    {"indexFilesNative", "([Ljava/lang/String;[Ljava/lang/String;[J)V", (void*)native_indexFiles},
+    {"submitCapabilityResponseNative", "(Ljava/lang/String;ZLjava/lang/String;)V", (void*)native_submitCapabilityResponse}
 };
 
 static JNINativeMethod g_worker_methods[] = {

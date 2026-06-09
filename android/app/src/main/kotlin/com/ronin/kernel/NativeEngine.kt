@@ -129,10 +129,26 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             val payload = request.optString("payload", "{}")
 
             // v9.5: Direct UI Delegation (Deterministic Routing)
-            if (capability == "MAP" || capability == "SMS" || capability == "CONTACTS" || capability == "MEMORY" || capability == "TEST" || capability == "ALARM" || capability == "CALENDAR") {
-                // v10.1.22: Extract specific action if available (e.g. SAVE_FACT instead of generic MEMORY)
+            if (capability == "MAP" || capability == "SMS" || capability == "CONTACTS" || capability == "MEMORY" || capability == "TEST" || capability == "ALARM" || capability == "CALENDAR" || capability == "FILES") {
                 val action = try { org.json.JSONObject(payload).optString("action", capability) } catch (e: Exception) { capability }
-                val res = executeAgentTool(action, payload)
+                
+                // Inject request_id into payload for async HITL callbacks
+                val enrichedPayload = try {
+                    val j = org.json.JSONObject(payload)
+                    j.put("request_id", request.optString("request_id", ""))
+                    j.toString()
+                } catch (e: Exception) { payload }
+
+                val res = executeAgentTool(action, enrichedPayload)
+                
+                // v11.0: Support Async HITL
+                if (res == "[ASYNC_PENDING]") {
+                    return org.json.JSONObject().apply {
+                        put("status", "PENDING")
+                        put("success", true)
+                    }.toString()
+                }
+
                 return org.json.JSONObject().apply {
                     put("success", !res.startsWith("Error"))
                     put("message", res)
@@ -218,6 +234,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun setOfflineModeNative(offline: Boolean)
     private external fun setPrimaryCloudProviderNative(provider: String)
     private external fun indexFilesNative(paths: Array<String>, names: Array<String>, dates: LongArray)
+    private external fun submitCapabilityResponseNative(requestId: String, success: Boolean, payload: String)
+
+    fun submitCapabilityResponseSafe(requestId: String, success: Boolean, payload: String) {
+        if (isLibLoaded) submitCapabilityResponseNative(requestId, success, payload)
+    }
 
     fun indexFilesSafe(paths: Array<String>, names: Array<String>, dates: LongArray) {
         if (isLibLoaded) indexFilesNative(paths, names, dates)

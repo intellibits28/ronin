@@ -23,6 +23,8 @@
 
     <!-- Agent Mode: System Integrations -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
     <!-- Agent Mode: Communication & Contacts -->
     <uses-permission android:name="android.permission.SEND_SMS" />

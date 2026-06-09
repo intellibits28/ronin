@@ -815,14 +815,49 @@ class MainActivity : FragmentActivity() {
                         "Opened Calendar to add event: $title"
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
+                "READ_CALENDAR", "QUERY_CALENDAR" -> {
+                    try {
+                        val keyword = params["keyword"] ?: params["query"] ?: params["event"] ?: ""
+                        if (checkSelfPermission(android.Manifest.permission.READ_CALENDAR) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 101)
+                            return "Error: Missing READ_CALENDAR permission."
+                        }
+                        val projection = arrayOf(
+                            android.provider.CalendarContract.Events.TITLE,
+                            android.provider.CalendarContract.Events.DTSTART,
+                            android.provider.CalendarContract.Events.EVENT_LOCATION
+                        )
+                        val now = System.currentTimeMillis()
+                        val selection = "${android.provider.CalendarContract.Events.DTSTART} >= ?"
+                        val selectionArgs = arrayOf(now.toString())
+                        val cursor = contentResolver.query(
+                            android.provider.CalendarContract.Events.CONTENT_URI,
+                            projection, selection, selectionArgs, "${android.provider.CalendarContract.Events.DTSTART} ASC LIMIT 5"
+                        )
+                        val results = mutableListOf<String>()
+                        cursor?.use {
+                            val titleIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.TITLE)
+                            val timeIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.DTSTART)
+                            val locIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.EVENT_LOCATION)
+                            while (it.moveToNext()) {
+                                val t = it.getString(titleIdx)
+                                val time = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it.getLong(timeIdx)))
+                                val loc = it.getString(locIdx) ?: ""
+                                if (keyword.isEmpty() || t.contains(keyword, true)) {
+                                    results.add("Event: $t\nTime: $time\nLocation: $loc")
+                                }
+                            }
+                        }
+                        if (results.isEmpty()) "No upcoming events found." else results.joinToString("\n---\n")
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
                 "SMS", "SEND_SMS", "send_sms" -> {
                     try {
                         val locJson = params["context_result_LOCATION"]
                         val conJson = params["context_result_CONTACTS"]
                         var recipient = params["recipient_number"] ?: params["recipient"] ?: params["recipient_name"] ?: ""
-                        var lat = "0.0"; var lon = "0.0"
+                        var body = params["message"] ?: params["sms_body"] ?: params["text"] ?: ""
 
-                        // v9.6: Correctly parse Blackboard data for recipient
                         if (conJson != null && conJson.startsWith("{")) {
                             try {
                                 val j = JSONObject(conJson)
@@ -833,12 +868,10 @@ class MainActivity : FragmentActivity() {
                         }
 
                         if (locJson != null && locJson.startsWith("{")) {
-                             val j = JSONObject(locJson); lat = j.opt("lat").toString(); lon = j.opt("lon").toString()
+                             val j = JSONObject(locJson); val lat = j.opt("lat").toString(); val lon = j.opt("lon").toString()
+                             if (body.isEmpty()) body = "📍 My Location\nLat: $lat\nLon: $lon\n\nhttps://maps.google.com/?q=$lat,$lon"
                         }
-
-                        val body = "📍 My Location\nLat: $lat\nLon: $lon\n\nhttps://maps.google.com/?q=$lat,$lon"
                         
-                        // Final attempt to resolve name to number if still alphabetic
                         if (!recipient.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) {
                              val resolved = resolveContactName(recipient)
                              if (!resolved.startsWith("NOT_FOUND") && resolved != "PERMISSION_DENIED") {
@@ -848,22 +881,42 @@ class MainActivity : FragmentActivity() {
 
                         val cleanRecipient = if (recipient.matches(Regex("^[+]?[0-9\\- ]{7,}+$"))) recipient else ""
                         
-                        runOnUiThread {
-                            try {
-                                // v9.6: Use ACTION_SENDTO with smsto: for reliable pre-filling
+                        val reqId = params["request_id"]
+                        if (reqId != null) {
+                            runOnUiThread {
+                                val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+                                chatViewModel.hitlIntentName = "Send SMS"
+                                chatViewModel.hitlMessage = "To: $cleanRecipient\n\n$body"
+                                chatViewModel.onHITLResult = { approved ->
+                                    if (approved) {
+                                        try {
+                                            val smsManager = android.telephony.SmsManager.getDefault()
+                                            smsManager.sendTextMessage(cleanRecipient, null, body, null, null)
+                                            nativeEngine.submitCapabilityResponseSafe(reqId, true, "SMS sent to $cleanRecipient")
+                                            nativeEngine.pushKernelMessage("[AGENT] SMS Sent Successfully")
+                                        } catch (e: Exception) {
+                                            nativeEngine.submitCapabilityResponseSafe(reqId, false, "SMS Failed: ${e.message}")
+                                        }
+                                    } else {
+                                        nativeEngine.submitCapabilityResponseSafe(reqId, false, "Cancelled by user")
+                                        nativeEngine.pushKernelMessage("[AGENT] SMS Cancelled")
+                                    }
+                                }
+                                chatViewModel.showHITLDialog = true
+                            }
+                            return "[ASYNC_PENDING]"
+                        } else {
+                            // Fallback to composer
+                            runOnUiThread {
                                 val intent = Intent(Intent.ACTION_SENDTO).apply {
                                     data = Uri.parse("smsto:${Uri.encode(cleanRecipient)}")
                                     putExtra("sms_body", body)
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
                                 startActivity(intent)
-                                Log.i("RoninKernel_MainActivity", "v9.6 SMS Intent pre-filled for: $cleanRecipient")
-                            } catch (e: Exception) {
-                                Log.e("RoninKernel_MainActivity", "v9.6 SMS Intent FAILED: ${e.message}")
-                                Toast.makeText(applicationContext, "SMS Error: ${e.message}", Toast.LENGTH_LONG).show()
                             }
+                            "Opened SMS composer for $cleanRecipient."
                         }
-                        "Opened SMS composer for ${if(cleanRecipient.isEmpty()) "selection" else cleanRecipient}."
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
                 else -> "Tool $toolName executed with params: $params"

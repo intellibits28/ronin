@@ -54,6 +54,17 @@ void AndroidBridge::sendRequest(const CapabilityRequest& req) {
                     
                     try {
                         auto res_obj = nlohmann::json::parse(res_json);
+                        
+                        // Phase 4.x: Support asynchronous HITL responses
+                        if (res_obj.value("status", "") == "PENDING") {
+                            LOGI(TAG, "Request %s is PENDING async human confirmation.", req.request_id.c_str());
+                            env->ReleaseStringUTFChars(jRes, cstr);
+                            env->DeleteLocalRef(jRes);
+                            env->DeleteLocalRef(jStr);
+                            if (attached) g_vm->DetachCurrentThread();
+                            return; // Do not call onResponse here; wait for submitCapabilityResponseNative
+                        }
+                        
                         response.success = res_obj.value("success", false);
                         response.payload_json = res_json;
                     } catch(...) {
