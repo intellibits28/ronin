@@ -1060,10 +1060,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         }
                         
                         // Phase 5: Developer HUD Overlay
-                        Box(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
-                            androidx.compose.animation.AnimatedVisibility(
-                                visible = chatViewModel.showDevHUD
-                            ) {
+                        if (chatViewModel.showDevHUD) {
+                            Box(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
                                 Surface(
                                     color = Color(0xCC000000L), 
                                     shape = RoundedCornerShape(8.dp),

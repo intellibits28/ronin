@@ -546,6 +546,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     var executeHardwareActionCallback: ((Int, Boolean) -> Boolean)? = null
     var onSystemTiersUpdateCallback: ((Float, Float, Float) -> Unit)? = null
     var requestHITLConfirmationCallback: ((String, String, (Boolean) -> Unit) -> Unit)? = null
+    var executeAgentToolCallback: ((String, Map<String, String>) -> String)? = null
     var onDevHUDUpdateCallback: ((String, String, Float, String) -> Unit)? = null
 
     @Keep
