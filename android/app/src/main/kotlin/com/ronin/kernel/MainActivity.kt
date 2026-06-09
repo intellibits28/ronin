@@ -779,6 +779,25 @@ class MainActivity : FragmentActivity() {
                         val attendees = params["attendees"] ?: ""
                         val shareVia = params["share_via"] ?: ""
 
+                        var beginTime = System.currentTimeMillis()
+                        val isTomorrow = time.contains("tomorrow", true) || time.contains("မနက်ဖြန်", true)
+                        val timeRegex = Regex("(\\d{1,2}):(\\d{2})|(\\d{1,2})\\s*(နာရီ|နာရီခွဲ)")
+                        val match = timeRegex.find(time)
+                        if (match != null) {
+                            val cal = java.util.Calendar.getInstance()
+                            if (isTomorrow) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                            val h1 = match.groupValues[1].takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val m1 = match.groupValues[2].takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val h2 = match.groupValues[3].takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val m2 = if (match.groupValues[4] == "နာရီခွဲ") 30 else 0
+                            val hour = h1 ?: h2 ?: 9
+                            val minute = m1 ?: m2
+                            cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
+                            cal.set(java.util.Calendar.MINUTE, minute)
+                            cal.set(java.util.Calendar.SECOND, 0)
+                            beginTime = cal.timeInMillis
+                        }
+
                         if (time.isNotEmpty()) desc += "\nTime: $time"
                         if (timezone.isNotEmpty()) desc += " ($timezone)"
                         if (attendees.isNotEmpty()) desc += "\nAttendees: $attendees"
@@ -787,6 +806,8 @@ class MainActivity : FragmentActivity() {
                             data = android.provider.CalendarContract.Events.CONTENT_URI
                             putExtra(android.provider.CalendarContract.Events.TITLE, title)
                             putExtra(android.provider.CalendarContract.Events.DESCRIPTION, desc)
+                            putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginTime)
+                            putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, beginTime + 60 * 60 * 1000)
                             if (timezone.isNotEmpty()) {
                                 putExtra(android.provider.CalendarContract.Events.EVENT_TIMEZONE, timezone)
                             }
@@ -891,10 +912,14 @@ class MainActivity : FragmentActivity() {
                                 chatViewModel.onHITLResult = { approved ->
                                     if (approved) {
                                         try {
-                                            val smsManager = android.telephony.SmsManager.getDefault()
-                                            smsManager.sendTextMessage(cleanRecipient, null, body, null, null)
-                                            nativeEngine.submitCapabilityResponseSafe(reqId, true, "SMS sent to $cleanRecipient")
-                                            nativeEngine.pushKernelMessage("[AGENT] SMS Sent Successfully")
+                                            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                                data = Uri.parse("smsto:${Uri.encode(cleanRecipient)}")
+                                                putExtra("sms_body", body)
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            startActivity(intent)
+                                            nativeEngine.submitCapabilityResponseSafe(reqId, true, "Opened SMS composer for $cleanRecipient")
+                                            nativeEngine.pushKernelMessage("[AGENT] Opened SMS Composer")
                                         } catch (e: Exception) {
                                             nativeEngine.submitCapabilityResponseSafe(reqId, false, "SMS Failed: ${e.message}")
                                         }
@@ -918,6 +943,19 @@ class MainActivity : FragmentActivity() {
                             }
                             "Opened SMS composer for $cleanRecipient."
                         }
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+                "FILE_SEARCH", "FILES", "SEARCH_FILES" -> {
+                    try {
+                        val query = params["query"] ?: params["keyword"] ?: ""
+                        val noteResults = nativeEngine.searchNotes(query)
+                        val epResults = nativeEngine.searchEpisodes(query)
+                        val combined = mutableListOf<String>()
+                        if (noteResults != null) combined.addAll(noteResults)
+                        if (epResults != null) combined.addAll(epResults)
+                        
+                        if (combined.isEmpty()) "No files or documents found matching: $query"
+                        else "Found ${combined.size} items:\n" + combined.take(5).joinToString("\n---\n")
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
                 else -> "Tool $toolName executed with params: $params"
@@ -1020,10 +1058,12 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 roninMsg.content = res
                                             } else { 
                                                 val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
-                                                if (isCommand || roninMsg.content.isEmpty()) {
+                                                if (isCommand || result.result.startsWith("Executing plan:")) {
                                                     roninMsg.content = result.result
-                                                    roninMsg.sessionId = result.sessionId
+                                                } else if (roninMsg.content.isEmpty()) {
+                                                    roninMsg.content = result.result
                                                 }
+                                                roninMsg.sessionId = result.sessionId
                                             }
                                         } finally {
                                             chatViewModel.isGenerating = false

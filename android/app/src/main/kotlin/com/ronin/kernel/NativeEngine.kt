@@ -216,6 +216,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     // --- JNI API ---
+    fun searchNotes(query: String): Array<String>? = if (isLibLoaded) searchNotesNative(query) else null
+    fun searchEpisodes(query: String): Array<String>? = if (isLibLoaded) searchEpisodesNative(query) else null
+    
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
     private external fun setEngineInstanceNative()
     private external fun getChatHistoryNative(limit: Int, offset: Int): Array<String>
