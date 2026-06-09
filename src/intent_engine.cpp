@@ -80,8 +80,10 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "- Alarm/နှိုး: intent 'ALARM'. Steps ['SET_ALARM']. parameters: time, message. "
         "- Calendar/Meeting/မှတ်: intent 'CALENDAR'. Steps ['ADD_EVENT']. parameters: title, description, time, timezone, share_via (optional), attendees (optional). "
         "- File Search/ရှာ: intent 'FILE_SEARCH'. Steps ['SEARCH_FILES']. parameters: query. "
+        "Examples: "
+        "User: 'မနက်ဖြန် မနက် ၆နာရီ နှိုးပေး' -> {\"intent\":\"ALARM\",\"plan\":[\"SET_ALARM\"],\"parameters\":{\"time\":\"06:00\",\"message\":\"Alarm\"}} "
         "Semantic Precision: "
-        "- Attribute names MUST be in Myanmar if user uses it (e.g. 'မွေးနေ့', 'ကားနံပါတ်'). "
+        "- Attribute names MUST be in Myanmar if user uses it. "
         "- Strip 'ရဲ့', '၏', 'က', 'ကို' from entity/attribute names. "
         "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {\"entity\": \"...\", \"attribute\": \"...\", \"value\": \"...\", \"vault_title\": \"...\", \"vault_content\": \"...\", \"time\": \"...\", \"title\": \"...\", \"description\": \"...\", \"timezone\": \"...\", \"share_via\": \"...\", \"attendees\": \"...\"}}";
 
