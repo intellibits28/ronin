@@ -45,7 +45,14 @@ static LLMContext g_llm_context;
 // --- Helper: exec_handler to bridge Kernel to JNI ---
 static Result exec_handler(uint32_t nodeId, const CognitiveState& state) {
     if (g_intent_engine) {
-        g_intent_engine->executeSkill(nodeId, ""); 
+        std::string param = "";
+        // Extract the most relevant parameter based on common naming
+        if (state.blackboard.storage.count("query")) param = state.blackboard.storage.at("query");
+        else if (state.blackboard.storage.count("value")) param = state.blackboard.storage.at("value");
+        else if (state.blackboard.storage.count("entity")) param = state.blackboard.storage.at("entity");
+        else if (state.blackboard.storage.count("time")) param = state.blackboard.storage.at("time");
+        
+        g_intent_engine->executeSkill(nodeId, param); 
         return {true, 200};
     }
     return {false, 500};
@@ -234,6 +241,25 @@ JNIEXPORT jstring JNICALL native_checkFileAccess(JNIEnv *env, jobject thiz, jstr
 JNIEXPORT void JNICALL native_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) {}
 JNIEXPORT void JNICALL native_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) {}
 
+JNIEXPORT void JNICALL native_indexFiles(JNIEnv *env, jobject thiz, jobjectArray paths, jobjectArray names, jlongArray dates) {
+    if (!g_ltm) return;
+    int len = env->GetArrayLength(paths);
+    jlong* dates_ptr = env->GetLongArrayElements(dates, nullptr);
+    for (int i = 0; i < len; ++i) {
+        jstring jPath = (jstring)env->GetObjectArrayElement(paths, i);
+        jstring jName = (jstring)env->GetObjectArrayElement(names, i);
+        std::string path = ConvertJStringToString(env, jPath);
+        std::string name = ConvertJStringToString(env, jName);
+        std::string ext = "";
+        size_t dot = path.find_last_of(".");
+        if (dot != std::string::npos) ext = path.substr(dot);
+        g_ltm->indexFile(name, path, ext, static_cast<uint64_t>(dates_ptr[i]));
+        env->DeleteLocalRef(jPath);
+        env->DeleteLocalRef(jName);
+    }
+    env->ReleaseLongArrayElements(dates, dates_ptr, JNI_ABORT);
+}
+
 static JNINativeMethod g_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
     {"setEngineInstanceNative", "()V", (void*)native_setEngineInstance},
@@ -271,7 +297,8 @@ static JNINativeMethod g_methods[] = {
     {"setPriorityNative", "(I)V", (void*)native_setPriority},
     {"checkFileAccessNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_checkFileAccess},
     {"setOfflineModeNative", "(Z)V", (void*)native_setOfflineMode},
-    {"setPrimaryCloudProviderNative", "(Ljava/lang/String;)V", (void*)native_setPrimaryCloudProvider}
+    {"setPrimaryCloudProviderNative", "(Ljava/lang/String;)V", (void*)native_setPrimaryCloudProvider},
+    {"indexFilesNative", "([Ljava/lang/String;[Ljava/lang/String;[J)V", (void*)native_indexFiles}
 };
 
 static JNINativeMethod g_worker_methods[] = {

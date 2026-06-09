@@ -79,6 +79,7 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "- Fact/Vault Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
         "- Alarm/နှိုး: intent 'ALARM'. Steps ['SET_ALARM']. parameters: time, message. "
         "- Calendar/Meeting/မှတ်: intent 'CALENDAR'. Steps ['ADD_EVENT']. parameters: title, description, time, timezone, share_via (optional), attendees (optional). "
+        "- File Search/ရှာ: intent 'FILE_SEARCH'. Steps ['SEARCH_FILES']. parameters: query. "
         "Semantic Precision: "
         "- Attribute names MUST be in Myanmar if user uses it (e.g. 'မွေးနေ့', 'ကားနံပါတ်'). "
         "- Strip 'ရဲ့', '၏', 'က', 'ကို' from entity/attribute names. "
@@ -124,6 +125,9 @@ CapabilityType TaskPlanner::mapIntentToCapability(const std::string& intent_name
         if (i_lower.find("meeting") != std::string::npos || i_lower.find("event") != std::string::npos || i_lower.find("calendar") != std::string::npos) {
             return CapabilityType::CALENDAR;
         }
+    }
+    if (i_lower.find("file") != std::string::npos || i_lower.find("document") != std::string::npos || i_lower.find("ဖိုင်") != std::string::npos) {
+        return CapabilityType::FILES;
     }
     if (i_lower.find("note") != std::string::npos || i_lower.find("fact") != std::string::npos || 
         i_lower.find("vault") != std::string::npos || i_lower.find("lookup") != std::string::npos ||

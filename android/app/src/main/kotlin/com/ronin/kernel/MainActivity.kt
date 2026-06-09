@@ -217,6 +217,7 @@ class MainActivity : FragmentActivity() {
 
             chatViewModel.kernelStatus = "Neural Bridge Active"
             checkAndRequestPermissions()
+            scanFilesSmart() // v11.0 Smart Indexing
             startWorldStateInjection() // v11.3: Start cognitive telemetry
             scanLocalModels()
             val savedModelPath = sharedPreferences.getString("local_model_path", "")
@@ -371,6 +372,58 @@ class MainActivity : FragmentActivity() {
                 }
             } else { Toast.makeText(this@MainActivity, "Fetch Failed: ${result.error}", Toast.LENGTH_SHORT).show() }
             chatViewModel.isFetchingModels = false
+        }
+    }
+
+    fun scanFilesSmart() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val paths = mutableListOf<String>()
+                val names = mutableListOf<String>()
+                val dates = mutableListOf<Long>()
+                
+                val projection = arrayOf(
+                    android.provider.MediaStore.Files.FileColumns.DATA,
+                    android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME,
+                    android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED
+                )
+                
+                // Filter for Documents and Downloads folders and common document extensions
+                val selection = "(${android.provider.MediaStore.Files.FileColumns.DATA} LIKE ? OR ${android.provider.MediaStore.Files.FileColumns.DATA} LIKE ?) AND " +
+                                "(${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.md' OR " +
+                                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.txt' OR " +
+                                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.pdf' OR " +
+                                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.doc%')"
+                
+                val selectionArgs = arrayOf("%/Documents/%", "%/Download/%")
+                
+                val cursor = contentResolver.query(
+                    android.provider.MediaStore.Files.getContentUri("external"),
+                    projection,
+                    selection,
+                    selectionArgs,
+                    null
+                )
+
+                cursor?.use {
+                    val dataIndex = it.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DATA)
+                    val nameIndex = it.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME)
+                    val dateIndex = it.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED)
+                    
+                    while (it.moveToNext()) {
+                        paths.add(it.getString(dataIndex))
+                        names.add(it.getString(nameIndex))
+                        dates.add(it.getLong(dateIndex))
+                    }
+                }
+                
+                if (paths.isNotEmpty()) {
+                    nativeEngine.indexFilesSafe(paths.toTypedArray(), names.toTypedArray(), dates.toLongArray())
+                    Log.i("RoninKernel_MainActivity", "Smart Indexing Complete: ${paths.size} files discovered via MediaStore.")
+                }
+            } catch (e: Exception) {
+                Log.e("RoninKernel_MainActivity", "Smart Indexing FAILED: ${e.message}")
+            }
         }
     }
 

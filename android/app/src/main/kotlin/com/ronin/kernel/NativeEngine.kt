@@ -217,6 +217,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun updateSystemHealthNative(temp: Float, used: Float, total: Float): Boolean
     private external fun setOfflineModeNative(offline: Boolean)
     private external fun setPrimaryCloudProviderNative(provider: String)
+    private external fun indexFilesNative(paths: Array<String>, names: Array<String>, dates: LongArray)
+
+    fun indexFilesSafe(paths: Array<String>, names: Array<String>, dates: LongArray) {
+        if (isLibLoaded) indexFilesNative(paths, names, dates)
+    }
+
     private external fun getLMKPressureNative(): Int
     private external fun updateModelRegistryNative(json: String): Boolean
     private external fun updateCloudProvidersNative(json: String): Boolean
