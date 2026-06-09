@@ -786,16 +786,20 @@ class MainActivity : FragmentActivity() {
                         val isTomorrow = time.contains("tomorrow", true) || time.contains("မနက်ဖြန်", true)
                         
                         // v12.1: Robust time parsing (Regex matches 11:00, 11နာရီ, 11:30, 11နာရီခွဲ)
-                        val timeRegex = Regex("(\\d{1,2})[:\\s]*(\\d{2})?|(\\d{1,2})\\s*(နာရီ|နာရီခွဲ)")
-                        val match = timeRegex.find(time)
+                        val timeRegex = Regex("(\\d{1,2})[:\\s]*(\\d{2})?|(\\d{1,2})\\s*(နာရီ|နာရီခွဲ|am|pm)")
+                        val match = timeRegex.find(time.lowercase())
                         if (match != null) {
                             if (isTomorrow) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
                             
-                            val hour = match.groupValues[1].takeIf { it.isNotEmpty() }?.toIntOrNull() 
-                                      ?: match.groupValues[3].takeIf { it.isNotEmpty() }?.toIntOrNull() 
-                                      ?: 9
-                            val minute = match.groupValues[2].takeIf { it.isNotEmpty() }?.toIntOrNull() 
-                                        ?: if (match.groupValues[4] == "နာရီခွဲ") 30 else 0
+                            val h1 = match.groupValues[1].takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val m1 = match.groupValues[2].takeIf { it.isNotEmpty() }?.toIntOrNull() ?: 0
+                            val h2 = match.groupValues[3].takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val m2 = if (match.groupValues[4].contains("ခွဲ")) 30 else 0
+                            
+                            var hour = h1 ?: h2 ?: 9
+                            val minute = if (h1 != null) m1 else m2
+                            
+                            if (time.lowercase().contains("pm") && hour < 12) hour += 12
                             
                             cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
                             cal.set(java.util.Calendar.MINUTE, minute)
@@ -914,7 +918,7 @@ class MainActivity : FragmentActivity() {
                                     if (approved) {
                                         try {
                                             val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                                data = Uri.parse("smsto:${Uri.encode(cleanRecipient)}")
+                                                data = Uri.parse("smsto:$cleanRecipient")
                                                 putExtra("sms_body", body)
                                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                             }
