@@ -303,11 +303,19 @@ IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& history) {
     std::string input_lower = input;
     std::transform(input_lower.begin(), input_lower.end(), input_lower.begin(), ::tolower);
-    std::string stripped = strip_punctuation(input_lower);
-    std::stringstream ss(stripped);
-    std::string t;
-    std::set<std::string> token_set;
-    while (ss >> t) token_set.insert(t);
+    
+    // v12.0: Use Trie-based segmenter for precise Myanmar keyword extraction
+    std::vector<std::string> tokens;
+    if (m_ltm) {
+        tokens = m_ltm->segmentText(input_lower);
+    } else {
+        std::string stripped = strip_punctuation(input_lower);
+        std::stringstream ss(stripped);
+        std::string t;
+        while (ss >> t) tokens.push_back(t);
+    }
+    
+    std::set<std::string> token_set(tokens.begin(), tokens.end());
 
     IntentCategory final_cat = IntentCategory::CHAT_QUERY;
 

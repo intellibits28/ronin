@@ -548,9 +548,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     var requestHITLConfirmationCallback: ((String, String, (Boolean) -> Unit) -> Unit)? = null
     var executeAgentToolCallback: ((String, Map<String, String>) -> String)? = null
     
-    // v7.6: Flag to silence internal system tokens (Planning, Summarization) from UI
-    @Volatile
+    @Keep
+    @Suppress("unused")
     var silentInference = false
+
+    @Keep
+    @Suppress("unused")
+    fun setSilentInference(silent: Boolean) {
+        silentInference = silent
+    }
 
     fun setOfflineModeSafe(offline: Boolean) {
         if (isLibLoaded) try { setOfflineModeNative(offline) } catch (e: Exception) {}

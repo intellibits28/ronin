@@ -466,7 +466,9 @@ class MainActivity : FragmentActivity() {
             android.Manifest.permission.ACCESS_COARSE_LOCATION,
             android.Manifest.permission.CAMERA,
             android.Manifest.permission.SEND_SMS,
-            android.Manifest.permission.READ_CONTACTS
+            android.Manifest.permission.READ_CONTACTS,
+            android.Manifest.permission.READ_CALENDAR,
+            android.Manifest.permission.WRITE_CALENDAR
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
         
@@ -779,26 +781,33 @@ class MainActivity : FragmentActivity() {
                         val attendees = params["attendees"] ?: ""
                         val shareVia = params["share_via"] ?: ""
 
-                        var beginTime = System.currentTimeMillis()
+                        val cal = java.util.Calendar.getInstance()
+                        var beginTime = cal.timeInMillis
                         val isTomorrow = time.contains("tomorrow", true) || time.contains("မနက်ဖြန်", true)
-                        val timeRegex = Regex("(\\d{1,2}):(\\d{2})|(\\d{1,2})\\s*(နာရီ|နာရီခွဲ)")
+                        
+                        // v12.1: Robust time parsing (Regex matches 11:00, 11နာရီ, 11:30, 11နာရီခွဲ)
+                        val timeRegex = Regex("(\\d{1,2})[:\\s]*(\\d{2})?|(\\d{1,2})\\s*(နာရီ|နာရီခွဲ)")
                         val match = timeRegex.find(time)
                         if (match != null) {
-                            val cal = java.util.Calendar.getInstance()
                             if (isTomorrow) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
-                            val h1 = match.groupValues[1].takeIf { it.isNotEmpty() }?.toIntOrNull()
-                            val m1 = match.groupValues[2].takeIf { it.isNotEmpty() }?.toIntOrNull()
-                            val h2 = match.groupValues[3].takeIf { it.isNotEmpty() }?.toIntOrNull()
-                            val m2 = if (match.groupValues[4] == "နာရီခွဲ") 30 else 0
-                            val hour = h1 ?: h2 ?: 9
-                            val minute = m1 ?: m2
+                            
+                            val hour = match.groupValues[1].takeIf { it.isNotEmpty() }?.toIntOrNull() 
+                                      ?: match.groupValues[3].takeIf { it.isNotEmpty() }?.toIntOrNull() 
+                                      ?: 9
+                            val minute = match.groupValues[2].takeIf { it.isNotEmpty() }?.toIntOrNull() 
+                                        ?: if (match.groupValues[4] == "နာရီခွဲ") 30 else 0
+                            
                             cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
                             cal.set(java.util.Calendar.MINUTE, minute)
                             cal.set(java.util.Calendar.SECOND, 0)
                             beginTime = cal.timeInMillis
+                        } else if (isTomorrow) {
+                            cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                            cal.set(java.util.Calendar.HOUR_OF_DAY, 10) // Default 10 AM tomorrow
+                            beginTime = cal.timeInMillis
                         }
 
-                        if (time.isNotEmpty()) desc += "\nTime: $time"
+                        if (time.isNotEmpty()) desc += "\nOriginal Time: $time"
                         if (timezone.isNotEmpty()) desc += " ($timezone)"
                         if (attendees.isNotEmpty()) desc += "\nAttendees: $attendees"
 
@@ -808,7 +817,7 @@ class MainActivity : FragmentActivity() {
                             putExtra(android.provider.CalendarContract.Events.DESCRIPTION, desc)
                             putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginTime)
                             putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, beginTime + 60 * 60 * 1000)
-                            if (timezone.isNotEmpty()) {
+                            if (timezone.isNotEmpty() && timezone != "system_default") {
                                 putExtra(android.provider.CalendarContract.Events.EVENT_TIMEZONE, timezone)
                             }
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -819,21 +828,13 @@ class MainActivity : FragmentActivity() {
                             if (shareVia.contains("sms", true)) {
                                 val smsIntent = Intent(Intent.ACTION_SENDTO).apply {
                                     data = Uri.parse("smsto:")
-                                    putExtra("sms_body", "Meeting: $title\nDetails: $desc")
+                                    putExtra("sms_body", "Meeting: $title\nTime: $time\nDetails: $desc")
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
                                 try { startActivity(smsIntent) } catch (e: Exception) {}
-                            } else if (shareVia.contains("email", true)) {
-                                val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
-                                    data = Uri.parse("mailto:")
-                                    putExtra(Intent.EXTRA_SUBJECT, "Meeting: $title")
-                                    putExtra(Intent.EXTRA_TEXT, desc)
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                try { startActivity(emailIntent) } catch (e: Exception) {}
                             }
                         }
-                        "Opened Calendar to add event: $title"
+                        "Scheduled $title for ${java.text.DateFormat.getDateTimeInstance().format(cal.time)}"
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
                 "READ_CALENDAR", "QUERY_CALENDAR" -> {
@@ -917,7 +918,7 @@ class MainActivity : FragmentActivity() {
                                                 putExtra("sms_body", body)
                                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                             }
-                                            startActivity(intent)
+                                            this@MainActivity.startActivity(intent)
                                             nativeEngine.submitCapabilityResponseSafe(reqId, true, "Opened SMS composer for $cleanRecipient")
                                             nativeEngine.pushKernelMessage("[AGENT] Opened SMS Composer")
                                         } catch (e: Exception) {

@@ -246,6 +246,19 @@ void HardwareBridge::pushToken(const std::string& token, bool isFinal) {
 #endif
 }
 
+void HardwareBridge::setInferenceSilence(bool silent) { 
+    s_silent = silent; 
+#ifdef __ANDROID__
+    if (!s_vm || !s_instance || !s_clazz) return;
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninSilenceThread");
+    JNIEnv* env = scopedEnv.env();
+    if (env) {
+        jmethodID mid = env->GetMethodID(s_clazz, "setSilentInference", "(Z)V");
+        if (mid) env->CallVoidMethod(s_instance, mid, (jboolean)silent);
+    }
+#endif
+}
+
 bool HardwareBridge::triggerSync(uint32_t nodeId, bool state) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return state;

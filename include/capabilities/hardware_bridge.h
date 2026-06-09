@@ -72,7 +72,7 @@ public:
     /**
      * suppress/allow inference token streaming to the UI.
      */
-    static void setInferenceSilence(bool silent) { s_silent = silent; }
+    static void setInferenceSilence(bool silent);
     static bool isInferenceSilenced() { return s_silent; }
 
 private:
