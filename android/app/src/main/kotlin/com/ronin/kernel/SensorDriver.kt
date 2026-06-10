@@ -29,8 +29,9 @@ class SensorDriver(private val context: Context, private val nativeEngine: Nativ
 
     fun startCollecting() {
         accelerometer?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST)
-            Log.i(TAG, "Sensor collection started.")
+            // v12.8: Use 10ms interval (100Hz) as per DSP spec
+            sensorManager.registerListener(this, it, 10000) 
+            Log.i(TAG, "Sensor collection started (100Hz).")
         } ?: Log.e(TAG, "Accelerometer not found!")
     }
 
