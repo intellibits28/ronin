@@ -253,8 +253,13 @@ void HardwareBridge::setInferenceSilence(bool silent) {
     Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninSilenceThread");
     JNIEnv* env = scopedEnv.env();
     if (env) {
-        jmethodID mid = env->GetMethodID(s_clazz, "setSilentInference", "(Z)V");
-        if (mid) env->CallVoidMethod(s_instance, mid, (jboolean)silent);
+        // v12.3: Match Kotlin @JvmName to prevent NoSuchMethodError/Crash
+        jmethodID mid = env->GetMethodID(s_clazz, "setSilentInferenceFromJNI", "(Z)V");
+        if (mid) {
+            env->CallVoidMethod(s_instance, mid, (jboolean)silent);
+        } else {
+            env->ExceptionClear(); // Clear pending exception if method not found
+        }
     }
 #endif
 }

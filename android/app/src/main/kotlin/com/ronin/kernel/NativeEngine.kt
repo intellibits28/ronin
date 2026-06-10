@@ -121,6 +121,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     /**
      * v7.0 Layer 3: JNI entry point for capability requests from C++.
      */
+    @Keep
     @Suppress("unused")
     fun onCapabilityRequest(jsonStr: String): String {
         return try {
@@ -407,6 +408,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return false
     }
 
+    @Keep
     @Suppress("unused")
     fun updateSystemTiers(temp: Float, used: Float, total: Float) {
         onSystemTiersUpdateCallback?.invoke(temp, used, total)
@@ -472,26 +474,31 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
+    @Keep
     @Suppress("unused")
     fun pushKernelMessage(message: String) {
         onKernelMessageCallback?.invoke(message)
     }
 
+    @Keep
     @Suppress("unused")
     fun getSecureApiKey(provider: String): String {
         return getSecureApiKeyProvider?.invoke(provider) ?: ""
     }
 
+    @Keep
     @Suppress("unused")
     fun triggerHardwareAction(nodeId: Int, state: Boolean): Boolean {
         return executeHardwareActionCallback?.invoke(nodeId, state) ?: true
     }
 
+    @Keep
     @Suppress("unused")
     fun requestHardwareData(nodeId: Int): String {
         return onRequestHardwareDataCallback?.invoke(nodeId) ?: "Error"
     }
 
+    @Keep
     @Suppress("unused")
     fun executeAgentTool(toolName: String, paramsJson: String): String {
         val result = executeAgentToolCallback?.let { callback ->
@@ -513,6 +520,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return result
     }
 
+    @Keep
     @Suppress("unused")
     fun requestHITLConfirmation(intentName: String, message: String): Boolean {
         var approved = false
