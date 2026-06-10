@@ -17,6 +17,27 @@ struct SensorAnalysis {
     uint64_t timestamp_ms = 0;
 };
 
+// Phase 2: Biquad IIR Filter Section
+struct BiquadCoeffs {
+    float b0, b1, b2, a1, a2;
+};
+
+class BiquadFilter {
+public:
+    BiquadFilter() { reset(); }
+    void setCoeffs(const BiquadCoeffs& c) { m_c = c; }
+    float process(float x) {
+        float y = m_c.b0 * x + m_c.b1 * m_z1 + m_c.b2 * m_z2 - m_c.a1 * m_v1 - m_c.a2 * m_v2;
+        m_z2 = m_z1; m_z1 = x;
+        m_v2 = m_v1; m_v1 = y;
+        return y;
+    }
+    void reset() { m_z1 = m_z2 = m_v1 = m_v2 = 0.0f; }
+private:
+    BiquadCoeffs m_c;
+    float m_z1, m_z2, m_v1, m_v2;
+};
+
 class ResonanceAnalyzer {
 public:
     ResonanceAnalyzer(int n_samples = 1024);
@@ -33,8 +54,11 @@ private:
     mutable std::shared_mutex m_mutex;
     SensorAnalysis m_last_analysis;
 
-    void processBatch();
-    float calculatePSD(const std::vector<float>& samples);
+    // Phase 2 components
+    BiquadFilter m_filter_low1, m_filter_low2; // Cascaded for 4th order
+    void initFilters(float sample_rate, float cutoff_hz);
+    
+    void processBatchWelch(const std::vector<float>& magnitude);
 };
 
 } // namespace Ronin::Kernel::DSP
