@@ -97,6 +97,8 @@ set(RONIN_CORE_SOURCES
     src/capabilities/hardware_bridge.cpp
     src/capabilities/chat_skill.cpp
     src/myanmar_segmenter.cpp
+    src/dsp/resonance_analyzer.cpp
+    include/third_party/pffft/pffft.c
 )
 
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
@@ -104,6 +106,7 @@ add_dependencies(ronin_core generate_fbs)
 
 target_include_directories(ronin_core PUBLIC 
     include 
+    include/third_party
     ${sqlite3_src_SOURCE_DIR} 
     ${flatbuffers_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}
@@ -128,6 +131,7 @@ if(ANDROID)
 
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
+        target_compile_definitions(ronin_core PRIVATE PFFFT_ENABLE_NEON)
     endif()
 else()
     add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)

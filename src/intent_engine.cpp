@@ -74,6 +74,7 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "Rules: "
         "- Memory/Fact: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. For 'ဆေး', 'ကား', 'password'. "
         "- Files: intent 'FILE_SEARCH'. For 'pdf', 'doc', 'txt', 'စာရွက်'. "
+        "- Sensor: intent 'SENSOR_ANALYSIS'. Steps ['GET_SENSOR_ANALYSIS']. For 'တုန်ခါမှု', 'vibration', 'resonance'. "
         "- Calendar: intent 'CALENDAR'. Steps ['ADD_EVENT'] or ['READ_CALENDAR']. "
         "- Alarm: intent 'ALARM'. Steps ['SET_ALARM']. "
         "- Map/SMS: steps ['GET_LOCATION', 'OPEN_MAP'] / ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
@@ -131,7 +132,7 @@ CapabilityType TaskPlanner::mapIntentToCapability(const std::string& intent_name
         i_lower.find("search") != std::string::npos || i_lower.find("remember") != std::string::npos) {
         return CapabilityType::MEMORY;
     }
-    if (i_lower.find("resonance") != std::string::npos || i_lower.find("vibration") != std::string::npos) {
+    if (i_lower.find("resonance") != std::string::npos || i_lower.find("vibration") != std::string::npos || i_lower.find("sensor") != std::string::npos || i_lower.find("တုန်ခါမှု") != std::string::npos) {
         return CapabilityType::SENSOR;
     }
     return CapabilityType::NONE;

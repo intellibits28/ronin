@@ -16,6 +16,7 @@
 #include "long_term_memory.h"
 #include "memory_manager.h"
 #include "capabilities/hardware_bridge.h"
+#include "dsp/resonance_analyzer.h"
 
 #define TAG "RoninKernel_JNI"
 
@@ -25,11 +26,13 @@ using namespace Ronin::Kernel::Reasoning;
 using namespace Ronin::Kernel::Capability;
 using namespace Ronin::Kernel::Memory;
 using namespace Ronin::Kernel::JNI;
+using namespace Ronin::Kernel::DSP;
 
 // --- Global Contexts ---
 static std::shared_ptr<RoninKernel> g_kernel = nullptr;
 static std::shared_ptr<IntentEngine> g_intent_engine = nullptr;
 static std::shared_ptr<LongTermMemory> g_ltm = nullptr;
+static std::shared_ptr<ResonanceAnalyzer> g_resonance_analyzer = nullptr;
 static std::unique_ptr<GraphStorage> g_graph_storage = nullptr;
 static std::unique_ptr<CapabilityGraph> g_cap_graph = nullptr;
 static std::unique_ptr<GraphExecutor> g_graph_executor = nullptr;
@@ -68,6 +71,7 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
     if (!isWorker) {
         g_instance = env->NewGlobalRef(thiz);
         g_ltm = std::make_shared<LongTermMemory>(base_path + "/ronin_cognitive.db");
+        g_resonance_analyzer = std::make_shared<ResonanceAnalyzer>(1024);
         g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
         g_cap_graph = std::make_unique<CapabilityGraph>();
         g_graph_storage->loadGraph(*g_cap_graph);
@@ -277,6 +281,23 @@ JNIEXPORT jobjectArray JNICALL native_searchFiles(JNIEnv *env, jobject thiz, jst
     return ja;
 }
 
+JNIEXPORT jboolean JNICALL native_pushSensorSamples(JNIEnv *env, jobject thiz, jfloatArray jx, jfloatArray jy, jfloatArray jz, jstring jtype) {
+    if (!g_resonance_analyzer) return JNI_FALSE;
+    int len = env->GetArrayLength(jx);
+    std::vector<float> x(len), y(len), z(len);
+    env->GetFloatArrayRegion(jx, 0, len, x.data());
+    env->GetFloatArrayRegion(jy, 0, len, y.data());
+    env->GetFloatArrayRegion(jz, 0, len, z.data());
+    g_resonance_analyzer->pushSamples(x, y, z);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jstring JNICALL native_getSensorAnalysis(JNIEnv *env, jobject thiz, jstring jtype) {
+    if (!g_resonance_analyzer) return env->NewStringUTF("{ \"error\": \"DSP_NOT_READY\" }");
+    std::string type = ConvertJStringToString(env, jtype);
+    return env->NewStringUTF(g_resonance_analyzer->getAnalysisJson(type).c_str());
+}
+
 static JNINativeMethod g_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
     {"setEngineInstanceNative", "()V", (void*)native_setEngineInstance},
@@ -307,6 +328,8 @@ static JNINativeMethod g_methods[] = {
     {"searchNotesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchNotes},
     {"searchEpisodesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchEpisodes},
     {"searchFilesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchFiles},
+    {"pushSensorSamplesNative", "([F[F[FLjava/lang/String;)Z", (void*)native_pushSensorSamples},
+    {"getSensorAnalysisNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_getSensorAnalysis},
     {"storePredictionNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;F)Z", (void*)native_storePrediction},
     {"injectWorldStateNative", "(FFZZZ)V", (void*)native_injectWorldState},
     {"applyHumanFeedbackNative", "(Ljava/lang/String;Z)V", (void*)native_applyHumanFeedback},

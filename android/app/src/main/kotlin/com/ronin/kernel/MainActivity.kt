@@ -155,6 +155,7 @@ class ChatViewModel : ViewModel() {
 
 class MainActivity : FragmentActivity() {
     internal lateinit var nativeEngine: NativeEngine
+    private lateinit var sensorDriver: SensorDriver
     private lateinit var sharedPreferences: android.content.SharedPreferences
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     // ... rest of the class remains same but I need to include the modified methods
@@ -198,6 +199,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         nativeEngine = NativeEngine(this)
+        sensorDriver = SensorDriver(this, nativeEngine)
         val masterKey = MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         sharedPreferences = EncryptedSharedPreferences.create(this, "ronin_secure_prefs", masterKey, EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -998,6 +1000,15 @@ class MainActivity : FragmentActivity() {
                         else "Found ${combined.size} items:\n" + combined.take(5).joinToString("\n---\n")
                         
                         nativeEngine.pushTokenToUI("\n[SEARCH RESULTS]\n$output", true)
+                        output
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+                "SENSOR", "SENSOR_ANALYSIS", "get_sensor_analysis" -> {
+                    try {
+                        val sensorType = params["sensor_type"] ?: "accelerometer"
+                        val analysis = sensorDriver.execute(JSONObject().put("action", "get_sensor_analysis").put("sensor_type", sensorType))
+                        val output = analysis.toString()
+                        nativeEngine.pushTokenToUI("\n[SENSOR ANALYSIS]\n$output", true)
                         output
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }

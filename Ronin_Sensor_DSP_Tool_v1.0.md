@@ -5,8 +5,10 @@
 To achieve maximum RAM and Thermal efficiency on Mi 11 Lite 5G NE, the legacy Shared Memory (SHM) streaming loop is completely deprecated. Sensor data processing follows the **"Collect → C++ DSP → On-Demand Tool JSON"** execution pattern. This aligns with Ronin Memory Model v2.1's "Derive More, Store Less" principle by treating sensor analytics as transient tool outputs rather than persistent streams.
 
 ## 2. DSP Engine Execution Flow (C++ Layer)
+*   **Library:** PFFFT (Pretty Fast FFT) with native ARM NEON SIMD optimization.
 *   **Background Thread:** Collects raw accelerometer/gyroscope signals during seismic events or periodic intervals into a local isolated buffer (`std::vector<float>`).
-*   **DSP Processing:** C++ executes FFT (Fast Fourier Transform) and Power Spectral Density (PSD) analysis natively on the collected batch using optimized NEON intrinsics where applicable.
+*   **Pre-processing:** DC offset removal and 4th order Butterworth IIR filtering.
+*   **DSP Processing:** C++ executes FFT and Power Spectral Density (PSD) analysis using Welch's Method (Hann windowing + segment averaging) natively on the collected batch using optimized NEON intrinsics.
 *   **Output State:** The analysis is compressed into a structured C++ Struct, ready to be serialized into a minimal JSON string (< 500 bytes).
 *   **Thread Safety:** All DSP state access is protected by `std::shared_mutex` to allow concurrent reads from Gemma Tool Calls while blocking only during batch updates.
 
