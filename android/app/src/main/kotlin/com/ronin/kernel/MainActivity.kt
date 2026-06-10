@@ -765,9 +765,21 @@ class MainActivity : FragmentActivity() {
                         var lat = "0.0"; var lon = "0.0"
                         if (locJson != null && locJson.startsWith("{")) {
                             val j = JSONObject(locJson); lat = j.opt("lat").toString(); lon = j.opt("lon").toString()
+                        } else {
+                            // v12.4: Smart Fallback - get last known location if not provided
+                            val task = fusedLocationClient.lastLocation
+                            val res = try { Tasks.await(task, 2, TimeUnit.SECONDS) } catch (e: Exception) { null }
+                            res?.let { lat = it.latitude.toString(); lon = it.longitude.toString() }
                         }
                         val uri = Uri.parse("geo:$lat,$lon?q=$lat,$lon")
-                        runOnUiThread { startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                            setPackage("com.google.android.apps.maps")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        runOnUiThread { 
+                            try { startActivity(intent) } 
+                            catch (e: Exception) { startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }
                         "Opened Map at $lat, $lon"
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
@@ -870,12 +882,13 @@ class MainActivity : FragmentActivity() {
                                 android.provider.CalendarContract.Events.DTSTART,
                                 android.provider.CalendarContract.Events.EVENT_LOCATION
                             )
-                            val now = System.currentTimeMillis()
+                            // v12.4: Search a wider range (1 year) to allow "searching back"
+                            val rangeStart = System.currentTimeMillis() - 365L * 24 * 60 * 60 * 1000
                             val selection = "${android.provider.CalendarContract.Events.DTSTART} >= ?"
-                            val selectionArgs = arrayOf(now.toString())
+                            val selectionArgs = arrayOf(rangeStart.toString())
                             val cursor = contentResolver.query(
                                 android.provider.CalendarContract.Events.CONTENT_URI,
-                                projection, selection, selectionArgs, "${android.provider.CalendarContract.Events.DTSTART} ASC LIMIT 5"
+                                projection, selection, selectionArgs, "${android.provider.CalendarContract.Events.DTSTART} DESC LIMIT 20"
                             )
                             val results = mutableListOf<String>()
                             cursor?.use {
@@ -891,7 +904,9 @@ class MainActivity : FragmentActivity() {
                                     }
                                 }
                             }
-                            if (results.isEmpty()) "No upcoming events found." else results.joinToString("\n---\n")
+                            val output = if (results.isEmpty()) "No events found matching '$keyword'." else results.joinToString("\n---\n")
+                            nativeEngine.pushTokenToUI("\n[CALENDAR RESULTS]\n$output", true)
+                            output
                         }
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
@@ -972,12 +987,18 @@ class MainActivity : FragmentActivity() {
                         val query = params["query"] ?: params["keyword"] ?: ""
                         val noteResults = nativeEngine.searchNotes(query)
                         val epResults = nativeEngine.searchEpisodes(query)
+                        val fileResults = nativeEngine.searchFiles(query)
+                        
                         val combined = mutableListOf<String>()
                         if (noteResults != null) combined.addAll(noteResults.toList())
                         if (epResults != null) combined.addAll(epResults.toList())
+                        if (fileResults != null) combined.addAll(fileResults.toList())
                         
-                        if (combined.isEmpty()) "No files or documents found matching: $query"
+                        val output = if (combined.isEmpty()) "No files or documents found matching: $query"
                         else "Found ${combined.size} items:\n" + combined.take(5).joinToString("\n---\n")
+                        
+                        nativeEngine.pushTokenToUI("\n[SEARCH RESULTS]\n$output", true)
+                        output
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
                 else -> "Tool $toolName executed with params: $params"

@@ -268,6 +268,15 @@ JNIEXPORT void JNICALL native_submitCapabilityResponse(JNIEnv *env, jobject thiz
     Ronin::Kernel::CapabilityDispatcher::getInstance().onResponse(response);
 }
 
+JNIEXPORT jobjectArray JNICALL native_searchFiles(JNIEnv *env, jobject thiz, jstring q) {
+    if (!g_ltm) return nullptr;
+    auto results = g_ltm->searchFiles(ConvertJStringToString(env, q));
+    jclass sc = env->FindClass("java/lang/String");
+    jobjectArray ja = env->NewObjectArray(results.size(), sc, nullptr);
+    for (size_t i = 0; i < results.size(); ++i) env->SetObjectArrayElement(ja, i, env->NewStringUTF(results[i].c_str()));
+    return ja;
+}
+
 static JNINativeMethod g_methods[] = {
     {"initializeKernelNative", "(Ljava/lang/String;Ljava/lang/String;Z)V", (void*)native_initializeKernel},
     {"setEngineInstanceNative", "()V", (void*)native_setEngineInstance},
@@ -297,6 +306,7 @@ static JNINativeMethod g_methods[] = {
     {"lookupVaultNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_lookupVault},
     {"searchNotesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchNotes},
     {"searchEpisodesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchEpisodes},
+    {"searchFilesNative", "(Ljava/lang/String;)[Ljava/lang/String;", (void*)native_searchFiles},
     {"storePredictionNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;F)Z", (void*)native_storePrediction},
     {"injectWorldStateNative", "(FFZZZ)V", (void*)native_injectWorldState},
     {"applyHumanFeedbackNative", "(Ljava/lang/String;Z)V", (void*)native_applyHumanFeedback},

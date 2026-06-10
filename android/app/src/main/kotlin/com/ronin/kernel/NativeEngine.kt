@@ -91,6 +91,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Keep
     @Suppress("unused")
+    fun searchFiles(query: String): Array<String> = if (isLibLoaded) searchFilesNative(query) else emptyArray()
+
+    @Keep
+    @Suppress("unused")
     fun storeVault(title: String, encryptedBlob: String): Boolean = if (isLibLoaded) storeVaultNative(title, encryptedBlob) else false
 
     @Keep
@@ -261,6 +265,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun lookupVaultNative(title: String): String
     private external fun searchNotesNative(query: String): Array<String>
     private external fun searchEpisodesNative(query: String): Array<String>
+    private external fun searchFilesNative(query: String): Array<String>
     private external fun storeVaultNative(title: String, encryptedBlob: String): Boolean
     private external fun storePredictionNative(goalId: String, nodeId: String, predicted: String, actual: String, error: Float): Boolean
     private external fun injectWorldStateNative(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean)

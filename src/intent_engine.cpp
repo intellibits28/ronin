@@ -69,26 +69,18 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
-    // v11.3.15: Optimized Prompt (Aggressive Parameter Alignment)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Cognitive Runtime. You HAVE full access to the user's device. Output ONLY valid JSON. Skip thinking tags. NEVER say you cannot set an alarm. NEVER apologize. "
+        "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY valid JSON. "
         "Rules: "
-        "- Long Horizon: You can chain tools. Use results from 'READ_CALENDAR' or 'GET_LOCATION' for 'SET_ALARM' or 'SEND_SMS'. "
+        "- Memory/Fact: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. For 'ဆေး', 'ကား', 'password'. "
+        "- Files: intent 'FILE_SEARCH'. For 'pdf', 'doc', 'txt', 'စာရွက်'. "
+        "- Calendar: intent 'CALENDAR'. Steps ['ADD_EVENT'] or ['READ_CALENDAR']. "
+        "- Alarm: intent 'ALARM'. Steps ['SET_ALARM']. "
         "- Map/SMS: steps ['GET_LOCATION', 'OPEN_MAP'] / ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
-        "- Fact Save/Find: intent 'ADD_FACT' / 'ADD_VAULT'. Steps ['SAVE_FACT'] / ['SAVE_VAULT']. "
-        "- Vault Keywords: ALWAYS use Vault for PIN, API key, password, token, or secret. "
-        "- Fact/Vault Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
-        "- Alarm/နှိုး: intent 'ALARM'. Steps ['SET_ALARM']. parameters: time, message. "
-        "- Calendar/Meeting/မှတ်: intent 'CALENDAR'. Steps ['ADD_EVENT'] (to save) or ['READ_CALENDAR'] (to query). parameters: title, description, time, timezone, keyword, share_via (optional), attendees (optional). "
-        "- File Search/ရှာ: intent 'FILE_SEARCH'. Steps ['SEARCH_FILES']. parameters: query. "
         "Examples: "
-        "User: 'မနက်ဖြန် မနက် ၆နာရီ နှိုးပေး' -> {\"intent\":\"ALARM\",\"plan\":[\"SET_ALARM\"],\"parameters\":{\"time\":\"06:00\",\"message\":\"Alarm\"}} "
-        "User: 'မနက်ဖြန် ဘာ meeting ရှိလဲ' -> {\"intent\":\"CALENDAR\",\"plan\":[\"READ_CALENDAR\"],\"parameters\":{\"keyword\":\"meeting\"}} "
-        "User: 'documents ထဲက အလုပ်ဖိုင် ရှာပေး' -> {\"intent\":\"FILE_SEARCH\",\"plan\":[\"SEARCH_FILES\"],\"parameters\":{\"query\":\"အလုပ်\"}} "
-        "Semantic Precision: "
-        "- Attribute names MUST be in Myanmar if user uses it. "
-        "- Strip 'ရဲ့', '၏', 'က', 'ကို' from entity/attribute names. "
-        "Schema: {\"intent\": \"...\", \"plan\": [], \"parameters\": {\"entity\": \"...\", \"attribute\": \"...\", \"value\": \"...\", \"vault_title\": \"...\", \"vault_content\": \"...\", \"time\": \"...\", \"title\": \"...\", \"description\": \"...\", \"timezone\": \"...\", \"keyword\": \"...\", \"query\": \"...\", \"share_via\": \"...\", \"attendees\": \"...\"}}";
+        "User: 'ကားနံပါတ် ရှာပေး' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"QUERY_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\"}} "
+        "User: 'ronin_test.pdf ရှာပေး' -> {\"intent\":\"FILE_SEARCH\",\"plan\":[\"SEARCH_FILES\"],\"parameters\":{\"query\":\"ronin_test\"}} "
+        "User: 'မနက်ဖြန် ၆နာရီ နှိုးပေး' -> {\"intent\":\"ALARM\",\"plan\":[\"SET_ALARM\"],\"parameters\":{\"time\":\"06:00\",\"message\":\"Alarm\"}} ";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
