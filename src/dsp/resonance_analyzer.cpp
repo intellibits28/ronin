@@ -39,7 +39,7 @@ void ResonanceAnalyzer::initFilters(float fs, float fc) {
 }
 
 void ResonanceAnalyzer::pushSamples(const std::vector<float>& x, const std::vector<float>& y, const std::vector<float>& z) {
-    std::unique_lock lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     
     std::vector<float> magnitude(m_n_samples);
     for (int i = 0; i < m_n_samples; ++i) {
@@ -106,7 +106,7 @@ void ResonanceAnalyzer::processBatchWelch(const std::vector<float>& magnitude) {
 
 
 std::string ResonanceAnalyzer::getAnalysisJson(const std::string& sensor_type) {
-    std::shared_lock lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     nlohmann::json j;
     j["resonance_freq_hz"] = m_last_analysis.resonance_freq_hz;
     j["psd_peak_db"] = m_last_analysis.psd_peak_db;
