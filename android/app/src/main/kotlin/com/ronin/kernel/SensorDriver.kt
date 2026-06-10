@@ -22,21 +22,49 @@ class SensorDriver(private val context: Context, private val nativeEngine: Nativ
     private val bufferY = FloatArray(BATCH_SIZE)
     private val bufferZ = FloatArray(BATCH_SIZE)
     private var bufferIndex = 0
+    
+    // v12.9: Hardware Guardrails State
+    private var isThrottled = false
+    private var isCollecting = false
+    private var currentInterval = 10000 // 10ms (100Hz)
 
     init {
         startCollecting()
     }
 
+    fun updateGuardrails(temp: Float, batteryPct: Int, isCharging: Boolean) {
+        val wasThrottled = isThrottled
+        val oldInterval = currentInterval
+
+        // Thermal Throttle: Pause DSP if Temp > 42C
+        isThrottled = temp > 42.0f
+
+        // Battery Awareness: Double interval (halve frequency) if Battery < 20% and not charging
+        currentInterval = if (batteryPct < 20 && !isCharging) 20000 else 10000
+
+        if (isThrottled && !wasThrottled) {
+            Log.w(TAG, "Thermal Throttle Active (Temp: $temp C). Pausing DSP collection.")
+            stopCollecting()
+        } else if (!isThrottled && (wasThrottled || currentInterval != oldInterval)) {
+            Log.i(TAG, "Adjusting DSP collection. Interval: $currentInterval us")
+            stopCollecting()
+            startCollecting()
+        }
+    }
+
     fun startCollecting() {
+        if (isThrottled || isCollecting) return
         accelerometer?.let {
-            // v12.8: Use 10ms interval (100Hz) as per DSP spec
-            sensorManager.registerListener(this, it, 10000) 
-            Log.i(TAG, "Sensor collection started (100Hz).")
+            sensorManager.registerListener(this, it, currentInterval) 
+            isCollecting = true
+            Log.i(TAG, "Sensor collection started (${1000000/currentInterval}Hz).")
         } ?: Log.e(TAG, "Accelerometer not found!")
     }
 
     fun stopCollecting() {
+        if (!isCollecting) return
         sensorManager.unregisterListener(this)
+        isCollecting = false
         Log.i(TAG, "Sensor collection stopped.")
     }
 

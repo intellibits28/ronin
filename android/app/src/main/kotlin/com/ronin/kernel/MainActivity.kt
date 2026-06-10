@@ -195,6 +195,12 @@ class MainActivity : FragmentActivity() {
         chatViewModel.wizardState = if (uniquePaths.isNotEmpty()) WizardState.ACTIVE else WizardState.MISSING_CORE
     }
 
+    fun updateSensorGuardrails(temp: Float, batteryPct: Int, isCharging: Boolean) {
+        if (::sensorDriver.isInitialized) {
+            sensorDriver.updateGuardrails(temp, batteryPct, isCharging)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
@@ -1035,11 +1041,19 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     am.getMemoryInfo(mi)
                     val used = (mi.totalMem - mi.availMem) / 1073741824f
                     val total = mi.totalMem / 1073741824f
-                    val temp = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.let { it / 10f } ?: 35f
+                    val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                    val temp = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.let { it / 10f } ?: 35f
+                    val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                    val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                    val batteryPct = if (level >= 0 && scale > 0) (level * 100) / scale else 50
+                    val isCharging = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) == BatteryManager.BATTERY_STATUS_CHARGING
+
                     withContext(Dispatchers.Main) { 
                         chatViewModel.ramUsedGB = used; chatViewModel.ramTotalGB = total
                         chatViewModel.systemTemperature = temp
                         chatViewModel.lmkPressure = engine.getLMKPressureSafe() 
+                        // v12.9: Update Sensor Driver Guardrails
+                        activity?.updateSensorGuardrails(temp, batteryPct, isCharging)
                     }
                     engine.updateSystemHealthSafe(temp, used, total) 
                 } catch (e: Exception) {} ; delay(5000) 
