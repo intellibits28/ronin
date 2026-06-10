@@ -22,6 +22,10 @@ ResonanceAnalyzer::ResonanceAnalyzer(int n_samples) : m_n_samples(n_samples) {
     LOGI(TAG, "ResonanceAnalyzer Hardened initialized (4th Order Butterworth @ 40Hz).");
 }
 
+ResonanceAnalyzer::~ResonanceAnalyzer() {
+    if (m_pffft_setup) pffft_destroy_setup(m_pffft_setup);
+}
+
 void ResonanceAnalyzer::initFilters(float fs, float fc) {
     float omega = std::tan(M_PI * fc / fs);
     float root2 = std::sqrt(2.0f);
