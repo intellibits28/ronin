@@ -72,13 +72,16 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     std::string system_prompt = 
         "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY valid JSON. "
         "Rules: "
-        "- Memory/Fact: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. For 'ဆေး', 'ကား', 'password'. "
+        "- Memory/Fact Save: intent 'ADD_FACT' / 'ADD_VAULT'. For 'မှတ်ထား', 'save'. Steps ['SAVE_FACT'] / ['SAVE_VAULT']. "
+        "- Memory/Fact Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. For 'ဆေး', 'ကား', 'password'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
         "- Files: intent 'FILE_SEARCH'. For 'pdf', 'doc', 'txt', 'စာရွက်'. "
         "- Sensor: intent 'SENSOR_ANALYSIS'. Steps ['GET_SENSOR_ANALYSIS']. For 'တုန်ခါမှု', 'vibration', 'resonance'. "
         "- Calendar: intent 'CALENDAR'. Steps ['ADD_EVENT'] or ['READ_CALENDAR']. "
         "- Alarm: intent 'ALARM'. Steps ['SET_ALARM']. "
         "- Map/SMS: steps ['GET_LOCATION', 'OPEN_MAP'] / ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
         "Examples: "
+        "User: 'ကားနံပါတ် 1234 လို့ မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"1234\"}} "
+        "User: 'wifi password ကို 1234 လို့ မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\",\"vault_content\":\"1234\"}} "
         "User: 'ကားနံပါတ် ရှာပေး' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"QUERY_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\"}} "
         "User: 'ronin_test.pdf ရှာပေး' -> {\"intent\":\"FILE_SEARCH\",\"plan\":[\"SEARCH_FILES\"],\"parameters\":{\"query\":\"ronin_test\"}} "
         "User: 'မနက်ဖြန် ၆နာရီ နှိုးပေး' -> {\"intent\":\"ALARM\",\"plan\":[\"SET_ALARM\"],\"parameters\":{\"time\":\"06:00\",\"message\":\"Alarm\"}} ";
@@ -336,7 +339,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("ရှာ") || token_set.count("ပြန်ရှာ") ||
                            token_set.count("alarm") || token_set.count("နှိုး") ||
                            token_set.count("calendar") || token_set.count("meeting") ||
-                           token_set.count("event");
+                           token_set.count("event") || token_set.count("တုန်ခါမှု") ||
+                           token_set.count("vibration") || token_set.count("resonance") ||
+                           token_set.count("sensor");
 
     // v12.2: Raw substring fallback for robust detection
     if (!is_simple_agent) {
@@ -344,17 +349,17 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                           (input_lower.find("နှိုး") != std::string::npos) ||
                           (input_lower.find("meeting") != std::string::npos) ||
                           (input_lower.find("ရှာ") != std::string::npos) ||
-                          (input_lower.find("search") != std::string::npos);
+                          (input_lower.find("search") != std::string::npos) ||
+                          (input_lower.find("တုန်ခါမှု") != std::string::npos) ||
+                          (input_lower.find("vibration") != std::string::npos);
     }
 
-    bool is_inquiry = token_set.count("ဘာလဲ") || token_set.count("ဘယ်လို") || 
-                      token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
-                      token_set.count("ရှိလဲ") || token_set.count("သိချင်လို့") ||
-                      token_set.count("how") || token_set.count("what") || 
-                      token_set.count("why") || token_set.count("explain") ||
-                      token_set.count("?") || token_set.count("လား");
+    bool is_inquiry = token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
+                      token_set.count("explain") || token_set.count("how to") || 
+                      token_set.count("why");
 
-    if ((is_complex || is_simple_agent) && !is_inquiry) {
+    // v12.11: Strong action keywords override inquiry
+    if (is_simple_agent || is_complex) {
         final_cat = IntentCategory::AGENT_PLAN;
         LOGI(TAG, "v7.0 Agent Request Detected -> Category AGENT_PLAN");
         Ronin::Kernel::Capability::HardwareBridge::updateDevHUD("PLANNING", "PENDING", 0.0f, "");

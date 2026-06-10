@@ -96,6 +96,8 @@ void AgentScheduler::workerLoop() {
                     type = CapabilityType::CALENDAR;
                 else if (s_lower.find("file") != std::string::npos || s_lower.find("search") != std::string::npos || s_lower.find("find") != std::string::npos || s_lower.find("ရှာ") != std::string::npos)
                     type = CapabilityType::FILES;
+                else if (s_lower.find("sensor") != std::string::npos || s_lower.find("vibration") != std::string::npos || s_lower.find("resonance") != std::string::npos || s_lower.find("တုန်ခါမှု") != std::string::npos)
+                    type = CapabilityType::SENSOR;
                 else if (s_lower.find("mock_test") != std::string::npos)
                     type = CapabilityType::TEST;
                 
