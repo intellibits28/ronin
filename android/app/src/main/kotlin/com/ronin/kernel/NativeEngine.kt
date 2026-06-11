@@ -385,6 +385,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      * Triggered by C++ HardwareBridge.
      * Synchronous across processes via AIDL streaming.
      */
+    @Keep
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String = runBlocking(Dispatchers.IO) {
         Log.d(TAG, "Native Trigger: Initiating Hardened AIDL Reasoning...")
