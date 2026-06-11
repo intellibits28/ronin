@@ -705,7 +705,7 @@ class MainActivity : FragmentActivity() {
                                     if (encrypted.isNotEmpty()) {
                                         val decrypted = nativeEngine.decryptSecret(encrypted)
                                         val uiMsg = "\n[VAULT] $title: $decrypted"
-                                        nativeEngine.pushTokenToUI(uiMsg, true)
+                                        nativeEngine.pushKernelMessage(uiMsg)
                                         nativeEngine.pushKernelMessage("[AGENT] Vault Found: $title")
                                         decrypted
                                     } else {
@@ -759,7 +759,7 @@ class MainActivity : FragmentActivity() {
                                         }
 
                                         val uiMsg = "\n[FACT] $entity's $attr is $finalRes"
-                                        nativeEngine.pushTokenToUI(uiMsg, true)
+                                        nativeEngine.pushKernelMessage(uiMsg)
                                         nativeEngine.pushKernelMessage("[AGENT] Fact Found: $entity's $attr")
                                         finalRes 
                                     } else {
@@ -769,11 +769,11 @@ class MainActivity : FragmentActivity() {
                                             if (vRes.isNotEmpty()) {
                                                 val decrypted = nativeEngine.decryptSecret(vRes)
                                                 val uiMsg = "\n[VAULT FALLBACK] $entity: $decrypted"
-                                                nativeEngine.pushTokenToUI(uiMsg, true)
+                                                nativeEngine.pushKernelMessage(uiMsg)
                                                 decrypted
                                             } else {
                                                 val err = "Error: No information found for $entity's $attr."
-                                                nativeEngine.pushTokenToUI("\n[FACT] $err", true)
+                                                nativeEngine.pushKernelMessage("\n[FACT] $err")
                                                 err
                                             }
                                         } else {
@@ -924,9 +924,12 @@ class MainActivity : FragmentActivity() {
                         "Scheduled $title for ${java.text.DateFormat.getDateTimeInstance().format(cal.time)}"
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
-                "READ_CALENDAR", "QUERY_CALENDAR" -> {
+                "READ_CALENDAR", "QUERY_CALENDAR", "GET_EVENTS" -> {
                     try {
                         val keyword = params["keyword"] ?: params["query"] ?: params["event"] ?: ""
+                        val timeParam = params["time"] ?: ""
+                        val originalQuery = params["original_query"] ?: ""
+                        
                         if (checkSelfPermission(android.Manifest.permission.READ_CALENDAR) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                             requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 101)
                             "Error: Missing READ_CALENDAR permission."
@@ -936,13 +939,40 @@ class MainActivity : FragmentActivity() {
                                 android.provider.CalendarContract.Events.DTSTART,
                                 android.provider.CalendarContract.Events.EVENT_LOCATION
                             )
-                            // v12.4: Search a wider range (1 year) to allow "searching back"
-                            val rangeStart = System.currentTimeMillis() - 365L * 24 * 60 * 60 * 1000
-                            val selection = "${android.provider.CalendarContract.Events.DTSTART} >= ?"
-                            val selectionArgs = arrayOf(rangeStart.toString())
+                            
+                            // v12.24: Smart Date Range detection
+                            val isTomorrow = timeParam.contains("tomorrow", true) || timeParam.contains("မနက်ဖြန်", true) || 
+                                             originalQuery.contains("tomorrow", true) || originalQuery.contains("မနက်ဖြန်", true)
+                            val isToday = originalQuery.contains("today", true) || originalQuery.contains("ဒီနေ့", true)
+
+                            val cal = java.util.Calendar.getInstance()
+                            var selection = "${android.provider.CalendarContract.Events.DTSTART} >= ?"
+                            val selectionArgs = mutableListOf<String>()
+
+                            if (isTomorrow) {
+                                cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                                cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+                                val start = cal.timeInMillis
+                                cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 59)
+                                val end = cal.timeInMillis
+                                selection = "${android.provider.CalendarContract.Events.DTSTART} >= ? AND ${android.provider.CalendarContract.Events.DTSTART} <= ?"
+                                selectionArgs.add(start.toString()); selectionArgs.add(end.toString())
+                            } else if (isToday) {
+                                cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+                                val start = cal.timeInMillis
+                                cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 59)
+                                val end = cal.timeInMillis
+                                selection = "${android.provider.CalendarContract.Events.DTSTART} >= ? AND ${android.provider.CalendarContract.Events.DTSTART} <= ?"
+                                selectionArgs.add(start.toString()); selectionArgs.add(end.toString())
+                            } else {
+                                // Default: Last 1 year search
+                                val rangeStart = System.currentTimeMillis() - 365L * 24 * 60 * 60 * 1000
+                                selectionArgs.add(rangeStart.toString())
+                            }
+
                             val cursor = contentResolver.query(
                                 android.provider.CalendarContract.Events.CONTENT_URI,
-                                projection, selection, selectionArgs, "${android.provider.CalendarContract.Events.DTSTART} DESC LIMIT 20"
+                                projection, selection, selectionArgs.toTypedArray(), "${android.provider.CalendarContract.Events.DTSTART} ASC LIMIT 20"
                             )
                             val results = mutableListOf<String>()
                             cursor?.use {
@@ -959,7 +989,7 @@ class MainActivity : FragmentActivity() {
                                 }
                             }
                             val output = if (results.isEmpty()) "No events found matching '$keyword'." else results.joinToString("\n---\n")
-                            nativeEngine.pushTokenToUI("\n[CALENDAR RESULTS]\n$output", true)
+                            nativeEngine.pushKernelMessage("\n[CALENDAR RESULTS]\n$output")
                             output
                         }
                     } catch (e: Exception) { "Error: ${e.message}" }
@@ -1045,6 +1075,7 @@ class MainActivity : FragmentActivity() {
                 "FILE_SEARCH", "FILES", "SEARCH_FILES", "SEARCH_DATABASE", "SEARCH" -> {
                     try {
                         val query = params["query"] ?: params["keyword"] ?: params["file"] ?: params["filename"] ?: ""
+                        Log.i("RoninKernel_MainActivity", "FILE_SEARCH starting for query: '$query'")
                         val noteResults = nativeEngine.searchNotes(query)
                         val epResults = nativeEngine.searchEpisodes(query)
                         val fileResults = nativeEngine.searchFiles(query)
@@ -1071,16 +1102,16 @@ class MainActivity : FragmentActivity() {
                         val output = if (combined.isEmpty()) "No files or documents found matching: $query"
                         else "Found ${combined.size} items:\n" + combined.take(5).joinToString("\n---\n")
                         
-                        nativeEngine.pushTokenToUI("\n[SEARCH RESULTS]\n$output", true)
+                        nativeEngine.pushKernelMessage("\n[SEARCH RESULTS]\n$output")
                         output
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
-                "SENSOR", "SENSOR_ANALYSIS", "GET_SENSOR_ANALYSIS", "get_sensor_analysis", "READ_SENSOR_DATA", "READ_VIBRATION_DATA", "CHECK_SENSOR" -> {
+                "SENSOR", "SENSOR_ANALYSIS", "GET_SENSOR_ANALYSIS", "get_sensor_analysis", "READ_SENSOR_DATA", "READ_VIBRATION_DATA", "CHECK_SENSOR", "ANALYZ_VIBRATION", "ANALYZE_VIBRATION" -> {
                     try {
                         val sensorType = params["sensor_type"] ?: "accelerometer"
                         val analysis = sensorDriver.execute(JSONObject().put("action", "get_sensor_analysis").put("sensor_type", sensorType))
                         val output = analysis.toString()
-                        nativeEngine.pushTokenToUI("\n[SENSOR ANALYSIS]\n$output", true)
+                        nativeEngine.pushKernelMessage("\n[SENSOR ANALYSIS]\n$output")
                         output
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }

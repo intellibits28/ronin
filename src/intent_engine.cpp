@@ -87,7 +87,8 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "User: 'တည်နေရာ မြေပုံမှာပြ' -> {\"intent\":\"MAP\",\"plan\":[\"GET_LOCATION\",\"OPEN_MAP\"],\"parameters\":{}} "
         "User: 'တည်နေရာကို Test ဆီ SMS ပို့ပါ' -> {\"intent\":\"SMS\",\"plan\":[\"GET_LOCATION\",\"RESOLVE_CONTACT\",\"SEND_SMS\"],\"parameters\":{\"recipient_name\":\"Test\"}} "
         "User: 'Toyota Wish ကားနံပါတ် 123 လို့ မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} "
-        "User: 'Toyota Wish ကားနံပါတ် ရှာပေး' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"QUERY_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish ကား\",\"attribute\":\"နံပါတ်\"}} ";
+        "User: 'Toyota Wish ကားနံပါတ် ရှာပေး' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"QUERY_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish ကား\",\"attribute\":\"နံပါတ်\"}} "
+        "User: 'ronin_test.pdf ဖိုင်ရှာပေး' -> {\"intent\":\"FILE_SEARCH\",\"plan\":[\"SEARCH_FILES\"],\"parameters\":{\"query\":\"ronin_test.pdf\"}} ";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
@@ -348,7 +349,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("ရှာ") || token_set.count("ပြန်ရှာ") ||
                            token_set.count("alarm") || token_set.count("နှိုး") ||
                            token_set.count("calendar") || token_set.count("meeting") ||
-                           token_set.count("event");
+                           token_set.count("event") || token_set.count("pdf") ||
+                           token_set.count("doc") || token_set.count("txt") ||
+                           token_set.count("ဖိုင်");
 
     // v12.18: Decouple sensor from simple agent to prevent location->sensor misrouting
     bool is_sensor_req = token_set.count("တုန်ခါမှု") || token_set.count("vibration") || 

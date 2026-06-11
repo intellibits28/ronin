@@ -196,8 +196,11 @@ bool LongTermMemory::storePrediction(const std::string& goal_id, const std::stri
 std::string LongTermMemory::lookupFact(const std::string& entity, const std::string& attr) {
     if (!m_db) return "";
     std::lock_guard<std::mutex> lock(m_mutex);
-    // v12.23: Handle superset entities (e.g. query='Toyota Wish ကား', db='ကား')
-    const char* sql = "SELECT value FROM facts WHERE (entity LIKE ? OR ? LIKE '%' || entity || '%') AND attribute LIKE ? ORDER BY confidence DESC, created_at DESC LIMIT 1;";
+    // v12.25: Ultra-robust matching with trim and case-insensitivity
+    const char* sql = "SELECT value FROM facts WHERE "
+                      "(trim(entity) LIKE ? OR ? LIKE '%' || trim(entity) || '%') "
+                      "AND (trim(attribute) LIKE ? OR ? LIKE '%' || trim(attribute) || '%') "
+                      "ORDER BY confidence DESC, created_at DESC LIMIT 1;";
     sqlite3_stmt* stmt = nullptr;
     std::string result;
     std::string entity_query = "%" + entity + "%";
@@ -206,6 +209,7 @@ std::string LongTermMemory::lookupFact(const std::string& entity, const std::str
         sqlite3_bind_text(stmt, 1, entity_query.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 2, entity.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 3, attr_query.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, attr.c_str(), -1, SQLITE_STATIC);
         if (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* val = sqlite3_column_text(stmt, 0);
             if (val) result = reinterpret_cast<const char*>(val);
