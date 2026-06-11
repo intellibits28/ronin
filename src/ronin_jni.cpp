@@ -75,6 +75,13 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
         g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
         g_cap_graph = std::make_unique<CapabilityGraph>();
         g_graph_storage->loadGraph(*g_cap_graph);
+        
+        // v12.20: Ensure Core Nodes exist in graph
+        if (!g_cap_graph->getNodeByID("SENSOR")) g_cap_graph->addNode(3, "SENSOR");
+        if (!g_cap_graph->getNodeByID("FILES")) g_cap_graph->addNode(6, "FILES");
+        if (!g_cap_graph->getNodeByID("LOCATION")) g_cap_graph->addNode(1, "LOCATION");
+        if (!g_cap_graph->getNodeByID("CALENDAR")) g_cap_graph->addNode(12, "CALENDAR");
+        
         g_graph_executor = std::make_unique<GraphExecutor>(*g_cap_graph, *g_graph_storage, g_ltm.get());
         AgentScheduler::getInstance().setExecutor(g_graph_executor.get());
         g_memory_manager = std::make_unique<MemoryManager>(2048);

@@ -80,8 +80,9 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"query\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\",\"time\":\"...\"}} "
         "Examples: "
         "User: 'Gemini API key ကို မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"Gemini API key\",\"vault_content\":\"YOUR_KEY\"}} "
-        "User: 'ကားနံပါတ် 123 လို့ မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} "
-        "User: 'တည်နေရာ မြေပုံမှာပြ' -> {\"intent\":\"MAP\",\"plan\":[\"GET_LOCATION\",\"OPEN_MAP\"],\"parameters\":{}} ";
+        "User: 'တည်နေရာ မြေပုံမှာပြ' -> {\"intent\":\"MAP\",\"plan\":[\"GET_LOCATION\",\"OPEN_MAP\"],\"parameters\":{}} "
+        "User: 'တည်နေရာကို Test ဆီ SMS ပို့ပါ' -> {\"intent\":\"SMS\",\"plan\":[\"GET_LOCATION\",\"RESOLVE_CONTACT\",\"SEND_SMS\"],\"parameters\":{\"recipient_name\":\"Test\"}} "
+        "User: 'ကားနံပါတ် 123 လို့ မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} ";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
@@ -101,6 +102,9 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         LOGE("RoninPlanner", "v9.1 Parser Failed. Setting fallback.");
         plan.intent_name = "fallback_chat";
     }
+    
+    // v12.20: Inject original query into parameters for better tool context
+    plan.parameters["original_query"] = input;
     
     return plan;
 }
@@ -374,8 +378,17 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         input_lower.find("မှတ်ထား") != std::string::npos || input_lower.find("မှတ်မိ") != std::string::npos ||
         input_lower.find("ရှာပေး") != std::string::npos || input_lower.find("ရှာပါ") != std::string::npos ||
         input_lower.find("pdf") != std::string::npos || input_lower.find("doc") != std::string::npos ||
-        input_lower.find("file") != std::string::npos || input_lower.find("ဖိုင်") != std::string::npos) {
+        input_lower.find("file") != std::string::npos || input_lower.find("ဖိုင်") != std::string::npos ||
+        input_lower.find("တည်နေရာ") != std::string::npos || input_lower.find("location") != std::string::npos) {
         final_cat = IntentCategory::AGENT_PLAN;
+    }
+
+    // v12.21: Explicit Priority Override to prevent misrouting
+    if (input_lower.find("location") != std::string::npos || input_lower.find("တည်နေရာ") != std::string::npos) {
+        is_sensor_req = false; // Never route location to sensor
+    }
+    if (input_lower.find("key") != std::string::npos || input_lower.find("password") != std::string::npos || input_lower.find("api") != std::string::npos) {
+        is_sensor_req = false;
     }
 
     if (final_cat == IntentCategory::AGENT_PLAN) {

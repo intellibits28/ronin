@@ -480,7 +480,8 @@ class MainActivity : FragmentActivity() {
             android.Manifest.permission.SEND_SMS,
             android.Manifest.permission.READ_CONTACTS,
             android.Manifest.permission.READ_CALENDAR,
-            android.Manifest.permission.WRITE_CALENDAR
+            android.Manifest.permission.WRITE_CALENDAR,
+            android.Manifest.permission.READ_EXTERNAL_STORAGE
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
         
@@ -848,8 +849,10 @@ class MainActivity : FragmentActivity() {
 
                         val cal = java.util.Calendar.getInstance()
                         var beginTime = cal.timeInMillis
-                        // v12.17: Check raw input for 'tomorrow' context if param is weak
-                        val isTomorrow = time.lowercase().contains("tomorrow") || time.contains("မနက်ဖြန်") || input.contains("မနက်ဖြန်") || input.lowercase().contains("tomorrow")
+                        val originalQuery = params["original_query"] ?: ""
+                        // v12.17: Check original query for 'tomorrow' context if param is weak
+                        val isTomorrow = time.lowercase().contains("tomorrow") || time.contains("မနက်ဖြန်") || 
+                                         originalQuery.contains("မနက်ဖြန်") || originalQuery.lowercase().contains("tomorrow")
                         
                         // v12.1: Robust time parsing (Regex matches 11:00, 11နာရီ, 11:30, 11နာရီခွဲ)
                         val timeRegex = Regex("(\\d{1,2})[:\\s]*(\\d{2})?|(\\d{1,2})\\s*(နာရီ|နာရီခွဲ|am|pm)")
