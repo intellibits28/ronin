@@ -88,15 +88,17 @@ void AgentScheduler::workerLoop() {
                 else if (s_lower.find("save") != std::string::npos || s_lower.find("store") != std::string::npos || 
                          s_lower.find("add_fact") != std::string::npos || s_lower.find("record") != std::string::npos || 
                          s_lower.find("query") != std::string::npos || s_lower.find("lookup") != std::string::npos || 
-                         s_lower.find("memory") != std::string::npos || s_lower.find("မှတ်") != std::string::npos)
+                         s_lower.find("memory") != std::string::npos || s_lower.find("မှတ်") != std::string::npos ||
+                         s_lower.find("vault") != std::string::npos || s_lower.find("fact") != std::string::npos ||
+                         s_lower.find("get_vault_content") != std::string::npos)
                     type = CapabilityType::MEMORY;
                 else if (s_lower.find("alarm") != std::string::npos || s_lower.find("wake") != std::string::npos || s_lower.find("နှိုး") != std::string::npos)
                     type = CapabilityType::ALARM;
                 else if (s_lower.find("calendar") != std::string::npos || s_lower.find("event") != std::string::npos || s_lower.find("meeting") != std::string::npos)
                     type = CapabilityType::CALENDAR;
-                else if (s_lower.find("file") != std::string::npos || s_lower.find("search") != std::string::npos || s_lower.find("find") != std::string::npos || s_lower.find("ရှာ") != std::string::npos)
+                else if (s_lower.find("file") != std::string::npos || s_lower.find("search") != std::string::npos || s_lower.find("find") != std::string::npos || s_lower.find("ရှာ") != std::string::npos || s_lower.find("database") != std::string::npos)
                     type = CapabilityType::FILES;
-                else if (s_lower.find("sensor") != std::string::npos || s_lower.find("vibration") != std::string::npos || s_lower.find("resonance") != std::string::npos || s_lower.find("တုန်ခါမှု") != std::string::npos)
+                else if (s_lower.find("sensor") != std::string::npos || s_lower.find("vibration") != std::string::npos || s_lower.find("resonance") != std::string::npos || s_lower.find("တုန်ခါမှု") != std::string::npos || s_lower.find("read_sensor_data") != std::string::npos)
                     type = CapabilityType::SENSOR;
                 else if (s_lower.find("mock_test") != std::string::npos)
                     type = CapabilityType::TEST;

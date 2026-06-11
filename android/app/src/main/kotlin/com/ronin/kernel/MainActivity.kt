@@ -617,7 +617,7 @@ class MainActivity : FragmentActivity() {
             when (actionName) {
                 "MEMORY", "SAVE_NOTE", "SAVE_FACT", "QUERY_FACT", "SAVE_VAULT", "QUERY_VAULT", 
                 "SEARCH_NOTES", "SEARCH_EPISODES", "ADD_FACT", "STORE_FACT", "ADD_NOTE", "STORE_NOTE",
-                "LOOKUP_FACT", "LOOKUP_VAULT", "ADD_VAULT", "STORE_VAULT" -> {
+                "LOOKUP_FACT", "LOOKUP_VAULT", "ADD_VAULT", "STORE_VAULT", "GET_VAULT_CONTENT", "READ_VAULT" -> {
                     try {
                         when (actionName) {
                             "SAVE_NOTE", "ADD_NOTE", "STORE_NOTE" -> {
@@ -683,7 +683,7 @@ class MainActivity : FragmentActivity() {
                                     }
                                 }
                             }
-                            "QUERY_VAULT", "LOOKUP_VAULT" -> {
+                            "QUERY_VAULT", "LOOKUP_VAULT", "GET_VAULT_CONTENT", "READ_VAULT" -> {
                                 val title = params["vault_title"] ?: params["title"] ?: params["entity"] ?: params["query"] ?: params["subject"] ?:
                                             params.keys.find { 
                                                 val k = it.lowercase()
@@ -1030,7 +1030,7 @@ class MainActivity : FragmentActivity() {
                         }
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
-                "FILE_SEARCH", "FILES", "SEARCH_FILES" -> {
+                "FILE_SEARCH", "FILES", "SEARCH_FILES", "SEARCH_DATABASE", "SEARCH" -> {
                     try {
                         val query = params["query"] ?: params["keyword"] ?: params["file"] ?: params["filename"] ?: ""
                         val noteResults = nativeEngine.searchNotes(query)
@@ -1049,7 +1049,7 @@ class MainActivity : FragmentActivity() {
                         output
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
-                "SENSOR", "SENSOR_ANALYSIS", "GET_SENSOR_ANALYSIS", "get_sensor_analysis" -> {
+                "SENSOR", "SENSOR_ANALYSIS", "GET_SENSOR_ANALYSIS", "get_sensor_analysis", "READ_SENSOR_DATA", "CHECK_SENSOR" -> {
                     try {
                         val sensorType = params["sensor_type"] ?: "accelerometer"
                         val analysis = sensorDriver.execute(JSONObject().put("action", "get_sensor_analysis").put("sensor_type", sensorType))
