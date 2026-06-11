@@ -197,13 +197,15 @@ std::string LongTermMemory::lookupFact(const std::string& entity, const std::str
     if (!m_db) return "";
     std::lock_guard<std::mutex> lock(m_mutex);
     // v10.2.13: Use LIKE for entity to handle Myanmar suffixes (ရဲ့, ၏, က)
-    const char* sql = "SELECT value FROM facts WHERE entity LIKE ? AND attribute = ? ORDER BY confidence DESC, created_at DESC LIMIT 1;";
+    // v12.15: Use LIKE for attribute as well for fuzzy matching
+    const char* sql = "SELECT value FROM facts WHERE entity LIKE ? AND attribute LIKE ? ORDER BY confidence DESC, created_at DESC LIMIT 1;";
     sqlite3_stmt* stmt = nullptr;
     std::string result;
     std::string entity_query = "%" + entity + "%";
+    std::string attr_query = "%" + attr + "%";
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, entity_query.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 2, attr.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, attr_query.c_str(), -1, SQLITE_STATIC);
         if (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* val = sqlite3_column_text(stmt, 0);
             if (val) result = reinterpret_cast<const char*>(val);

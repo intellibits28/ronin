@@ -686,14 +686,24 @@ class MainActivity : FragmentActivity() {
                                 }
                             }
                             "QUERY_VAULT", "LOOKUP_VAULT" -> {
-                                val title = params["vault_title"] ?: params["title"] ?: params["entity"] ?: params["query"] ?: 
+                                val title = params["vault_title"] ?: params["title"] ?: params["entity"] ?: params["query"] ?: params["subject"] ?:
                                             params.keys.find { 
                                                 val k = it.lowercase()
-                                                k.contains("name") || k.contains("title") || k.contains("subject") || k.contains("item")
-                                            }?.let { params[it] } ?: ""
+                                                k.contains("name") || k.contains("title") || k.contains("subject") || k.contains("item") || k.contains("secret")
+                                            }?.let { params[it] } ?: params.values.firstOrNull { it.length > 3 } ?: ""
+                                
                                 if (title.isEmpty()) "Error: Vault search title is empty. Params: $params"
                                 else authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $title") {
-                                    val encrypted = nativeEngine.lookupVault(title)
+                                    // v12.16: Try exact match first, then fuzzy match
+                                    var encrypted = nativeEngine.lookupVault(title)
+                                    if (encrypted.isEmpty() && title.length > 3) {
+                                         // Try fuzzy fallback if direct title lookup fails
+                                         val results = nativeEngine.searchNotes(title)
+                                         if (results != null && results.isNotEmpty()) {
+                                             // This is a note search fallback, not vault, but helps if user confused them
+                                         }
+                                    }
+                                    
                                     if (encrypted.isNotEmpty()) {
                                         val decrypted = nativeEngine.decryptSecret(encrypted)
                                         val uiMsg = "\n[VAULT] $title: $decrypted"

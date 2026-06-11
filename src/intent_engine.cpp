@@ -69,22 +69,22 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
+    // v12.14: Constrained Prompting (Rigid JSON Enforcement)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY valid JSON. "
+        "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY a valid JSON object. "
         "Rules: "
-        "- Memory/Fact Save: intent 'ADD_FACT' / 'ADD_VAULT'. For 'မှတ်ထား', 'save'. Steps ['SAVE_FACT'] / ['SAVE_VAULT']. "
-        "- Memory/Fact Find: intent 'LOOKUP_FACT' / 'LOOKUP_VAULT'. For 'ဆေး', 'ကား', 'password'. Steps ['QUERY_FACT'] / ['QUERY_VAULT']. "
-        "- Files: intent 'FILE_SEARCH'. For 'pdf', 'doc', 'txt', 'စာရွက်'. "
-        "- Sensor: intent 'SENSOR_ANALYSIS'. Steps ['GET_SENSOR_ANALYSIS']. For 'တုန်ခါမှု', 'vibration', 'resonance'. "
-        "- Calendar: intent 'CALENDAR'. Steps ['ADD_EVENT'] or ['READ_CALENDAR']. "
-        "- Alarm: intent 'ALARM'. Steps ['SET_ALARM']. "
-        "- Map/SMS: steps ['GET_LOCATION', 'OPEN_MAP'] / ['GET_LOCATION', 'RESOLVE_CONTACT', 'SEND_SMS']. "
+        "- SAVE Fact: intent 'ADD_FACT', steps ['SAVE_FACT']. "
+        "- FIND Fact: intent 'LOOKUP_FACT', steps ['QUERY_FACT']. "
+        "- SAVE Vault: intent 'ADD_VAULT', steps ['SAVE_VAULT']. "
+        "- FIND Vault: intent 'LOOKUP_VAULT', steps ['QUERY_VAULT']. "
+        "- FILES: intent 'FILE_SEARCH', steps ['SEARCH_FILES']. "
+        "- SENSOR: intent 'SENSOR_ANALYSIS', steps ['GET_SENSOR_ANALYSIS']. "
+        "- CALENDAR: intent 'CALENDAR', steps ['ADD_EVENT'] or ['READ_CALENDAR']. "
+        "- ALARM: intent 'ALARM', steps ['SET_ALARM']. "
+        "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"query\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\"}} "
         "Examples: "
-        "User: 'ကားနံပါတ် 1234 လို့ မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"1234\"}} "
-        "User: 'wifi password ကို 1234 လို့ မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\",\"vault_content\":\"1234\"}} "
-        "User: 'ကားနံပါတ် ရှာပေး' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"QUERY_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\"}} "
-        "User: 'ronin_test.pdf ရှာပေး' -> {\"intent\":\"FILE_SEARCH\",\"plan\":[\"SEARCH_FILES\"],\"parameters\":{\"query\":\"ronin_test\"}} "
-        "User: 'မနက်ဖြန် ၆နာရီ နှိုးပေး' -> {\"intent\":\"ALARM\",\"plan\":[\"SET_ALARM\"],\"parameters\":{\"time\":\"06:00\",\"message\":\"Alarm\"}} ";
+        "User: 'ကားနံပါတ် 123 လို့ မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} "
+        "User: 'ကားနံပါတ် ရှာပေး' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"QUERY_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\"}} ";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
@@ -112,32 +112,35 @@ CapabilityType TaskPlanner::mapIntentToCapability(const std::string& intent_name
     std::string i_lower = intent_name;
     std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
 
-    if (i_lower.find("location") != std::string::npos || i_lower.find("map") != std::string::npos) {
+    if (i_lower == "location" || i_lower == "get_location" || i_lower == "map" || i_lower == "open_map") {
         return CapabilityType::LOCATION;
     }
-    if (i_lower.find("sms") != std::string::npos || i_lower.find("message") != std::string::npos) {
+    if (i_lower == "sms" || i_lower == "send_sms") {
         return CapabilityType::SMS;
     }
-    if (i_lower.find("alarm") != std::string::npos || i_lower.find("wake") != std::string::npos || i_lower.find("နှိုး") != std::string::npos) {
+    if (i_lower == "alarm" || i_lower == "set_alarm") {
         return CapabilityType::ALARM;
     }
-    if (i_lower.find("calendar") != std::string::npos || i_lower.find("event") != std::string::npos || i_lower.find("meeting") != std::string::npos || i_lower.find("schedule") != std::string::npos || i_lower.find("မှတ်") != std::string::npos || i_lower.find("ကြည့်") != std::string::npos) {
-        // Handle overlap with MEMORY ("မှတ်") by prioritizing CALENDAR if other keywords exist
-        if (i_lower.find("meeting") != std::string::npos || i_lower.find("event") != std::string::npos || i_lower.find("calendar") != std::string::npos) {
-            return CapabilityType::CALENDAR;
-        }
+    if (i_lower == "calendar" || i_lower == "add_event" || i_lower == "read_calendar") {
+        return CapabilityType::CALENDAR;
     }
-    if (i_lower.find("file") != std::string::npos || i_lower.find("document") != std::string::npos || i_lower.find("ဖိုင်") != std::string::npos) {
+    if (i_lower == "file_search" || i_lower == "search_files") {
         return CapabilityType::FILES;
     }
-    if (i_lower.find("note") != std::string::npos || i_lower.find("fact") != std::string::npos || 
-        i_lower.find("vault") != std::string::npos || i_lower.find("lookup") != std::string::npos ||
-        i_lower.find("search") != std::string::npos || i_lower.find("remember") != std::string::npos) {
+    if (i_lower == "add_fact" || i_lower == "lookup_fact" || i_lower == "add_vault" || i_lower == "lookup_vault" || i_lower == "memory") {
         return CapabilityType::MEMORY;
     }
-    if (i_lower.find("resonance") != std::string::npos || i_lower.find("vibration") != std::string::npos || i_lower.find("sensor") != std::string::npos || i_lower.find("တုန်ခါမှု") != std::string::npos) {
+    if (i_lower == "sensor_analysis" || i_lower == "get_sensor_analysis") {
         return CapabilityType::SENSOR;
     }
+    
+    // v12.12: Substring fallback for LLM hallucinations
+    if (i_lower.find("calendar") != std::string::npos || i_lower.find("meeting") != std::string::npos || i_lower.find("event") != std::string::npos) return CapabilityType::CALENDAR;
+    if (i_lower.find("fact") != std::string::npos || i_lower.find("vault") != std::string::npos || i_lower.find("note") != std::string::npos) return CapabilityType::MEMORY;
+    if (i_lower.find("sensor") != std::string::npos || i_lower.find("vibration") != std::string::npos) return CapabilityType::SENSOR;
+    if (i_lower.find("location") != std::string::npos || i_lower.find("map") != std::string::npos) return CapabilityType::LOCATION;
+    if (i_lower.find("sms") != std::string::npos) return CapabilityType::SMS;
+
     return CapabilityType::NONE;
 }
 
@@ -361,6 +364,20 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     // v12.11: Strong action keywords override inquiry
     if (is_simple_agent || is_complex) {
         final_cat = IntentCategory::AGENT_PLAN;
+    }
+
+    // v12.13: Final Keyword Override (Security Hardening & Point 4 Fallback)
+    if (input_lower.find("နှိုး") != std::string::npos || input_lower.find("alarm") != std::string::npos || 
+        input_lower.find("meeting") != std::string::npos || input_lower.find("calendar") != std::string::npos ||
+        input_lower.find("တုန်ခါမှု") != std::string::npos || input_lower.find("vibration") != std::string::npos ||
+        input_lower.find("မှတ်ထား") != std::string::npos || input_lower.find("မှတ်မိ") != std::string::npos ||
+        input_lower.find("ရှာပေး") != std::string::npos || input_lower.find("ရှာပါ") != std::string::npos ||
+        input_lower.find("pdf") != std::string::npos || input_lower.find("doc") != std::string::npos ||
+        input_lower.find("file") != std::string::npos || input_lower.find("ဖိုင်") != std::string::npos) {
+        final_cat = IntentCategory::AGENT_PLAN;
+    }
+
+    if (final_cat == IntentCategory::AGENT_PLAN) {
         LOGI(TAG, "v7.0 Agent Request Detected -> Category AGENT_PLAN");
         Ronin::Kernel::Capability::HardwareBridge::updateDevHUD("PLANNING", "PENDING", 0.0f, "");
         return {1, 1.0f, true, final_cat}; 
