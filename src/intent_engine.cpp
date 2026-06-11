@@ -71,20 +71,17 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
 
     // v12.14: Constrained Prompting (Rigid JSON Enforcement)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY a valid JSON object. "
-        "Rules: "
-        "- SAVE Fact: intent 'ADD_FACT', steps ['SAVE_FACT']. "
-        "- FIND Fact: intent 'LOOKUP_FACT', steps ['QUERY_FACT']. "
-        "- SAVE Vault: intent 'ADD_VAULT', steps ['SAVE_VAULT']. "
-        "- FIND Vault: intent 'LOOKUP_VAULT', steps ['QUERY_VAULT']. "
-        "- FILES: intent 'FILE_SEARCH', steps ['SEARCH_FILES']. "
-        "- SENSOR: intent 'SENSOR_ANALYSIS', steps ['GET_SENSOR_ANALYSIS']. "
-        "- CALENDAR: intent 'CALENDAR', steps ['ADD_EVENT'] or ['READ_CALENDAR']. "
-        "- ALARM: intent 'ALARM', steps ['SET_ALARM']. "
-        "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"query\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\"}} "
+        "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY a valid JSON object. NEVER apologize. "
+        "Priority Rules: "
+        "1. SENSITIVE DATA (API keys, passwords, secrets, PINs) -> Use intent 'ADD_VAULT' or 'LOOKUP_VAULT'. NEVER use ADD_FACT for secrets. "
+        "2. LOCATION/MAP -> Use intent 'LOCATION' (to get) or 'MAP' (to show). "
+        "3. SENSOR/VIBRATION -> Use intent 'SENSOR_ANALYSIS'. Use ONLY for physical vibration/resonance. "
+        "4. FILES -> Use intent 'FILE_SEARCH'. "
+        "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"query\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\",\"time\":\"...\"}} "
         "Examples: "
+        "User: 'Gemini API key ကို မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"Gemini API key\",\"vault_content\":\"YOUR_KEY\"}} "
         "User: 'ကားနံပါတ် 123 လို့ မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} "
-        "User: 'ကားနံပါတ် ရှာပေး' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"QUERY_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\"}} ";
+        "User: 'တည်နေရာ မြေပုံမှာပြ' -> {\"intent\":\"MAP\",\"plan\":[\"GET_LOCATION\",\"OPEN_MAP\"],\"parameters\":{}} ";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
@@ -112,34 +109,34 @@ CapabilityType TaskPlanner::mapIntentToCapability(const std::string& intent_name
     std::string i_lower = intent_name;
     std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
 
-    if (i_lower == "location" || i_lower == "get_location" || i_lower == "map" || i_lower == "open_map") {
+    // v12.15: Strict Intent-to-Capability Mapping
+    if (i_lower == "map" || i_lower == "open_map" || i_lower == "location" || i_lower == "get_location") {
         return CapabilityType::LOCATION;
     }
-    if (i_lower == "sms" || i_lower == "send_sms") {
+    if (i_lower == "sms" || i_lower == "send_sms" || i_lower == "send_sms_with_location") {
         return CapabilityType::SMS;
-    }
-    if (i_lower == "alarm" || i_lower == "set_alarm") {
-        return CapabilityType::ALARM;
-    }
-    if (i_lower == "calendar" || i_lower == "add_event" || i_lower == "read_calendar") {
-        return CapabilityType::CALENDAR;
-    }
-    if (i_lower == "file_search" || i_lower == "search_files") {
-        return CapabilityType::FILES;
-    }
-    if (i_lower == "add_fact" || i_lower == "lookup_fact" || i_lower == "add_vault" || i_lower == "lookup_vault" || i_lower == "memory") {
-        return CapabilityType::MEMORY;
     }
     if (i_lower == "sensor_analysis" || i_lower == "get_sensor_analysis") {
         return CapabilityType::SENSOR;
     }
+    if (i_lower == "calendar" || i_lower == "add_event" || i_lower == "read_calendar") {
+        return CapabilityType::CALENDAR;
+    }
+    if (i_lower == "file_search" || i_lower == "search_files" || i_lower == "files") {
+        return CapabilityType::FILES;
+    }
+    if (i_lower.find("fact") != std::string::npos || i_lower.find("vault") != std::string::npos || i_lower == "memory") {
+        return CapabilityType::MEMORY;
+    }
+    if (i_lower == "alarm" || i_lower == "set_alarm") {
+        return CapabilityType::ALARM;
+    }
     
-    // v12.12: Substring fallback for LLM hallucinations
-    if (i_lower.find("calendar") != std::string::npos || i_lower.find("meeting") != std::string::npos || i_lower.find("event") != std::string::npos) return CapabilityType::CALENDAR;
-    if (i_lower.find("fact") != std::string::npos || i_lower.find("vault") != std::string::npos || i_lower.find("note") != std::string::npos) return CapabilityType::MEMORY;
-    if (i_lower.find("sensor") != std::string::npos || i_lower.find("vibration") != std::string::npos) return CapabilityType::SENSOR;
+    // v12.16: Substring fallback for LLM hallucinations
     if (i_lower.find("location") != std::string::npos || i_lower.find("map") != std::string::npos) return CapabilityType::LOCATION;
     if (i_lower.find("sms") != std::string::npos) return CapabilityType::SMS;
+    if (i_lower.find("sensor") != std::string::npos || i_lower.find("vibration") != std::string::npos) return CapabilityType::SENSOR;
+    if (i_lower.find("calendar") != std::string::npos || i_lower.find("meeting") != std::string::npos) return CapabilityType::CALENDAR;
 
     return CapabilityType::NONE;
 }
@@ -342,19 +339,23 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("ရှာ") || token_set.count("ပြန်ရှာ") ||
                            token_set.count("alarm") || token_set.count("နှိုး") ||
                            token_set.count("calendar") || token_set.count("meeting") ||
-                           token_set.count("event") || token_set.count("တုန်ခါမှု") ||
-                           token_set.count("vibration") || token_set.count("resonance") ||
-                           token_set.count("sensor");
+                           token_set.count("event");
+
+    // v12.18: Decouple sensor from simple agent to prevent location->sensor misrouting
+    bool is_sensor_req = token_set.count("တုန်ခါမှု") || token_set.count("vibration") || 
+                         token_set.count("resonance") || token_set.count("sensor");
 
     // v12.2: Raw substring fallback for robust detection
-    if (!is_simple_agent) {
+    if (!is_simple_agent && !is_sensor_req) {
         is_simple_agent = (input_lower.find("alarm") != std::string::npos) ||
                           (input_lower.find("နှိုး") != std::string::npos) ||
                           (input_lower.find("meeting") != std::string::npos) ||
-                          (input_lower.find("ရှာ") != std::string::npos) ||
-                          (input_lower.find("search") != std::string::npos) ||
-                          (input_lower.find("တုန်ခါမှု") != std::string::npos) ||
-                          (input_lower.find("vibration") != std::string::npos);
+                          (input_lower.find("ရှာ") != std::string::npos);
+    }
+    
+    if (!is_sensor_req) {
+        is_sensor_req = (input_lower.find("တုန်ခါမှု") != std::string::npos) ||
+                        (input_lower.find("vibration") != std::string::npos);
     }
 
     bool is_inquiry = token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
@@ -362,7 +363,7 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                       token_set.count("why");
 
     // v12.11: Strong action keywords override inquiry
-    if (is_simple_agent || is_complex) {
+    if (is_simple_agent || is_complex || is_sensor_req) {
         final_cat = IntentCategory::AGENT_PLAN;
     }
 

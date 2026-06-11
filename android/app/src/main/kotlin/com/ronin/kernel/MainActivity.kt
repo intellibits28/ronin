@@ -403,21 +403,18 @@ class MainActivity : FragmentActivity() {
                     android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED
                 )
                 
-                // Filter for Documents and Downloads folders and common document extensions
-                val selection = "(${android.provider.MediaStore.Files.FileColumns.DATA} LIKE ? OR ${android.provider.MediaStore.Files.FileColumns.DATA} LIKE ?) AND " +
-                                "(${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.md' OR " +
+                // Filter for common document extensions anywhere on storage
+                val selection = "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.md' OR " +
                                 "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.txt' OR " +
                                 "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.pdf' OR " +
-                                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.doc%')"
-                
-                val selectionArgs = arrayOf("%/Documents/%", "%/Download/%")
+                                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.doc%'"
                 
                 val cursor = contentResolver.query(
                     android.provider.MediaStore.Files.getContentUri("external"),
                     projection,
                     selection,
-                    selectionArgs,
-                    null
+                    null,
+                    "${android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
                 )
 
                 cursor?.use {
@@ -747,11 +744,31 @@ class MainActivity : FragmentActivity() {
                                 val executeLookup = {
                                     val res = nativeEngine.lookupFact(entity, attr)
                                     if (res.isNotEmpty()) {
-                                        val uiMsg = "\n[FACT] $entity's $attr is $res"
+                                        // v12.18: Smart Decryption Fallback - if it looks like encrypted Base64 and it's a sensitive field
+                                        var finalRes = res
+                                        if (isSensitive && res.length > 20 && !res.contains(" ")) {
+                                            try {
+                                                val decrypted = nativeEngine.decryptSecret(res)
+                                                if (decrypted.isNotEmpty()) finalRes = decrypted
+                                            } catch (e: Exception) {}
+                                        }
+
+                                        val uiMsg = "\n[FACT] $entity's $attr is $finalRes"
                                         nativeEngine.pushTokenToUI(uiMsg, true)
                                         nativeEngine.pushKernelMessage("[AGENT] Fact Found: $entity's $attr")
-                                        res 
-                                    } else "Error: No information found for $entity's $attr."
+                                        finalRes 
+                                    } else {
+                                        // Try Vault Fallback if Fact fails for sensitive info
+                                        if (isSensitive) {
+                                            val vRes = nativeEngine.lookupVault(entity)
+                                            if (vRes.isNotEmpty()) {
+                                                val decrypted = nativeEngine.decryptSecret(vRes)
+                                                val uiMsg = "\n[VAULT FALLBACK] $entity: $decrypted"
+                                                nativeEngine.pushTokenToUI(uiMsg, true)
+                                                decrypted
+                                            } else "Error: No information found for $entity's $attr."
+                                        } else "Error: No information found for $entity's $attr."
+                                    }
                                 }
 
                                 if (isSensitive) {
@@ -831,7 +848,8 @@ class MainActivity : FragmentActivity() {
 
                         val cal = java.util.Calendar.getInstance()
                         var beginTime = cal.timeInMillis
-                        val isTomorrow = time.contains("tomorrow", true) || time.contains("မနက်ဖြန်", true)
+                        // v12.17: Check raw input for 'tomorrow' context if param is weak
+                        val isTomorrow = time.lowercase().contains("tomorrow") || time.contains("မနက်ဖြန်") || input.contains("မနက်ဖြန်") || input.lowercase().contains("tomorrow")
                         
                         // v12.1: Robust time parsing (Regex matches 11:00, 11နာရီ, 11:30, 11နာရီခွဲ)
                         val timeRegex = Regex("(\\d{1,2})[:\\s]*(\\d{2})?|(\\d{1,2})\\s*(နာရီ|နာရီခွဲ|am|pm)")
@@ -848,6 +866,8 @@ class MainActivity : FragmentActivity() {
                             val minute = if (h1 != null) m1 else m2
                             
                             if (time.lowercase().contains("pm") && hour < 12) hour += 12
+                            // v12.17: Basic AM/PM detection for Burmese (if no explicit am/pm, and hour < 8, assume PM for meetings)
+                            if (!time.lowercase().contains("am") && !time.lowercase().contains("pm") && hour > 0 && hour < 8) hour += 12
                             
                             cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
                             cal.set(java.util.Calendar.MINUTE, minute)
@@ -855,7 +875,7 @@ class MainActivity : FragmentActivity() {
                             beginTime = cal.timeInMillis
                         } else if (isTomorrow) {
                             cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
-                            cal.set(java.util.Calendar.HOUR_OF_DAY, 10) // Default 10 AM tomorrow
+                            cal.set(java.util.Calendar.HOUR_OF_DAY, 9) // Default 9 AM tomorrow
                             beginTime = cal.timeInMillis
                         }
 
@@ -1009,7 +1029,7 @@ class MainActivity : FragmentActivity() {
                 }
                 "FILE_SEARCH", "FILES", "SEARCH_FILES" -> {
                     try {
-                        val query = params["query"] ?: params["keyword"] ?: ""
+                        val query = params["query"] ?: params["keyword"] ?: params["file"] ?: params["filename"] ?: ""
                         val noteResults = nativeEngine.searchNotes(query)
                         val epResults = nativeEngine.searchEpisodes(query)
                         val fileResults = nativeEngine.searchFiles(query)
