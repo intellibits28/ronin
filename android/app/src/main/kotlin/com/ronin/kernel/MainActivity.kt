@@ -708,7 +708,11 @@ class MainActivity : FragmentActivity() {
                                         nativeEngine.pushTokenToUI(uiMsg, true)
                                         nativeEngine.pushKernelMessage("[AGENT] Vault Found: $title")
                                         decrypted
-                                    } else "Error: No vault entry found for '$title'."
+                                    } else {
+                                        val err = "Error: No vault entry found for '$title'."
+                                        nativeEngine.pushTokenToUI("\n[VAULT] $err", true)
+                                        err
+                                    }
                                 }
                             }
                             "SEARCH_NOTES" -> {
@@ -767,8 +771,16 @@ class MainActivity : FragmentActivity() {
                                                 val uiMsg = "\n[VAULT FALLBACK] $entity: $decrypted"
                                                 nativeEngine.pushTokenToUI(uiMsg, true)
                                                 decrypted
-                                            } else "Error: No information found for $entity's $attr."
-                                        } else "Error: No information found for $entity's $attr."
+                                            } else {
+                                                val err = "Error: No information found for $entity's $attr."
+                                                nativeEngine.pushTokenToUI("\n[FACT] $err", true)
+                                                err
+                                            }
+                                        } else {
+                                            val err = "Error: No information found for $entity's $attr."
+                                            nativeEngine.pushTokenToUI("\n[FACT] $err", true)
+                                            err
+                                        }
                                     }
                                 }
 
@@ -1041,6 +1053,20 @@ class MainActivity : FragmentActivity() {
                         if (noteResults != null) combined.addAll(noteResults.toList())
                         if (epResults != null) combined.addAll(epResults.toList())
                         if (fileResults != null) combined.addAll(fileResults.toList())
+                        
+                        // v12.22: Deep File System Fallback (Toybox find) if DB/MediaStore misses the file
+                        if (combined.isEmpty() && query.length > 2) {
+                            try {
+                                val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "find /storage/emulated/0/ -iname '*$query*' -type f | head -n 5"))
+                                val reader = java.io.BufferedReader(java.io.InputStreamReader(proc.inputStream))
+                                var line: String?
+                                while (reader.readLine().also { line = it } != null) {
+                                    val f = java.io.File(line!!)
+                                    combined.add("File: ${f.name}\nPath: ${f.absolutePath}\nSize: ${f.length()} bytes")
+                                }
+                                proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+                            } catch (e: Exception) { Log.e("RoninKernel_MainActivity", "Deep find failed: ${e.message}") }
+                        }
                         
                         val output = if (combined.isEmpty()) "No files or documents found matching: $query"
                         else "Found ${combined.size} items:\n" + combined.take(5).joinToString("\n---\n")

@@ -87,10 +87,10 @@ void AgentScheduler::workerLoop() {
                     type = CapabilityType::CONTACTS;
                 else if (s_lower.find("save") != std::string::npos || s_lower.find("store") != std::string::npos || 
                          s_lower.find("add_fact") != std::string::npos || s_lower.find("record") != std::string::npos || 
-                         s_lower.find("query") != std::string::npos || s_lower.find("lookup") != std::string::npos || 
-                         s_lower.find("memory") != std::string::npos || s_lower.find("မှတ်") != std::string::npos ||
-                         s_lower.find("vault") != std::string::npos || s_lower.find("fact") != std::string::npos ||
-                         s_lower.find("get_vault_content") != std::string::npos)
+                         s_lower.find("query_fact") != std::string::npos || s_lower.find("query_vault") != std::string::npos || 
+                         s_lower.find("lookup") != std::string::npos || s_lower.find("memory") != std::string::npos || 
+                         s_lower.find("မှတ်") != std::string::npos || s_lower.find("vault") != std::string::npos || 
+                         s_lower.find("fact") != std::string::npos || s_lower.find("get_vault_content") != std::string::npos)
                     type = CapabilityType::MEMORY;
                 else if (s_lower.find("alarm") != std::string::npos || s_lower.find("wake") != std::string::npos || s_lower.find("နှိုး") != std::string::npos)
                     type = CapabilityType::ALARM;

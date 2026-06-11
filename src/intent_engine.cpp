@@ -79,10 +79,12 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "4. FILES -> Use intent 'FILE_SEARCH'. "
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"query\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\",\"time\":\"...\"}} "
         "Examples: "
-        "User: 'Gemini API key ကို မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"Gemini API key\",\"vault_content\":\"YOUR_KEY\"}} "
+        "User: 'wifi password 1234 လို့ မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\",\"vault_content\":\"1234\"}} "
+        "User: 'wifi password ပြန်ကြည့်မယ်' -> {\"intent\":\"LOOKUP_VAULT\",\"plan\":[\"QUERY_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\"}} "
         "User: 'တည်နေရာ မြေပုံမှာပြ' -> {\"intent\":\"MAP\",\"plan\":[\"GET_LOCATION\",\"OPEN_MAP\"],\"parameters\":{}} "
         "User: 'တည်နေရာကို Test ဆီ SMS ပို့ပါ' -> {\"intent\":\"SMS\",\"plan\":[\"GET_LOCATION\",\"RESOLVE_CONTACT\",\"SEND_SMS\"],\"parameters\":{\"recipient_name\":\"Test\"}} "
-        "User: 'ကားနံပါတ် 123 လို့ မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} ";
+        "User: 'ကားနံပါတ် 123 လို့ မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} "
+        "User: 'ကားနံပါတ် ရှာပေး' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"QUERY_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\"}} ";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
