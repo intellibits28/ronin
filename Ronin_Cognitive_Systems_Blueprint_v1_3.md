@@ -136,8 +136,8 @@ CREATE TABLE predictions (
 *   [x] **Long Horizon Planning:** Multi-step goal decomposition (e.g. Calendar-aware Alarms).
 *   [x] **Self-Evaluation Loops:** Continuous strategy optimization.
 
-### Phase 5: Observability & Continuous Calibration (Active)
+### Phase 5: Observability & Continuous Calibration (Done)
 
-*   [ ] **1Hz Developer HUD:** Real-time visualization of cognitive state and Bayesian weights.
-*   [ ] **Confidence Calibration:** Automatic threshold adjustment based on prediction error.
-*   [ ] **Deep-Store Sync:** Optimized atomic persistence for high-frequency belief updates.
+*   [x] **1Hz Developer HUD:** Real-time visualization of cognitive state and Bayesian weights.
+*   [x] **Confidence Calibration:** Automatic threshold adjustment based on prediction error.
+*   [x] **Deep-Store Sync:** Optimized atomic persistence for high-frequency belief updates.
