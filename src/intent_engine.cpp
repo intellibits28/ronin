@@ -73,22 +73,21 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     std::string system_prompt = 
         "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY a valid JSON object. NEVER apologize. "
         "Priority Rules: "
-        "1. CALENDAR EVENTS (Meetings, Schedules, Appointments, Dates) -> Use intent 'CALENDAR'. Steps ['ADD_EVENT'] or ['READ_CALENDAR']. NEVER use ADD_FACT for time-based events. "
-        "2. SENSITIVE DATA (API keys, passwords, secrets, PINs) -> Use intent 'ADD_VAULT' or 'LOOKUP_VAULT'. NEVER use ADD_FACT for secrets. "
-        "3. LOCATION/MAP -> Use intent 'LOCATION' (to get) or 'MAP' (to show). "
-        "4. FILES -> Use intent 'FILE_SEARCH'. You HAVE access to 'Download' and 'Documents' folders. "
-        "5. SENSOR/VIBRATION -> Use intent 'SENSOR_ANALYSIS'. Use ONLY for physical vibration/resonance. "
-        "6. FULL ENTITY EXTRACTION -> Always extract the COMPLETE subject name for 'entity' (e.g. 'Toyota Wish ကား' instead of just 'ကား'). "
+        "1. ALARM CLOCK (Waking up, specific time alerts) -> Use intent 'ALARM'. Step ['SET_ALARM']. Use ONLY for short-term daily wake-up alerts. "
+        "2. CALENDAR EVENTS (Meetings, Schedules, Appointments, Dates) -> Use intent 'CALENDAR'. Steps ['ADD_EVENT'] or ['READ_CALENDAR']. "
+        "3. SENSITIVE DATA (API keys, passwords, secrets, PINs, Credit Cards) -> Use intent 'ADD_VAULT' or 'LOOKUP_VAULT'. NEVER use ADD_FACT for secrets. "
+        "4. LOCATION/MAP -> Use intent 'LOCATION' (to get) or 'MAP' (to show). "
+        "5. FILES -> Use intent 'FILE_SEARCH'. You HAVE access to 'Download' and 'Documents' folders. "
+        "6. SENSOR/VIBRATION -> Use intent 'SENSOR_ANALYSIS'. Use ONLY for physical vibration/resonance. "
+        "7. FULL ENTITY EXTRACTION -> Always extract the COMPLETE subject name for 'entity' (e.g. 'Toyota Wish ကား' instead of just 'ကား'). "
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"query\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\",\"time\":\"...\",\"title\":\"...\"}} "
         "Examples: "
+        "User: 'မနက်ဖြန် ၅နာရီ နှိုးစက်ပေး' -> {\"intent\":\"ALARM\",\"plan\":[\"SET_ALARM\"],\"parameters\":{\"time\":\"5:00 AM\",\"label\":\"Wake Up\"}} "
         "User: 'မနက်ဖြန် ၉နာရီ meeting မှတ်ထား' -> {\"intent\":\"CALENDAR\",\"plan\":[\"ADD_EVENT\"],\"parameters\":{\"title\":\"meeting\",\"time\":\"tomorrow 9:00\"}} "
+        "User: 'Visa Card ကတ်နံပါတ် ပြန်ကြည့်မယ်' -> {\"intent\":\"LOOKUP_VAULT\",\"plan\":[\"QUERY_VAULT\"],\"parameters\":{\"vault_title\":\"Visa Card\"}} "
+        "User: 'Visa Card ပိုင်ရှင်နာမည် ဘယ်သူလဲ' -> {\"intent\":\"LOOKUP_VAULT\",\"plan\":[\"QUERY_VAULT\"],\"parameters\":{\"vault_title\":\"Visa Card\"}} "
         "User: 'wifi password 1234 လို့ မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\",\"vault_content\":\"1234\"}} "
-        "User: 'wifi password ပြန်ကြည့်မယ်' -> {\"intent\":\"LOOKUP_VAULT\",\"plan\":[\"QUERY_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\"}} "
-        "User: 'တည်နေရာ မြေပုံမှာပြ' -> {\"intent\":\"MAP\",\"plan\":[\"GET_LOCATION\",\"OPEN_MAP\"],\"parameters\":{}} "
-        "User: 'တည်နေရာကို Test ဆီ SMS ပို့ပါ' -> {\"intent\":\"SMS\",\"plan\":[\"GET_LOCATION\",\"RESOLVE_CONTACT\",\"SEND_SMS\"],\"parameters\":{\"recipient_name\":\"Test\"}} "
-        "User: 'Toyota Wish ကားနံပါတ် 123 လို့ မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} "
-        "User: 'Toyota Wish ကားနံပါတ် ရှာပေး' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"QUERY_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish ကား\",\"attribute\":\"နံပါတ်\"}} "
-        "User: 'ronin_test.pdf ဖိုင်ရှာပေး' -> {\"intent\":\"FILE_SEARCH\",\"plan\":[\"SEARCH_FILES\"],\"parameters\":{\"query\":\"ronin_test.pdf\"}} ";
+        "User: 'wifi password ပြန်ကြည့်မယ်' -> {\"intent\":\"LOOKUP_VAULT\",\"plan\":[\"QUERY_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\"}} ";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 

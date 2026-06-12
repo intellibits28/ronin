@@ -595,6 +595,11 @@ class MainActivity : FragmentActivity() {
         nativeEngine.onKernelMessageCallback = { msg -> 
             runOnUiThread {
                 vm.reasoningLogsText += "\n> $msg"
+                
+                // v12.30: If it's a bracketed tool result (e.g. [SENSOR ANALYSIS]), push to chat bubbles too
+                if (msg.startsWith("[") && !msg.startsWith("[AGENT]")) {
+                    vm.messages.add(ChatMessage("Ronin", msg))
+                }
             }
         }
         
@@ -689,33 +694,38 @@ class MainActivity : FragmentActivity() {
                                 }
                             }
                             "QUERY_VAULT", "LOOKUP_VAULT", "GET_VAULT_CONTENT", "READ_VAULT", "RETURN_CONTENT" -> {
-                                val title = params["vault_title"] ?: params["title"] ?: params["entity"] ?: params["query"] ?: params["subject"] ?:
+                                val rawTitle = params["vault_title"] ?: params["title"] ?: params["entity"] ?: params["query"] ?: params["subject"] ?:
                                             params.keys.find { 
                                                 val k = it.lowercase()
                                                 k.contains("name") || k.contains("title") || k.contains("subject") || k.contains("item") || k.contains("secret")
                                             }?.let { params[it] } ?: params.values.firstOrNull { it.length > 3 } ?: ""
                                 
-                                if (title.isEmpty()) "Error: Vault search title is empty. Params: $params"
-                                else authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $title") {
-                                    // v12.16: Try exact match first, then fuzzy match
-                                    var encrypted = nativeEngine.lookupVault(title)
-                                    if (encrypted.isEmpty() && title.length > 3) {
-                                         // Try fuzzy fallback if direct title lookup fails
-                                         val results = nativeEngine.searchNotes(title)
-                                         if (results != null && results.isNotEmpty()) {
-                                             // This is a note search fallback, not vault, but helps if user confused them
-                                         }
-                                    }
+                                if (rawTitle.isEmpty()) "Error: Vault search title is empty. Params: $params"
+                                else authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $rawTitle") {
+                                    // v12.31: Multi-stage title fuzzy fallback (e.g. PHYO WAI -> Visa Card)
+                                    var encrypted = nativeEngine.lookupVault(rawTitle)
+                                    var title = rawTitle
                                     
+                                    if (encrypted.isEmpty()) {
+                                        // Try common keywords if specific title fails
+                                        val fallbackKeywords = listOf("card", "visa", "bank", "password", "key", "secret", "လိုင်စင်")
+                                        for (kw in fallbackKeywords) {
+                                            if (rawTitle.lowercase().contains(kw) || kw.contains(rawTitle.lowercase())) {
+                                                val res = nativeEngine.lookupVault(kw)
+                                                if (res.isNotEmpty()) { encrypted = res; title = kw; break }
+                                            }
+                                        }
+                                    }
+
                                     if (encrypted.isNotEmpty()) {
                                         val decrypted = nativeEngine.decryptSecret(encrypted)
-                                        val uiMsg = "\n[VAULT] $title: $decrypted"
+                                        val uiMsg = "\n[VAULT] Found in '$title':\n$decrypted"
                                         nativeEngine.pushKernelMessage(uiMsg)
                                         nativeEngine.pushKernelMessage("[AGENT] Vault Found: $title")
                                         decrypted
                                     } else {
-                                        val err = "Error: No vault entry found for '$title'."
-                                        nativeEngine.pushTokenToUI("\n[VAULT] $err", true)
+                                        val err = "Error: No vault entry found for '$rawTitle'."
+                                        nativeEngine.pushKernelMessage("\n[VAULT] $err")
                                         err
                                     }
                                 }
