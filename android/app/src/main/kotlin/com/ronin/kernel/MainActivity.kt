@@ -1088,14 +1088,22 @@ class MainActivity : FragmentActivity() {
                         // v12.22: Deep File System Fallback (Toybox find) if DB/MediaStore misses the file
                         if (combined.isEmpty() && query.length > 2) {
                             try {
-                                val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "find /storage/emulated/0/ -iname '*$query*' -type f | head -n 5"))
-                                val reader = java.io.BufferedReader(java.io.InputStreamReader(proc.inputStream))
-                                var line: String?
-                                while (reader.readLine().also { line = it } != null) {
-                                    val f = java.io.File(line!!)
+                                // v12.26: Multi-stage fallback: Direct Download check + find command
+                                val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                                downloadDir.listFiles()?.filter { it.name.contains(query, true) }?.forEach { f ->
                                     combined.add("File: ${f.name}\nPath: ${f.absolutePath}\nSize: ${f.length()} bytes")
                                 }
-                                proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+
+                                if (combined.isEmpty()) {
+                                    val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "find /storage/emulated/0/ -name '*$query*' -type f | head -n 5"))
+                                    val reader = java.io.BufferedReader(java.io.InputStreamReader(proc.inputStream))
+                                    var line: String?
+                                    while (reader.readLine().also { line = it } != null) {
+                                        val f = java.io.File(line!!)
+                                        combined.add("File: ${f.name}\nPath: ${f.absolutePath}\nSize: ${f.length()} bytes")
+                                    }
+                                    proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+                                }
                             } catch (e: Exception) { Log.e("RoninKernel_MainActivity", "Deep find failed: ${e.message}") }
                         }
                         
@@ -1169,10 +1177,24 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 Column(modifier = Modifier.fillMaxSize()) {
                     if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
                     AnimatedVisibility(visible = chatViewModel.showReasoning) { 
-                        Box(modifier = Modifier.height(150.dp).fillMaxWidth().background(Color(0xFF12141C)).padding(8.dp).border(1.dp, Color.Cyan.copy(alpha = 0.2f), RoundedCornerShape(8.dp))) { 
-                            val scrollState = rememberScrollState()
-                            LaunchedEffect(chatViewModel.reasoningLogsText) { scrollState.animateScrollTo(scrollState.maxValue) }
-                            Text(chatViewModel.reasoningLogsText, color = Color.Cyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.verticalScroll(scrollState))
+                        Box(modifier = Modifier.height(180.dp).fillMaxWidth().background(Color(0xFF12141C)).padding(8.dp).border(1.dp, Color.Cyan.copy(alpha = 0.2f), RoundedCornerShape(8.dp))) { 
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+                                    Text("Reasoning Console", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = { 
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("Ronin Console", chatViewModel.reasoningLogsText)
+                                        clipboard.setPrimaryClip(clip)
+                                    }, modifier = Modifier.size(24.dp)) {
+                                        Icon(Icons.Default.Share, "Copy", tint = Color.Cyan, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                                val scrollState = rememberScrollState()
+                                LaunchedEffect(chatViewModel.reasoningLogsText) { scrollState.animateScrollTo(scrollState.maxValue) }
+                                androidx.compose.foundation.text.selection.SelectionContainer {
+                                    Text(chatViewModel.reasoningLogsText, color = Color.Cyan, fontSize = 9.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.verticalScroll(scrollState).weight(1f))
+                                }
+                            }
                         } 
                     }
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) { 
