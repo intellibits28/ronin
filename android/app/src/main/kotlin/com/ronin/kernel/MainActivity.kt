@@ -141,6 +141,11 @@ class ChatViewModel : ViewModel() {
     var hudConfidence by mutableStateOf(0.0f)
     var hudPlan by mutableStateOf("")
     var hudState by mutableStateOf("IDLE")
+    
+    // v1.0 Sensor DSP HUD
+    var sensorFreqHz by mutableStateOf(0.0f)
+    var sensorPsdDb by mutableStateOf(-100.0f)
+    var sensorAnomaly by mutableStateOf(false)
 
     var systemPrompt by mutableStateOf("You are Ronin. Always reason inside [THINK] [/THINK] and then reply inside [REPLY] [/REPLY] in Myanmar.")
 
@@ -1095,7 +1100,8 @@ class MainActivity : FragmentActivity() {
                                 }
 
                                 if (combined.isEmpty()) {
-                                    val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "find /storage/emulated/0/ -name '*$query*' -type f | head -n 5"))
+                                    // v12.27: Case-insensitive deep find
+                                    val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "find /storage/emulated/0/ -iname '*$query*' -type f | head -n 5"))
                                     val reader = java.io.BufferedReader(java.io.InputStreamReader(proc.inputStream))
                                     var line: String?
                                     while (reader.readLine().also { line = it } != null) {
@@ -1103,6 +1109,13 @@ class MainActivity : FragmentActivity() {
                                         combined.add("File: ${f.name}\nPath: ${f.absolutePath}\nSize: ${f.length()} bytes")
                                     }
                                     proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+                                }
+
+                                // v12.28: Check for internal assets if searching for dictionary
+                                if (combined.isEmpty() && (query.contains("dictionary", true) || query.contains("myanmar", true))) {
+                                    assets.list("")?.find { it.contains(query, true) }?.let {
+                                        combined.add("File: $it\nLocation: [Internal App Asset]\nNote: This is a system dictionary file.")
+                                    }
                                 }
                             } catch (e: Exception) { Log.e("RoninKernel_MainActivity", "Deep find failed: ${e.message}") }
                         }
@@ -1119,6 +1132,14 @@ class MainActivity : FragmentActivity() {
                         val sensorType = params["sensor_type"] ?: "accelerometer"
                         val analysis = sensorDriver.execute(JSONObject().put("action", "get_sensor_analysis").put("sensor_type", sensorType))
                         val output = analysis.toString()
+                        
+                        // Phase 5: Update HUD variables
+                        try {
+                            vm.sensorFreqHz = analysis.optDouble("resonance_freq_hz", 0.0).toFloat()
+                            vm.sensorPsdDb = analysis.optDouble("psd_peak_db", -100.0).toFloat()
+                            vm.sensorAnomaly = analysis.optBoolean("anomaly_detected", false)
+                        } catch (e: Exception) {}
+
                         nativeEngine.pushKernelMessage("\n[SENSOR ANALYSIS]\n$output")
                         output
                     } catch (e: Exception) { "Error: ${e.message}" }
@@ -1185,8 +1206,9 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                         val clip = android.content.ClipData.newPlainText("Ronin Console", chatViewModel.reasoningLogsText)
                                         clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "Console logs copied to clipboard", Toast.LENGTH_SHORT).show()
                                     }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.Share, "Copy", tint = Color.Cyan, modifier = Modifier.size(14.dp))
+                                        Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Cyan, modifier = Modifier.size(14.dp))
                                     }
                                 }
                                 val scrollState = rememberScrollState()
@@ -1240,6 +1262,15 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         Text("CONF: ${"%.2f".format(chatViewModel.hudConfidence)}", color = if(chatViewModel.hudConfidence > 0.5f) Color.Green else Color.Red, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                                         if (chatViewModel.hudPlan.isNotEmpty()) {
                                             Text("PLAN: ${chatViewModel.hudPlan}", color = Color.Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                        }
+                                        
+                                        // Phase 5: Sensor Analytics Visualization
+                                        if (chatViewModel.sensorFreqHz > 0) {
+                                            Divider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 4.dp))
+                                            Text("DSP SENSOR DATA", color = Color(0xFFFFA726), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            val anomalyColor = if(chatViewModel.sensorAnomaly) Color.Red else Color.Green
+                                            Text("PEAK: ${"%.1f".format(chatViewModel.sensorFreqHz)}Hz", color = anomalyColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                            Text("PSD: ${"%.1f".format(chatViewModel.sensorPsdDb)}dB", color = anomalyColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                                         }
                                     }
                                 }
@@ -1565,7 +1596,18 @@ fun ChatBubble(msg: ChatMessage, onContinue: () -> Unit = {}, onFeedback: (Boole
                         }
                     }
                     if (msg.content.isNotEmpty()) {
-                        Text(msg.content, color = Color.White, fontSize = 15.sp, lineHeight = 20.sp)
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(msg.content, color = Color.White, fontSize = 15.sp, lineHeight = 20.sp, modifier = Modifier.weight(1f))
+                            val context = LocalContext.current
+                            IconButton(onClick = { 
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                val clip = android.content.ClipData.newPlainText("Ronin Message", msg.content)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                            }, modifier = Modifier.size(20.dp).padding(start = 4.dp, top = 2.dp)) {
+                                Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Gray, modifier = Modifier.size(12.dp))
+                            }
+                        }
                     }
 
                     // v10.2.17: RLHF Feedback Row
