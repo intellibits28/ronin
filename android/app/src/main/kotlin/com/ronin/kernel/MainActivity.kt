@@ -598,7 +598,7 @@ class MainActivity : FragmentActivity() {
                 
                 // v12.30: If it's a bracketed tool result (e.g. [SENSOR ANALYSIS]), push to chat bubbles too
                 if (msg.startsWith("[") && !msg.startsWith("[AGENT]")) {
-                    vm.messages.add(ChatMessage("Ronin", msg))
+                    vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", msg))
                 }
             }
         }
