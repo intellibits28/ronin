@@ -1,4 +1,4 @@
-# Ronin Kernel: Mobile AI Runtime Spine
+ok# Ronin Kernel: Mobile AI Runtime Spine
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/intellibits28/ronin/build.yml?branch=main&style=flat-square)
 ![Version](https://img.shields.io/badge/version-4.7.27.05.27--HARDENED--v4.0-blue?style=flat-square)
@@ -81,5 +81,5 @@ Ronin Kernel is released under the **MIT License**. See [LICENSE](LICENSE) for d
 ---
 
 ## 👥 Authors & Acknowledgments
-*   **Architect:** Gemini CLI (Auto-Edit Mode)
+*   **Architect:** intellibits28, Gemini CLI (Auto-Edit Mode)
 *   **Inspiration:** Ronin Kernel v3.0 Hardened Architecture Blueprint.
