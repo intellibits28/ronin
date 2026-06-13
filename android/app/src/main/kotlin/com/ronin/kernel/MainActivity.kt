@@ -494,6 +494,22 @@ class MainActivity : FragmentActivity() {
         val needed = permissions.filter { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
         if (needed.isNotEmpty()) {
             requestPermissions(needed.toTypedArray(), 101)
+        }
+        
+        // v12.35: Request Manage All Files permission for Android 11+ (Required for deep search)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!android.os.Environment.isExternalStorageManager()) {
+                Toast.makeText(this, "Please allow 'All Files Access' for deep file search.", Toast.LENGTH_LONG).show()
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    intent.addCategory("android.intent.category.DEFAULT")
+                    intent.data = Uri.parse(String.format("package:%s", packageName))
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivity(intent)
+                }
+            }
         } else {
             scanLocalModels()
         }
@@ -1087,9 +1103,9 @@ class MainActivity : FragmentActivity() {
                         }
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
-                "FILE_SEARCH", "FILES", "SEARCH_FILES", "SEARCH_DATABASE", "SEARCH" -> {
+                "FILE_SEARCH", "FILES", "SEARCH_FILES", "SEARCH_DATABASE", "SEARCH", "QUERY_FILE", "QUERY_FILES" -> {
                     try {
-                        val query = params["query"] ?: params["keyword"] ?: params["file"] ?: params["filename"] ?: ""
+                        val query = params["query"] ?: params["entity"] ?: params["title"] ?: params["keyword"] ?: params["file"] ?: params["filename"] ?: ""
                         Log.i("RoninKernel_MainActivity", "FILE_SEARCH starting for query: '$query'")
                         val noteResults = nativeEngine.searchNotes(query)
                         val epResults = nativeEngine.searchEpisodes(query)
