@@ -11,7 +11,18 @@
 
 ## 🧪 BETA TESTING IS ACTIVE!
 We are currently in a public Beta phase. If you want to try Ronin on your device, please follow our:
-👉 **[BETA TESTING GUIDE](BETA_TESTING_GUIDE.md)** 👈
+👉 **[BETA TESTING GUIDE](docs/BETA_TESTING.md)** 👈
+
+---
+
+## 🏗️ Architecture & Blueprints
+Explore the detailed technical foundations of Ronin:
+*   **[Core Cognitive Blueprint v1.3](docs/BLUEPRINT_V1_3.md)**
+*   **[Hardened Architecture Blueprint](docs/HARDENED_ARCH_V3.pdf)**
+*   **[Memory Model Spec v2.1](docs/MEMORY_MODEL_V2.md)**
+*   **[Sensor DSP Tool Spec v1.0](docs/SENSOR_DSP_V1.md)**
+*   **[Technical Specifications](docs/TECHNICAL_SPECS.md)**
+*   **[Project Manifest](docs/MANIFEST.md)**
 
 ---
 
