@@ -44,6 +44,12 @@ jobs:
           cd build_host
           ./ronin_governance_test
 
+      - name: Self-Healing Runtime Tests
+        run: |
+          cd build_host
+          ninja ronin_self_healing_test
+          ./ronin_self_healing_test
+
       - name: Run Inference Module Tests
         run: |
           cd build_host

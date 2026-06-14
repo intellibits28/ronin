@@ -1,6 +1,7 @@
 #include "jni_gateway.h"
 #include "jni_utils.h"
 #include "execution_budget.h"
+#include "recovery_manager.h"
 #include "ronin_log.h"
 #include "agent_scheduler.h"
 
@@ -30,6 +31,9 @@ KernelResult<Execution::ExecutionContextPtr> JniExecutionGateway::createAndValid
     ctx->session_id = session_id;
     ctx->execution_id = exec_id;
     ctx->correlation_id = corr_id;
+
+    // v1.5: Recovery Checkpoint
+    Execution::RecoveryManager::getInstance().recordCheckpoint(ctx);
 
     // Allocate default 15s budget
     Execution::ExecutionBudgetController::getInstance().allocateBudget(exec_id, 15000);

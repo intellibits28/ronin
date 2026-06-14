@@ -3,8 +3,12 @@
 #include "ronin_log.h"
 #include "capabilities/hardware_bridge.h"
 #include "execution_budget.h"
+#include "recovery_manager.h"
+#include "adaptive_budget.h"
+#include "failure_telemetry.h"
 #include <chrono>
 #include <nlohmann/json.hpp>
+#include <thread>
 
 #define TAG "RoninScheduler"
 
@@ -129,82 +133,100 @@ void AgentScheduler::workerLoop() {
                     // v9.2: Pass all session parameters to every step
                     nlohmann::json jParams;
                     for (const auto& [k, v] : current_session->getParameters()) jParams[k] = v;
-                    
-                    // v10.1.22: Inject current step as 'action' for accurate Kotlin tool routing
                     jParams["action"] = step;
                     
-                    // v10.6: Enforce Execution Budget
-                    auto start_time = std::chrono::steady_clock::now();
+                    auto exec_ctx = current_session->getExecutionContext();
+                    std::string exec_id = exec_ctx ? exec_ctx->execution_id : "legacy";
                     
-                    // Call Layer 10 Optimizer and WAIT for completion with cancellation
-                    auto future = m_executor->optimizeAndDispatch(type, jParams.dump(), exec_ctx);
-                    
-                    try {
-                        LOGI(TAG, "L8 Scheduler: Waiting for Driver response (future.get)...");
-                        // We still wait for the future but check the cancellation token or timeout
-                        bool step_success = false;
-                        bool finished = false;
+                    // v1.5: Adaptive Budget Allocation
+                    uint32_t allocated_budget = Execution::AdaptiveBudgetController::getInstance().getAdaptedBudget(exec_id, step);
+                    if (exec_ctx) {
+                        Execution::ExecutionBudgetController::getInstance().allocateBudget(exec_id, allocated_budget);
+                    }
+
+                    int retry_count = 0;
+                    const int MAX_RETRIES = 3;
+                    bool step_success = false;
+
+                    while (retry_count <= MAX_RETRIES) {
+                        auto start_time = std::chrono::steady_clock::now();
+                        auto future = m_executor->optimizeAndDispatch(type, jParams.dump(), exec_ctx);
                         
-                        while (!finished) {
-                            if (future.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready) {
-                                step_success = future.get();
-                                finished = true;
-                                break;
+                        try {
+                            LOGI(TAG, "L8 Scheduler: Waiting for Driver response (Attempt %d)...", retry_count + 1);
+                            bool finished = false;
+                            
+                            while (!finished) {
+                                if (future.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready) {
+                                    step_success = future.get();
+                                    finished = true;
+                                    break;
+                                }
+                                
+                                if (current_session->getToken() && current_session->getToken()->isCancelled()) {
+                                    LOGE(TAG, "L8 Scheduler: Session was cancelled during wait.");
+                                    all_steps_success = false;
+                                    finished = true;
+                                    break;
+                                }
+                                
+                                auto now = std::chrono::steady_clock::now();
+                                uint32_t elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
+                                if (elapsed >= 45000) { // 45s hard timeout per step
+                                    LOGE(TAG, "L8 Scheduler: Step '%s' timed out (Watchdog).", step.c_str());
+                                    Execution::FailureTelemetryStore::getInstance().recordFailure(step, FailureType::TIMEOUT, retry_count, "ABORT_TIMEOUT");
+                                    Capability::HardwareBridge::pushMessage("[AGENT] Step timed out: " + step);
+                                    current_session->abortSession(AgentSession::Error::TIMEOUT);
+                                    all_steps_success = false;
+                                    finished = true;
+                                    break;
+                                }
                             }
                             
-                            if (current_session->getToken() && current_session->getToken()->isCancelled()) {
-                                LOGE(TAG, "L8 Scheduler: Session was cancelled during wait.");
-                                all_steps_success = false;
-                                finished = true;
-                                break;
-                            }
+                            if (!finished || !all_steps_success) break;
+
+                            auto end_time = std::chrono::steady_clock::now();
+                            uint32_t cost = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
                             
-                            auto now = std::chrono::steady_clock::now();
-                            uint32_t elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
-                            if (elapsed >= 45000) { // 45s hard timeout per step
-                                LOGE(TAG, "L8 Scheduler: Step '%s' timed out (Watchdog).", step.c_str());
-                                Capability::HardwareBridge::pushMessage("[AGENT] Step timed out: " + step);
-                                current_session->abortSession(AgentSession::Error::TIMEOUT);
-                                all_steps_success = false;
-                                finished = true;
-                                break;
+                            if (exec_ctx) {
+                                if (!Execution::ExecutionBudgetController::getInstance().consumeBudget(exec_id, cost)) {
+                                    LOGE(TAG, "L8 Scheduler: Execution Budget Exceeded! %s", exec_ctx->logPrefix().c_str());
+                                    Execution::FailureTelemetryStore::getInstance().recordFailure(step, FailureType::BUDGET_EXCEEDED, retry_count, "ABORT_BUDGET");
+                                    current_session->abortSession(AgentSession::Error::DEPTH_EXCEEDED);
+                                    all_steps_success = false;
+                                    break;
+                                }
+                                Execution::ExecutionTelemetryBus::getInstance().logNodeEnd(exec_ctx->session_id, exec_id, step, cost, step_success ? "SUCCESS" : "FAILURE", cost);
                             }
-                        }
-                        
-                        if (!finished || !all_steps_success) {
-                            current_session->setState(AgentState::FAILED);
-                            break;
-                        }
 
-                        auto end_time = std::chrono::steady_clock::now();
-                        uint32_t cost = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-                        
-                        auto exec_ctx = current_session->getExecutionContext();
-                        if (exec_ctx) {
-                            if (!Execution::ExecutionBudgetController::getInstance().consumeBudget(exec_ctx->execution_id, cost)) {
-                                LOGE(TAG, "L8 Scheduler: Execution Budget Exceeded! %s", exec_ctx->logPrefix().c_str());
-                                current_session->abortSession(AgentSession::Error::DEPTH_EXCEEDED);
+                            // v1.5 Adaptive feedback
+                            Execution::AdaptiveBudgetController::getInstance().reportExecution(step, cost, step_success);
+
+                            if (step_success) break; // Success! exit retry loop
+
+                            // v1.5 Retry logic with exponential backoff
+                            retry_count++;
+                            if (retry_count <= MAX_RETRIES) {
+                                int backoff_ms = (retry_count == 1) ? 100 : (retry_count == 2 ? 500 : 1500);
+                                LOGW(TAG, "L8 Scheduler: Step '%s' failed. Retrying in %d ms...", step.c_str(), backoff_ms);
+                                std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+                            } else {
+                                LOGE(TAG, "L8 Scheduler: Step '%s' failed after %d retries.", step.c_str(), MAX_RETRIES);
+                                Execution::FailureTelemetryStore::getInstance().recordFailure(step, FailureType::UNKNOWN, retry_count, "MAX_RETRIES_EXCEEDED");
+                                Execution::RecoveryManager::getInstance().recoverFromFailure(exec_id, FailureType::UNKNOWN);
+                                Capability::HardwareBridge::pushMessage("[AGENT] Step failed: " + step);
                                 all_steps_success = false;
-                                break;
                             }
-                            Execution::ExecutionTelemetryBus::getInstance().logNodeEnd(exec_ctx->session_id, exec_ctx->execution_id, step, cost, step_success ? "SUCCESS" : "FAILURE", cost);
-                        } else {
-                            LOGW(TAG, "L8 Scheduler: Legacy execution without UEC budget tracking.");
-                        }
-
-                        LOGI(TAG, "L8 Scheduler: Driver responded with Success: %d", step_success);
-                        if (!step_success) {
-                            LOGE(TAG, "L8 Scheduler: Step '%s' failed. Stopping chain.", step.c_str());
-                            Capability::HardwareBridge::pushMessage("[AGENT] Step failed: " + step + ". Check console for details.");
-                            current_session->setState(AgentState::FAILED);
+                        } catch (const std::exception& e) {
+                            LOGE(TAG, "L8 Scheduler: Exception during step '%s': %s", step.c_str(), e.what());
+                            Execution::FailureTelemetryStore::getInstance().recordFailure(step, FailureType::JNI_EXCEPTION, retry_count, e.what());
+                            Execution::RecoveryManager::getInstance().recoverFromFailure(exec_id, FailureType::JNI_EXCEPTION);
                             all_steps_success = false;
                             break;
                         }
-                    } catch (const std::exception& e) {
-                        LOGE(TAG, "L8 Scheduler: Exception during step '%s': %s", step.c_str(), e.what());
-                        all_steps_success = false;
-                        break;
-                    }
+                    } // end retry loop
+
+                    if (!all_steps_success) break; // exit step loop
                 }
             }
             

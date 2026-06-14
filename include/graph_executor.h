@@ -74,6 +74,9 @@ public:
     BeliefState& getBeliefState() { return m_belief_state; }
     ReflectionEngine& getReflectionEngine() { return m_reflection_engine; }
 
+    // v1.5 Self-Healing Toggle
+    void setRetryMode(bool enabled) { m_retry_graph_mode = enabled; }
+
 private:
     CapabilityGraph& m_graph;
     GraphStorage& m_storage;
@@ -87,6 +90,7 @@ private:
     std::atomic<bool> m_is_syncing{false};
     std::thread m_sync_thread;
     std::string m_current_session_id; // v10.2.14: Session isolation
+    bool m_retry_graph_mode = true; // v1.5 Default enabled
     
     // Dynamic learning rate helper
     float calculateLearningRate(RiskLevel risk);

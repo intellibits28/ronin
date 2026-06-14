@@ -57,7 +57,8 @@ bool LongTermMemory::initSchema() {
         "CREATE TABLE IF NOT EXISTS predictions (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, goal_id TEXT, node_id TEXT, predicted_json TEXT, actual_json TEXT, error_score REAL);",
         "CREATE TABLE IF NOT EXISTS chat_history (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT, content TEXT, timestamp INTEGER);",
         "CREATE VIRTUAL TABLE IF NOT EXISTS file_index USING fts5(name, path, extension, last_modified UNINDEXED);",
-        "CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, details TEXT, timestamp INTEGER);"
+        "CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, details TEXT, timestamp INTEGER);",
+        "CREATE TABLE IF NOT EXISTS failures (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, failure_type INTEGER, timestamp INTEGER, retry_count INTEGER, resolution TEXT);"
     };
 
     for (const char* sql : statements) {
@@ -408,6 +409,63 @@ std::vector<LongTermMemory::EpisodeRecord> LongTermMemory::getRecentFailures(int
     }
     sqlite3_finalize(stmt);
     return results;
+}
+
+bool LongTermMemory::storeFailure(const std::string& node_id, int failure_type, int retry_count, const std::string& resolution) {
+    if (!m_db || m_read_only.load()) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "INSERT INTO failures (node_id, failure_type, timestamp, retry_count, resolution) VALUES (?, ?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    
+    sqlite3_bind_text(stmt, 1, node_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, failure_type);
+    sqlite3_bind_int64(stmt, 3, std::time(nullptr) * 1000); // ms
+    sqlite3_bind_int(stmt, 4, retry_count);
+    sqlite3_bind_text(stmt, 5, resolution.c_str(), -1, SQLITE_TRANSIENT);
+    
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+std::vector<FailureRecord> LongTermMemory::getFailures(int limit) {
+    if (!m_db) return {};
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<FailureRecord> results;
+    const char* sql = "SELECT node_id, failure_type, timestamp, retry_count, resolution FROM failures ORDER BY timestamp DESC LIMIT ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, limit);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            FailureRecord rec;
+            rec.node_id = columnText(stmt, 0);
+            rec.type = static_cast<FailureType>(sqlite3_column_int(stmt, 1));
+            rec.timestamp = static_cast<uint64_t>(sqlite3_column_int64(stmt, 2));
+            rec.retry_count = sqlite3_column_int(stmt, 3);
+            rec.resolution = columnText(stmt, 4);
+            results.push_back(rec);
+        }
+    }
+    sqlite3_finalize(stmt);
+    return results;
+}
+
+int LongTermMemory::countFailures(const std::string& node_id, uint64_t since_ms) {
+    if (!m_db) return 0;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "SELECT COUNT(*) FROM failures WHERE node_id = ? AND timestamp > ?;";
+    sqlite3_stmt* stmt = nullptr;
+    int count = 0;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, node_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 2, static_cast<int64_t>(since_ms));
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            count = sqlite3_column_int(stmt, 0);
+        }
+    }
+    sqlite3_finalize(stmt);
+    return count;
 }
 
 } // namespace Ronin::Kernel::Memory

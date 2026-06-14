@@ -1,4 +1,7 @@
 #include "graph_executor.h"
+#include "recovery_manager.h"
+#include "adaptive_budget.h"
+#include "failure_telemetry.h"
 #include <algorithm>
 #include <iostream>
 #include <thread>
@@ -199,8 +202,8 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
             std::lock_guard<std::recursive_mutex> inner_lock(m_mutex);
             
             // v10.2.14: Isolation guard - only update blackboard if session is still active
-            if (session_id != m_current_session_id) {
-                LOGW(TAG, "L10: Tool result arrived for STALE session %s. Dropping.", session_id.c_str());
+            if (sid != m_current_session_id) {
+                LOGW(TAG, "L10: Tool result arrived for STALE session %s. Dropping.", sid.c_str());
             } else {
                 // v9.2: Key results by capability name to avoid overwrites
                 std::string cap_str = Ronin::Kernel::CapabilityTypeToString(type);

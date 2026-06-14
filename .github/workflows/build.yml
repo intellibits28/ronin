@@ -45,6 +45,7 @@ jobs:
           ./ronin_atomic_test
           ./ronin_integration_test
           ./ronin_governance_test
+          ./ronin_self_healing_test
 
   build-apk:
     needs: test-host
