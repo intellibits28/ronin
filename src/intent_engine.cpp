@@ -76,13 +76,14 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "1. ALARM CLOCK (Waking up, specific time alerts) -> Use intent 'ALARM'. Step ['SET_ALARM']. Use ONLY for short-term daily wake-up alerts. "
         "2. CALENDAR EVENTS (Meetings, Schedules, Appointments, Dates) -> Use intent 'CALENDAR'. Steps ['ADD_EVENT'] or ['READ_CALENDAR']. Leave 'query' or 'keyword' empty if user wants to see all events for a date range. "
         "3. SENSITIVE DATA (API keys, passwords, secrets, PINs) -> Use intent 'ADD_VAULT' or 'LOOKUP_VAULT'. NEVER use ADD_FACT for secrets. "
-        "4. NON-SENSITIVE FACTS (Car plates, license numbers, general info) -> Use intent 'ADD_FACT' or 'LOOKUP_FACT'. "
-        "5. LOCATION/MAP -> Use intent 'LOCATION' (to get) or 'MAP' (to show). "
-        "6. FILES -> Use intent 'FILE_SEARCH'. You HAVE access to 'Download' and 'Documents' folders. "
-        "7. SENSOR/VIBRATION -> Use intent 'SENSOR_ANALYSIS'. "
+        "4. EXPLICIT VAULT REQUESTS -> If user explicitly says 'vault' or 'လုံခြုံအောင်သိမ်း', ALWAYS use 'ADD_VAULT' even for non-sensitive info. "
+        "5. NON-SENSITIVE FACTS (Car plates, license numbers, general info) -> Use intent 'ADD_FACT' or 'LOOKUP_FACT'. "
+        "6. LOCATION/MAP -> Use intent 'LOCATION' (to get) or 'MAP' (to show). "
+        "7. FILES -> Use intent 'FILE_SEARCH'. You HAVE access to 'Download' and 'Documents' folders. "
+        "8. SENSOR/VIBRATION -> Use intent 'SENSOR_ANALYSIS'. "
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"query\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\",\"time\":\"...\",\"title\":\"...\"}} "
         "Examples: "
-        "User: 'မနက်ဖြန် ၅နာရီ နှိုးစက်ပေး' -> {\"intent\":\"ALARM\",\"plan\":[\"SET_ALARM\"],\"parameters\":{\"time\":\"5:00 AM\",\"label\":\"Wake Up\"}} "
+        "User: 'ကားနံပါတ် 123 vault ထဲသိမ်းပါ' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"ကားနံပါတ်\",\"vault_content\":\"123\"}} "
         "User: 'မနက်ဖြန် ၉နာရီ meeting မှတ်ထား' -> {\"intent\":\"CALENDAR\",\"plan\":[\"ADD_EVENT\"],\"parameters\":{\"title\":\"meeting\",\"time\":\"tomorrow 9:00\"}} "
         "User: 'ကားနံပါတ် 123 မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} "
         "User: 'Visa Card အချက်အလက်တွေ မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"Visa Card\",\"vault_content\":\"Holder: PHYO WAI, No: 4602...\"}} "
@@ -350,7 +351,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("event") || token_set.count("pdf") ||
                            token_set.count("doc") || token_set.count("txt") ||
                            token_set.count("ဖိုင်") || token_set.count("မနက်ဖြန်") ||
-                           token_set.count("ဒီနေ့") || token_set.count("ချိန်း");
+                           token_set.count("ဒီနေ့") || token_set.count("ချိန်း") ||
+                           token_set.count("vault") || token_set.count("လုံခြုံ");
 
     // v12.18: Decouple sensor from simple agent to prevent location->sensor misrouting
     bool is_sensor_req = token_set.count("တုန်ခါမှု") || token_set.count("vibration") || 
@@ -364,6 +366,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                           (input_lower.find("မနက်ဖြန်") != std::string::npos) ||
                           (input_lower.find("ဒီနေ့") != std::string::npos) ||
                           (input_lower.find("ချိန်း") != std::string::npos) ||
+                          (input_lower.find("vault") != std::string::npos) ||
+                          (input_lower.find("လုံခြုံ") != std::string::npos) ||
                           (input_lower.find("ရှာ") != std::string::npos);
     }
     
@@ -389,7 +393,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         input_lower.find("ရှာပေး") != std::string::npos || input_lower.find("ရှာပါ") != std::string::npos ||
         input_lower.find("pdf") != std::string::npos || input_lower.find("doc") != std::string::npos ||
         input_lower.find("file") != std::string::npos || input_lower.find("ဖိုင်") != std::string::npos ||
-        input_lower.find("တည်နေရာ") != std::string::npos || input_lower.find("location") != std::string::npos) {
+        input_lower.find("တည်နေရာ") != std::string::npos || input_lower.find("location") != std::string::npos ||
+        input_lower.find("vault") != std::string::npos || input_lower.find("လုံခြုံ") != std::string::npos) {
         final_cat = IntentCategory::AGENT_PLAN;
     }
 
