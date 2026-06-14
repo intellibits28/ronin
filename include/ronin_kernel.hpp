@@ -50,6 +50,9 @@ public:
    */
   void shutdown();
 
+  // v10.6: Hardened Execution Safe Mode
+  void enterSafeMode();
+
 private:
   const HandlerRegistry &registry_;
   CapabilityManager &capManager_;

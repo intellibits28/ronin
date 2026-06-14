@@ -13,6 +13,13 @@
 
 namespace Ronin::Kernel::Memory {
 
+namespace {
+std::string columnText(sqlite3_stmt* stmt, int column) {
+    const unsigned char* text = sqlite3_column_text(stmt, column);
+    return text ? reinterpret_cast<const char*>(text) : "";
+}
+}
+
 LongTermMemory::LongTermMemory(const std::string& db_path) 
     : m_segmenter(std::make_unique<Ronin::Kernel::NLP::MyanmarSegmenter>()) {
     if (sqlite3_open(db_path.c_str(), &m_db) != SQLITE_OK) {
@@ -68,7 +75,7 @@ bool LongTermMemory::initSchema() {
 }
 
 bool LongTermMemory::storeNote(const std::string& title, const std::string& content, const std::string& tags) {
-    if (!m_db) return false;
+    if (!m_db || m_read_only.load()) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO notes (title, content, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
@@ -85,7 +92,7 @@ bool LongTermMemory::storeNote(const std::string& title, const std::string& cont
 }
 
 bool LongTermMemory::storeFact(const std::string& entity, const std::string& attr, const std::string& value, SourceType source, float confidence) {
-    if (!m_db) { LOGE(TAG, "storeFact failed: DB is null."); return false; }
+    if (!m_db || m_read_only.load()) { LOGE(TAG, "storeFact failed: DB is null or ReadOnly."); return false; }
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO facts (entity, attribute, value, source_type, confidence, last_verified_at, created_at, updated_at) "
                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
@@ -149,7 +156,7 @@ std::string LongTermMemory::lookupVault(const std::string& title) {
 bool LongTermMemory::storeEpisode(const std::string& intent, const std::string& summary, const std::string& payload_json, 
                                   bool success, const std::string& goal_id, const std::string& node_id,
                                   int64_t latency_ms, float conf_before, float conf_after) {
-    if (!m_db) return false;
+    if (!m_db || m_read_only.load()) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO episodes (timestamp, intent, goal_id, node_id, summary, payload_json, outcome_enum, latency_ms, confidence_before, confidence_after) "
                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
@@ -174,7 +181,7 @@ bool LongTermMemory::storeEpisode(const std::string& intent, const std::string& 
 
 bool LongTermMemory::storePrediction(const std::string& goal_id, const std::string& node_id, 
                                      const std::string& predicted_json, const std::string& actual_json, float error_score) {
-    if (!m_db) return false;
+    if (!m_db || m_read_only.load()) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO predictions (timestamp, goal_id, node_id, predicted_json, actual_json, error_score) "
                       "VALUES (?, ?, ?, ?, ?, ?);";
@@ -228,8 +235,8 @@ std::vector<std::string> LongTermMemory::searchNotes(const std::string& query) {
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            std::string title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-            std::string content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            std::string title = columnText(stmt, 0);
+            std::string content = columnText(stmt, 1);
             results.push_back(title + ": " + content);
         }
     }
@@ -261,7 +268,7 @@ std::vector<std::string> LongTermMemory::getNotesList() {
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, "SELECT title FROM notes ORDER BY updated_at DESC LIMIT 20;", -1, &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            results.push_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+            results.push_back(columnText(stmt, 0));
         }
     }
     sqlite3_finalize(stmt);
@@ -276,8 +283,8 @@ std::vector<std::pair<std::string, std::string>> LongTermMemory::getFactsList() 
     if (sqlite3_prepare_v2(m_db, "SELECT entity, attribute || ' -> ' || value FROM facts ORDER BY created_at DESC LIMIT 20;", -1, &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             results.push_back({
-                reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)),
-                reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))
+                columnText(stmt, 0),
+                columnText(stmt, 1)
             });
         }
     }
@@ -286,7 +293,7 @@ std::vector<std::pair<std::string, std::string>> LongTermMemory::getFactsList() 
 }
 
 bool LongTermMemory::storeMessage(const std::string& role, const std::string& content, int64_t timestamp) {
-    if (!m_db) return false;
+    if (!m_db || m_read_only.load()) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO chat_history (role, content, timestamp) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
@@ -312,8 +319,8 @@ std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int 
         sqlite3_bind_int(stmt, 2, offset);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             history.push_back({
-                reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)),
-                reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))
+                columnText(stmt, 0),
+                columnText(stmt, 1)
             });
         }
     }
@@ -322,7 +329,7 @@ std::vector<std::pair<std::string, std::string>> LongTermMemory::getHistory(int 
 }
 
 bool LongTermMemory::clearHistory() {
-    if (!m_db) return false;
+    if (!m_db || m_read_only.load()) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     return sqlite3_exec(m_db, "DELETE FROM chat_history;", nullptr, nullptr, nullptr) == SQLITE_OK;
 }
@@ -342,7 +349,7 @@ std::vector<std::string> LongTermMemory::segmentText(const std::string& input) {
 }
 
 bool LongTermMemory::indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified) {
-    if (!m_db) return false;
+    if (!m_db || m_read_only.load()) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT OR REPLACE INTO file_index (name, path, extension, last_modified) VALUES (?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
@@ -369,7 +376,7 @@ std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
         sqlite3_bind_text(stmt, 1, like_query.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 2, like_query.c_str(), -1, SQLITE_STATIC);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            results.push_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+            results.push_back(columnText(stmt, 0));
         }
     }
     sqlite3_finalize(stmt);
@@ -392,8 +399,8 @@ std::vector<LongTermMemory::EpisodeRecord> LongTermMemory::getRecentFailures(int
         sqlite3_bind_int(stmt, 1, limit);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             EpisodeRecord rec;
-            rec.intent = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-            rec.summary = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            rec.intent = columnText(stmt, 0);
+            rec.summary = columnText(stmt, 1);
             rec.success = false;
             rec.timestamp = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
             results.push_back(rec);

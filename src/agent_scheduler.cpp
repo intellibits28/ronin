@@ -22,8 +22,19 @@ AgentScheduler::~AgentScheduler() {
     stop();
 }
 
+void AgentScheduler::purgeQueue() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    while(!m_task_queue.empty()) m_task_queue.pop();
+    LOGI(TAG, "Scheduler queue purged for SafeMode.");
+}
+
 void AgentScheduler::schedule(std::shared_ptr<AgentSession> session, uint32_t priority) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_task_queue.size() >= 50) {
+        LOGE(TAG, "Scheduler queue full. Dropping session %s", session->getSessionId().c_str());
+        session->abortSession(AgentSession::Error::QUEUE_FULL);
+        return;
+    }
     m_task_queue.push({priority, session});
     LOGI(TAG, "Task scheduled for session: %s (Priority: %u)", session->getSessionId().c_str(), priority);
     m_cv.notify_one();
@@ -116,12 +127,58 @@ void AgentScheduler::workerLoop() {
                     // v10.1.22: Inject current step as 'action' for accurate Kotlin tool routing
                     jParams["action"] = step;
                     
-                    // Call Layer 10 Optimizer and WAIT for completion (v7.4)
-                    auto future = m_executor->optimizeAndDispatch(type, current_session->getSessionId(), jParams.dump());
+                    // v10.6: Enforce Execution Budget
+                    auto start_time = std::chrono::steady_clock::now();
+                    
+                    // Call Layer 10 Optimizer and WAIT for completion with cancellation
+                    auto future = m_executor->optimizeAndDispatch(type, current_session->getSessionId(), jParams.dump(), current_session->getToken());
                     
                     try {
                         LOGI(TAG, "L8 Scheduler: Waiting for Driver response (future.get)...");
-                        bool step_success = future.get(); // Synchronous block in worker thread
+                        // We still wait for the future but check the cancellation token or timeout
+                        bool step_success = false;
+                        bool finished = false;
+                        
+                        while (!finished) {
+                            if (future.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready) {
+                                step_success = future.get();
+                                finished = true;
+                                break;
+                            }
+                            
+                            if (current_session->getToken() && current_session->getToken()->isCancelled()) {
+                                LOGE(TAG, "L8 Scheduler: Session was cancelled during wait.");
+                                all_steps_success = false;
+                                finished = true;
+                                break;
+                            }
+                            
+                            auto now = std::chrono::steady_clock::now();
+                            uint32_t elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
+                            if (elapsed >= 45000) { // 45s hard timeout per step
+                                LOGE(TAG, "L8 Scheduler: Step '%s' timed out (Watchdog).", step.c_str());
+                                Capability::HardwareBridge::pushMessage("[AGENT] Step timed out: " + step);
+                                current_session->abortSession(AgentSession::Error::TIMEOUT);
+                                all_steps_success = false;
+                                finished = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!finished || !all_steps_success) {
+                            current_session->setState(AgentState::FAILED);
+                            break;
+                        }
+
+                        auto end_time = std::chrono::steady_clock::now();
+                        uint32_t cost = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+                        if (!current_session->consumeBudget(cost)) {
+                            LOGE(TAG, "L8 Scheduler: Execution Budget Exceeded!");
+                            current_session->abortSession(AgentSession::Error::DEPTH_EXCEEDED);
+                            all_steps_success = false;
+                            break;
+                        }
+
                         LOGI(TAG, "L8 Scheduler: Driver responded with Success: %d", step_success);
                         if (!step_success) {
                             LOGE(TAG, "L8 Scheduler: Step '%s' failed. Stopping chain.", step.c_str());

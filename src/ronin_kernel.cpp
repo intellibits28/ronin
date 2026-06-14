@@ -136,4 +136,13 @@ void RoninKernel::shutdown() {
     LOGI(TAG, "Kernel Shutdown Complete. Resources released.");
 }
 
+void RoninKernel::enterSafeMode() {
+    LOGE(TAG, "Entering Strict SafeMode.");
+    // In a fully decoupled architecture, we would broadcast an event.
+    // For now, we rely on the JNI layer to handle global side-effects,
+    // but we can clear local state here.
+    contextStore_.clear();
+    state_.requiresAction = false;
+}
+
 } // namespace Ronin::Kernel

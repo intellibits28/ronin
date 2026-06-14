@@ -69,6 +69,10 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
     std::string base_path = ConvertJStringToString(env, filesDir);
     std::string native_lib_path = ConvertJStringToString(env, libDir);
     if (!isWorker) {
+        if (g_instance) {
+            env->DeleteGlobalRef(g_instance);
+            g_instance = nullptr;
+        }
         g_instance = env->NewGlobalRef(thiz);
         g_ltm = std::make_shared<LongTermMemory>(base_path + "/ronin_cognitive.db");
         g_resonance_analyzer = std::make_shared<ResonanceAnalyzer>(1024);
@@ -186,8 +190,15 @@ JNIEXPORT jobjectArray JNICALL native_searchNotes(JNIEnv *env, jobject thiz, jst
     if (!g_ltm) return nullptr;
     auto res = g_ltm->searchNotes(ConvertJStringToString(env, q));
     jclass sc = env->FindClass("java/lang/String");
-    jobjectArray ja = env->NewObjectArray(res.size(), sc, env->NewStringUTF(""));
-    for (size_t i = 0; i < res.size(); ++i) env->SetObjectArrayElement(ja, i, env->NewStringUTF(res[i].c_str()));
+    jstring empty = env->NewStringUTF("");
+    jobjectArray ja = env->NewObjectArray(res.size(), sc, empty);
+    env->DeleteLocalRef(empty);
+    for (size_t i = 0; i < res.size(); ++i) {
+        jstring item = env->NewStringUTF(res[i].c_str());
+        env->SetObjectArrayElement(ja, i, item);
+        env->DeleteLocalRef(item);
+    }
+    env->DeleteLocalRef(sc);
     return ja;
 }
 
@@ -195,8 +206,15 @@ JNIEXPORT jobjectArray JNICALL native_searchEpisodes(JNIEnv *env, jobject thiz, 
     if (!g_ltm) return nullptr;
     auto res = g_ltm->searchEpisodes(ConvertJStringToString(env, q));
     jclass sc = env->FindClass("java/lang/String");
-    jobjectArray ja = env->NewObjectArray(res.size(), sc, env->NewStringUTF(""));
-    for (size_t i = 0; i < res.size(); ++i) env->SetObjectArrayElement(ja, i, env->NewStringUTF(res[i].c_str()));
+    jstring empty = env->NewStringUTF("");
+    jobjectArray ja = env->NewObjectArray(res.size(), sc, empty);
+    env->DeleteLocalRef(empty);
+    for (size_t i = 0; i < res.size(); ++i) {
+        jstring item = env->NewStringUTF(res[i].c_str());
+        env->SetObjectArrayElement(ja, i, item);
+        env->DeleteLocalRef(item);
+    }
+    env->DeleteLocalRef(sc);
     return ja;
 }
 
@@ -205,7 +223,14 @@ JNIEXPORT jboolean JNICALL native_storePrediction(JNIEnv *env, jobject thiz, jst
 JNIEXPORT void JNICALL native_injectWorldState(JNIEnv *env, jobject thiz, jfloat b, jfloat r, jboolean g, jboolean n, jboolean c) {}
 JNIEXPORT void JNICALL native_applyHumanFeedback(JNIEnv *env, jobject thiz, jstring s, jboolean h) { if (g_graph_executor) g_graph_executor->getReflectionEngine().applyHumanFeedback(ConvertJStringToString(env, s), h == JNI_TRUE); }
 JNIEXPORT jfloat JNICALL native_getFreeRamGB(JNIEnv *env, jobject thiz) { return HardwareBridge::getFreeRamGB(); }
-JNIEXPORT void JNICALL native_shutdownKernel(JNIEnv *env, jobject thiz) { if (g_kernel) g_kernel->shutdown(); }
+JNIEXPORT void JNICALL native_shutdownKernel(JNIEnv *env, jobject thiz) {
+    if (g_kernel) g_kernel->shutdown();
+    HardwareBridge::release(env);
+    if (g_instance) {
+        env->DeleteGlobalRef(g_instance);
+        g_instance = nullptr;
+    }
+}
 JNIEXPORT jint JNICALL native_getLMKPressure(JNIEnv *env, jobject thiz) { return g_memory_manager ? g_memory_manager->getPressureScore() : 0; }
 JNIEXPORT jboolean JNICALL native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring p) { if (g_intent_engine) { g_intent_engine->loadCapabilities(ConvertJStringToString(env, p)); return JNI_TRUE; } return JNI_FALSE; }
 JNIEXPORT jboolean JNICALL native_updateCloudProviders(JNIEnv *env, jobject thiz, jstring j) { return JNI_TRUE; }
@@ -224,9 +249,14 @@ JNIEXPORT jobjectArray JNICALL native_getChatHistory(JNIEnv *env, jobject thiz, 
     jclass sc = env->FindClass("java/lang/String");
     jobjectArray ja = env->NewObjectArray(h.size() * 2, sc, nullptr);
     for (size_t i = 0; i < h.size(); ++i) {
-        env->SetObjectArrayElement(ja, i * 2, env->NewStringUTF(h[i].first.c_str()));
-        env->SetObjectArrayElement(ja, i * 2 + 1, env->NewStringUTF(h[i].second.c_str()));
+        jstring role = env->NewStringUTF(h[i].first.c_str());
+        jstring content = env->NewStringUTF(h[i].second.c_str());
+        env->SetObjectArrayElement(ja, i * 2, role);
+        env->SetObjectArrayElement(ja, i * 2 + 1, content);
+        env->DeleteLocalRef(role);
+        env->DeleteLocalRef(content);
     }
+    env->DeleteLocalRef(sc);
     return ja;
 }
 
@@ -246,7 +276,16 @@ JNIEXPORT void JNICALL native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstri
         g_intent_engine->setPriority(Ronin::Kernel::Capability::SkillPriority::HIGH);
     }
 }
-JNIEXPORT void JNICALL native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {}
+JNIEXPORT void JNICALL native_setSafeMode(JNIEnv *env, jobject thiz, jboolean enabled) {
+    if (enabled) {
+        LOGE(TAG, "Entering Strict SafeMode.");
+        AgentScheduler::getInstance().purgeQueue();
+        if (g_ltm) g_ltm->setReadOnly(true);
+        if (g_kernel) g_kernel->enterSafeMode();
+    } else {
+        if (g_ltm) g_ltm->setReadOnly(false);
+    }
+}
 JNIEXPORT void JNICALL native_setPriority(JNIEnv *env, jobject thiz, jint priority) {}
 JNIEXPORT jstring JNICALL native_checkFileAccess(JNIEnv *env, jobject thiz, jstring path) { return env->NewStringUTF(""); }
 JNIEXPORT void JNICALL native_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) {}
@@ -254,8 +293,11 @@ JNIEXPORT void JNICALL native_setPrimaryCloudProvider(JNIEnv *env, jobject thiz,
 
 JNIEXPORT void JNICALL native_indexFiles(JNIEnv *env, jobject thiz, jobjectArray paths, jobjectArray names, jlongArray dates) {
     if (!g_ltm) return;
+    if (!paths || !names || !dates) return;
     int len = env->GetArrayLength(paths);
+    if (env->GetArrayLength(names) != len || env->GetArrayLength(dates) != len) return;
     jlong* dates_ptr = env->GetLongArrayElements(dates, nullptr);
+    if (!dates_ptr) return;
     for (int i = 0; i < len; ++i) {
         jstring jPath = (jstring)env->GetObjectArrayElement(paths, i);
         jstring jName = (jstring)env->GetObjectArrayElement(names, i);
@@ -284,13 +326,20 @@ JNIEXPORT jobjectArray JNICALL native_searchFiles(JNIEnv *env, jobject thiz, jst
     auto results = g_ltm->searchFiles(ConvertJStringToString(env, q));
     jclass sc = env->FindClass("java/lang/String");
     jobjectArray ja = env->NewObjectArray(results.size(), sc, nullptr);
-    for (size_t i = 0; i < results.size(); ++i) env->SetObjectArrayElement(ja, i, env->NewStringUTF(results[i].c_str()));
+    for (size_t i = 0; i < results.size(); ++i) {
+        jstring item = env->NewStringUTF(results[i].c_str());
+        env->SetObjectArrayElement(ja, i, item);
+        env->DeleteLocalRef(item);
+    }
+    env->DeleteLocalRef(sc);
     return ja;
 }
 
 JNIEXPORT jboolean JNICALL native_pushSensorSamples(JNIEnv *env, jobject thiz, jfloatArray jx, jfloatArray jy, jfloatArray jz, jstring jtype) {
     if (!g_resonance_analyzer) return JNI_FALSE;
+    if (!jx || !jy || !jz) return JNI_FALSE;
     int len = env->GetArrayLength(jx);
+    if (env->GetArrayLength(jy) != len || env->GetArrayLength(jz) != len) return JNI_FALSE;
     std::vector<float> x(len), y(len), z(len);
     env->GetFloatArrayRegion(jx, 0, len, x.data());
     env->GetFloatArrayRegion(jy, 0, len, y.data());

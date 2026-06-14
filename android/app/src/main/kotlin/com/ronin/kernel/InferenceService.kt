@@ -8,6 +8,8 @@ import android.util.Log
 import com.google.ai.edge.litertlm.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -37,6 +39,7 @@ class InferenceService : Service() {
     private var isConversationFresh = true
     private var lastSummary: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val inferenceMutex = Mutex()
 
     // --- Native JNI Interface (Essential Only) ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
@@ -75,7 +78,7 @@ class InferenceService : Service() {
             .build()
     }
 
-    private fun resetConversationInternal() {
+    private fun resetConversationLocked() {
         synchronized(this) {
             try {
                 litertConversation?.close()
@@ -83,6 +86,14 @@ class InferenceService : Service() {
                 isConversationFresh = true
                 Log.i(TAG, "Conversation Reset: KV Cache Pruned.")
             } catch (e: Exception) { Log.e(TAG, "Reset failed: ${e.message}") }
+        }
+    }
+
+    private fun resetConversationInternal() {
+        runBlocking(Dispatchers.IO) {
+            inferenceMutex.withLock {
+                resetConversationLocked()
+            }
         }
     }
 
@@ -115,7 +126,8 @@ class InferenceService : Service() {
         }
 
         override fun summarizeAndReset(): String = runBlocking(Dispatchers.IO) {
-            val activeConv = synchronized(this@InferenceService) { litertConversation } ?: return@runBlocking ""
+            inferenceMutex.withLock {
+            val activeConv = synchronized(this@InferenceService) { litertConversation } ?: return@withLock ""
             val summaryPrompt = "[INTERNAL] Summarize our conversation concisely in 3 lines of Myanmar text. Focus on facts. No thinking tags."
             val fullResult = StringBuilder()
             try {
@@ -128,12 +140,13 @@ class InferenceService : Service() {
                 }
                 val summary = fullResult.toString().replace("[REPLY]", "").replace("[/REPLY]", "").trim()
                 lastSummary = summary
-                resetConversationInternal()
+                resetConversationLocked()
                 Log.i(TAG, "Summarization Complete. Next turn will include context anchor.")
                 summary
             } catch (e: Exception) { 
                 Log.e(TAG, "Summarization Failed: ${e.message}")
                 ""
+            }
             }
         }
 
@@ -146,32 +159,45 @@ class InferenceService : Service() {
 
     private fun tryHydrate(path: String): Boolean {
         if (!File(path).exists()) return false
-        releaseResources()
-        return try {
-            // Hardened v5.1: Stabilized EngineConfig for Mi 11 Lite
-            // Note: maxSequenceLength is not supported in this SDK version's constructor.
-            val config = EngineConfig(
-                modelPath = path, 
-                maxNumTokens = 2048
-            )
-            val engine = Engine(config)
-            engine.initialize()
-            litertEngine = engine
-            litertConversation = engine.createConversation()
-            isConversationFresh = true; currentModelPath = path
-            Log.i(TAG, "Hardened Spine Hydrated (4K Window): $path")
-            true
-        } catch (e: Throwable) { Log.e(TAG, "Hydration Failed: ${e.message}"); false }
+        return runBlocking(Dispatchers.IO) {
+            inferenceMutex.withLock {
+                releaseResourcesLocked()
+                try {
+                    // Hardened v5.1: Stabilized EngineConfig for Mi 11 Lite
+                    // Note: maxSequenceLength is not supported in this SDK version's constructor.
+                    val config = EngineConfig(
+                        modelPath = path, 
+                        maxNumTokens = 1024
+                    )
+                    val engine = Engine(config)
+                    engine.initialize()
+                    litertEngine = engine
+                    litertConversation = engine.createConversation()
+                    isConversationFresh = true; currentModelPath = path
+                    Log.i(TAG, "Hardened Spine Hydrated (1024 Token Window): $path")
+                    true
+                } catch (e: Throwable) { Log.e(TAG, "Hydration Failed: ${e.message}"); false }
+            }
+        }
     }
 
-    private fun releaseResources() {
+    private fun releaseResourcesLocked() {
         synchronized(this) {
             try { litertConversation?.close(); litertConversation = null; litertEngine?.close(); litertEngine = null } 
             catch (e: Exception) {}
         }
     }
 
+    private fun releaseResources() {
+        runBlocking(Dispatchers.IO) {
+            inferenceMutex.withLock {
+                releaseResourcesLocked()
+            }
+        }
+    }
+
     private fun executeInference(input: String): Flow<String> = flow {
+        inferenceMutex.withLock {
         // v7.1: Selective Stripping Hardening
         // We MUST preserve instructions for internal system calls (Summarization, Planning).
         val isInternalCall = input.contains("[INTERNAL]") || input.contains("Task Planner") || input.contains("CORE_IDENTITY")
@@ -192,12 +218,12 @@ class InferenceService : Service() {
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
         if (freeRam < 0.7f && !isConversationFresh) {
             Log.w(TAG, "CRITICAL RAM ALERT (%.2fGB). Purging KV Cache.".format(freeRam))
-            resetConversationInternal()
+            resetConversationLocked()
             // Resetting isConversationFresh here would be too late for this loop, 
             // but the next turn will see it as fresh and re-inject Persona.
         }
 
-        val activeConv = synchronized(this@InferenceService) { litertConversation ?: return@flow }
+        val activeConv = synchronized(this@InferenceService) { litertConversation } ?: return@withLock
         
         // Mark as no longer fresh AFTER we have decided to use/strip the wrap for THIS prompt
         val wasFresh = isConversationFresh
@@ -216,9 +242,10 @@ class InferenceService : Service() {
             Log.e(TAG, "LiteRT Fault: ${e.message}")
             if (e.message?.contains("not alive", ignoreCase = true) == true || e.message?.contains("failed", ignoreCase = true) == true) {
                 Log.w(TAG, "Attempting to recover from dead conversation...")
-                resetConversationInternal()
+                resetConversationLocked()
             }
             throw e
+        }
         }
     }.flowOn(Dispatchers.IO)
 
