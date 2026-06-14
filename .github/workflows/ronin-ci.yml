@@ -19,16 +19,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake g++ sqlite3 libsqlite3-dev ninja-build
 
-      - name: Build Host Flatc (v23)
-        run: |
-          git clone --branch v23.5.26 --depth 1 https://github.com/google/flatbuffers.git
-          cd flatbuffers
-          mkdir build && cd build
-          cmake -G Ninja -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_BUILD_FLATC=ON ..
-          ninja flatc
-          sudo cp flatc /usr/local/bin/
-          flatc --version
-
       - name: Configure CMake
         run: |
           mkdir build_host && cd build_host
@@ -37,7 +27,7 @@ jobs:
       - name: KernelCompileTest
         run: |
           cd build_host
-          ninja ronin_atomic_test ronin_integration_test ronin_governance_test
+          ninja ronin_atomic_test ronin_integration_test ronin_governance_test ronin_self_healing_test
 
       - name: KernelGovernanceTest
         run: |

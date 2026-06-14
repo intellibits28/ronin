@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
-#include "recovery_manager.h"
-#include "adaptive_budget.h"
-#include "failure_telemetry.h"
+#include "runtime_healing_controller.h"
+#include "adaptive_budget_controller.h"
+#include "failure_telemetry_bus.h"
+#include "execution_checkpoint_store.h"
 #include "execution_context.h"
 #include <thread>
 #include <chrono>
@@ -10,18 +11,18 @@ using namespace Ronin::Kernel::Execution;
 using namespace Ronin::Kernel;
 
 TEST(SelfHealingTest, RecoveryCheckpointing) {
-    auto& recovery = RecoveryManager::getInstance();
+    auto& store = ExecutionCheckpointStore::getInstance();
     auto ctx = std::make_shared<ExecutionContext>();
     ctx->session_id = "s1";
     ctx->execution_id = "e1";
     
-    EXPECT_TRUE(recovery.recordCheckpoint(ctx));
-    EXPECT_EQ(recovery.getLastValidContext()->session_id, "s1");
+    EXPECT_TRUE(store.saveCheckpoint(ctx, "{}"));
+    EXPECT_EQ(store.getPendingExecutions().size(), 1);
 }
 
 TEST(SelfHealingTest, AdaptiveBudgetTuning) {
     auto& budget = AdaptiveBudgetController::getInstance();
-    auto& telemetry = FailureTelemetryStore::getInstance();
+    auto& telemetry = FailureTelemetryBus::getInstance();
     std::string node_id = "heavy_node";
     
     // Initial budget
@@ -30,7 +31,7 @@ TEST(SelfHealingTest, AdaptiveBudgetTuning) {
     
     // Simulate some failures to increase risk
     for (int i = 0; i < 5; ++i) {
-        telemetry.recordFailure(node_id, FailureType::TIMEOUT, 0, "TEST");
+        telemetry.logFailure("e", node_id, FailureType::TIMEOUT, "TEST");
     }
     
     uint32_t b2 = budget.getAdaptedBudget("e2", node_id);
@@ -39,12 +40,12 @@ TEST(SelfHealingTest, AdaptiveBudgetTuning) {
 }
 
 TEST(SelfHealingTest, FailureLearning) {
-    auto& telemetry = FailureTelemetryStore::getInstance();
+    auto& telemetry = FailureTelemetryBus::getInstance();
     std::string node_id = "learn_node";
     
-    telemetry.recordFailure(node_id, FailureType::JNI_EXCEPTION, 1, "RETRY_SUCCESS");
+    telemetry.logFailure("e1", node_id, FailureType::JNI_EXCEPTION, "RETRY_SUCCESS");
     
-    auto failures = telemetry.getRecentFailures(1);
+    auto failures = telemetry.getRecentFailures(node_id, 1);
     ASSERT_FALSE(failures.empty());
     EXPECT_EQ(failures[0].node_id, node_id);
     EXPECT_EQ(failures[0].type, FailureType::JNI_EXCEPTION);
