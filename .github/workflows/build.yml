@@ -2,9 +2,9 @@ name: Ronin Kernel Build & Test
 
 on:
   push:
-    branches: [ 'main', 'feature/agent-planner-core', 'refactor/**' ]
+    branches: [ 'main', 'feature/**', 'refactor/**' ]
   pull_request:
-    branches: [ 'main', 'feature/agent-planner-core', 'refactor/**' ]
+    branches: [ 'main', 'feature/**', 'refactor/**' ]
   workflow_dispatch:
 
 permissions:
@@ -37,7 +37,7 @@ jobs:
       - name: Build Host Tests
         run: |
           cd build_host
-          ninja ronin_atomic_test ronin_integration_test ronin_governance_test -j$(nproc)
+          ninja ronin_atomic_test ronin_integration_test ronin_governance_test ronin_self_healing_test -j$(nproc)
           
       - name: Run Host Tests
         run: |
