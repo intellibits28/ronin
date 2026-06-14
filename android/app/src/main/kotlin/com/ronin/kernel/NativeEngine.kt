@@ -240,7 +240,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun setPriorityNative(priority: Int)
     private external fun checkFileAccessNative(path: String): String
     private external fun getFreeRamGBNative(): Float
-    private external fun processInputNative(input: String, systemPrompt: String): String
+    private external fun processInputNative(sessionId: String, execId: String, corrId: String, input: String, systemPrompt: String): String
+    private external fun cancelExecutionNative(execId: String)
     private external fun isLoadedNative(): Boolean
     private external fun notifyTrimMemoryNative(level: Int)
     private external fun getActiveModelPathNative(): String
@@ -343,9 +344,28 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     data class ProcessResult(val result: String, val sessionId: String = "")
 
+    fun cancelExecution(execId: String) {
+        if (isLibLoaded) {
+            try { cancelExecutionNative(execId) } catch (e: Exception) { Log.e(TAG, "Cancel execution failed: ${e.message}") }
+        }
+    }
+
     suspend fun processInputAsync(input: String, systemPrompt: String = ""): ProcessResult = withContext(Dispatchers.Default) {
         if (!isLibLoaded) return@withContext ProcessResult("Error: Lib not loaded.")
-        
+
+        val sessionId = "S-" + System.currentTimeMillis()
+        val execId = "E-" + java.util.UUID.randomUUID().toString().substring(0, 8)
+        val corrId = "C-" + java.util.UUID.randomUUID().toString()
+
+        // v1.4 Execution Governance: Link coroutine cancellation to JNI execution
+        val job = coroutineContext[Job]
+        job?.invokeOnCompletion { cause ->
+            if (cause is CancellationException) {
+                Log.w(TAG, "[$sessionId | $execId | CANCEL] Kotlin coroutine cancelled. Propagating to JNI.")
+                cancelExecution(execId)
+            }
+        }
+
         // v6.3: Automatic Context Optimization (Thinking Stripper)
         try {
             val history = getChatHistoryAsync(20, 0)
@@ -359,9 +379,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } catch (e: Exception) { Log.w(TAG, "Context optimization failed: ${e.message}") }
 
         try { 
-            val jsonStr = processInputNative(input, systemPrompt)
+            Log.i(TAG, "[$sessionId | $execId | JNI_HOP] KOTLIN -> JNI Dispatch")
+            val jsonStr = processInputNative(sessionId, execId, corrId, input, systemPrompt)
             val json = org.json.JSONObject(jsonStr)
-            ProcessResult(json.getString("result"), json.optString("session_id", ""))
+            ProcessResult(json.getString("result"), json.optString("session_id", sessionId))
         } catch (e: Exception) { 
             Log.e(TAG, "Process Input failed: ${e.message}")
             ProcessResult("Error: Kernel failure.") 

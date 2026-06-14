@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include "ronin_types.hpp"
 #include "capability_request.h"
+#include "execution_context.h"
 
 namespace Ronin::Kernel {
 
@@ -34,17 +35,15 @@ public:
     size_t getCurrentStepIndex() const { return m_current_step_idx; }
     void advanceStep() { m_current_step_idx++; }
 
-    // v10.6: Global execution budget
-    bool consumeBudget(uint32_t cost) {
-        if (m_total_budget_ms < cost) return false;
-        m_total_budget_ms -= cost;
-        return true;
-    }
-
-    CancellationTokenPtr getToken() { return m_cancel_token; }
+    // v1.4 Execution Governance
+    void bindExecutionContext(Execution::ExecutionContextPtr ctx) { m_exec_context = ctx; }
+    Execution::ExecutionContextPtr getExecutionContext() const { return m_exec_context; }
+    CancellationTokenPtr getToken() { return m_exec_context ? m_exec_context->cancel_token : nullptr; }
 
     void abortSession(Error err) {
-        m_cancel_token->cancel(); // Signals running nodes to stop
+        if (m_exec_context && m_exec_context->cancel_token) {
+            m_exec_context->cancel_token->cancel();
+        }
         m_fatal_error = err;
         m_state = AgentState::FAILED;
     }
@@ -60,8 +59,7 @@ private:
     std::vector<std::string> m_plan_steps;
     size_t m_current_step_idx = 0;
 
-    CancellationTokenPtr m_cancel_token;
-    uint32_t m_total_budget_ms = 15000; // Hard cap: 15s total per session
+    Execution::ExecutionContextPtr m_exec_context;
     Error m_fatal_error = Error::NONE;
 };
 

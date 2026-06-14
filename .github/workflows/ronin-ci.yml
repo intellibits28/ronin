@@ -10,37 +10,39 @@ on:
 jobs:
   validate-inference-module:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Host Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ flatbuffers-compiler sqlite3 libsqlite3-dev
+          sudo apt-get install -y cmake g++ sqlite3 libsqlite3-dev ninja-build
+
+      - name: Build Host Flatc (v23)
+        run: |
+          git clone --branch v23.5.26 --depth 1 https://github.com/google/flatbuffers.git
+          cd flatbuffers
+          mkdir build && cd build
+          cmake -G Ninja -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_BUILD_FLATC=ON ..
+          ninja flatc
+          sudo cp flatc /usr/local/bin/
+          flatc --version
+
+      - name: Configure CMake
+        run: |
+          mkdir build_host && cd build_host
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
 
       - name: KernelCompileTest
         run: |
-          mkdir build_host && cd build_host
-          cmake -DCMAKE_BUILD_TYPE=Release ..
-          make ronin_atomic_test ronin_integration_test -j$(nproc)
+          cd build_host
+          ninja ronin_atomic_test ronin_integration_test ronin_governance_test
 
-      - name: KernelStressTest
+      - name: KernelGovernanceTest
         run: |
           cd build_host
-          # Placeholder for actual stress test binary when added
-          echo "Stress test passed"
-
-      - name: KernelCancellationTest
-        run: |
-          cd build_host
-          # Placeholder for actual cancellation test binary when added
-          echo "Cancellation test passed"
-
-      - name: KernelBudgetTest
-        run: |
-          cd build_host
-          # Placeholder for actual budget test binary when added
-          echo "Budget test passed"
+          ./ronin_governance_test
 
       - name: Run Inference Module Tests
         run: |
@@ -51,13 +53,9 @@ jobs:
   build-android-jni:
     needs: validate-inference-module
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Host Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatbuffers-compiler
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -70,6 +68,16 @@ jobs:
         with:
           ndk-version: r26b
 
+      - name: Build Host Flatc (v23)
+        run: |
+          git clone --branch v23.5.26 --depth 1 https://github.com/google/flatbuffers.git
+          cd flatbuffers
+          mkdir build && cd build
+          cmake -G Ninja -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_BUILD_FLATC=ON ..
+          ninja flatc
+          sudo cp flatc /usr/local/bin/
+          flatc --version
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -80,14 +88,13 @@ jobs:
       - name: Build Android JNI & APK (arm64-v8a)
         run: |
           cd android
-          gradle assembleDebug
+          ./gradlew assembleDebug -PversionCode=${{ github.run_number }} -PversionName=5.0.${{ github.run_number }}
 
       - name: Extract Native Library (.so)
         run: |
           mkdir -p output_libs
           find android/app/build/intermediates/cmake/debug -name "libronin_kernel.so" -exec cp {} output_libs/ \;
           cp android/app/build/outputs/apk/debug/app-debug.apk ronin-kernel-debug.apk
-          echo "Native library and APK extracted."
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
