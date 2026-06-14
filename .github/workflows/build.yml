@@ -13,20 +13,38 @@ permissions:
 jobs:
   test-host:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y valgrind sqlite3 libsqlite3-dev
-      - name: Build Host Tests
+        run: sudo apt-get update && sudo apt-get install -y valgrind sqlite3 libsqlite3-dev ninja-build
+      
+      - name: Build Host Flatc (v23)
+        run: |
+          git clone --branch v23.5.26 --depth 1 https://github.com/google/flatbuffers.git
+          cd flatbuffers
+          mkdir build && cd build
+          cmake -G Ninja -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_BUILD_FLATC=ON ..
+          ninja flatc
+          sudo cp flatc /usr/local/bin/
+          flatc --version
+
+      - name: Configure CMake
         run: |
           mkdir build_host && cd build_host
-          cmake -DCMAKE_BUILD_TYPE=Debug ..
-          make ronin_atomic_test ronin_integration_test
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug ..
+          
+      - name: Build Host Tests
+        run: |
+          cd build_host
+          ninja ronin_atomic_test ronin_integration_test ronin_governance_test -j$(nproc)
+          
       - name: Run Host Tests
         run: |
           cd build_host
           ./ronin_atomic_test
           ./ronin_integration_test
+          ./ronin_governance_test
 
   build-apk:
     needs: test-host
@@ -55,6 +73,7 @@ jobs:
           ninja flatc
           sudo cp flatc /usr/local/bin/
           echo "Host flatc v23.5.26 installed."
+          flatc --version
 
       - name: Deploy Assets
         run: |
@@ -63,10 +82,11 @@ jobs:
           cp assets/providers.json android/app/src/main/assets/
           echo "Assets deployed to APK folder."
 
-      - name: "Debug: List Assets"
+      - name: "Debug: System Info"
         run: |
-          echo "--- Assets ---"
-          ls -R android/app/src/main/assets/ || echo "Assets directory missing"
+          echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+          cmake --version
+          ninja --version
 
       - name: Generate Dynamic CalVer
         run: |
@@ -93,7 +113,6 @@ jobs:
           echo "VERSION_TAG=v${VERSION_NAME}" >> $GITHUB_ENV
 
       - name: Upload Ronin APK
-
         uses: actions/upload-artifact@v4
         with:
           name: ronin-kernel-app-debug

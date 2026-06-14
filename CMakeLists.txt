@@ -98,6 +98,7 @@ set(RONIN_CORE_SOURCES
     src/capabilities/chat_skill.cpp
     src/myanmar_segmenter.cpp
     src/dsp/resonance_analyzer.cpp
+    src/execution_governance.cpp
     include/third_party/pffft/pffft.c
 )
 
@@ -119,7 +120,7 @@ if(ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
     
-    add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
+    add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp src/jni_gateway.cpp)
     target_include_directories(ronin_kernel PRIVATE include)
     
     target_link_libraries(ronin_kernel 
@@ -134,7 +135,7 @@ if(ANDROID)
         target_compile_definitions(ronin_core PRIVATE PFFFT_ENABLE_NEON)
     endif()
 else()
-    add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp)
+    add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp src/jni_gateway.cpp)
     target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib)
 endif()
 
@@ -154,6 +155,9 @@ if(NOT ANDROID)
 
     add_executable(ronin_integration_test tests/phase_1_3_integration_test.cpp)
     target_link_libraries(ronin_integration_test ronin_core gtest_main)
+
+    add_executable(ronin_governance_test tests/governance_test.cpp)
+    target_link_libraries(ronin_governance_test ronin_core gtest_main)
 
     add_executable(ronin_segmenter_test tests/segmenter_stress_test.cpp)
     target_link_libraries(ronin_segmenter_test ronin_core)

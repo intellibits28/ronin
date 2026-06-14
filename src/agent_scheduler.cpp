@@ -2,6 +2,7 @@
 #include "graph_executor.h"
 #include "ronin_log.h"
 #include "capabilities/hardware_bridge.h"
+#include "execution_budget.h"
 #include <chrono>
 #include <nlohmann/json.hpp>
 
@@ -82,6 +83,11 @@ void AgentScheduler::workerLoop() {
                 LOGI(TAG, "L8 Scheduler: Executing Step -> '%s'", step.c_str());
                 Capability::HardwareBridge::pushMessage("[AGENT] Step: " + step);
                 
+                auto exec_ctx = current_session->getExecutionContext();
+                if (exec_ctx) {
+                    Execution::ExecutionTelemetryBus::getInstance().logNodeStart(exec_ctx->session_id, exec_ctx->execution_id, step);
+                }
+                
                 // v7.7 Robust Step-to-Capability Mapping
                 CapabilityType type = CapabilityType::NONE;
                 std::string s_lower = step;
@@ -131,7 +137,7 @@ void AgentScheduler::workerLoop() {
                     auto start_time = std::chrono::steady_clock::now();
                     
                     // Call Layer 10 Optimizer and WAIT for completion with cancellation
-                    auto future = m_executor->optimizeAndDispatch(type, current_session->getSessionId(), jParams.dump(), current_session->getToken());
+                    auto future = m_executor->optimizeAndDispatch(type, jParams.dump(), exec_ctx);
                     
                     try {
                         LOGI(TAG, "L8 Scheduler: Waiting for Driver response (future.get)...");
@@ -172,11 +178,18 @@ void AgentScheduler::workerLoop() {
 
                         auto end_time = std::chrono::steady_clock::now();
                         uint32_t cost = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-                        if (!current_session->consumeBudget(cost)) {
-                            LOGE(TAG, "L8 Scheduler: Execution Budget Exceeded!");
-                            current_session->abortSession(AgentSession::Error::DEPTH_EXCEEDED);
-                            all_steps_success = false;
-                            break;
+                        
+                        auto exec_ctx = current_session->getExecutionContext();
+                        if (exec_ctx) {
+                            if (!Execution::ExecutionBudgetController::getInstance().consumeBudget(exec_ctx->execution_id, cost)) {
+                                LOGE(TAG, "L8 Scheduler: Execution Budget Exceeded! %s", exec_ctx->logPrefix().c_str());
+                                current_session->abortSession(AgentSession::Error::DEPTH_EXCEEDED);
+                                all_steps_success = false;
+                                break;
+                            }
+                            Execution::ExecutionTelemetryBus::getInstance().logNodeEnd(exec_ctx->session_id, exec_ctx->execution_id, step, cost, step_success ? "SUCCESS" : "FAILURE", cost);
+                        } else {
+                            LOGW(TAG, "L8 Scheduler: Legacy execution without UEC budget tracking.");
                         }
 
                         LOGI(TAG, "L8 Scheduler: Driver responded with Success: %d", step_success);

@@ -106,13 +106,20 @@ void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool s
     triggerAsyncSync();
 }
 
-std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const std::string& session_id, const std::string& payload, CancellationTokenPtr token) {
+std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const std::string& payload, Execution::ExecutionContextPtr ctx) {
     auto promise = std::make_shared<std::promise<bool>>();
     auto completed = std::make_shared<std::atomic<bool>>(false);
     std::future<bool> future = promise->get_future();
 
-    if (token && token->isCancelled()) {
+    if (ctx && ctx->cancel_token && ctx->cancel_token->isCancelled()) {
         LOGE(TAG, "L10: Execution cancelled before dispatch.");
+        promise->set_value(false);
+        return future;
+    }
+
+    // Checking if safe mode is enabled via LongTermMemory status (as a proxy for global state for now)
+    if (m_ltm && m_ltm->isReadOnly()) {
+        LOGE(TAG, "L10: Execution blocked by SafeMode.");
         promise->set_value(false);
         return future;
     }
@@ -120,7 +127,7 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     
     // v10.2.14: Update active session tracking
-    m_current_session_id = session_id;
+    m_current_session_id = ctx ? ctx->session_id : "unknown";
     
     // v10.1.19: Targeted Node Selection
     uint32_t best_node_id = 1; // Default
@@ -151,7 +158,8 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     CapabilityRequest req;
     req.request_id = std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
     req.capability = type;
-    req.session_id = session_id;
+    req.session_id = ctx ? ctx->session_id : "unknown";
+    req.exec_context = ctx;
     
     // Inject all blackboard data into payload
     nlohmann::json jPayload = nlohmann::json::parse(payload.empty() ? "{}" : payload);
@@ -177,9 +185,10 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     LOGI(TAG, "L10 Optimizer: Selected Node %u for Capability %d. Dispatching...", 
          best_node_id, static_cast<int>(type));
          
-    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise, completed, type, session_id](const CapabilityResponse& res) {
+    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise, completed, type, ctx](const CapabilityResponse& res) {
+        std::string sid = ctx ? ctx->session_id : "unknown";
         if (completed->exchange(true)) {
-            LOGW(TAG, "L10: Duplicate response ignored for session %s.", session_id.c_str());
+            LOGW(TAG, "L10: Duplicate response ignored for session %s.", sid.c_str());
             return;
         }
 
