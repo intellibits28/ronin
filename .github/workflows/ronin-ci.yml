@@ -2,7 +2,7 @@ name: Ronin Isolated Inference CI
 
 on:
   push:
-    branches: [ main, develop, 'feature/**' ]
+    branches: [ main, develop, 'feature/**', 'refactor/**' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
