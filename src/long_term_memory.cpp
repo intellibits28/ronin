@@ -429,16 +429,16 @@ bool LongTermMemory::storeFailure(const std::string& node_id, int failure_type, 
     return ok;
 }
 
-std::vector<FailureRecord> LongTermMemory::getFailures(int limit) {
+std::vector<Ronin::Kernel::FailureRecord> LongTermMemory::getFailures(int limit) {
     if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
-    std::vector<FailureRecord> results;
+    std::vector<Ronin::Kernel::FailureRecord> results;
     const char* sql = "SELECT node_id, failure_type, timestamp, retry_count, resolution FROM failures ORDER BY timestamp DESC LIMIT ?;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_int(stmt, 1, limit);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            FailureRecord rec;
+            Ronin::Kernel::FailureRecord rec;
             rec.node_id = columnText(stmt, 0);
             rec.type = static_cast<FailureType>(sqlite3_column_int(stmt, 1));
             rec.timestamp = static_cast<uint64_t>(sqlite3_column_int64(stmt, 2));
