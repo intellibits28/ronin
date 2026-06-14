@@ -17,7 +17,7 @@ void FailureTelemetryBus::logFailure(const std::string& exec_id, const std::stri
 
 std::vector<Ronin::Kernel::FailureRecord> FailureTelemetryBus::getRecentFailures(const std::string& node_id, int limit) {
     if (!m_ltm) return {};
-    return m_ltm->getFailures(limit);
+    return m_ltm->getFailuresByNode(node_id, limit);
 }
 
 int FailureTelemetryBus::getFailureCount(const std::string& node_id, uint64_t window_ms) {

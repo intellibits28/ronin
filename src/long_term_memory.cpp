@@ -451,6 +451,29 @@ std::vector<Ronin::Kernel::FailureRecord> LongTermMemory::getFailures(int limit)
     return results;
 }
 
+std::vector<Ronin::Kernel::FailureRecord> LongTermMemory::getFailuresByNode(const std::string& node_id, int limit) {
+    if (!m_db) return {};
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<Ronin::Kernel::FailureRecord> results;
+    const char* sql = "SELECT node_id, failure_type, timestamp, retry_count, resolution FROM failures WHERE node_id = ? ORDER BY timestamp DESC LIMIT ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, node_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 2, limit);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            Ronin::Kernel::FailureRecord rec;
+            rec.node_id = columnText(stmt, 0);
+            rec.type = static_cast<FailureType>(sqlite3_column_int(stmt, 1));
+            rec.timestamp = static_cast<uint64_t>(sqlite3_column_int64(stmt, 2));
+            rec.retry_count = sqlite3_column_int(stmt, 3);
+            rec.resolution = columnText(stmt, 4);
+            results.push_back(rec);
+        }
+    }
+    sqlite3_finalize(stmt);
+    return results;
+}
+
 int LongTermMemory::countFailures(const std::string& node_id, uint64_t since_ms) {
     if (!m_db) return 0;
     std::lock_guard<std::mutex> lock(m_mutex);

@@ -106,6 +106,7 @@ public:
     // v10.7 Failure Telemetry
     bool storeFailure(const std::string& node_id, int failure_type, int retry_count, const std::string& resolution);
     std::vector<Ronin::Kernel::FailureRecord> getFailures(int limit);
+    std::vector<Ronin::Kernel::FailureRecord> getFailuresByNode(const std::string& node_id, int limit);
     int countFailures(const std::string& node_id, uint64_t since_ms);
 
     // Phase 4: Reflection Support
