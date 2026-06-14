@@ -9,11 +9,7 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.RemoteException
 import androidx.annotation.Keep
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.json.JSONArray
@@ -111,12 +107,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Suppress("unused")
     fun storePrediction(goalId: String, nodeId: String, predicted: String, actual: String, error: Float): Boolean = 
         if (isLibLoaded) storePredictionNative(goalId, nodeId, predicted, actual, error) else false
-
-    @Keep
-    @Suppress("unused")
-    fun injectWorldState(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean) {
-        if (isLibLoaded) injectWorldStateNative(battery, ram, gps, net, charging)
-    }
 
     @Keep
     @Suppress("unused")
@@ -252,19 +242,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun setPrimaryCloudProviderNative(provider: String)
     private external fun indexFilesNative(paths: Array<String>, names: Array<String>, dates: LongArray)
     private external fun submitCapabilityResponseNative(requestId: String, success: Boolean, payload: String)
-
-    fun submitCapabilityResponseSafe(requestId: String, success: Boolean, payload: String) {
-        if (isLibLoaded) submitCapabilityResponseNative(requestId, success, payload)
-    }
-
-    fun indexFilesSafe(paths: Array<String>, names: Array<String>, dates: LongArray) {
-        if (isLibLoaded) indexFilesNative(paths, names, dates)
-    }
-
-    fun injectWorldState(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean) {
-        if (isLibLoaded) injectWorldStateNative(battery, ram, gps, net, charging)
-    }
-
     private external fun getLMKPressureNative(): Int
     private external fun updateModelRegistryNative(json: String): Boolean
     private external fun updateCloudProvidersNative(json: String): Boolean
@@ -286,8 +263,19 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun pushSensorSamplesNative(samplesX: FloatArray, samplesY: FloatArray, samplesZ: FloatArray, sensorType: String): Boolean
     private external fun getSensorAnalysisNative(sensorType: String): String
     private external fun storePredictionNative(goalId: String, nodeId: String, predicted: String, actual: String, error: Float): Boolean
-    private external fun injectWorldStateNative(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean)
     private external fun applyHumanFeedbackNative(sessionId: String, wasHelpful: Boolean)
+
+    fun submitCapabilityResponseSafe(requestId: String, success: Boolean, payload: String) {
+        if (isLibLoaded) submitCapabilityResponseNative(requestId, success, payload)
+    }
+
+    fun indexFilesSafe(paths: Array<String>, names: Array<String>, dates: LongArray) {
+        if (isLibLoaded) indexFilesNative(paths, names, dates)
+    }
+
+    fun injectWorldState(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean) {
+        if (isLibLoaded) injectWorldStateNative(battery, ram, gps, net, charging)
+    }
 
     enum class RiskLevel(val value: Int) {
         LOW(0), MEDIUM(1), HIGH(2), EXTREME(3)
@@ -363,9 +351,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         val corrId = "C-" + java.util.UUID.randomUUID().toString()
 
         // v1.4 Execution Governance: Link coroutine cancellation to JNI execution
-        val job = coroutineContext[Job]
+        val job = coroutineContext[kotlinx.coroutines.Job]
         job?.invokeOnCompletion { cause ->
-            if (cause is CancellationException) {
+            if (cause is kotlinx.coroutines.CancellationException) {
                 Log.w(TAG, "[$sessionId | $execId | CANCEL] Kotlin coroutine cancelled. Propagating to JNI.")
                 cancelExecution(execId)
             }
