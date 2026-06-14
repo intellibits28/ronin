@@ -13,7 +13,7 @@ public:
     void setMemory(Memory::LongTermMemory* ltm) { m_ltm = ltm; }
     
     void logFailure(const std::string& exec_id, const std::string& node_id, FailureType type, const std::string& details);
-    std::vector<FailureRecord> getRecentFailures(const std::string& node_id, int limit = 10);
+    std::vector<Ronin::Kernel::FailureRecord> getRecentFailures(const std::string& node_id, int limit = 10);
     int getFailureCount(const std::string& node_id, uint64_t window_ms = 3600000);
 
 private:

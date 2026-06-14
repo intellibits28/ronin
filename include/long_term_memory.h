@@ -7,6 +7,7 @@
 #include <atomic>
 #include <sqlite3.h>
 #include "myanmar_segmenter.h"
+#include "ronin_types.hpp"
 
 namespace Ronin::Kernel::Memory {
 
@@ -104,7 +105,7 @@ public:
 
     // v10.7 Failure Telemetry
     bool storeFailure(const std::string& node_id, int failure_type, int retry_count, const std::string& resolution);
-    std::vector<FailureRecord> getFailures(int limit);
+    std::vector<Ronin::Kernel::FailureRecord> getFailures(int limit);
     int countFailures(const std::string& node_id, uint64_t since_ms);
 
     // Phase 4: Reflection Support
