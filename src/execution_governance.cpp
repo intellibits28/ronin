@@ -18,7 +18,7 @@ void ExecutionTelemetryBus::logNodeStart(const std::string& session_id, const st
 
 void ExecutionTelemetryBus::logNodeEnd(const std::string& session_id, const std::string& exec_id, const std::string& node_id, int64_t latency_ms, const std::string& result, int budget_consumed) {
     LOGI(TAG, "[%s | %s | NODE:%s] Node Execution Ended | Latency: %lld ms | Budget Used: %d ms | Result: %s", 
-         session_id.c_str(), exec_id.c_str(), node_id.c_str(), latency_ms, budget_consumed, result.c_str());
+         session_id.c_str(), exec_id.c_str(), node_id.c_str(), (long long)latency_ms, budget_consumed, result.c_str());
 }
 
 void ExecutionTelemetryBus::logCancellation(const std::string& session_id, const std::string& exec_id, const std::string& reason) {

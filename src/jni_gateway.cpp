@@ -17,7 +17,7 @@ JniExecutionGateway& JniExecutionGateway::getInstance() {
 
 KernelResult<Execution::ExecutionContextPtr> JniExecutionGateway::createAndValidateContext(
     JNIEnv* env, jstring jSessionId, jstring jExecId, jstring jCorrelationId) {
-    
+#ifdef __ANDROID__
     std::string session_id = ConvertJStringToString(env, jSessionId);
     std::string exec_id = ConvertJStringToString(env, jExecId);
     std::string corr_id = ConvertJStringToString(env, jCorrelationId);
@@ -43,6 +43,9 @@ KernelResult<Execution::ExecutionContextPtr> JniExecutionGateway::createAndValid
     registerExecution(ctx);
 
     return KernelResult<Execution::ExecutionContextPtr>::Success(ctx);
+#else
+    return KernelResult<Execution::ExecutionContextPtr>::Error(501, "JNI Gateway not implemented on this platform.");
+#endif
 }
 
 void JniExecutionGateway::propagateCancellation(const std::string& exec_id) {

@@ -97,7 +97,7 @@ void run_integrated_test() {
     cancel_trigger.join();
 
     if (aborted_successfully) {
-        LOGI(TAG, "SUCCESS: Inference loop aborted within %lld ms (Target < 50ms from trigger).", (elapsed_ms - 100));
+        LOGI(TAG, "SUCCESS: Inference loop aborted within %lld ms (Target < 50ms from trigger).", (long long)(elapsed_ms - 100));
     } else {
         LOGE(TAG, "FAILURE: Cancellation flag was ignored or loop completed unexpectedly.");
         return;
