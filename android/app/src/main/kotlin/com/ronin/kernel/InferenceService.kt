@@ -163,11 +163,11 @@ class InferenceService : Service() {
             inferenceMutex.withLock {
                 releaseResourcesLocked()
                 try {
-                    // Hardened v5.1: Stabilized EngineConfig for Mid-range
-                    // Reduced to 768 to prevent terminally unstable invocation errors (Code 13)
+                    // Hardened v5.1: Balanced EngineConfig for SD778G+
+                    // Set to 1536 to allow context for Planner + History while maintaining GPU memory stability
                     val config = EngineConfig(
                         modelPath = path, 
-                        maxNumTokens = 768
+                        maxNumTokens = 1536
                     )
                     val engine = Engine(config)
                     engine.initialize()

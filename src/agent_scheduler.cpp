@@ -6,6 +6,7 @@
 #include "runtime_healing_controller.h"
 #include "adaptive_budget_controller.h"
 #include "failure_telemetry_bus.h"
+#include "jni_gateway.h"
 #include <chrono>
 #include <nlohmann/json.hpp>
 #include <thread>
@@ -248,6 +249,11 @@ void AgentScheduler::workerLoop() {
                 if (m_executor) {
                     m_executor->recordEpisode(current_session->getIntent(), "Failed task: " + current_session->getIntent(), "{}", false);
                 }
+            }
+
+            // v1.5 Clean up JNI Gateway registration
+            if (auto exec_ctx = current_session->getExecutionContext()) {
+                JNI::JniExecutionGateway::getInstance().unregisterExecution(exec_ctx->execution_id);
             }
         }
     }
