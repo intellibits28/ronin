@@ -25,25 +25,22 @@ void SpeculativeGraphExecutor::rollbackNode(uint32_t node_id) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (!m_speculative_mode) return;
     
+    LOGW(TAG, "Initiating Rollback for Node %u", node_id);
+    
     // Find the state and rollback blackboard
-    for (auto it = m_speculative_buffer.begin(); it != m_speculative_buffer.end(); ++it) {
-        if (it->node_id == node_id) {
-            // Restore blackboard
-            try {
-                auto j = nlohmann::json::parse(it->original_blackboard_json);
-                m_blackboard.storage.clear();
-                for (auto& [key, val] : j.items()) {
-                    m_blackboard.storage[key] = val.get<std::string>();
-                }
-                LOGW(TAG, "Rolled back blackboard state for node %u", node_id);
-            } catch(...) {
-                LOGE(TAG, "Failed to parse blackboard rollback state.");
+    if (!m_speculative_buffer.empty()) {
+        auto spec = m_speculative_buffer.back();
+        try {
+            auto j = nlohmann::json::parse(spec.original_blackboard_json);
+            m_blackboard.storage.clear();
+            for (auto& [key, val] : j.items()) {
+                m_blackboard.storage[key] = val.get<std::string>();
             }
-            
-            // Remove this and subsequent speculative states
-            m_speculative_buffer.erase(it, m_speculative_buffer.end());
-            break;
+            LOGI(TAG, "Rollback successful. Blackboard restored.");
+        } catch(...) {
+            LOGE(TAG, "Rollback FAILED: Corruption in buffered state.");
         }
+        m_speculative_buffer.pop_back();
     }
 }
 
@@ -51,15 +48,16 @@ std::future<bool> SpeculativeGraphExecutor::optimizeAndDispatch(CapabilityType t
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     
     if (m_speculative_mode) {
-        // Snapshot current blackboard
+        // Snapshot current blackboard state
         nlohmann::json jState;
         for (const auto& [k, v] : m_blackboard.storage) jState[k] = v;
         
-        // We don't have the exact node_id yet here, so we buffer the state 
-        // and let the base class handle the dispatch. The callback would need
-        // to be intercepted to associate the node_id.
-        // For v1.5 prototype, we just log.
-        LOGI(TAG, "Speculative state buffered.");
+        SpeculativeState spec;
+        spec.node_id = 0; // Temporary ID
+        spec.original_blackboard_json = jState.dump();
+        m_speculative_buffer.push_back(spec);
+        
+        LOGI(TAG, "Speculative state buffered for Capability %d", static_cast<int>(type));
     }
     
     return GraphExecutor::optimizeAndDispatch(type, payload, ctx);

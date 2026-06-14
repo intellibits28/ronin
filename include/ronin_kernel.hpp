@@ -31,10 +31,20 @@ public:
    */
   void tick(const Input &input);
 
+  // v1.3 Cognitive Loop Steps
+  void observe();                   // Gather World State
+  void orient();                    // Update Beliefs & Context
+  void decide(const Input& input);  // Intent & Goal Selection
+  void act();                       // Execute & Planning
+
   /**
    * @return The last cognitive intent identified by the kernel.
    */
   CognitiveIntent getLastIntent() const { return lastIntent_; }
+
+  // v13.0: World State Management
+  void updateWorldState(const WorldState& state) { m_world_state = state; }
+  const WorldState& getWorldState() const { return m_world_state; }
 
   // Contextual Subject Management (v3.9)
   void setSuggestedSubject(const std::string& subject) { m_last_suggested_subject = subject; }
@@ -58,15 +68,11 @@ private:
   CapabilityManager &capManager_;
   CognitiveState state_;
   CognitiveIntent lastIntent_;
+  WorldState m_world_state; // v13.0
   CircularBuffer<uint32_t, 128> contextStore_;
 
   std::string m_last_suggested_subject;
   const int maxIterations_ = 8;
-
-  /**
-   * Internal autonomous loop implementation.
-   */
-  void runAutonomousLoop(const Input &input);
 };
 
 } // namespace Ronin::Kernel
