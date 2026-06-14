@@ -204,27 +204,27 @@ bool LongTermMemory::storePrediction(const std::string& goal_id, const std::stri
 std::string LongTermMemory::lookupFact(const std::string& entity, const std::string& attr) {
     if (!m_db) return "";
     std::lock_guard<std::mutex> lock(m_mutex);
-    // v12.25: Ultra-robust matching with trim and case-insensitivity
+    // v12.25: Simplified robust matching
     const char* sql = "SELECT value FROM facts WHERE "
-                      "(trim(entity) LIKE ? OR ? LIKE '%' || trim(entity) || '%') "
-                      "AND (trim(attribute) LIKE ? OR ? LIKE '%' || trim(attribute) || '%') "
-                      "ORDER BY confidence DESC, created_at DESC LIMIT 1;";
+                      "(entity LIKE ? OR ? LIKE '%' || entity || '%') "
+                      "AND (attribute LIKE ? OR ? LIKE '%' || attribute || '%') "
+                      "ORDER BY confidence DESC, id DESC LIMIT 1;";
     sqlite3_stmt* stmt = nullptr;
-    std::string result;
-    std::string entity_query = "%" + entity + "%";
-    std::string attr_query = "%" + attr + "%";
+    std::string entity_param = "%" + entity + "%";
+    std::string attr_param = "%" + attr + "%";
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, entity_query.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 2, entity.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 3, attr_query.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 4, attr.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 1, entity_param.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, entity.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, attr_param.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 4, attr.c_str(), -1, SQLITE_TRANSIENT);
+        
         if (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* val = sqlite3_column_text(stmt, 0);
-            if (val) result = reinterpret_cast<const char*>(val);
+            if (val) return reinterpret_cast<const char*>(val);
         }
     }
-    sqlite3_finalize(stmt);
-    return result;
+    if (stmt) sqlite3_finalize(stmt);
+    return "";
 }
 
 std::vector<std::string> LongTermMemory::searchNotes(const std::string& query) {
