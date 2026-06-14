@@ -4,13 +4,35 @@
 #include "failure_telemetry_bus.h"
 #include "execution_checkpoint_store.h"
 #include "execution_context.h"
+#include "long_term_memory.h"
 #include <thread>
 #include <chrono>
 
 using namespace Ronin::Kernel::Execution;
 using namespace Ronin::Kernel;
+using namespace Ronin::Kernel::Memory;
 
-TEST(SelfHealingTest, RecoveryCheckpointing) {
+class SelfHealingTest : public ::testing::Test {
+protected:
+    static std::unique_ptr<LongTermMemory> ltm;
+
+    static void SetUpTestSuite() {
+        // Initialize in-memory database for testing
+        ltm = std::make_unique<LongTermMemory>(":memory:");
+        
+        // Wire up singletons
+        FailureTelemetryBus::getInstance().setMemory(ltm.get());
+        ExecutionCheckpointStore::getInstance().initialize(ltm->getDatabase());
+    }
+
+    static void TearDownTestSuite() {
+        ltm.reset();
+    }
+};
+
+std::unique_ptr<LongTermMemory> SelfHealingTest::ltm = nullptr;
+
+TEST_F(SelfHealingTest, RecoveryCheckpointing) {
     auto& store = ExecutionCheckpointStore::getInstance();
     auto ctx = std::make_shared<ExecutionContext>();
     ctx->session_id = "s1";
@@ -20,7 +42,7 @@ TEST(SelfHealingTest, RecoveryCheckpointing) {
     EXPECT_EQ(store.getPendingExecutions().size(), 1);
 }
 
-TEST(SelfHealingTest, AdaptiveBudgetTuning) {
+TEST_F(SelfHealingTest, AdaptiveBudgetTuning) {
     auto& budget = AdaptiveBudgetController::getInstance();
     auto& telemetry = FailureTelemetryBus::getInstance();
     std::string node_id = "heavy_node";
@@ -39,7 +61,7 @@ TEST(SelfHealingTest, AdaptiveBudgetTuning) {
     EXPECT_EQ(b2, 18000);
 }
 
-TEST(SelfHealingTest, FailureLearning) {
+TEST_F(SelfHealingTest, FailureLearning) {
     auto& telemetry = FailureTelemetryBus::getInstance();
     std::string node_id = "learn_node";
     
