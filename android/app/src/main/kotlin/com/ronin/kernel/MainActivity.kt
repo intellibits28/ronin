@@ -834,7 +834,8 @@ class MainActivity : FragmentActivity() {
                 }
                 "LOCATION", "GET_LOCATION", "MAP", "OPEN_MAP", "show_map", "SHOW_LOCATION" -> {
                     val actualAction = params["action"]?.uppercase() ?: ""
-                    if (actualAction.contains("MAP") || actualAction.contains("SHOW") || actionName == "MAP") {
+                    // v10.2.17: Force MAP trigger if intent is MAP regardless of step name
+                    if (actualAction.contains("MAP") || actualAction.contains("SHOW") || actionName == "MAP" || actionName == "MAP") {
                         try {
                             val locJson = params["context_result_LOCATION"] ?: params["payload"]
                             var lat = "0.0"; var lon = "0.0"
@@ -873,11 +874,12 @@ class MainActivity : FragmentActivity() {
                 }
                 "ALARM", "SET_ALARM", "alarm" -> {
                     try {
-                        val timeStr = params["time"] ?: params["hour"] ?: "06:00"
-                        val message = params["message"] ?: params["label"] ?: "Ronin Alarm"
+                        // v10.2.17: Prioritize 'value' which is where Planner puts the 05:00 time
+                        val timeStr = params["value"] ?: params["time"] ?: params["hour"] ?: "06:00"
+                        val message = params["message"] ?: params["label"] ?: params["entity"] ?: "Ronin Alarm"
                         val parts = timeStr.split(":")
-                        val hour = parts.getOrNull(0)?.toIntOrNull() ?: 6
-                        val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                        val hour = parts.getOrNull(0)?.trim()?.toIntOrNull() ?: 6
+                        val minute = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
                         val intent = Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
                             putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, message)
                             putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
@@ -947,6 +949,22 @@ class MainActivity : FragmentActivity() {
                                 putExtra(android.provider.CalendarContract.Events.EVENT_TIMEZONE, timezone)
                             }
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        
+                        // v10.2.17: Background insertion fallback if permission exists
+                        if (checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            try {
+                                val values = android.content.ContentValues().apply {
+                                    put(android.provider.CalendarContract.Events.DTSTART, beginTime)
+                                    put(android.provider.CalendarContract.Events.DTEND, beginTime + 60 * 60 * 1000)
+                                    put(android.provider.CalendarContract.Events.TITLE, title)
+                                    put(android.provider.CalendarContract.Events.DESCRIPTION, desc)
+                                    put(android.provider.CalendarContract.Events.CALENDAR_ID, 1)
+                                    put(android.provider.CalendarContract.Events.EVENT_TIMEZONE, timezone.ifEmpty { java.util.TimeZone.getDefault().id })
+                                }
+                                contentResolver.insert(android.provider.CalendarContract.Events.CONTENT_URI, values)
+                                Log.i("RoninKernel", "Calendar: Event inserted via ContentProvider.")
+                            } catch (e: Exception) { Log.w("RoninKernel", "Direct insert failed, using Intent fallback: ${e.message}") }
                         }
                         
                         runOnUiThread { 
@@ -1042,7 +1060,7 @@ class MainActivity : FragmentActivity() {
                         try {
                             val locJson = params["context_result_LOCATION"]
                             val conJson = params["context_result_CONTACTS"]
-                            var recipient = params["recipient_number"] ?: params["recipient"] ?: params["recipient_name"] ?: ""
+                            var recipient = params["recipient_name"] ?: params["recipient_number"] ?: params["recipient"] ?: params["to"] ?: ""
                             var body = params["message"] ?: params["sms_body"] ?: params["text"] ?: ""
 
                             if (conJson != null && conJson.startsWith("{")) {
