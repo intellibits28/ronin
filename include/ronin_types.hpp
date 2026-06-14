@@ -6,8 +6,42 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <atomic>
+#include <memory>
+#include <stdexcept>
 
 namespace Ronin::Kernel {
+
+// v10.6: Cooperative Cancellation Primitive
+class CancellationToken {
+public:
+    void cancel() { m_cancelled.store(true, std::memory_order_release); }
+    bool isCancelled() const { return m_cancelled.load(std::memory_order_acquire); }
+private:
+    std::atomic<bool> m_cancelled{false};
+};
+
+using CancellationTokenPtr = std::shared_ptr<CancellationToken>;
+
+// v10.6: Hardened, Exception-Free Result Type
+template<typename T>
+class KernelResult {
+public:
+    static KernelResult Success(T val) { return KernelResult(val, 0); }
+    static KernelResult Error(int code, std::string msg) { return KernelResult(T(), code, msg); }
+
+    bool isOk() const { return m_code == 0; }
+    
+    // Caller MUST check isOk() before accessing. No throw, safe for NDK.
+    T value() const { return m_value; }
+    std::string error() const { return m_msg; }
+
+private:
+    T m_value;
+    int m_code;
+    std::string m_msg;
+    KernelResult(T v, int c, std::string m = "") : m_value(v), m_code(c), m_msg(m) {}
+};
 
 /**
  * Dynamic capability manifest entry.

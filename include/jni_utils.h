@@ -44,8 +44,9 @@ private:
 };
 
 /**
- * JNI String Utilities.
+ * JNI String Utilities & Error Handling.
  */
+bool CheckJniException(JNIEnv* env);
 std::string ConvertJStringToString(JNIEnv* env, jstring jstr);
 jstring ConvertStringToJString(JNIEnv* env, const std::string& str);
 

@@ -79,6 +79,7 @@ void AndroidBridge::sendRequest(const CapabilityRequest& req) {
                 }
                 env->DeleteLocalRef(jStr);
             }
+            env->DeleteLocalRef(cls);
         }
         
         if (attached) {

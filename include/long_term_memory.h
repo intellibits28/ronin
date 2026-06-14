@@ -115,9 +115,12 @@ public:
     std::vector<std::string> segmentText(const std::string& input);
     Ronin::Kernel::NLP::MyanmarSegmenter* getSegmenter() { return m_segmenter.get(); }
 
+    void setReadOnly(bool readOnly) { m_read_only.store(readOnly); }
+
 private:
     sqlite3* m_db = nullptr;
     std::mutex m_mutex;
+    std::atomic<bool> m_read_only{false};
     double m_lambda = 0.000001; 
     std::unique_ptr<Ronin::Kernel::NLP::MyanmarSegmenter> m_segmenter;
 

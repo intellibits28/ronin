@@ -29,7 +29,7 @@ public:
 private:
     SessionManager() = default;
     
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
     std::unordered_map<std::string, std::shared_ptr<AgentSession>> m_sessions;
 };
 

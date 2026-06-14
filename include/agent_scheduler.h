@@ -45,6 +45,9 @@ public:
     // Stops the background worker thread
     void stop();
 
+    // v10.6: Purge queue during SafeMode
+    void purgeQueue();
+
 private:
     AgentScheduler();
     ~AgentScheduler();

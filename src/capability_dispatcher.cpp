@@ -25,18 +25,23 @@ void CapabilityDispatcher::dispatch(const CapabilityRequest& req, ResponseCallba
 }
 
 void CapabilityDispatcher::onResponse(const CapabilityResponse& res) {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    
-    LOGI(TAG, "Received capability response: %s (Success: %d)", res.request_id.c_str(), res.success);
-    
-    auto it = m_pending_requests.find(res.request_id);
-    if (it != m_pending_requests.end()) {
-        if (it->second) {
-            it->second(res);
+    ResponseCallback callback;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        
+        LOGI(TAG, "Received capability response: %s (Success: %d)", res.request_id.c_str(), res.success);
+        
+        auto it = m_pending_requests.find(res.request_id);
+        if (it != m_pending_requests.end()) {
+            callback = std::move(it->second);
+            m_pending_requests.erase(it);
+        } else {
+            LOGW(TAG, "No pending callback found for request_id: %s", res.request_id.c_str());
         }
-        m_pending_requests.erase(it);
-    } else {
-        LOGW(TAG, "No pending callback found for request_id: %s", res.request_id.c_str());
+    }
+
+    if (callback) {
+        callback(res);
     }
 }
 

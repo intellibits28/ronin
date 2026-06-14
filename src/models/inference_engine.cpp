@@ -70,14 +70,18 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input, const 
         wrapped_input = PromptFactory::wrap(input, type, systemPrompt);
     }
 
+    struct ProcessingGuard {
+        InferenceEngine::Impl* impl;
+        ~ProcessingGuard() {
+            if (!impl) return;
+            std::lock_guard<std::mutex> lock(impl->inference_mutex);
+            impl->is_processing = false;
+        }
+    } processing_guard{m_impl.get()};
+
     // Phase 11.0: Strictly Synchronous JNI Bridge (Freeze Prevention)
     LOGI(TAG, "Requesting Neural Reasoning via Sync JNI Bridge...");
     std::string result = Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
-
-    {
-        std::lock_guard<std::mutex> lock(m_impl->inference_mutex);
-        m_impl->is_processing = false;
-    }
 
     if (isCancelled()) {
         LOGW(TAG, "Inference cancelled by hardware guard-rail.");

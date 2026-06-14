@@ -106,9 +106,16 @@ void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool s
     triggerAsyncSync();
 }
 
-std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const std::string& session_id, const std::string& payload) {
+std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const std::string& session_id, const std::string& payload, CancellationTokenPtr token) {
     auto promise = std::make_shared<std::promise<bool>>();
+    auto completed = std::make_shared<std::atomic<bool>>(false);
     std::future<bool> future = promise->get_future();
+
+    if (token && token->isCancelled()) {
+        LOGE(TAG, "L10: Execution cancelled before dispatch.");
+        promise->set_value(false);
+        return future;
+    }
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     
@@ -170,7 +177,12 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     LOGI(TAG, "L10 Optimizer: Selected Node %u for Capability %d. Dispatching...", 
          best_node_id, static_cast<int>(type));
          
-    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise, type, session_id](const CapabilityResponse& res) {
+    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise, completed, type, session_id](const CapabilityResponse& res) {
+        if (completed->exchange(true)) {
+            LOGW(TAG, "L10: Duplicate response ignored for session %s.", session_id.c_str());
+            return;
+        }
+
         // v7.4: Feedback + Blackboard Storage
         this->reportOutcome(0, best_node_id, res.success, RiskLevel::MEDIUM);
         

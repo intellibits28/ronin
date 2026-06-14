@@ -41,6 +41,7 @@ void SessionManager::terminateSession(const std::string& session_id) {
 }
 
 bool SessionManager::hasActiveSessions() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
     return !m_sessions.empty();
 }
 
