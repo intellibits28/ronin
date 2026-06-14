@@ -1,7 +1,8 @@
 #include "jni_gateway.h"
 #include "jni_utils.h"
 #include "execution_budget.h"
-#include "recovery_manager.h"
+#include "execution_checkpoint_store.h"
+#include "adaptive_budget_controller.h"
 #include "ronin_log.h"
 #include "agent_scheduler.h"
 
@@ -33,10 +34,11 @@ KernelResult<Execution::ExecutionContextPtr> JniExecutionGateway::createAndValid
     ctx->correlation_id = corr_id;
 
     // v1.5: Recovery Checkpoint
-    Execution::RecoveryManager::getInstance().recordCheckpoint(ctx);
+    Execution::ExecutionCheckpointStore::getInstance().saveCheckpoint(ctx, "{}");
 
-    // Allocate default 15s budget
-    Execution::ExecutionBudgetController::getInstance().allocateBudget(exec_id, 15000);
+    // Allocate default 15s budget (adapted)
+    uint32_t budget = Execution::AdaptiveBudgetController::getInstance().getAdaptedBudget(exec_id, "gateway");
+    Execution::ExecutionBudgetController::getInstance().allocateBudget(exec_id, budget);
 
     registerExecution(ctx);
 

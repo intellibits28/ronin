@@ -1,7 +1,7 @@
 #include "graph_executor.h"
-#include "recovery_manager.h"
-#include "adaptive_budget.h"
-#include "failure_telemetry.h"
+#include "execution_checkpoint_store.h"
+#include "adaptive_budget_controller.h"
+#include "failure_telemetry_bus.h"
 #include <algorithm>
 #include <iostream>
 #include <thread>

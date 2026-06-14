@@ -3,9 +3,9 @@
 #include "ronin_log.h"
 #include "capabilities/hardware_bridge.h"
 #include "execution_budget.h"
-#include "recovery_manager.h"
-#include "adaptive_budget.h"
-#include "failure_telemetry.h"
+#include "runtime_healing_controller.h"
+#include "adaptive_budget_controller.h"
+#include "failure_telemetry_bus.h"
 #include <chrono>
 #include <nlohmann/json.hpp>
 #include <thread>
@@ -174,7 +174,7 @@ void AgentScheduler::workerLoop() {
                                 uint32_t elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
                                 if (elapsed >= 45000) { // 45s hard timeout per step
                                     LOGE(TAG, "L8 Scheduler: Step '%s' timed out (Watchdog).", step.c_str());
-                                    Execution::FailureTelemetryStore::getInstance().recordFailure(step, FailureType::TIMEOUT, retry_count, "ABORT_TIMEOUT");
+                                    Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::TIMEOUT, "ABORT_TIMEOUT");
                                     Capability::HardwareBridge::pushMessage("[AGENT] Step timed out: " + step);
                                     current_session->abortSession(AgentSession::Error::TIMEOUT);
                                     all_steps_success = false;
@@ -191,7 +191,7 @@ void AgentScheduler::workerLoop() {
                             if (exec_ctx) {
                                 if (!Execution::ExecutionBudgetController::getInstance().consumeBudget(exec_id, cost)) {
                                     LOGE(TAG, "L8 Scheduler: Execution Budget Exceeded! %s", exec_ctx->logPrefix().c_str());
-                                    Execution::FailureTelemetryStore::getInstance().recordFailure(step, FailureType::BUDGET_EXCEEDED, retry_count, "ABORT_BUDGET");
+                                    Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::BUDGET_EXCEEDED, "ABORT_BUDGET");
                                     current_session->abortSession(AgentSession::Error::DEPTH_EXCEEDED);
                                     all_steps_success = false;
                                     break;
@@ -212,15 +212,15 @@ void AgentScheduler::workerLoop() {
                                 std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
                             } else {
                                 LOGE(TAG, "L8 Scheduler: Step '%s' failed after %d retries.", step.c_str(), MAX_RETRIES);
-                                Execution::FailureTelemetryStore::getInstance().recordFailure(step, FailureType::UNKNOWN, retry_count, "MAX_RETRIES_EXCEEDED");
-                                Execution::RecoveryManager::getInstance().recoverFromFailure(exec_id, FailureType::UNKNOWN);
+                                Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::UNKNOWN, "MAX_RETRIES_EXCEEDED");
+                                Execution::RuntimeHealingController::getInstance().detectInstability();
                                 Capability::HardwareBridge::pushMessage("[AGENT] Step failed: " + step);
                                 all_steps_success = false;
                             }
                         } catch (const std::exception& e) {
                             LOGE(TAG, "L8 Scheduler: Exception during step '%s': %s", step.c_str(), e.what());
-                            Execution::FailureTelemetryStore::getInstance().recordFailure(step, FailureType::JNI_EXCEPTION, retry_count, e.what());
-                            Execution::RecoveryManager::getInstance().recoverFromFailure(exec_id, FailureType::JNI_EXCEPTION);
+                            Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::JNI_EXCEPTION, e.what());
+                            Execution::RuntimeHealingController::getInstance().detectInstability();
                             all_steps_success = false;
                             break;
                         }
