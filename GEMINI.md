@@ -15,7 +15,7 @@ Core Philosophy: Sovereign edge intelligence with multi-process isolation and li
 *   **AIDL Bridge:** Secure cross-process token streaming with `@Keep` reflection safety.
 
 ### 2. Linguistic Precision (Myanmar Text)
-*   **Token Limit:** `maxNumTokens` defaults to **1024** (Optimal for UTF-8 Multi-byte).
+*   **Token Limit:** `maxNumTokens` defaults to **768** (Optimal for SD778G+ stability).
 *   **Extended Range:** UI slider allows up to **2048** tokens for deep context.
 *   **Trie-based BWS:** Pure C++ Trie Segmenter (23k+ words) for precise lexical keyword extraction.
 

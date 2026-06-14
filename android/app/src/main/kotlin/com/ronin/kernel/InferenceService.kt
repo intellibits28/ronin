@@ -163,28 +163,36 @@ class InferenceService : Service() {
             inferenceMutex.withLock {
                 releaseResourcesLocked()
                 try {
-                    // Hardened v5.1: Stabilized EngineConfig for Mi 11 Lite
-                    // Note: maxSequenceLength is not supported in this SDK version's constructor.
+                    // Hardened v5.1: Stabilized EngineConfig for Mid-range
+                    // Reduced to 768 to prevent terminally unstable invocation errors (Code 13)
                     val config = EngineConfig(
                         modelPath = path, 
-                        maxNumTokens = 1024
+                        maxNumTokens = 768
                     )
                     val engine = Engine(config)
                     engine.initialize()
                     litertEngine = engine
                     litertConversation = engine.createConversation()
                     isConversationFresh = true; currentModelPath = path
-                    Log.i(TAG, "Hardened Spine Hydrated (1024 Token Window): $path")
+                    Log.i(TAG, "Hardened Spine Hydrated (768 Token Window): $path")
                     true
-                } catch (e: Throwable) { Log.e(TAG, "Hydration Failed: ${e.message}"); false }
+                } catch (e: Throwable) { 
+                    Log.e(TAG, "Hydration Failed: ${e.message}")
+                    // v1.5 Self-Healing: If hydration fails, release to prevent zombie state
+                    releaseResourcesLocked()
+                    false 
+                }
             }
         }
     }
 
     private fun releaseResourcesLocked() {
         synchronized(this) {
-            try { litertConversation?.close(); litertConversation = null; litertEngine?.close(); litertEngine = null } 
-            catch (e: Exception) {}
+            try { 
+                litertConversation?.close(); litertConversation = null
+                litertEngine?.close(); litertEngine = null 
+                Log.w(TAG, "Neural resources released due to instability.")
+            } catch (e: Exception) {}
         }
     }
 
@@ -197,6 +205,12 @@ class InferenceService : Service() {
     }
 
     private fun executeInference(input: String): Flow<String> = flow {
+        // v1.5 Self-Healing: Check and auto-hydrate if engine was released due to instability
+        if (litertEngine == null && currentModelPath.isNotEmpty()) {
+            Log.i(TAG, "Spine is dry. Attempting Auto-Rehydration before inference...")
+            tryHydrate(currentModelPath)
+        }
+
         inferenceMutex.withLock {
         // v7.1: Selective Stripping Hardening
         // We MUST preserve instructions for internal system calls (Summarization, Planning).
@@ -214,13 +228,11 @@ class InferenceService : Service() {
             Log.d(TAG, "Injected Summary Anchor into Turn 1.")
         }
         
-        // v6.1 Maximum RAM Guard: 0.7GB (Pushing limits for SD778G)
+        // v6.1 Maximum RAM Guard: 0.8GB (Mid-range protection)
         val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
-        if (freeRam < 0.7f && !isConversationFresh) {
+        if (freeRam < 0.8f && !isConversationFresh) {
             Log.w(TAG, "CRITICAL RAM ALERT (%.2fGB). Purging KV Cache.".format(freeRam))
             resetConversationLocked()
-            // Resetting isConversationFresh here would be too late for this loop, 
-            // but the next turn will see it as fresh and re-inject Persona.
         }
 
         val activeConv = synchronized(this@InferenceService) { litertConversation } ?: return@withLock
@@ -240,7 +252,11 @@ class InferenceService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "LiteRT Fault: ${e.message}")
-            if (e.message?.contains("not alive", ignoreCase = true) == true || e.message?.contains("failed", ignoreCase = true) == true) {
+            if (e.message?.contains("Status Code: 13") == true || e.message?.contains("failed to invoke", ignoreCase = true) == true) {
+                Log.w(TAG, "Terminally unstable engine state detected (Error 13). Forcing Hard Reset...")
+                releaseResourcesLocked()
+                // The next call will attempt to re-hydrate if the service is still alive
+            } else if (e.message?.contains("not alive", ignoreCase = true) == true || e.message?.contains("failed", ignoreCase = true) == true) {
                 Log.w(TAG, "Attempting to recover from dead conversation...")
                 resetConversationLocked()
             }

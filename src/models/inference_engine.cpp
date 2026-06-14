@@ -92,11 +92,19 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input, const 
         Execution::FailureTelemetryBus::getInstance().logFailure("inference", "Gemma", FailureType::UNKNOWN, "LITERT_INVOKE_ERROR_13");
         
         // 2. Notify User and Reset Context (Self-Healing Step)
-        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[SYSTEM] Local Inference Error (Code 13). Resetting Context...");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[SYSTEM] Neural Spine Unstable (Code 13). Resetting engine...");
         
-        // 3. Strictly Local: Do not escalate to Cloud.
-        // Return original result so Planner can show fallback message or retry locally.
-        return result;
+        // 3. Brief sleep to allow Kotlin side to release resources
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+        
+        // 4. Retry Once: InferenceService will auto-rehydrate on this call
+        LOGI(TAG, "L15: Retrying inference after hard reset...");
+        result = Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
+        
+        if (result.find("Status Code: 13") != std::string::npos) {
+            LOGE(TAG, "L15: Terminal instability after reset. Aborting turn.");
+            return result;
+        }
     }
 
     if (isCancelled()) {
