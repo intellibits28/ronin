@@ -1,5 +1,5 @@
 #pragma once
-#include <jni.h>
+#include "ronin_jni_stubs.h"
 #include <string>
 #include <mutex>
 #include <unordered_map>

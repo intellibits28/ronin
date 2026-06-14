@@ -77,7 +77,7 @@ public:
     // v1.5 Self-Healing Toggle
     void setRetryMode(bool enabled) { m_retry_graph_mode = enabled; }
 
-private:
+protected:
     CapabilityGraph& m_graph;
     GraphStorage& m_storage;
     Memory::LongTermMemory* m_ltm;
@@ -91,7 +91,8 @@ private:
     std::thread m_sync_thread;
     std::string m_current_session_id; // v10.2.14: Session isolation
     bool m_retry_graph_mode = true; // v1.5 Default enabled
-    
+
+private:
     // Dynamic learning rate helper
     float calculateLearningRate(RiskLevel risk);
 
