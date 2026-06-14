@@ -104,6 +104,8 @@ set(RONIN_CORE_SOURCES
     src/adaptive_budget_controller.cpp
     src/speculative_graph_executor.cpp
     src/runtime_healing_controller.cpp
+    src/jni_gateway.cpp
+    src/jni_utils.cpp
     include/third_party/pffft/pffft.c
 )
 
@@ -125,7 +127,7 @@ if(ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
     
-    add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp src/jni_gateway.cpp)
+    add_library(ronin_kernel SHARED src/ronin_jni.cpp)
     target_include_directories(ronin_kernel PRIVATE include)
     
     target_link_libraries(ronin_kernel 
@@ -140,7 +142,7 @@ if(ANDROID)
         target_compile_definitions(ronin_core PRIVATE PFFFT_ENABLE_NEON)
     endif()
 else()
-    add_library(ronin_kernel SHARED src/ronin_jni.cpp src/jni_utils.cpp src/jni_gateway.cpp)
+    add_library(ronin_kernel SHARED src/ronin_jni.cpp)
     target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib)
 endif()
 
