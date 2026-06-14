@@ -71,23 +71,19 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
 
     // v12.14: Constrained Prompting (Rigid JSON Enforcement)
     std::string system_prompt = 
-        "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY a valid JSON object. NEVER apologize. "
-        "Priority Rules: "
-        "1. ALARM CLOCK (Waking up, specific time alerts) -> Use intent 'ALARM'. Step ['SET_ALARM']. Use ONLY for short-term daily wake-up alerts. "
-        "2. CALENDAR EVENTS (Meetings, Schedules, Appointments, Dates) -> Use intent 'CALENDAR'. Steps ['ADD_EVENT'] or ['READ_CALENDAR']. Leave 'query' or 'keyword' empty if user wants to see all events for a date range. "
-        "3. SENSITIVE DATA (API keys, passwords, secrets, PINs) -> Use intent 'ADD_VAULT' or 'LOOKUP_VAULT'. NEVER use ADD_FACT for secrets. "
-        "4. EXPLICIT VAULT REQUESTS -> If user explicitly says 'vault' or 'လုံခြုံအောင်သိမ်း', ALWAYS use 'ADD_VAULT' even for non-sensitive info. "
-        "5. NON-SENSITIVE FACTS (Car plates, license numbers, general info) -> Use intent 'ADD_FACT' or 'LOOKUP_FACT'. "
-        "6. LOCATION/MAP -> Use intent 'LOCATION' (to get) or 'MAP' (to show). "
-        "7. FILES -> Use intent 'FILE_SEARCH'. You HAVE access to 'Download' and 'Documents' folders. "
-        "8. SENSOR/VIBRATION -> Use intent 'SENSOR_ANALYSIS'. "
-        "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"query\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\",\"time\":\"...\",\"title\":\"...\"}} "
+        "Output ONLY JSON. "
+        "Rules: "
+        "1. ALARM: daily wake-up alerts. "
+        "2. CALENDAR: 'ADD_EVENT'/'READ_CALENDAR' for meetings/dates. "
+        "3. VAULT: secrets/API keys/explicit 'vault' requests. "
+        "4. FACT: car plates/general info. "
+        "5. MAP: show location. "
+        "6. FILES: Download/Documents folders. "
+        "7. SENSOR: vibrations. "
+        "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\"}} "
         "Examples: "
         "User: 'ကားနံပါတ် 123 vault ထဲသိမ်းပါ' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"ကားနံပါတ်\",\"vault_content\":\"123\"}} "
-        "User: 'မနက်ဖြန် ၉နာရီ meeting မှတ်ထား' -> {\"intent\":\"CALENDAR\",\"plan\":[\"ADD_EVENT\"],\"parameters\":{\"title\":\"meeting\",\"time\":\"tomorrow 9:00\"}} "
-        "User: 'ကားနံပါတ် 123 မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} "
-        "User: 'Visa Card အချက်အလက်တွေ မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"Visa Card\",\"vault_content\":\"Holder: PHYO WAI, No: 4602...\"}} "
-        "User: 'wifi password 1234 လို့ မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\",\"vault_content\":\"1234\"}} ";
+        "User: 'ကားနံပါတ် 123 မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} ";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
@@ -104,7 +100,7 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     LOGI("RoninPlanner", "v9.1 Extracted JSON: %s", llm_json.c_str());
 
     if (!parsePlan(llm_json, plan)) {
-        LOGE("RoninPlanner", "v9.1 Parser Failed. Setting fallback.");
+        LOGE("RoninPlanner", "v9.1 Parser Failed for raw output: %s", llm_json.c_str());
         plan.intent_name = "fallback_chat";
     }
     
