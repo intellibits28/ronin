@@ -102,6 +102,11 @@ public:
     // Auditing
     bool storeAuditLog(const std::string& action, const std::string& details);
 
+    // v10.7 Failure Telemetry
+    bool storeFailure(const std::string& node_id, int failure_type, int retry_count, const std::string& resolution);
+    std::vector<FailureRecord> getFailures(int limit);
+    int countFailures(const std::string& node_id, uint64_t since_ms);
+
     // Phase 4: Reflection Support
     struct EpisodeRecord {
         std::string intent;

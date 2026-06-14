@@ -99,6 +99,9 @@ set(RONIN_CORE_SOURCES
     src/myanmar_segmenter.cpp
     src/dsp/resonance_analyzer.cpp
     src/execution_governance.cpp
+    src/recovery_manager.cpp
+    src/adaptive_budget.cpp
+    src/failure_telemetry.cpp
     include/third_party/pffft/pffft.c
 )
 
@@ -158,6 +161,9 @@ if(NOT ANDROID)
 
     add_executable(ronin_governance_test tests/governance_test.cpp)
     target_link_libraries(ronin_governance_test ronin_core gtest_main)
+
+    add_executable(ronin_self_healing_test tests/self_healing_test.cpp)
+    target_link_libraries(ronin_self_healing_test ronin_core gtest_main)
 
     add_executable(ronin_segmenter_test tests/segmenter_stress_test.cpp)
     target_link_libraries(ronin_segmenter_test ronin_core)

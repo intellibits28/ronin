@@ -122,6 +122,25 @@ enum class AgentState : uint32_t {
     FAILED = 6
 };
 
+// v10.7: Failure Classifications for Self-Healing
+enum class FailureType {
+    NONE = 0,
+    TIMEOUT = 1,
+    JNI_EXCEPTION = 2,
+    BUDGET_EXCEEDED = 3,
+    CYCLE_DETECTED = 4,
+    NATIVE_CRASH = 5,
+    UNKNOWN = 6
+};
+
+struct FailureRecord {
+    std::string node_id;
+    FailureType type;
+    uint64_t timestamp;
+    int retry_count;
+    std::string resolution;
+};
+
 /**
  * Represents a required data point or condition for a task.
  */
