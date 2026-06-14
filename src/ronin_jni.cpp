@@ -11,7 +11,9 @@
 #include "jni_utils.h"
 #include "jni_gateway.h"
 #include "intent_engine.h"
-#include "failure_telemetry.h"
+#include "failure_telemetry_bus.h"
+#include "execution_checkpoint_store.h"
+#include "runtime_healing_controller.h"
 #include "session_manager.h"
 #include "agent_scheduler.h"
 #include "graph_executor.h"
@@ -77,7 +79,9 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
         }
         g_instance = env->NewGlobalRef(thiz);
         g_ltm = std::make_shared<LongTermMemory>(base_path + "/ronin_cognitive.db");
-        Execution::FailureTelemetryStore::getInstance().setMemory(g_ltm.get());
+        Execution::FailureTelemetryBus::getInstance().setMemory(g_ltm.get());
+        Execution::ExecutionCheckpointStore::getInstance().initialize(g_ltm->getDatabase());
+        Execution::RuntimeHealingController::getInstance().initialize(&AgentScheduler::getInstance());
         g_resonance_analyzer = std::make_shared<ResonanceAnalyzer>(1024);
         g_graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
         g_cap_graph = std::make_unique<CapabilityGraph>();

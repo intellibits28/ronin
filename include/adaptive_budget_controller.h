@@ -6,9 +6,6 @@
 
 namespace Ronin::Kernel::Execution {
 
-/**
- * v10.7: AdaptiveBudgetController - Dynamically scales execution cost.
- */
 class AdaptiveBudgetController {
 public:
     static AdaptiveBudgetController& getInstance();
