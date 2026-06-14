@@ -9,6 +9,7 @@
 #include "ronin_kernel.hpp"
 #include "ronin_log.h"
 #include "jni_utils.h"
+#include "jni_gateway.h"
 #include "intent_engine.h"
 #include "session_manager.h"
 #include "agent_scheduler.h"
@@ -119,7 +120,14 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
 JNIEXPORT void JNICALL native_setEngineInstance(JNIEnv *env, jobject thiz) {}
 JNIEXPORT void JNICALL native_stopLowPriorityTasks(JNIEnv *env, jobject thiz) { if (g_intent_engine) g_intent_engine->stopLowPriorityTasks(); }
 
-JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring input, jstring systemPrompt) {
+JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring jSessionId, jstring jExecId, jstring jCorrId, jstring input, jstring systemPrompt) {
+    auto uec_result = JniExecutionGateway::getInstance().createAndValidateContext(env, jSessionId, jExecId, jCorrId);
+    if (!uec_result.isOk()) {
+        LOGE("RoninJNI", "Execution Context Validation Failed: %s", uec_result.error().c_str());
+        return env->NewStringUTF("{\"result\":\"Execution Blocked by Governance Layer.\"}");
+    }
+    auto exec_ctx = uec_result.value();
+
     if (!g_intent_engine) return env->NewStringUTF("{\"result\":\"Error\"}");
     std::string rawInput = ConvertJStringToString(env, input);
     if (g_graph_executor) g_graph_executor->clearContext();
@@ -141,6 +149,7 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
         if (plan.intent_name == "fallback_chat") { return env->NewStringUTF("{\"result\":\"Agent planning failed.\"}"); }
         auto session = SessionManager::getInstance().createSession(plan.intent_name);
         sid = session->getSessionId();
+        session->bindExecutionContext(exec_ctx); // v1.4 Bind UEC
         session->setPlan(plan.plan_steps);
         for (const auto& [k, v] : plan.parameters) session->setParameter(k, v);
         bool is_safe = true;
@@ -179,6 +188,13 @@ JNIEXPORT void JNICALL native_notifyTrimMemory(JNIEnv *env, jobject thiz, jint l
 JNIEXPORT jstring JNICALL native_getActiveModelPath(JNIEnv *env, jobject thiz) { return env->NewStringUTF(g_llm_context.engine ? g_llm_context.engine->getModelPath().c_str() : ""); }
 JNIEXPORT void JNICALL native_injectLocation(JNIEnv *env, jobject thiz, jdouble lat, jdouble lon) { if (g_intent_engine) g_intent_engine->updateLocation(lat, lon); }
 JNIEXPORT jboolean JNICALL native_updateSystemHealth(JNIEnv *env, jobject thiz, jfloat temp, jfloat used, jfloat total) { HardwareBridge::reportSystemHealth(temp, used, total); return JNI_TRUE; }
+JNIEXPORT void JNICALL native_cancelExecution(JNIEnv *env, jobject thiz, jstring execId) {
+    std::string exec_id = ConvertJStringToString(env, execId);
+    if (!exec_id.empty()) {
+        Ronin::Kernel::JNI::JniExecutionGateway::getInstance().propagateCancellation(exec_id);
+    }
+}
+
 JNIEXPORT void JNICALL native_requestCancellation(JNIEnv *env, jobject thiz) { if (g_llm_context.engine) g_llm_context.engine->requestCancellation(); }
 JNIEXPORT void JNICALL native_setInferenceSilence(JNIEnv *env, jobject thiz, jboolean silent) { HardwareBridge::setInferenceSilence(silent == JNI_TRUE); }
 JNIEXPORT jboolean JNICALL native_storeNote(JNIEnv *env, jobject thiz, jstring t, jstring c, jstring tg) { return (g_ltm && g_ltm->storeNote(ConvertJStringToString(env, t), ConvertJStringToString(env, c), ConvertJStringToString(env, tg))) ? JNI_TRUE : JNI_FALSE; }
@@ -280,6 +296,7 @@ JNIEXPORT void JNICALL native_setSafeMode(JNIEnv *env, jobject thiz, jboolean en
     if (enabled) {
         LOGE(TAG, "Entering Strict SafeMode.");
         AgentScheduler::getInstance().purgeQueue();
+        Ronin::Kernel::JNI::JniExecutionGateway::getInstance().triggerSafeMode();
         if (g_ltm) g_ltm->setReadOnly(true);
         if (g_kernel) g_kernel->enterSafeMode();
     } else {
@@ -360,7 +377,7 @@ static JNINativeMethod g_methods[] = {
     {"getChatHistoryNative", "(II)[Ljava/lang/String;", (void*)native_getChatHistory},
     {"stopLowPriorityTasksNative", "()V", (void*)native_stopLowPriorityTasks},
     {"getFreeRamGBNative", "()F", (void*)native_getFreeRamGB},
-    {"processInputNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
+    {"processInputNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", (void*)native_processInput},
     {"isLoadedNative", "()Z", (void*)native_isLoaded},
     {"notifyTrimMemoryNative", "(I)V", (void*)native_notifyTrimMemory},
     {"getActiveModelPathNative", "()Ljava/lang/String;", (void*)native_getActiveModelPath},
@@ -374,6 +391,7 @@ static JNINativeMethod g_methods[] = {
     {"resetContextNativeJNI", "()V", (void*)native_resetContext},
     {"loadMyanmarDictionaryNative", "(Ljava/lang/String;)Z", (void*)native_loadMyanmarDictionary},
     {"reportOutcomeNative", "(IIZI)V", (void*)native_reportOutcome},
+    {"cancelExecutionNative", "(Ljava/lang/String;)V", (void*)native_cancelExecution},
     {"requestCancellationNative", "()V", (void*)native_requestCancellation},
     {"setInferenceSilenceNative", "(Z)V", (void*)native_setInferenceSilence},
     {"storeNoteNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeNote},
