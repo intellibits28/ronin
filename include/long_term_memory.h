@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include <mutex>
+#include <atomic>
 #include <sqlite3.h>
 #include "myanmar_segmenter.h"
 
