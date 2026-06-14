@@ -99,9 +99,11 @@ set(RONIN_CORE_SOURCES
     src/myanmar_segmenter.cpp
     src/dsp/resonance_analyzer.cpp
     src/execution_governance.cpp
-    src/recovery_manager.cpp
-    src/adaptive_budget.cpp
-    src/failure_telemetry.cpp
+    src/failure_telemetry_bus.cpp
+    src/execution_checkpoint_store.cpp
+    src/adaptive_budget_controller.cpp
+    src/speculative_graph_executor.cpp
+    src/runtime_healing_controller.cpp
     include/third_party/pffft/pffft.c
 )
 
