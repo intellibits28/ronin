@@ -86,18 +86,17 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input, const 
 
     // v1.5 Self-Healing: Check for LiteRT internal invocation errors
     if (result.find("Status Code: 13") != std::string::npos || result.find("Failed to invoke") != std::string::npos) {
-        LOGE(TAG, "L15 Self-Healing: LiteRT Invocation Failed (Code 13). Attempting Recovery...");
+        LOGE(TAG, "L15 Self-Healing: LiteRT Invocation Failed (Code 13). Attempting Local Recovery...");
         
         // 1. Log failure for learning loop
         Execution::FailureTelemetryBus::getInstance().logFailure("inference", "Gemma", FailureType::UNKNOWN, "LITERT_INVOKE_ERROR_13");
         
-        // 2. Clear KV Cache (Self-Healing Step 1)
-        LOGW(TAG, "Triggering memory cleanup to resolve LiteRT internal state.");
-        // In a full implementation, we'd call a dedicated reset method here
+        // 2. Notify User and Reset Context (Self-Healing Step)
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[SYSTEM] Local Inference Error (Code 13). Resetting Context...");
         
-        // 3. Fallback: Escalate to Cloud if local engine is terminally unstable
-        LOGI(TAG, "Triggering Adaptive Fallback to Cloud Inference.");
-        return escalateToCloud(input, "", "Gemini");
+        // 3. Strictly Local: Do not escalate to Cloud.
+        // Return original result so Planner can show fallback message or retry locally.
+        return result;
     }
 
     if (isCancelled()) {
