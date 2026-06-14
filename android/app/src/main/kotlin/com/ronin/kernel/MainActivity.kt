@@ -1195,7 +1195,54 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); scanLocalModels() }
+    override fun onResume() { 
+        super.onResume()
+        scanLocalModels()
+        startWorldStateSync()
+    }
+
+    private val android.os.BatteryManager.isCharging: Boolean
+        get() {
+            return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_STATUS) == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
+                getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_STATUS) == android.os.BatteryManager.BATTERY_STATUS_FULL
+            } else {
+                val intent = registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+                val status = intent?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+                status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
+            }
+        }
+
+    private fun startWorldStateSync() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            while (true) {
+                try {
+                    val batteryManager = getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+                    val battery = batteryManager.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY).toFloat()
+                    
+                    val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                    val memoryInfo = android.app.ActivityManager.MemoryInfo()
+                    activityManager.getMemoryInfo(memoryInfo)
+                    val ram = memoryInfo.availMem / (1024f * 1024f) // MB
+                    
+                    val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                    val net = cm.activeNetworkInfo?.isConnected ?: false
+                    
+                    val gps = try {
+                        val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+                        lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+                    } catch (e: Exception) { false }
+
+                    val charging = batteryManager.isCharging
+                    
+                    nativeEngine.injectWorldState(battery, ram, gps, net, charging)
+                } catch (e: Exception) { 
+                    Log.w("RoninKernel", "WorldState Sync failed: ${e.message}")
+                }
+                delay(10000) // 10s cycle
+            }
+        }
+    }
 }
 
 @Composable

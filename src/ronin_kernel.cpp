@@ -14,103 +14,43 @@ RoninKernel::RoninKernel(const HandlerRegistry &registry,
 }
 
 void RoninKernel::tick(const Input &input) {
-  // Reset state for new heartbeat
-  state_.iterations = 0;
-  state_.requiresAction = true;
+  LOGI(TAG, ">>> KERNEL HEARTBEAT START <<<");
+  
+  observe();
+  orient();
+  decide(input);
+  act();
 
-  // Initial Intent Processing via Static Dispatch
-  state_.currentIntent = registry_.intentProcessor(input);
-  lastIntent_ = state_.currentIntent;
-
-  // Tier 3: Adaptive Reasoning Fallback
-  if (state_.currentIntent.confidence < 0.6f) {
-      std::string original_input(input.data, input.length);
-      LOGI(TAG, "> Tier 3: Adaptive Fallback for: '%s'", original_input.c_str());
-      
-      // v6.0: Default to AGENT_PLAN for low confidence to explore paths
-      state_.currentIntent.id = 1;
-      state_.currentIntent.category = IntentCategory::AGENT_PLAN;
-      state_.currentIntent.confidence = 0.6f; 
-      state_.currentIntent.intent_param = true;
-  }
-
-  LOGI(TAG, "Heartbeat start: Intent ID %u, Category %u (Conf: %.2f) [v6.0-ADAPTIVE]",
-       state_.currentIntent.id, static_cast<uint32_t>(state_.currentIntent.category), state_.currentIntent.confidence);
-
-  runAutonomousLoop(input);
-
-  LOGI(TAG, "Heartbeat complete after %d iterations.", state_.iterations);
-
-  // Strict State Reset (v3.9.5-STABLE)
-  state_.currentIntent.id = 0;
-  state_.currentIntent.confidence = 0.0f;
-  state_.currentIntent.intent_param = true;
-  state_.requiresAction = false;
+  LOGI(TAG, ">>> KERNEL HEARTBEAT COMPLETE <<<");
 }
 
-void RoninKernel::runAutonomousLoop(const Input &input) {
-  while (state_.requiresAction && state_.iterations < maxIterations_) {
-    state_.iterations++;
+void RoninKernel::observe() {
+  LOGI(TAG, "[LOOP] 1. OBSERVE: Synchronizing World State...");
+  // v13.0: Physical constraints (Battery: %.1f%%, RAM: %.1f MB)", m_world_state.battery_percent, m_world_state.ram_available_mb);
+  // This state is pushed from Kotlin via JNI injectWorldState
+}
 
-    // 1. Resolve Plan (Selection logic encapsulated in dispatch or state update)
-    // For the prototype, we map intent ID directly to node ID if action required
-    state_.activeNodeId = state_.currentIntent.id;
-
-    LOGI(TAG, "> Thinking: Step [%d] - Analyzing Node %u", state_.iterations,
-         state_.activeNodeId);
-
-    // 2. Security Gate: Pre-dispatch authorization
-    if (!capManager_.canExecute(state_.activeNodeId)) {
-      LOGI(TAG, "> SECURITY WARNING: Unauthorized access attempt to Node %u. "
-                "Skipping.",
-           state_.activeNodeId);
-      state_.requiresAction = false;
-      break;
-    }
-
-    // 3. Execution via Static Dispatch Registry (Sandboxed-style wrapper)
-    Result result = {false, -1};
-    try {
-      if (registry_.execProcessor) {
-        result = registry_.execProcessor(state_.activeNodeId, state_);
-      }
-    } catch (...) {
-      LOGE(TAG, "> FATAL: Exception caught during Node %u execution! "
-                "Emergency halt.",
-           state_.activeNodeId);
-      state_.requiresAction = false;
-      break;
-    }
-
-    // 4. Context Update (Short-term memory)
-    contextStore_.push(state_.activeNodeId);
-
-    // 5. Termination Condition / Planning Update
-    // In a full implementation, the result or a new intent check would determine
-    // if more actions are needed.
-    if (result.success) {
-      LOGI(TAG, "> Success: Node %u returned status %d", state_.activeNodeId,
-           result.statusCode);
-      // Clear context after successful action (v3.9)
-      clearSuggestedSubject();
-    } else {
-      LOGI(TAG, "> Failure: Node %u failed with status %d", state_.activeNodeId,
-           result.statusCode);
-    }
-
-    // State Clearing (v3.9-SYSTEM-CONTROL-MASTER)
-    state_.requiresAction = false; 
-    state_.currentIntent.id = 0;
-    state_.currentIntent.intent_param = true;
+void RoninKernel::orient() {
+  LOGI(TAG, "[LOOP] 2. ORIENT: Updating Beliefs & Contextual Buffer...");
+  // v10.2.13: Isolation logic
+  contextStore_.clear();
+  
+  // v13.0: Inject world state into belief system if significant
+  if (m_world_state.battery_percent < 15.0f) {
+      setSuggestedSubject("System Constraint: Low Battery");
   }
+}
 
+void RoninKernel::decide(const Input& input) {
+  LOGI(TAG, "[LOOP] 3. DECIDE: Intent Decomposition & Goal Selection...");
+  state_.currentIntent = registry_.intentProcessor(input);
+  lastIntent_ = state_.currentIntent;
+}
 
-  // Bounded Autonomy Check
-  if (state_.iterations >= maxIterations_ && state_.requiresAction) {
-    LOGI(TAG, "> Warning: Kernel reached max iterations (%d). Force stopping.",
-         maxIterations_);
-    state_.requiresAction = false;
-  }
+void RoninKernel::act() {
+  LOGI(TAG, "[LOOP] 4. ACT: Speculative Execution & Replay...");
+  // In v1.5, execution is handled by AgentScheduler which is triggered by JNI.
+  // This method acts as a synchronous fallback or internal maintenance trigger.
 }
 
 void RoninKernel::injectLocation(double lat, double lon) {
