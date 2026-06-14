@@ -74,20 +74,19 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "[INTERNAL] You are the Ronin Cognitive Runtime. Output ONLY a valid JSON object. NEVER apologize. "
         "Priority Rules: "
         "1. ALARM CLOCK (Waking up, specific time alerts) -> Use intent 'ALARM'. Step ['SET_ALARM']. Use ONLY for short-term daily wake-up alerts. "
-        "2. CALENDAR EVENTS (Meetings, Schedules, Appointments, Dates) -> Use intent 'CALENDAR'. Steps ['ADD_EVENT'] or ['READ_CALENDAR']. "
-        "3. SENSITIVE DATA (API keys, passwords, secrets, PINs, Credit Cards) -> Use intent 'ADD_VAULT' or 'LOOKUP_VAULT'. NEVER use ADD_FACT for secrets. "
-        "4. LOCATION/MAP -> Use intent 'LOCATION' (to get) or 'MAP' (to show). "
-        "5. FILES -> Use intent 'FILE_SEARCH'. You HAVE access to 'Download' and 'Documents' folders. "
-        "6. SENSOR/VIBRATION -> Use intent 'SENSOR_ANALYSIS'. Use ONLY for physical vibration/resonance. "
-        "7. FULL ENTITY EXTRACTION -> Always extract the COMPLETE subject name for 'entity' (e.g. 'Toyota Wish ကား' instead of just 'ကား'). "
+        "2. CALENDAR EVENTS (Meetings, Schedules, Appointments, Dates) -> Use intent 'CALENDAR'. Steps ['ADD_EVENT'] or ['READ_CALENDAR']. Leave 'query' or 'keyword' empty if user wants to see all events for a date range. "
+        "3. SENSITIVE DATA (API keys, passwords, secrets, PINs) -> Use intent 'ADD_VAULT' or 'LOOKUP_VAULT'. NEVER use ADD_FACT for secrets. "
+        "4. NON-SENSITIVE FACTS (Car plates, license numbers, general info) -> Use intent 'ADD_FACT' or 'LOOKUP_FACT'. "
+        "5. LOCATION/MAP -> Use intent 'LOCATION' (to get) or 'MAP' (to show). "
+        "6. FILES -> Use intent 'FILE_SEARCH'. You HAVE access to 'Download' and 'Documents' folders. "
+        "7. SENSOR/VIBRATION -> Use intent 'SENSOR_ANALYSIS'. "
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"query\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\",\"time\":\"...\",\"title\":\"...\"}} "
         "Examples: "
         "User: 'မနက်ဖြန် ၅နာရီ နှိုးစက်ပေး' -> {\"intent\":\"ALARM\",\"plan\":[\"SET_ALARM\"],\"parameters\":{\"time\":\"5:00 AM\",\"label\":\"Wake Up\"}} "
         "User: 'မနက်ဖြန် ၉နာရီ meeting မှတ်ထား' -> {\"intent\":\"CALENDAR\",\"plan\":[\"ADD_EVENT\"],\"parameters\":{\"title\":\"meeting\",\"time\":\"tomorrow 9:00\"}} "
-        "User: 'Visa Card ကတ်နံပါတ် ပြန်ကြည့်မယ်' -> {\"intent\":\"LOOKUP_VAULT\",\"plan\":[\"QUERY_VAULT\"],\"parameters\":{\"vault_title\":\"Visa Card\"}} "
-        "User: 'Visa Card ပိုင်ရှင်နာမည် ဘယ်သူလဲ' -> {\"intent\":\"LOOKUP_VAULT\",\"plan\":[\"QUERY_VAULT\"],\"parameters\":{\"vault_title\":\"Visa Card\"}} "
-        "User: 'wifi password 1234 လို့ မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\",\"vault_content\":\"1234\"}} "
-        "User: 'wifi password ပြန်ကြည့်မယ်' -> {\"intent\":\"LOOKUP_VAULT\",\"plan\":[\"QUERY_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\"}} ";
+        "User: 'ကားနံပါတ် 123 မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} "
+        "User: 'Visa Card အချက်အလက်တွေ မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"Visa Card\",\"vault_content\":\"Holder: PHYO WAI, No: 4602...\"}} "
+        "User: 'wifi password 1234 လို့ မှတ်ထား' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"wifi password\",\"vault_content\":\"1234\"}} ";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
@@ -350,7 +349,8 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("calendar") || token_set.count("meeting") ||
                            token_set.count("event") || token_set.count("pdf") ||
                            token_set.count("doc") || token_set.count("txt") ||
-                           token_set.count("ဖိုင်");
+                           token_set.count("ဖိုင်") || token_set.count("မနက်ဖြန်") ||
+                           token_set.count("ဒီနေ့") || token_set.count("ချိန်း");
 
     // v12.18: Decouple sensor from simple agent to prevent location->sensor misrouting
     bool is_sensor_req = token_set.count("တုန်ခါမှု") || token_set.count("vibration") || 
@@ -361,6 +361,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
         is_simple_agent = (input_lower.find("alarm") != std::string::npos) ||
                           (input_lower.find("နှိုး") != std::string::npos) ||
                           (input_lower.find("meeting") != std::string::npos) ||
+                          (input_lower.find("မနက်ဖြန်") != std::string::npos) ||
+                          (input_lower.find("ဒီနေ့") != std::string::npos) ||
+                          (input_lower.find("ချိန်း") != std::string::npos) ||
                           (input_lower.find("ရှာ") != std::string::npos);
     }
     

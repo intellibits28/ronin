@@ -832,36 +832,44 @@ class MainActivity : FragmentActivity() {
                     else if (resolved.startsWith("NOT_FOUND")) "Error: Contact not found: $name"
                     else resolved
                 }
-                "LOCATION", "GET_LOCATION" -> {
-                    try {
-                        val task = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
-                        val res = try { Tasks.await(task, 5, TimeUnit.SECONDS) } catch (e: Exception) { Tasks.await(fusedLocationClient.lastLocation, 2, TimeUnit.SECONDS) }
-                        res?.let { JSONObject().put("lat", it.latitude).put("lon", it.longitude).toString() } ?: "Error: GPS Unavailable"
-                    } catch (e: Exception) { "Error: ${e.message}" }
-                }
-                "MAP", "OPEN_MAP", "show_map" -> {
-                    try {
-                        val locJson = params["context_result_LOCATION"] ?: params["payload"]
-                        var lat = "0.0"; var lon = "0.0"
-                        if (locJson != null && locJson.startsWith("{")) {
-                            val j = JSONObject(locJson); lat = j.opt("lat").toString(); lon = j.opt("lon").toString()
-                        } else {
-                            // v12.4: Smart Fallback - get last known location if not provided
-                            val task = fusedLocationClient.lastLocation
-                            val res = try { Tasks.await(task, 2, TimeUnit.SECONDS) } catch (e: Exception) { null }
-                            res?.let { lat = it.latitude.toString(); lon = it.longitude.toString() }
-                        }
-                        val uri = Uri.parse("geo:$lat,$lon?q=$lat,$lon")
-                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                            setPackage("com.google.android.apps.maps")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        runOnUiThread { 
-                            try { startActivity(intent) } 
-                            catch (e: Exception) { startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                        }
-                        "Opened Map at $lat, $lon"
-                    } catch (e: Exception) { "Error: ${e.message}" }
+                "LOCATION", "GET_LOCATION", "MAP", "OPEN_MAP", "show_map", "SHOW_LOCATION" -> {
+                    val actualAction = params["action"]?.uppercase() ?: ""
+                    if (actualAction.contains("MAP") || actualAction.contains("SHOW") || actionName == "MAP") {
+                        try {
+                            val locJson = params["context_result_LOCATION"] ?: params["payload"]
+                            var lat = "0.0"; var lon = "0.0"
+                            if (locJson != null && locJson.startsWith("{")) {
+                                val j = JSONObject(locJson); lat = j.opt("lat").toString(); lon = j.opt("lon").toString()
+                            } else {
+                                // v12.4: Smart Fallback - get last known location if not provided
+                                val task = fusedLocationClient.lastLocation
+                                val res = try { Tasks.await(task, 2, TimeUnit.SECONDS) } catch (e: Exception) { null }
+                                res?.let { lat = it.latitude.toString(); lon = it.longitude.toString() }
+                            }
+                            val uri = Uri.parse("geo:$lat,$lon?q=$lat,$lon")
+                            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                setPackage("com.google.android.apps.maps")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            runOnUiThread { 
+                                try { startActivity(intent) } 
+                                catch (e: Exception) { 
+                                    try {
+                                        val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        startActivity(webIntent)
+                                    } catch (e2: Exception) { Log.e("RoninKernel", "Map fail: ${e2.message}") }
+                                }
+                            }
+                            "Opened Map at $lat, $lon"
+                        } catch (e: Exception) { "Error: ${e.message}" }
+                    } else {
+                        // Default to LOCATION retrieval
+                        try {
+                            val task = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
+                            val res = try { Tasks.await(task, 5, TimeUnit.SECONDS) } catch (e: Exception) { Tasks.await(fusedLocationClient.lastLocation, 2, TimeUnit.SECONDS) }
+                            res?.let { JSONObject().put("lat", it.latitude).put("lon", it.longitude).toString() } ?: "Error: GPS Unavailable"
+                        } catch (e: Exception) { "Error: ${e.message}" }
+                    }
                 }
                 "ALARM", "SET_ALARM", "alarm" -> {
                     try {
@@ -957,7 +965,10 @@ class MainActivity : FragmentActivity() {
                 }
                 "READ_CALENDAR", "QUERY_CALENDAR", "GET_EVENTS" -> {
                     try {
-                        val keyword = params["keyword"] ?: params["query"] ?: params["event"] ?: ""
+                        var keyword = params["keyword"] ?: params["query"] ?: params["event"] ?: ""
+                        // v12.36: Filter out generic hallucinations
+                        if (keyword.lowercase().contains("all events") || keyword.lowercase().contains("everything")) keyword = ""
+                        
                         val timeParam = params["time"] ?: ""
                         val originalQuery = params["original_query"] ?: ""
                         
@@ -1026,82 +1037,85 @@ class MainActivity : FragmentActivity() {
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
                 "SMS", "SEND_SMS", "send_sms" -> {
-                    try {
-                        val locJson = params["context_result_LOCATION"]
-                        val conJson = params["context_result_CONTACTS"]
-                        var recipient = params["recipient_number"] ?: params["recipient"] ?: params["recipient_name"] ?: ""
-                        var body = params["message"] ?: params["sms_body"] ?: params["text"] ?: ""
+                    val actualAction = params["action"]?.uppercase() ?: ""
+                    if (actualAction.contains("SMS") || actionName == "SMS") {
+                        try {
+                            val locJson = params["context_result_LOCATION"]
+                            val conJson = params["context_result_CONTACTS"]
+                            var recipient = params["recipient_number"] ?: params["recipient"] ?: params["recipient_name"] ?: ""
+                            var body = params["message"] ?: params["sms_body"] ?: params["text"] ?: ""
 
-                        if (conJson != null && conJson.startsWith("{")) {
-                            try {
-                                val j = JSONObject(conJson)
-                                recipient = j.optString("phone_number", j.optString("message", recipient))
-                            } catch (e: Exception) {}
-                        } else if (conJson != null && !conJson.startsWith("Error")) {
-                            recipient = conJson
-                        }
+                            if (conJson != null && conJson.startsWith("{")) {
+                                try {
+                                    val j = JSONObject(conJson)
+                                    recipient = j.optString("phone_number", j.optString("message", recipient))
+                                } catch (e: Exception) {}
+                            } else if (conJson != null && !conJson.startsWith("Error")) {
+                                recipient = conJson
+                            }
 
-                        if (locJson != null && locJson.startsWith("{")) {
-                             val j = JSONObject(locJson); val lat = j.opt("lat").toString(); val lon = j.opt("lon").toString()
-                             val mapsLink = "📍 My Location\nLat: $lat\nLon: $lon\n\nhttps://maps.google.com/?q=$lat,$lon"
-                             // v12.10: Overwrite generic placeholder generated by LLM if location is requested
-                             if (body.isEmpty() || body.contains("တည်နေရာ") || body.contains("location")) {
-                                 body = mapsLink
-                             } else {
-                                 body += "\n\n$mapsLink"
-                             }
-                        }
-                        
-                        if (!recipient.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) {
-                             val resolved = resolveContactName(recipient)
-                             if (!resolved.startsWith("NOT_FOUND") && resolved != "PERMISSION_DENIED") {
-                                 recipient = resolved
-                             }
-                        }
+                            if (locJson != null && locJson.startsWith("{")) {
+                                 val j = JSONObject(locJson); val lat = j.opt("lat").toString(); val lon = j.opt("lon").toString()
+                                 val mapsLink = "📍 My Location\nLat: $lat\nLon: $lon\n\nhttps://maps.google.com/?q=$lat,$lon"
+                                 // v12.10: Overwrite generic placeholder generated by LLM if location is requested
+                                 if (body.isEmpty() || body.contains("တည်နေရာ") || body.contains("location")) {
+                                     body = mapsLink
+                                 } else {
+                                     body += "\n\n$mapsLink"
+                                 }
+                            }
+                            
+                            if (!recipient.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) {
+                                 val resolved = resolveContactName(recipient)
+                                 if (!resolved.startsWith("NOT_FOUND") && resolved != "PERMISSION_DENIED") {
+                                     recipient = resolved
+                                 }
+                            }
 
-                        val cleanRecipient = if (recipient.matches(Regex("^[+]?[0-9\\- ]{7,}+$"))) recipient else ""
-                        
-                        val reqId = params["request_id"]
-                        if (reqId != null) {
-                            runOnUiThread {
-                                val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-                                chatViewModel.hitlIntentName = "Send SMS"
-                                chatViewModel.hitlMessage = "To: $cleanRecipient\n\n$body"
-                                chatViewModel.onHITLResult = { approved ->
-                                    if (approved) {
-                                        try {
-                                            val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                                data = Uri.parse("smsto:$cleanRecipient")
-                                                putExtra("sms_body", body)
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            val cleanRecipient = if (recipient.matches(Regex("^[+]?[0-9\\- ]{7,}+$"))) recipient else ""
+                            
+                            val reqId = params["request_id"]
+                            if (reqId != null) {
+                                runOnUiThread {
+                                    val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+                                    chatViewModel.hitlIntentName = "Send SMS"
+                                    chatViewModel.hitlMessage = "To: $cleanRecipient\n\n$body"
+                                    chatViewModel.onHITLResult = { approved ->
+                                        if (approved) {
+                                            try {
+                                                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                                    data = Uri.parse("smsto:${Uri.encode(cleanRecipient)}")
+                                                    putExtra("sms_body", body)
+                                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
+                                                this@MainActivity.startActivity(intent)
+                                                nativeEngine.submitCapabilityResponseSafe(reqId, true, "Opened SMS composer for $cleanRecipient")
+                                                nativeEngine.pushKernelMessage("[AGENT] Opened SMS Composer")
+                                            } catch (e: Exception) {
+                                                nativeEngine.submitCapabilityResponseSafe(reqId, false, "SMS Failed: ${e.message}")
                                             }
-                                            this@MainActivity.startActivity(intent)
-                                            nativeEngine.submitCapabilityResponseSafe(reqId, true, "Opened SMS composer for $cleanRecipient")
-                                            nativeEngine.pushKernelMessage("[AGENT] Opened SMS Composer")
-                                        } catch (e: Exception) {
-                                            nativeEngine.submitCapabilityResponseSafe(reqId, false, "SMS Failed: ${e.message}")
+                                        } else {
+                                            nativeEngine.submitCapabilityResponseSafe(reqId, false, "Cancelled by user")
+                                            nativeEngine.pushKernelMessage("[AGENT] SMS Cancelled")
                                         }
-                                    } else {
-                                        nativeEngine.submitCapabilityResponseSafe(reqId, false, "Cancelled by user")
-                                        nativeEngine.pushKernelMessage("[AGENT] SMS Cancelled")
                                     }
+                                    chatViewModel.showHITLDialog = true
                                 }
-                                chatViewModel.showHITLDialog = true
-                            }
-                            "[ASYNC_PENDING]"
-                        } else {
-                            // Fallback to composer
-                            runOnUiThread {
-                                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                    data = Uri.parse("smsto:${Uri.encode(cleanRecipient)}")
-                                    putExtra("sms_body", body)
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                "[ASYNC_PENDING]"
+                            } else {
+                                // Fallback to composer
+                                runOnUiThread {
+                                    val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                        data = Uri.parse("smsto:${Uri.encode(cleanRecipient)}")
+                                        putExtra("sms_body", body)
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    startActivity(intent)
                                 }
-                                startActivity(intent)
+                                "Opened SMS composer for $cleanRecipient."
                             }
-                            "Opened SMS composer for $cleanRecipient."
-                        }
-                    } catch (e: Exception) { "Error: ${e.message}" }
+                        } catch (e: Exception) { "Error: ${e.message}" }
+                    } else "Action $actualAction skipped for SMS."
                 }
                 "FILE_SEARCH", "FILES", "SEARCH_FILES", "SEARCH_DATABASE", "SEARCH", "QUERY_FILE", "QUERY_FILES" -> {
                     try {
@@ -1157,13 +1171,19 @@ class MainActivity : FragmentActivity() {
                     try {
                         val sensorType = params["sensor_type"] ?: "accelerometer"
                         val analysis = sensorDriver.execute(JSONObject().put("action", "get_sensor_analysis").put("sensor_type", sensorType))
-                        val output = analysis.toString()
+                        val output = if (analysis.length() == 0 || !analysis.has("resonance_freq_hz")) {
+                            "Error: No vibration data collected yet. Please shake the device or wait for 10 seconds."
+                        } else {
+                            analysis.toString()
+                        }
                         
                         // Phase 5: Update HUD variables
                         try {
-                            vm.sensorFreqHz = analysis.optDouble("resonance_freq_hz", 0.0).toFloat()
-                            vm.sensorPsdDb = analysis.optDouble("psd_peak_db", -100.0).toFloat()
-                            vm.sensorAnomaly = analysis.optBoolean("anomaly_detected", false)
+                            if (analysis.has("resonance_freq_hz")) {
+                                vm.sensorFreqHz = analysis.optDouble("resonance_freq_hz", 0.0).toFloat()
+                                vm.sensorPsdDb = analysis.optDouble("psd_peak_db", -100.0).toFloat()
+                                vm.sensorAnomaly = analysis.optBoolean("anomaly_detected", false)
+                            }
                         } catch (e: Exception) {}
 
                         nativeEngine.pushKernelMessage("\n[SENSOR ANALYSIS]\n$output")
