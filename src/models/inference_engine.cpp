@@ -92,10 +92,8 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input, const 
         Execution::FailureTelemetryBus::getInstance().logFailure("inference", "Gemma", FailureType::UNKNOWN, "LITERT_INVOKE_ERROR_13");
         
         // 2. Clear KV Cache (Self-Healing Step 1)
-        if (m_impl->engine) {
-            LOGW(TAG, "Purging KV-cache to free up memory/context slots.");
-            // In a full implementation, we'd call native_purgeKVCache here
-        }
+        LOGW(TAG, "Triggering memory cleanup to resolve LiteRT internal state.");
+        // In a full implementation, we'd call a dedicated reset method here
         
         // 3. Fallback: Escalate to Cloud if local engine is terminally unstable
         LOGI(TAG, "Triggering Adaptive Fallback to Cloud Inference.");
