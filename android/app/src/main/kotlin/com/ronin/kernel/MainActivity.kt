@@ -638,190 +638,84 @@ class MainActivity : FragmentActivity() {
         }
         
         nativeEngine.executeAgentToolCallback = { toolName, params ->
-            val actionName = params["action"]?.uppercase() ?: toolName
-            Log.i("RoninKernel_MainActivity", "Executing Tool: $toolName (Action: $actionName) with params: $params")
-            when (actionName) {
-                "MEMORY", "SAVE_NOTE", "SAVE_FACT", "QUERY_FACT", "SAVE_VAULT", "QUERY_VAULT", 
-                "SEARCH_NOTES", "SEARCH_EPISODES", "ADD_FACT", "STORE_FACT", "ADD_NOTE", "STORE_NOTE",
-                "LOOKUP_FACT", "LOOKUP_VAULT", "ADD_VAULT", "STORE_VAULT", "GET_VAULT_CONTENT", "READ_VAULT", "RETURN_CONTENT", "RETURN_RESULT", "SEARCH_DATABASE" -> {
+            val actionName = (params["action"] ?: toolName).uppercase()
+            val intentContext = (params["intent"] ?: "").uppercase()
+            Log.i("RoninKernel_MainActivity", "Executing Tool: $toolName (Action: $actionName, Intent: $intentContext)")
+            
+            when {
+                // 1. MEMORY & DATA (Facts, Notes, Vault)
+                actionName.contains("NOTE") || actionName.contains("FACT") || actionName.contains("VAULT") || 
+                actionName.contains("MEMORY") || actionName.contains("DATABASE") || actionName.contains("RECORD") ||
+                actionName.contains("STORE") || actionName.contains("SAVE") || actionName.contains("LOOKUP") || 
+                actionName.contains("QUERY") || actionName.contains("ACCESS") || toolName == "MEMORY" -> {
                     try {
-                        when (actionName) {
-                            "SAVE_NOTE", "ADD_NOTE", "STORE_NOTE" -> {
-                                val title = params["note_title"] ?: params["title"] ?: params.keys.find { it.contains("title", true) }?.let { params[it] } ?: "Untitled Note"
-                                val content = params["note_content"] ?: params["content"] ?: params["text"] ?: params.values.find { it.length > 5 } ?: ""
-                                
-                                if (content.isEmpty()) {
-                                    val err = "Error: Note content is empty. Params: $params"
-                                    nativeEngine.pushKernelMessage("[AGENT] $err")
-                                    err
-                                } else if (nativeEngine.storeNote(title, content, "")) "Note saved: $title" 
-                                else "Error: Database failure during SAVE_NOTE."
+                        when {
+                            actionName.contains("SAVE_NOTE") || actionName.contains("ADD_NOTE") -> {
+                                val title = params["note_title"] ?: params["title"] ?: "Untitled Note"
+                                val content = params["note_content"] ?: params["content"] ?: params["text"] ?: ""
+                                if (content.isEmpty()) "Error: Note content is empty."
+                                else if (nativeEngine.storeNote(title, content, "")) {
+                                    nativeEngine.pushKernelMessage("[AGENT] Note saved: $title")
+                                    "Note saved: $title" 
+                                } else "Error: Database failure."
                             }
-                            "SAVE_FACT", "ADD_FACT", "STORE_FACT" -> {
-                                // v10.1.16: Intelligent parameter matching
-                                val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) || it.contains("person", true) }?.let { params[it] } ?: "Unknown"
-                                val rawAttr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) }?.let { params[it] } ?: "General"
-                                
-                                // v10.2.14: Semantic Attribute Normalization
+                            actionName.contains("SAVE_FACT") || actionName.contains("ADD_FACT") -> {
+                                val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) }?.let { params[it] } ?: "Unknown"
+                                val rawAttr = params["attribute"] ?: params["property"] ?: "General"
                                 val attr = normalizeAttribute(rawAttr)
-
-                                // Try to find the most likely 'value'
-                                val value = params["value"] ?: params["content"] ?: params.keys.find { 
-                                    val k = it.lowercase()
-                                    // v10.2.14: Exclude title/entity keys from value search to prevent corruption
-                                    !k.contains("title") && !k.contains("entity") && !k.contains("name") && !k.contains("attribute") &&
-                                    (k.contains("plate") || k.contains("medicine") || k.contains("number") || k.contains("result") || k.contains("val") || k.contains("data") || k.contains("content"))
-                                }?.let { params[it] } ?: params.values.firstOrNull { it != entity && it != rawAttr && it.length > 2 } ?: ""
-                                
-                                if (value.isEmpty()) {
-                                    val err = "Error: Fact value is empty. Params: $params"
-                                    nativeEngine.pushKernelMessage("[AGENT] $err")
-                                    err
-                                } else if (nativeEngine.storeFact(entity, attr, value)) {
-                                    "Fact saved: $entity.$attr = $value (Source: User)"
-                                } else {
-                                    val err = "Error: Database failure during SAVE_FACT."
-                                    nativeEngine.pushKernelMessage("[AGENT] $err")
-                                    err
-                                }
+                                val value = params["value"] ?: params["content"] ?: params.values.firstOrNull { it != entity && it != rawAttr && it.length > 2 } ?: ""
+                                if (value.isEmpty()) "Error: Fact value is empty."
+                                else if (nativeEngine.storeFact(entity, attr, value)) {
+                                    nativeEngine.pushKernelMessage("[AGENT] Fact saved: $entity.$attr = $value")
+                                    "Fact saved: $entity.$attr = $value"
+                                } else "Error: Database failure."
                             }
-                            "SAVE_VAULT", "ADD_VAULT", "STORE_VAULT" -> {
-                                val title = params["vault_title"] ?: params["title"] ?: params.keys.find { it.contains("name", true) || it.contains("title", true) }?.let { params[it] } ?: "Secret"
-                                
-                                val content = params["vault_content"] ?: params["content"] ?: params["value"] ?: params.keys.find {
-                                    val k = it.lowercase()
-                                    // v10.2.14: Exclude title keys from content search to prevent corruption
-                                    !k.contains("title") && !k.contains("name") &&
-                                    (k.contains("key") || k.contains("token") || k.contains("password") || k.contains("secret") || k.contains("pin"))
-                                }?.let { params[it] } ?: ""
-                                
-                                if (content.isEmpty()) {
-                                    val err = "Error: Vault content is empty. Params: $params"
-                                    nativeEngine.pushKernelMessage("[AGENT] $err")
-                                    err
-                                } else authenticateAndExecute("Store Secret", "Authenticate to encrypt and store in Vault") {
+                            actionName.contains("VAULT") && (actionName.contains("SAVE") || actionName.contains("ADD")) -> {
+                                val title = params["vault_title"] ?: params["title"] ?: "Secret"
+                                val content = params["vault_content"] ?: params["content"] ?: ""
+                                authenticateAndExecute("Store Secret", "Authenticate to encrypt and store in Vault") {
                                     val encrypted = nativeEngine.encryptSecret(content)
-                                    if (nativeEngine.storeVault(title, encrypted)) "Vault entry saved: $title" 
-                                    else {
-                                        val err = "Error: Database failure during SAVE_VAULT."
-                                        nativeEngine.pushKernelMessage("[AGENT] $err")
-                                        err
-                                    }
+                                    if (nativeEngine.storeVault(title, encrypted)) {
+                                        nativeEngine.pushKernelMessage("[AGENT] Vault entry saved: $title")
+                                        "Vault entry saved: $title" 
+                                    } else "Error: Database failure."
                                 }
                             }
-                            "QUERY_VAULT", "LOOKUP_VAULT", "GET_VAULT_CONTENT", "READ_VAULT", "RETURN_CONTENT" -> {
-                                val rawTitle = params["vault_title"] ?: params["title"] ?: params["entity"] ?: params["query"] ?: params["subject"] ?:
-                                            params.keys.find { 
-                                                val k = it.lowercase()
-                                                k.contains("name") || k.contains("title") || k.contains("subject") || k.contains("item") || k.contains("secret")
-                                            }?.let { params[it] } ?: params.values.firstOrNull { it.length > 3 } ?: ""
-                                
-                                if (rawTitle.isEmpty()) "Error: Vault search title is empty. Params: $params"
-                                else authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $rawTitle") {
-                                    // v12.31: Multi-stage title fuzzy fallback (e.g. PHYO WAI -> Visa Card)
+                            actionName.contains("VAULT") && (actionName.contains("QUERY") || actionName.contains("LOOKUP") || actionName.contains("CHECK") || actionName.contains("READ") || actionName.contains("ACCESS")) -> {
+                                val rawTitle = params["vault_title"] ?: params["title"] ?: params["query"] ?: ""
+                                authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $rawTitle") {
                                     var encrypted = nativeEngine.lookupVault(rawTitle)
-                                    var title = rawTitle
-                                    
                                     if (encrypted.isEmpty()) {
-                                        // Try common keywords if specific title fails
-                                        val fallbackKeywords = listOf("card", "visa", "bank", "password", "key", "secret", "လိုင်စင်")
-                                        for (kw in fallbackKeywords) {
-                                            if (rawTitle.lowercase().contains(kw) || kw.contains(rawTitle.lowercase())) {
+                                        listOf("card", "visa", "bank", "password", "key", "secret").forEach { kw ->
+                                            if (rawTitle.lowercase().contains(kw)) {
                                                 val res = nativeEngine.lookupVault(kw)
-                                                if (res.isNotEmpty()) { encrypted = res; title = kw; break }
+                                                if (res.isNotEmpty()) { encrypted = res; return@forEach }
                                             }
                                         }
                                     }
-
                                     if (encrypted.isNotEmpty()) {
                                         val decrypted = nativeEngine.decryptSecret(encrypted)
-                                        val uiMsg = "\n[VAULT] Found in '$title':\n$decrypted"
-                                        nativeEngine.pushKernelMessage(uiMsg)
-                                        nativeEngine.pushKernelMessage("[AGENT] Vault Found: $title")
+                                        nativeEngine.pushKernelMessage("\n[VAULT] Result: $decrypted")
                                         decrypted
-                                    } else {
-                                        val err = "Error: No vault entry found for '$rawTitle'."
-                                        nativeEngine.pushKernelMessage("\n[VAULT] $err")
-                                        err
-                                    }
+                                    } else "Error: No vault entry found."
                                 }
                             }
-                            "SEARCH_NOTES" -> {
-                                val query = params["query"] ?: ""
-                                val results = nativeEngine.searchNotes(query)
+                            actionName.contains("SEARCH_NOTES") || actionName.contains("QUERY_NOTES") -> {
+                                val results = nativeEngine.searchNotes(params["query"] ?: "")
                                 if (results.isNotEmpty()) {
-                                    val formatted = results.joinToString("\n---\n")
-                                    val uiMsg = "\n[NOTES FOUND]\n$formatted"
-                                    nativeEngine.pushTokenToUI(uiMsg, true)
-                                    nativeEngine.pushKernelMessage("[AGENT] Found Notes")
-                                    "Found ${results.size} notes matching '$query'."
-                                } else "Error: No notes found matching '$query'."
+                                    nativeEngine.pushKernelMessage("\n[NOTES FOUND]\n" + results.joinToString("\n---\n"))
+                                    "Found ${results.size} notes."
+                                } else "Error: No notes found."
                             }
-                            "SEARCH_EPISODES" -> {
-                                val query = params["query"] ?: ""
-                                val results = nativeEngine.searchEpisodes(query)
-                                if (results.isNotEmpty()) {
-                                    val formatted = results.joinToString("\n---\n")
-                                    val uiMsg = "\n[HISTORY FOUND]\n$formatted"
-                                    nativeEngine.pushTokenToUI(uiMsg, true)
-                                    nativeEngine.pushKernelMessage("[AGENT] Found Episodes")
-                                    "Found ${results.size} episodes matching '$query'."
-                                } else "Error: No history found matching '$query'."
+                            else -> {
+                                val entity = params["entity"] ?: params["item"] ?: "Unknown"
+                                val attr = normalizeAttribute(params["attribute"] ?: "General")
+                                val res = nativeEngine.lookupFact(entity, attr)
+                                if (res.isNotEmpty()) {
+                                    nativeEngine.pushKernelMessage("\n[FACT FOUND] $entity's $attr is $res")
+                                    res
+                                } else "Error: No information found for $entity."
                             }
-                            "QUERY_FACT", "MEMORY", "LOOKUP_FACT" -> {
-                                val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) || it.contains("person", true) }?.let { params[it] } ?: "Unknown"
-                                val rawAttr = params["attribute"] ?: params["property"] ?: params.keys.find { it.contains("type", true) || it.contains("field", true) || it.contains("attribute", true) }?.let { params[it] } ?: "General"
-                                
-                                // v10.2.14: Semantic Attribute Normalization
-                                val attr = normalizeAttribute(rawAttr)
-
-                                val isSensitive = attr.lowercase().let { it.contains("key") || it.contains("password") || it.contains("pin") || it.contains("secret") }
-                                
-                                val executeLookup = {
-                                    val res = nativeEngine.lookupFact(entity, attr)
-                                    if (res.isNotEmpty()) {
-                                        // v12.18: Smart Decryption Fallback - if it looks like encrypted Base64 and it's a sensitive field
-                                        var finalRes = res
-                                        if (isSensitive && res.length > 20 && !res.contains(" ")) {
-                                            try {
-                                                val decrypted = nativeEngine.decryptSecret(res)
-                                                if (decrypted.isNotEmpty()) finalRes = decrypted
-                                            } catch (e: Exception) {}
-                                        }
-
-                                        val uiMsg = "\n[FACT] $entity's $attr is $finalRes"
-                                        nativeEngine.pushKernelMessage(uiMsg)
-                                        nativeEngine.pushKernelMessage("[AGENT] Fact Found: $entity's $attr")
-                                        finalRes 
-                                    } else {
-                                        // Try Vault Fallback if Fact fails for sensitive info
-                                        if (isSensitive) {
-                                            val vRes = nativeEngine.lookupVault(entity)
-                                            if (vRes.isNotEmpty()) {
-                                                val decrypted = nativeEngine.decryptSecret(vRes)
-                                                val uiMsg = "\n[VAULT FALLBACK] $entity: $decrypted"
-                                                nativeEngine.pushKernelMessage(uiMsg)
-                                                decrypted
-                                            } else {
-                                                val err = "Error: No information found for $entity's $attr."
-                                                nativeEngine.pushKernelMessage("\n[FACT] $err")
-                                                err
-                                            }
-                                        } else {
-                                            val err = "Error: No information found for $entity's $attr."
-                                            nativeEngine.pushTokenToUI("\n[FACT] $err", true)
-                                            err
-                                        }
-                                    }
-                                }
-
-                                if (isSensitive) {
-                                    authenticateAndExecute("Access Sensitive Fact", "Authenticate to retrieve $entity's $attr", executeLookup)
-                                } else {
-                                    executeLookup()
-                                }
-                            }
-                            else -> "Error: Unknown memory action $toolName"
                         }
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
@@ -832,382 +726,110 @@ class MainActivity : FragmentActivity() {
                     else if (resolved.startsWith("NOT_FOUND")) "Error: Contact not found: $name"
                     else resolved
                 }
-                "LOCATION", "GET_LOCATION", "MAP", "OPEN_MAP", "show_map", "SHOW_LOCATION" -> {
-                    val actualAction = params["action"]?.uppercase() ?: ""
-                    // v10.2.17: Force MAP trigger if intent is MAP regardless of step name
-                    if (actualAction.contains("MAP") || actualAction.contains("SHOW") || actionName == "MAP" || actionName == "MAP") {
-                        try {
+                
+                // 3. LOCATION & MAPS
+                actionName.contains("LOCATION") || actionName.contains("MAP") || actionName.contains("GPS") ||
+                intentContext.contains("MAP") || intentContext.contains("LOCATION") || toolName == "LOCATION" -> {
+                    try {
+                        val isMapReq = actionName.contains("MAP") || actionName.contains("SHOW") || actionName.contains("OPEN") || 
+                                      intentContext.contains("MAP") || intentContext.contains("SHOW")
+                        if (isMapReq) {
                             val locJson = params["context_result_LOCATION"] ?: params["payload"]
                             var lat = "0.0"; var lon = "0.0"
                             if (locJson != null && locJson.startsWith("{")) {
                                 val j = JSONObject(locJson); lat = j.opt("lat")?.toString() ?: "0.0"; lon = j.opt("lon")?.toString() ?: "0.0"
                             } else {
-                                // v12.4: Smart Fallback - get last known location if not provided
                                 val task = fusedLocationClient.lastLocation
                                 val res = try { Tasks.await(task, 2, TimeUnit.SECONDS) } catch (e: Exception) { null }
                                 res?.let { lat = it.latitude.toString(); lon = it.longitude.toString() }
                             }
                             val uri = Uri.parse("geo:$lat,$lon?q=$lat,$lon")
-                            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                                setPackage("com.google.android.apps.maps")
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            runOnUiThread { 
-                                try { startActivity(intent) } 
-                                catch (e: Exception) { 
-                                    try {
-                                        val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        startActivity(webIntent)
-                                    } catch (e2: Exception) { Log.e("RoninKernel", "Map fail: ${e2.message}") }
-                                }
-                            }
-                            "Opened Map at $lat, $lon"
-                        } catch (e: Exception) { "Error: ${e.message}" }
-                    } else {
-                        // Default to LOCATION retrieval
-                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps"); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                            runOnUiThread { try { startActivity(intent) } catch (e: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+                            val msg = "Opened Map at $lat, $lon"
+                            nativeEngine.pushKernelMessage("[AGENT] $msg")
+                            msg
+                        } else {
                             val task = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
                             val res = try { Tasks.await(task, 5, TimeUnit.SECONDS) } catch (e: Exception) { Tasks.await(fusedLocationClient.lastLocation, 2, TimeUnit.SECONDS) }
                             res?.let { JSONObject().put("lat", it.latitude).put("lon", it.longitude).toString() } ?: "Error: GPS Unavailable"
-                        } catch (e: Exception) { "Error: ${e.message}" }
-                    }
+                        }
+                    } catch (e: Exception) { "Error: ${e.message}" }
                 }
-                "ALARM", "SET_ALARM", "alarm" -> {
+
+                // 4. ALARM
+                actionName.contains("ALARM") || actionName.contains("WAKE") || actionName.contains("နှိုး") || toolName == "ALARM" -> {
                     try {
-                        // v10.2.17: Prioritize 'value' which is where Planner puts the 05:00 time
-                        val timeStr = params["value"] ?: params["time"] ?: params["hour"] ?: "06:00"
-                        val message = params["message"] ?: params["label"] ?: params["entity"] ?: "Ronin Alarm"
+                        val timeStr = params["value"] ?: params["time"] ?: "06:00"
+                        val message = params["message"] ?: params["label"] ?: "Ronin Alarm"
                         val parts = timeStr.split(":")
                         val hour = parts.getOrNull(0)?.trim()?.toIntOrNull() ?: 6
                         val minute = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
-                        val intent = Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
-                            putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, message)
-                            putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
-                            putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
-                            putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, false)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
+                        val intent = Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply { putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, message); putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour); putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
                         runOnUiThread { startActivity(intent) }
-                        "Set alarm for $hour:$minute with message: $message"
+                        val msg = "Set alarm for $hour:$minute"
+                        nativeEngine.pushKernelMessage("[AGENT] $msg")
+                        msg
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
-                "CALENDAR", "ADD_EVENT", "event", "set_calendar" -> {
+
+                // 5. CALENDAR
+                actionName.contains("CALENDAR") || actionName.contains("EVENT") || actionName.contains("MEETING") || toolName == "CALENDAR" -> {
                     try {
-                        val title = params["title"] ?: params["event"] ?: "Ronin Event"
-                        var desc = params["description"] ?: params["details"] ?: ""
-                        val time = params["time"] ?: ""
-                        val timezone = params["timezone"] ?: ""
-                        val attendees = params["attendees"] ?: ""
-                        val shareVia = params["share_via"] ?: ""
-
-                        val cal = java.util.Calendar.getInstance()
-                        var beginTime = cal.timeInMillis
-                        val originalQuery = params["original_query"] ?: ""
-                        // v12.17: Check original query for 'tomorrow' context if param is weak
-                        val isTomorrow = time.lowercase().contains("tomorrow") || time.contains("မနက်ဖြန်") || 
-                                         originalQuery.contains("မနက်ဖြန်") || originalQuery.lowercase().contains("tomorrow")
-                        
-                        // v12.1: Robust time parsing (Regex matches 11:00, 11နာရီ, 11:30, 11နာရီခွဲ)
-                        val timeRegex = Regex("(\\d{1,2})[:\\s]*(\\d{2})?|(\\d{1,2})\\s*(နာရီ|နာရီခွဲ|am|pm)")
-                        val match = timeRegex.find(time.lowercase())
-                        if (match != null) {
-                            if (isTomorrow) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
-                            
-                            val h1 = match.groupValues[1].takeIf { it.isNotEmpty() }?.toIntOrNull()
-                            val m1 = match.groupValues[2].takeIf { it.isNotEmpty() }?.toIntOrNull() ?: 0
-                            val h2 = match.groupValues[3].takeIf { it.isNotEmpty() }?.toIntOrNull()
-                            val m2 = if (match.groupValues[4].contains("ခွဲ")) 30 else 0
-                            
-                            var hour = h1 ?: h2 ?: 9
-                            val minute = if (h1 != null) m1 else m2
-                            
-                            if (time.lowercase().contains("pm") && hour < 12) hour += 12
-                            // v12.17: Basic AM/PM detection for Burmese (if no explicit am/pm, and hour < 8, assume PM for meetings)
-                            if (!time.lowercase().contains("am") && !time.lowercase().contains("pm") && hour > 0 && hour < 8) hour += 12
-                            
-                            cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
-                            cal.set(java.util.Calendar.MINUTE, minute)
-                            cal.set(java.util.Calendar.SECOND, 0)
-                            beginTime = cal.timeInMillis
-                        } else if (isTomorrow) {
-                            cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
-                            cal.set(java.util.Calendar.HOUR_OF_DAY, 9) // Default 9 AM tomorrow
-                            beginTime = cal.timeInMillis
-                        }
-
-                        if (time.isNotEmpty()) desc += "\nOriginal Time: $time"
-                        if (timezone.isNotEmpty()) desc += " ($timezone)"
-                        if (attendees.isNotEmpty()) desc += "\nAttendees: $attendees"
-
-                        val intent = Intent(Intent.ACTION_INSERT).apply {
-                            data = android.provider.CalendarContract.Events.CONTENT_URI
-                            putExtra(android.provider.CalendarContract.Events.TITLE, title)
-                            putExtra(android.provider.CalendarContract.Events.DESCRIPTION, desc)
-                            putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginTime)
-                            putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, beginTime + 60 * 60 * 1000)
-                            if (timezone.isNotEmpty() && timezone != "system_default") {
-                                putExtra(android.provider.CalendarContract.Events.EVENT_TIMEZONE, timezone)
-                            }
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        
-                        // v10.2.17: Background insertion fallback if permission exists
-                        if (checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                            try {
-                                val values = android.content.ContentValues().apply {
-                                    put(android.provider.CalendarContract.Events.DTSTART, beginTime)
-                                    put(android.provider.CalendarContract.Events.DTEND, beginTime + 60 * 60 * 1000)
-                                    put(android.provider.CalendarContract.Events.TITLE, title)
-                                    put(android.provider.CalendarContract.Events.DESCRIPTION, desc)
-                                    put(android.provider.CalendarContract.Events.CALENDAR_ID, 1)
-                                    put(android.provider.CalendarContract.Events.EVENT_TIMEZONE, timezone.ifEmpty { java.util.TimeZone.getDefault().id })
-                                }
-                                contentResolver.insert(android.provider.CalendarContract.Events.CONTENT_URI, values)
-                                Log.i("RoninKernel", "Calendar: Event inserted via ContentProvider.")
-                            } catch (e: Exception) { Log.w("RoninKernel", "Direct insert failed, using Intent fallback: ${e.message}") }
-                        }
-                        
-                        runOnUiThread { 
-                            startActivity(intent) 
-                            if (shareVia.contains("sms", true)) {
-                                val smsIntent = Intent(Intent.ACTION_SENDTO).apply {
-                                    data = Uri.parse("smsto:")
-                                    putExtra("sms_body", "Meeting: $title\nTime: $time\nDetails: $desc")
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                try { startActivity(smsIntent) } catch (e: Exception) {}
-                            }
-                        }
-                        "Scheduled $title for ${java.text.DateFormat.getDateTimeInstance().format(cal.time)}"
-                    } catch (e: Exception) { "Error: ${e.message}" }
-                }
-                "READ_CALENDAR", "QUERY_CALENDAR", "GET_EVENTS" -> {
-                    try {
-                        var keyword = params["keyword"] ?: params["query"] ?: params["event"] ?: ""
-                        // v12.36: Filter out generic hallucinations
-                        if (keyword.lowercase().contains("all events") || keyword.lowercase().contains("everything")) keyword = ""
-                        
-                        val timeParam = params["time"] ?: ""
-                        val originalQuery = params["original_query"] ?: ""
-                        
-                        if (checkSelfPermission(android.Manifest.permission.READ_CALENDAR) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                            requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 101)
-                            "Error: Missing READ_CALENDAR permission."
-                        } else {
-                            val projection = arrayOf(
-                                android.provider.CalendarContract.Events.TITLE,
-                                android.provider.CalendarContract.Events.DTSTART,
-                                android.provider.CalendarContract.Events.EVENT_LOCATION
-                            )
-                            
-                            // v12.24: Smart Date Range detection
-                            val isTomorrow = timeParam.contains("tomorrow", true) || timeParam.contains("မနက်ဖြန်", true) || 
-                                             originalQuery.contains("tomorrow", true) || originalQuery.contains("မနက်ဖြန်", true)
-                            val isToday = originalQuery.contains("today", true) || originalQuery.contains("ဒီနေ့", true)
-
+                        val isRead = actionName.contains("READ") || actionName.contains("QUERY") || actionName.contains("CHECK") || actionName.contains("LIST") || actionName.contains("GET")
+                        if (isRead) {
+                            var keyword = params["keyword"] ?: params["query"] ?: ""
                             val cal = java.util.Calendar.getInstance()
-                            var selection = "${android.provider.CalendarContract.Events.DTSTART} >= ?"
-                            val selectionArgs = mutableListOf<String>()
-
-                            if (isTomorrow) {
-                                cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
-                                cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
-                                val start = cal.timeInMillis
-                                cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 59)
-                                val end = cal.timeInMillis
-                                selection = "${android.provider.CalendarContract.Events.DTSTART} >= ? AND ${android.provider.CalendarContract.Events.DTSTART} <= ?"
-                                selectionArgs.add(start.toString()); selectionArgs.add(end.toString())
-                            } else if (isToday) {
-                                cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
-                                val start = cal.timeInMillis
-                                cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 59)
-                                val end = cal.timeInMillis
-                                selection = "${android.provider.CalendarContract.Events.DTSTART} >= ? AND ${android.provider.CalendarContract.Events.DTSTART} <= ?"
-                                selectionArgs.add(start.toString()); selectionArgs.add(end.toString())
-                            } else {
-                                // Default: Last 1 year search
-                                val rangeStart = System.currentTimeMillis() - 365L * 24 * 60 * 60 * 1000
-                                selectionArgs.add(rangeStart.toString())
-                            }
-
-                            val cursor = contentResolver.query(
-                                android.provider.CalendarContract.Events.CONTENT_URI,
-                                projection, selection, selectionArgs.toTypedArray(), "${android.provider.CalendarContract.Events.DTSTART} ASC LIMIT 20"
-                            )
+                            if (params["time"]?.contains("tomorrow") == true || params["original_query"]?.contains("မက်ဖြန်") == true) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                            cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+                            val start = cal.timeInMillis; cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 59)
+                            val end = cal.timeInMillis
+                            val cursor = contentResolver.query(android.provider.CalendarContract.Events.CONTENT_URI, arrayOf("title", "dtstart"), "dtstart >= ? AND dtstart <= ?", arrayOf(start.toString(), end.toString()), "dtstart ASC")
                             val results = mutableListOf<String>()
-                            cursor?.use {
-                                val titleIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.TITLE)
-                                val timeIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.DTSTART)
-                                val locIdx = it.getColumnIndexOrThrow(android.provider.CalendarContract.Events.EVENT_LOCATION)
-                                while (it.moveToNext()) {
-                                    val t = it.getString(titleIdx)
-                                    val time = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it.getLong(timeIdx)))
-                                    val loc = it.getString(locIdx) ?: ""
-                                    if (keyword.isEmpty() || t.contains(keyword, true)) {
-                                        results.add("Event: $t\nTime: $time\nLocation: $loc")
-                                    }
-                                }
-                            }
-                            val output = if (results.isEmpty()) "No events found matching '$keyword'." else results.joinToString("\n---\n")
-                            nativeEngine.pushKernelMessage("\n[CALENDAR RESULTS]\n$output")
-                            output
-                        }
-                    } catch (e: Exception) { "Error: ${e.message}" }
-                }
-                "SMS", "SEND_SMS", "send_sms" -> {
-                    val actualAction = params["action"]?.uppercase() ?: ""
-                    if (actualAction.contains("SMS") || actionName == "SMS") {
-                        try {
-                            val locJson = params["context_result_LOCATION"]
-                            val conJson = params["context_result_CONTACTS"]
-                            var recipient = params["recipient_name"] ?: params["recipient_number"] ?: params["recipient"] ?: params["to"] ?: ""
-                            var body = params["message"] ?: params["sms_body"] ?: params["text"] ?: ""
-
-                            if (conJson != null && conJson.startsWith("{")) {
-                                try {
-                                    val j = JSONObject(conJson)
-                                    recipient = j.optString("phone_number", j.optString("message", recipient))
-                                } catch (e: Exception) {}
-                            } else if (conJson != null && !conJson.startsWith("Error")) {
-                                recipient = conJson
-                            }
-
-                            if (locJson != null && locJson.startsWith("{")) {
-                                 val j = JSONObject(locJson); val lat = j.opt("lat")?.toString() ?: "0.0"; val lon = j.opt("lon")?.toString() ?: "0.0"
-                                 val mapsLink = "📍 My Location\nLat: $lat\nLon: $lon\n\nhttps://maps.google.com/?q=$lat,$lon"
-                                 // v12.10: Overwrite generic placeholder generated by LLM if location is requested
-                                 if (body.isEmpty() || body.contains("တည်နေရာ") || body.contains("location")) {
-                                     body = mapsLink
-                                 } else {
-                                     body += "\n\n$mapsLink"
-                                 }
-                            }
-                            
-                            if (!recipient.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) {
-                                 val resolved = resolveContactName(recipient)
-                                 if (!resolved.startsWith("NOT_FOUND") && resolved != "PERMISSION_DENIED") {
-                                     recipient = resolved
-                                 }
-                            }
-
-                            val cleanRecipient = if (recipient.matches(Regex("^[+]?[0-9\\- ]{7,}+$"))) recipient else ""
-                            
-                            val reqId = params["request_id"]
-                            if (reqId != null) {
-                                runOnUiThread {
-                                    val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
-                                    chatViewModel.hitlIntentName = "Send SMS"
-                                    chatViewModel.hitlMessage = "To: $cleanRecipient\n\n$body"
-                                    chatViewModel.onHITLResult = { approved ->
-                                        if (approved) {
-                                            try {
-                                                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                                    data = Uri.parse("smsto:${Uri.encode(cleanRecipient)}")
-                                                    putExtra("sms_body", body)
-                                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                }
-                                                this@MainActivity.startActivity(intent)
-                                                nativeEngine.submitCapabilityResponseSafe(reqId, true, "Opened SMS composer for $cleanRecipient")
-                                                nativeEngine.pushKernelMessage("[AGENT] Opened SMS Composer")
-                                            } catch (e: Exception) {
-                                                nativeEngine.submitCapabilityResponseSafe(reqId, false, "SMS Failed: ${e.message}")
-                                            }
-                                        } else {
-                                            nativeEngine.submitCapabilityResponseSafe(reqId, false, "Cancelled by user")
-                                            nativeEngine.pushKernelMessage("[AGENT] SMS Cancelled")
-                                        }
-                                    }
-                                    chatViewModel.showHITLDialog = true
-                                }
-                                "[ASYNC_PENDING]"
-                            } else {
-                                // Fallback to composer
-                                runOnUiThread {
-                                    val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                        data = Uri.parse("smsto:${Uri.encode(cleanRecipient)}")
-                                        putExtra("sms_body", body)
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    }
-                                    startActivity(intent)
-                                }
-                                "Opened SMS composer for $cleanRecipient."
-                            }
-                        } catch (e: Exception) { "Error: ${e.message}" }
-                    } else "Action $actualAction skipped for SMS."
-                }
-                "FILE_SEARCH", "FILES", "SEARCH_FILES", "SEARCH_DATABASE", "SEARCH", "QUERY_FILE", "QUERY_FILES" -> {
-                    try {
-                        val query = params["query"] ?: params["entity"] ?: params["title"] ?: params["keyword"] ?: params["file"] ?: params["filename"] ?: ""
-                        Log.i("RoninKernel_MainActivity", "FILE_SEARCH starting for query: '$query'")
-                        val noteResults = nativeEngine.searchNotes(query)
-                        val epResults = nativeEngine.searchEpisodes(query)
-                        val fileResults = nativeEngine.searchFiles(query)
-                        
-                        val combined = mutableListOf<String>()
-                        if (noteResults != null) combined.addAll(noteResults.toList())
-                        if (epResults != null) combined.addAll(epResults.toList())
-                        if (fileResults != null) combined.addAll(fileResults.toList())
-                        
-                        // v12.22: Deep File System Fallback (Toybox find) if DB/MediaStore misses the file
-                        if (combined.isEmpty() && query.length > 2) {
-                            try {
-                                // v12.26: Multi-stage fallback: Direct Download check + find command
-                                val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-                                downloadDir.listFiles()?.filter { it.name.contains(query, true) }?.forEach { f ->
-                                    combined.add("File: ${f.name}\nPath: ${f.absolutePath}\nSize: ${f.length()} bytes")
-                                }
-
-                                if (combined.isEmpty()) {
-                                    // v12.27: Case-insensitive deep find
-                                    val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "find /storage/emulated/0/ -iname '*$query*' -type f | head -n 5"))
-                                    val reader = java.io.BufferedReader(java.io.InputStreamReader(proc.inputStream))
-                                    var line: String?
-                                    while (reader.readLine().also { line = it } != null) {
-                                        val f = java.io.File(line!!)
-                                        combined.add("File: ${f.name}\nPath: ${f.absolutePath}\nSize: ${f.length()} bytes")
-                                    }
-                                    proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
-                                }
-
-                                // v12.28: Check for internal assets if searching for dictionary
-                                if (combined.isEmpty() && (query.contains("dictionary", true) || query.contains("myanmar", true))) {
-                                    assets.list("")?.find { it.contains(query, true) }?.let {
-                                        combined.add("File: $it\nLocation: [Internal App Asset]\nNote: This is a system dictionary file.")
-                                    }
-                                }
-                            } catch (e: Exception) { Log.e("RoninKernel_MainActivity", "Deep find failed: ${e.message}") }
-                        }
-                        
-                        val output = if (combined.isEmpty()) "No files or documents found matching: $query"
-                        else "Found ${combined.size} items:\n" + combined.take(5).joinToString("\n---\n")
-                        
-                        nativeEngine.pushKernelMessage("\n[SEARCH RESULTS]\n$output")
-                        output
-                    } catch (e: Exception) { "Error: ${e.message}" }
-                }
-                "SENSOR", "SENSOR_ANALYSIS", "GET_SENSOR_ANALYSIS", "get_sensor_analysis", "READ_SENSOR_DATA", "READ_VIBRATION_DATA", "CHECK_SENSOR", "ANALYZ_VIBRATION", "ANALYZE_VIBRATION" -> {
-                    try {
-                        val sensorType = params["sensor_type"] ?: "accelerometer"
-                        val analysis = sensorDriver.execute(JSONObject().put("action", "get_sensor_analysis").put("sensor_type", sensorType))
-                        val output = if (analysis.length() == 0 || !analysis.has("resonance_freq_hz")) {
-                            "Error: No vibration data collected yet. Please shake the device or wait for 10 seconds."
+                            cursor?.use { while (it.moveToNext()) { val t = it.getString(0); val time = java.text.SimpleDateFormat("HH:mm").format(java.util.Date(it.getLong(1))); if (keyword.isEmpty() || t.contains(keyword, true)) results.add("[$time] $t") } }
+                            val output = if (results.isEmpty()) "No events found." else results.joinToString("\n")
+                            nativeEngine.pushKernelMessage("\n[CALENDAR]\n$output"); output
                         } else {
-                            analysis.toString()
+                            val title = params["title"] ?: params["event"] ?: "Ronin Event"
+                            var desc = params["description"] ?: params["details"] ?: ""
+                            val cal = java.util.Calendar.getInstance()
+                            var beginTime = cal.timeInMillis
+                            if (params["time"]?.contains("tomorrow") == true || params["original_query"]?.contains("မနက်ဖြန်") == true) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                            val intent = Intent(Intent.ACTION_INSERT).apply { data = android.provider.CalendarContract.Events.CONTENT_URI; putExtra(android.provider.CalendarContract.Events.TITLE, title); putExtra(android.provider.CalendarContract.Events.DESCRIPTION, desc); putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginTime); putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, beginTime + 60 * 60 * 1000); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                            runOnUiThread { startActivity(intent) }
+                            val msg = "Scheduled $title"
+                            nativeEngine.pushKernelMessage("[AGENT] $msg")
+                            msg
                         }
-                        
-                        // Phase 5: Update HUD variables
-                        try {
-                            if (analysis.has("resonance_freq_hz")) {
-                                vm.sensorFreqHz = analysis.optDouble("resonance_freq_hz", 0.0).toFloat()
-                                vm.sensorPsdDb = analysis.optDouble("psd_peak_db", -100.0).toFloat()
-                                vm.sensorAnomaly = analysis.optBoolean("anomaly_detected", false)
-                            }
-                        } catch (e: Exception) {}
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
 
+                // 6. SENSOR & ANALYSIS
+                actionName.contains("SENSOR") || actionName.contains("VIBRATION") || actionName.contains("RESONANCE") || 
+                actionName.contains("ANALYSIS") || actionName.contains("STATUS") || actionName.contains("CONCEPT") || toolName == "SENSOR" -> {
+                    try {
+                        val analysis = nativeEngine.getSensorAnalysis("RESONANCE")
+                        val output = if (analysis.startsWith("{")) JSONObject(analysis).optString("summary", analysis) else analysis
                         nativeEngine.pushKernelMessage("\n[SENSOR ANALYSIS]\n$output")
                         output
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
+
+                // 7. SMS
+                actionName.contains("SMS") || actionName.contains("MESSAGE") || toolName == "SMS" -> {
+                    try {
+                        val locJson = params["context_result_LOCATION"]; val conJson = params["context_result_CONTACTS"]
+                        var recipient = params["recipient_name"] ?: params["recipient_number"] ?: params["recipient"] ?: ""
+                        var body = params["message"] ?: params["sms_body"] ?: ""
+                        if (conJson != null && conJson.startsWith("{")) recipient = JSONObject(conJson).optString("phone_number", recipient)
+                        else if (conJson != null && !conJson.startsWith("Error")) recipient = conJson
+                        if (locJson != null && locJson.startsWith("{")) { val j = JSONObject(locJson); val lat = j.opt("lat")?.toString() ?: "0.0"; val lon = j.opt("lon")?.toString() ?: "0.0"; body += "\n\n📍 My Location: https://maps.google.com/?q=$lat,$lon" }
+                        if (!recipient.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) { val resolved = resolveContactName(recipient); if (!resolved.startsWith("NOT_FOUND")) recipient = resolved }
+                        runOnUiThread { val intent = Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("smsto:${Uri.encode(recipient)}"); putExtra("sms_body", body); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }; startActivity(intent) }
+                        "Opened SMS composer for $recipient"
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+
                 else -> "Tool $toolName executed with params: $params"
             }
         }

@@ -97,9 +97,15 @@ void AgentScheduler::workerLoop() {
                 CapabilityType type = CapabilityType::NONE;
                 std::string s_lower = step;
                 std::transform(s_lower.begin(), s_lower.end(), s_lower.begin(), ::tolower);
+                
+                std::string i_lower = current_session->getIntent();
+                std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
 
-                // v8.5: Prioritize MAP and SMS over generic LOCATION
-                if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
+                // v10.2.17: Force MAP trigger if intent is MAP
+                if (i_lower.find("map") != std::string::npos && (s_lower.find("location") != std::string::npos || s_lower.find("get") != std::string::npos)) {
+                    type = CapabilityType::MAP;
+                }
+                else if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
                     type = CapabilityType::MAP;
                 else if (s_lower.find("sms") != std::string::npos || s_lower.find("message") != std::string::npos || s_lower.find("ပို့") != std::string::npos || s_lower.find("send") != std::string::npos || s_lower.find("mock_sms") != std::string::npos) 
                     type = CapabilityType::SMS;
@@ -113,15 +119,20 @@ void AgentScheduler::workerLoop() {
                          s_lower.find("lookup") != std::string::npos || s_lower.find("memory") != std::string::npos || 
                          s_lower.find("မှတ်") != std::string::npos || s_lower.find("vault") != std::string::npos || 
                          s_lower.find("fact") != std::string::npos || s_lower.find("get_vault_content") != std::string::npos ||
-                         s_lower.find("return_result") != std::string::npos || s_lower.find("return_content") != std::string::npos || s_lower.find("search_database") != std::string::npos)
+                         s_lower.find("return_result") != std::string::npos || s_lower.find("return_content") != std::string::npos || 
+                         s_lower.find("search_database") != std::string::npos || s_lower.find("check_vault") != std::string::npos ||
+                         s_lower.find("access") != std::string::npos || s_lower.find("provide") != std::string::npos ||
+                         s_lower.find("factual") != std::string::npos)
                     type = CapabilityType::MEMORY;
                 else if (s_lower.find("alarm") != std::string::npos || s_lower.find("wake") != std::string::npos || s_lower.find("နှိုး") != std::string::npos)
                     type = CapabilityType::ALARM;
-                else if (s_lower.find("calendar") != std::string::npos || s_lower.find("event") != std::string::npos || s_lower.find("meeting") != std::string::npos)
+                else if (s_lower.find("calendar") != std::string::npos || s_lower.find("event") != std::string::npos || s_lower.find("meeting") != std::string::npos || s_lower.find("check_calendar") != std::string::npos)
                     type = CapabilityType::CALENDAR;
                 else if (s_lower.find("file") != std::string::npos || s_lower.find("search_file") != std::string::npos || s_lower.find("find_file") != std::string::npos || s_lower.find("ဖိုင်") != std::string::npos)
                     type = CapabilityType::FILES;
-                else if (s_lower.find("sensor") != std::string::npos || s_lower.find("vibration") != std::string::npos || s_lower.find("resonance") != std::string::npos || s_lower.find("တုန်ခါမှု") != std::string::npos || s_lower.find("read_sensor_data") != std::string::npos || s_lower.find("read_vibration_data") != std::string::npos)
+                else if (s_lower.find("sensor") != std::string::npos || s_lower.find("vibration") != std::string::npos || s_lower.find("resonance") != std::string::npos || s_lower.find("တုန်ခါမှု") != std::string::npos || 
+                         s_lower.find("read_sensor_data") != std::string::npos || s_lower.find("read_vibration_data") != std::string::npos || s_lower.find("status") != std::string::npos ||
+                         s_lower.find("identify") != std::string::npos || s_lower.find("concept") != std::string::npos || s_lower.find("context") != std::string::npos)
                     type = CapabilityType::SENSOR;
                 else if (s_lower.find("mock_test") != std::string::npos)
                     type = CapabilityType::TEST;
@@ -135,6 +146,7 @@ void AgentScheduler::workerLoop() {
                     nlohmann::json jParams;
                     for (const auto& [k, v] : current_session->getParameters()) jParams[k] = v;
                     jParams["action"] = step;
+                    jParams["intent"] = current_session->getIntent(); // Pass intent context to Kotlin
                     
                     auto exec_ctx = current_session->getExecutionContext();
                     std::string exec_id = exec_ctx ? exec_ctx->execution_id : "legacy";
