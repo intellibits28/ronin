@@ -719,7 +719,7 @@ class MainActivity : FragmentActivity() {
                         }
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
-                "CONTACTS", "RESOLVE_CONTACT" -> {
+                actionName.contains("CONTACT") || actionName.contains("RESOLVE") || toolName == "CONTACTS" -> {
                     val name = params["recipient_name"] ?: params["recipient"] ?: params["contact_name"] ?: "Unknown"
                     val resolved = resolveContactName(name)
                     if (resolved == "PERMISSION_DENIED") "Error: Permission Denied"
@@ -780,7 +780,7 @@ class MainActivity : FragmentActivity() {
                         if (isRead) {
                             var keyword = params["keyword"] ?: params["query"] ?: ""
                             val cal = java.util.Calendar.getInstance()
-                            if (params["time"]?.contains("tomorrow") == true || params["original_query"]?.contains("မက်ဖြန်") == true) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                            if (params["time"]?.contains("tomorrow") == true || params["original_query"]?.contains("မနက်ဖြန်") == true) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
                             cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
                             val start = cal.timeInMillis; cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 59)
                             val end = cal.timeInMillis
