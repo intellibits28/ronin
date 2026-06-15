@@ -809,7 +809,17 @@ class MainActivity : FragmentActivity() {
                 actionName.contains("ANALYSIS") || actionName.contains("STATUS") || actionName.contains("CONCEPT") || toolName == "SENSOR" -> {
                     try {
                         val analysis = nativeEngine.getSensorAnalysis("RESONANCE")
-                        val output = if (analysis.startsWith("{")) JSONObject(analysis).optString("summary", analysis) else analysis
+                        val output = if (analysis.startsWith("{")) {
+                            val j = JSONObject(analysis)
+                            try {
+                                if (j.has("resonance_freq_hz")) {
+                                    vm.sensorFreqHz = j.optDouble("resonance_freq_hz", 0.0).toFloat()
+                                    vm.sensorPsdDb = j.optDouble("psd_peak_db", -100.0).toFloat()
+                                    vm.sensorAnomaly = j.optBoolean("anomaly_detected", false)
+                                }
+                            } catch (e: Exception) {}
+                            j.optString("summary", analysis)
+                        } else analysis
                         nativeEngine.pushKernelMessage("\n[SENSOR ANALYSIS]\n$output")
                         output
                     } catch (e: Exception) { "Error: ${e.message}" }

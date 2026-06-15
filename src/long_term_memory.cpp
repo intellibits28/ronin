@@ -204,19 +204,16 @@ bool LongTermMemory::storePrediction(const std::string& goal_id, const std::stri
 std::string LongTermMemory::lookupFact(const std::string& entity, const std::string& attr) {
     if (!m_db) return "";
     std::lock_guard<std::mutex> lock(m_mutex);
-    // v12.25: Simplified robust matching
+    // v12.26: Secure matching. Only match if exact or substring of parameter, not the other way around if entity is too short.
     const char* sql = "SELECT value FROM facts WHERE "
-                      "(entity LIKE ? OR ? LIKE '%' || entity || '%') "
-                      "AND (attribute LIKE ? OR ? LIKE '%' || attribute || '%') "
+                      "entity LIKE ? AND attribute LIKE ? "
                       "ORDER BY confidence DESC, id DESC LIMIT 1;";
     sqlite3_stmt* stmt = nullptr;
     std::string entity_param = "%" + entity + "%";
     std::string attr_param = "%" + attr + "%";
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, entity_param.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 2, entity.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 3, attr_param.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 4, attr.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, attr_param.c_str(), -1, SQLITE_TRANSIENT);
         
         if (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* val = sqlite3_column_text(stmt, 0);
