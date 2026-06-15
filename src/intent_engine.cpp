@@ -73,17 +73,14 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     std::string system_prompt = 
         "Output ONLY JSON. "
         "Rules: "
-        "1. ALARM: daily wake-up alerts. "
-        "2. CALENDAR: 'ADD_EVENT'/'READ_CALENDAR' for meetings/dates. "
-        "3. VAULT: secrets/API keys/explicit 'vault' requests. "
-        "4. FACT: car plates/general info. Always extract 'entity' (e.g. Toyota Wish) and 'attribute' (e.g. license plate). "
-        "5. MAP: show location. "
-        "6. SMS: Always extract 'recipient_name' (e.g. Aung Aung) and 'message'. "
-        "7. FILES: Download/Documents folders. "
-        "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"recipient_name\":\"...\",\"message\":\"...\"}} "
-        "Examples: "
-        "User: 'ကားနံပါတ် 123 vault ထဲသိမ်းပါ' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"ကားနံပါတ်\",\"vault_content\":\"123\"}} "
-        "User: 'ကားနံပါတ် 123 မှတ်ထား' -> {\"intent\":\"ADD_FACT\",\"plan\":[\"SAVE_FACT\"],\"parameters\":{\"entity\":\"ကား\",\"attribute\":\"နံပါတ်\",\"value\":\"123\"}} ";
+        "1. ALARM: 'SET_ALARM' for alerts. "
+        "2. CALENDAR: 'ADD_EVENT' or 'READ_CALENDAR'. "
+        "3. VAULT: 'SAVE_VAULT' or 'LOOKUP_VAULT'. "
+        "4. FACT: 'SAVE_FACT' or 'LOOKUP_FACT'. "
+        "5. MAP: 'GET_LOCATION' then 'OPEN_MAP'. "
+        "6. SMS: 'GET_LOCATION' then 'SEND_SMS'. "
+        "7. SENSOR: 'ANALYZE_VIBRATION'. "
+        "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{...}} ";
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 
