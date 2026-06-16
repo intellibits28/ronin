@@ -115,6 +115,17 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
             lessons_context += "[End of Lessons. DO NOT repeat these mistakes.]\n";
             LOGI("RoninPlanner", "Injected %zu behavioral lessons into prompt.", lessons.size());
         }
+        
+        // v1.6 Phase 5: Inject Discovered Macro-Skills
+        auto macros = m_ltm->searchNotes("macro_skill");
+        if (!macros.empty()) {
+            lessons_context += "\n[AVAILABLE MACRO-SKILLS]:\n";
+            for (const auto& macro : macros) {
+                lessons_context += "- " + macro + "\n";
+            }
+            lessons_context += "You may use these Macro-Skills in your plan.\n";
+            LOGI("RoninPlanner", "Injected %zu macro-skills into prompt.", macros.size());
+        }
     }
 
     // v12.14: Constrained Prompting (Rigid JSON Enforcement)

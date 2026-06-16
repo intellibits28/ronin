@@ -71,7 +71,37 @@ void ReflectionEngine::reflectOnRecentTasks() {
         }
     }
 
-    // 3. Memory Consolidation
+    // 3. Phase 5: Macro-Skill Consolidation
+    if (m_engine && !recent_episodes.empty()) {
+        std::string sequence_context = "Recent Successful Executions:\n";
+        bool has_multi_step = false;
+        for (const auto& ep : recent_episodes) {
+            if (ep.success && ep.payload_json.find("executed_steps") != std::string::npos) {
+                sequence_context += "- Intent: " + ep.intent + " -> " + ep.payload_json + "\n";
+                has_multi_step = true;
+            }
+        }
+        
+        if (has_multi_step) {
+            std::string prompt = 
+                "Analyze the following successful multi-step execution sequences. If you see a recurring pattern of tools being used together (e.g., getting location then sending SMS), propose a single 'Macro-Skill' name and its purpose. Output ONLY the Macro-Skill definition, or 'NONE' if no clear pattern exists.\n" + sequence_context;
+                
+            std::string macro_skill = m_engine->runLiteRTReasoning("", prompt);
+            
+            // Sanitize output
+            if (macro_skill.find("[REPLY]") != std::string::npos) macro_skill = macro_skill.substr(macro_skill.find("[REPLY]") + 7);
+            if (macro_skill.find("[/REPLY]") != std::string::npos) macro_skill = macro_skill.substr(0, macro_skill.find("[/REPLY]"));
+            macro_skill.erase(0, macro_skill.find_first_not_of(" \n\r\t"));
+            macro_skill.erase(macro_skill.find_last_not_of(" \n\r\t") + 1);
+
+            if (!macro_skill.empty() && macro_skill != "NONE" && macro_skill.find("Error") == std::string::npos && macro_skill.find("Status Code") == std::string::npos) {
+                LOGI(TAG, "Phase 5 Macro-Skill Discovered: %s", macro_skill.c_str());
+                m_ltm->storeNote("Discovered Macro-Skill", macro_skill, "macro_skill");
+            }
+        }
+    }
+
+    // 4. Memory Consolidation
     std::unordered_map<std::string, int> success_map;
     for (const auto& ep : recent_episodes) {
         if (ep.success) success_map[ep.intent]++;
