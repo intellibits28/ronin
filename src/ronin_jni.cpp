@@ -14,6 +14,7 @@
 #include "failure_telemetry_bus.h"
 #include "execution_checkpoint_store.h"
 #include "runtime_healing_controller.h"
+#include "adaptive_budget_controller.h"
 #include "session_manager.h"
 #include "agent_scheduler.h"
 #include "graph_executor.h"
