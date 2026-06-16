@@ -140,6 +140,7 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
     std::string cmdOutput;
     if (g_intent_engine->handleCommand(rawInput, cmdOutput)) {
         if (rawInput == "/reset" && g_llm_context.engine) g_llm_context.engine->purgeKVCache();
+        if (rawInput == "/reflect") native_runNightlyReflection(env, thiz);
         nlohmann::json cmdRes; cmdRes["result"] = cmdOutput;
         return env->NewStringUTF(cmdRes.dump().c_str());
     }

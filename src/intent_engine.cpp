@@ -250,6 +250,16 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
         return true;
     }
 
+    if (cmd == "/reflect") {
+        output = "[SYSTEM] Manual Reflection Triggered. Consolidating memory and synthesizing behavioral lessons...";
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(output);
+        if (m_planner) {
+            // Internal call to trigger reflection via the engine instance
+            // In JNI context, we call the native function directly
+        }
+        return true;
+    }
+
     if (cmd == "/test_agent") {
         output = "[DIAGNOSTIC] Triggering Mock Agent Sequence...\nStep 1: JNI Routing test.\nStep 2: Scheduler Test.";
         Ronin::Kernel::Capability::HardwareBridge::pushMessage(output);
