@@ -615,8 +615,12 @@ class MainActivity : FragmentActivity() {
                 // v1.6 Phase 4 Fix: Route [AGENT] results to chat bubble so user sees action feedback
                 if (msg.startsWith("[")) {
                     // Do not push verbose system logs to chat, only actionable feedback
-                    if (!msg.startsWith("[STATUS]") && !msg.startsWith("[MODEL]") && !msg.startsWith("[SKILLS]")) {
-                        vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", msg))
+                    if (!msg.startsWith("[STATUS]") && !msg.startsWith("[MODEL]") && !msg.startsWith("[SKILLS]") &&
+                        !msg.contains("Starting:") && !msg.contains("Step:") && !msg.contains("Task completed successfully") && !msg.contains("failed after")) {
+                        
+                        // Clean up the "[AGENT] " prefix for a more natural conversation feel
+                        val cleanMsg = msg.replace("[AGENT] ", "").replace("[VAULT] ", "").replace("[CALENDAR] ", "").replace("[FACT FOUND] ", "")
+                        vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", cleanMsg.trim()))
                     }
                 }
             }
