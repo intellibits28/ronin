@@ -762,9 +762,25 @@ class MainActivity : FragmentActivity() {
                     try {
                         val timeStr = params["value"] ?: params["time"] ?: "06:00"
                         val message = params["message"] ?: params["label"] ?: "Ronin Alarm"
-                        val parts = timeStr.split(":")
-                        val hour = parts.getOrNull(0)?.trim()?.toIntOrNull() ?: 6
-                        val minute = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
+                        
+                        // v10.2.17: Robust Time Extraction (handles "၅ နာရီ", "5:00", "5 AM")
+                        var hour = 6
+                        var minute = 0
+                        val match = Regex("(\\d{1,2})[:\\s]*(\\d{2})?|(\\d{1,2})\\s*(နာရီ|နာရီခွဲ|am|pm|:၀၀)").find(timeStr.lowercase())
+                        if (match != null) {
+                            val h1 = match.groupValues[1].takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val m1 = match.groupValues[2].takeIf { it.isNotEmpty() }?.toIntOrNull() ?: 0
+                            val h2 = match.groupValues[3].takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val m2 = if (match.groupValues[4].contains("ခွဲ")) 30 else 0
+                            hour = h1 ?: h2 ?: 6
+                            minute = if (h1 != null) m1 else m2
+                            if (timeStr.lowercase().contains("pm") && hour < 12) hour += 12
+                        } else {
+                            val parts = timeStr.split(":")
+                            hour = parts.getOrNull(0)?.trim()?.toIntOrNull() ?: 6
+                            minute = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
+                        }
+
                         val intent = Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply { putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, message); putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour); putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
                         runOnUiThread { startActivity(intent) }
                         val msg = "Set alarm for $hour:$minute"
@@ -792,12 +808,36 @@ class MainActivity : FragmentActivity() {
                         } else {
                             val title = params["title"] ?: params["event"] ?: "Ronin Event"
                             var desc = params["description"] ?: params["details"] ?: ""
+                            val timeStr = params["time"] ?: params["original_query"] ?: ""
                             val cal = java.util.Calendar.getInstance()
-                            var beginTime = cal.timeInMillis
-                            if (params["time"]?.contains("tomorrow") == true || params["original_query"]?.contains("မနက်ဖြန်") == true) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                            
+                            // v10.2.17: Robust Time Extraction for Calendar
+                            var hour = 9
+                            var minute = 0
+                            val match = Regex("(\\d{1,2})[:\\s]*(\\d{2})?|(\\d{1,2})\\s*(နာရီ|နာရီခွဲ|am|pm|:၀၀)").find(timeStr.lowercase())
+                            if (match != null) {
+                                val h1 = match.groupValues[1].takeIf { it.isNotEmpty() }?.toIntOrNull()
+                                val m1 = match.groupValues[2].takeIf { it.isNotEmpty() }?.toIntOrNull() ?: 0
+                                val h2 = match.groupValues[3].takeIf { it.isNotEmpty() }?.toIntOrNull()
+                                val m2 = if (match.groupValues[4].contains("ခွဲ")) 30 else 0
+                                hour = h1 ?: h2 ?: 9
+                                minute = if (h1 != null) m1 else m2
+                                if (timeStr.lowercase().contains("pm") && hour < 12) hour += 12
+                                if (!timeStr.lowercase().contains("am") && !timeStr.lowercase().contains("pm") && hour > 0 && hour < 8) hour += 12
+                            }
+
+                            if (timeStr.lowercase().contains("tomorrow") || timeStr.contains("မနက်ဖြန်")) {
+                                cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                            }
+                            
+                            cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
+                            cal.set(java.util.Calendar.MINUTE, minute)
+                            cal.set(java.util.Calendar.SECOND, 0)
+                            val beginTime = cal.timeInMillis
+
                             val intent = Intent(Intent.ACTION_INSERT).apply { data = android.provider.CalendarContract.Events.CONTENT_URI; putExtra(android.provider.CalendarContract.Events.TITLE, title); putExtra(android.provider.CalendarContract.Events.DESCRIPTION, desc); putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginTime); putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, beginTime + 60 * 60 * 1000); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
                             runOnUiThread { startActivity(intent) }
-                            val msg = "Scheduled $title"
+                            val msg = "Scheduled $title at $hour:$minute"
                             nativeEngine.pushKernelMessage("[AGENT] $msg")
                             msg
                         }
