@@ -47,6 +47,12 @@ TEST_F(SelfHealingTest, AdaptiveBudgetTuning) {
     auto& telemetry = FailureTelemetryBus::getInstance();
     std::string node_id = "heavy_node";
     
+    // Set a normal daylight WorldState to avoid Night/Idle scaling
+    WorldState normal_state = {};
+    normal_state.hour_of_day = 12; // Noon
+    normal_state.battery_percent = 50.0f;
+    budget.updateWorldState(normal_state);
+    
     // Initial budget
     uint32_t b1 = budget.getAdaptedBudget("e1", node_id);
     EXPECT_EQ(b1, 15000);
@@ -59,6 +65,27 @@ TEST_F(SelfHealingTest, AdaptiveBudgetTuning) {
     uint32_t b2 = budget.getAdaptedBudget("e2", node_id);
     // 15000 * (1.0 + (5 * 0.05)) = 15000 * 1.25 -> clamped to 1.20 -> 18000
     EXPECT_EQ(b2, 18000);
+    
+    // v1.6 Phase 4: Test Context-Aware Scaling (Night/Idle)
+    WorldState night_state = {};
+    night_state.hour_of_day = 2; // 2 AM
+    night_state.battery_percent = 80.0f;
+    budget.updateWorldState(night_state);
+    
+    uint32_t b3 = budget.getAdaptedBudget("e3", node_id);
+    // 18000 * 1.5 = 27000
+    EXPECT_EQ(b3, 27000);
+    
+    // v1.6 Phase 4: Test Context-Aware Scaling (Low Battery)
+    WorldState low_batt_state = {};
+    low_batt_state.hour_of_day = 12;
+    low_batt_state.battery_percent = 10.0f;
+    low_batt_state.charging = false;
+    budget.updateWorldState(low_batt_state);
+    
+    uint32_t b4 = budget.getAdaptedBudget("e4", node_id);
+    // 18000 * 0.7 = 12600
+    EXPECT_EQ(b4, 12600);
 }
 
 TEST_F(SelfHealingTest, FailureLearning) {
