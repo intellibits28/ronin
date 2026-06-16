@@ -251,6 +251,12 @@ void AgentScheduler::workerLoop() {
                 if (m_executor) {
                     nlohmann::json jPayload;
                     for (const auto& [k, v] : current_session->getParameters()) jPayload[k] = v;
+                    
+                    // v1.6 Phase 5: Embed execution sequence for Macro-Skill mining
+                    nlohmann::json stepsArray = nlohmann::json::array();
+                    for (const auto& s : current_session->getPlan()) stepsArray.push_back(s);
+                    jPayload["executed_steps"] = stepsArray;
+                    
                     std::string summary = "Successfully executed " + current_session->getIntent();
                     m_executor->recordEpisode(current_session->getIntent(), summary, jPayload.dump(), true);
                 }
