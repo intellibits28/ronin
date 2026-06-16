@@ -45,7 +45,18 @@ void ReflectionEngine::reflectOnRecentTasks() {
             
         std::string lesson = m_engine->runLiteRTReasoning("", prompt);
         
-        // Sanitize LLM output
+        // Sanitize LLM output (Strip Thinking blocks)
+        if (lesson.find("[REPLY]") != std::string::npos) {
+            lesson = lesson.substr(lesson.find("[REPLY]") + 7);
+        }
+        if (lesson.find("[/REPLY]") != std::string::npos) {
+            lesson = lesson.substr(0, lesson.find("[/REPLY]"));
+        }
+        
+        // Trim whitespace
+        lesson.erase(0, lesson.find_first_not_of(" \n\r\t"));
+        lesson.erase(lesson.find_last_not_of(" \n\r\t") + 1);
+
         if (!lesson.empty() && lesson.find("Error") == std::string::npos && lesson.find("Status Code") == std::string::npos) {
             LOGI(TAG, "Reflection: Derived new lesson: %s", lesson.c_str());
             m_ltm->storeNote("Nightly Lesson", lesson, "lesson");
