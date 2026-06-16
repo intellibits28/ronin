@@ -113,6 +113,7 @@ public:
     struct EpisodeRecord {
         std::string intent;
         std::string summary;
+        std::string payload_json;
         bool success;
         uint64_t timestamp;
     };

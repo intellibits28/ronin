@@ -391,7 +391,7 @@ std::vector<LongTermMemory::EpisodeRecord> LongTermMemory::getRecentEpisodes(int
     if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<EpisodeRecord> results;
-    const char* sql = "SELECT intent, summary, outcome_enum, timestamp FROM episodes ORDER BY timestamp DESC LIMIT ?;";
+    const char* sql = "SELECT intent, summary, payload_json, outcome_enum, timestamp FROM episodes ORDER BY timestamp DESC LIMIT ?;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_int(stmt, 1, limit);
@@ -399,8 +399,9 @@ std::vector<LongTermMemory::EpisodeRecord> LongTermMemory::getRecentEpisodes(int
             EpisodeRecord rec;
             rec.intent = columnText(stmt, 0);
             rec.summary = columnText(stmt, 1);
-            rec.success = (sqlite3_column_int(stmt, 2) != 0);
-            rec.timestamp = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
+            rec.payload_json = columnText(stmt, 2);
+            rec.success = (sqlite3_column_int(stmt, 3) != 0);
+            rec.timestamp = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
             results.push_back(rec);
         }
     }
@@ -412,7 +413,7 @@ std::vector<LongTermMemory::EpisodeRecord> LongTermMemory::getRecentFailures(int
     if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<EpisodeRecord> results;
-    const char* sql = "SELECT intent, summary, outcome_enum, timestamp FROM episodes WHERE outcome_enum = 0 ORDER BY timestamp DESC LIMIT ?;";
+    const char* sql = "SELECT intent, summary, payload_json, outcome_enum, timestamp FROM episodes WHERE outcome_enum = 0 ORDER BY timestamp DESC LIMIT ?;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_int(stmt, 1, limit);
@@ -420,8 +421,9 @@ std::vector<LongTermMemory::EpisodeRecord> LongTermMemory::getRecentFailures(int
             EpisodeRecord rec;
             rec.intent = columnText(stmt, 0);
             rec.summary = columnText(stmt, 1);
+            rec.payload_json = columnText(stmt, 2);
             rec.success = false;
-            rec.timestamp = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
+            rec.timestamp = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
             results.push_back(rec);
         }
     }
