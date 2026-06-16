@@ -236,7 +236,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun notifyTrimMemoryNative(level: Int)
     private external fun getActiveModelPathNative(): String
     private external fun injectLocationNative(lat: Double, lon: Double)
-    private external fun injectWorldStateNative(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean)
+    private external fun injectWorldStateNative(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean, hourOfDay: Int)
     private external fun updateSystemHealthNative(temp: Float, used: Float, total: Float): Boolean
     private external fun setOfflineModeNative(offline: Boolean)
     private external fun setPrimaryCloudProviderNative(provider: String)
@@ -276,7 +276,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     fun injectWorldState(battery: Float, ram: Float, gps: Boolean, net: Boolean, charging: Boolean) {
-        if (isLibLoaded) injectWorldStateNative(battery, ram, gps, net, charging)
+        if (isLibLoaded) {
+            val hourOfDay = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            injectWorldStateNative(battery, ram, gps, net, charging, hourOfDay)
+        }
     }
 
     enum class RiskLevel(val value: Int) {

@@ -12,10 +12,12 @@ public:
     
     uint32_t getAdaptedBudget(const std::string& exec_id, const std::string& node_id);
     void reportExecution(const std::string& node_id, uint32_t latency_ms, bool success);
+    void updateWorldState(const WorldState& state);
 
 private:
     AdaptiveBudgetController() = default;
     std::mutex m_mutex;
+    WorldState m_world_state;
     
     struct NodeStats {
         uint32_t avg_latency = 0;
