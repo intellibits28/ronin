@@ -208,7 +208,10 @@ class InferenceService : Service() {
         // v1.5 Self-Healing: Check and auto-hydrate if engine was released due to instability
         if (litertEngine == null && currentModelPath.isNotEmpty()) {
             Log.i(TAG, "Spine is dry. Attempting Auto-Rehydration before inference...")
-            tryHydrate(currentModelPath)
+            if (!tryHydrate(currentModelPath)) {
+                emit("Error: Hydration Failed. Engine could not be initialized.")
+                return@flow
+            }
         }
 
         inferenceMutex.withLock {
@@ -235,7 +238,11 @@ class InferenceService : Service() {
             resetConversationLocked()
         }
 
-        val activeConv = synchronized(this@InferenceService) { litertConversation } ?: return@withLock
+        val activeConv = synchronized(this@InferenceService) { litertConversation }
+        if (activeConv == null) {
+            emit("Error: Active Conversation is null.")
+            return@withLock
+        }
         
         // Mark as no longer fresh AFTER we have decided to use/strip the wrap for THIS prompt
         val wasFresh = isConversationFresh
@@ -255,7 +262,6 @@ class InferenceService : Service() {
             if (e.message?.contains("Status Code: 13") == true || e.message?.contains("failed to invoke", ignoreCase = true) == true) {
                 Log.w(TAG, "Terminally unstable engine state detected (Error 13). Forcing Hard Reset...")
                 releaseResourcesLocked()
-                // The next call will attempt to re-hydrate if the service is still alive
             } else if (e.message?.contains("not alive", ignoreCase = true) == true || e.message?.contains("failed", ignoreCase = true) == true) {
                 Log.w(TAG, "Attempting to recover from dead conversation...")
                 resetConversationLocked()
