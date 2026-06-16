@@ -80,6 +80,15 @@ bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
                 if (out_plan.plan_steps.size() > 0) out_plan.plan_steps[0] = "SET_ALARM";
             }
         }
+
+        // Force SAVE_FACT if user explicitly asks to save/remember
+        if (lower_query.find("မှတ်ထား") != std::string::npos || lower_query.find("save") != std::string::npos || lower_query.find("store") != std::string::npos) {
+            if (out_plan.intent_name == "LOOKUP_FACT" || out_plan.intent_name == "QUERY_FACT") {
+                LOGW("RoninPlanner", "v1.6 Hardening: Overriding Hallucinated LOOKUP intent to SAVE for memory query.");
+                out_plan.intent_name = "SAVE_FACT";
+                if (out_plan.plan_steps.size() > 0) out_plan.plan_steps[0] = "SAVE_FACT";
+            }
+        }
         
         LOGI("RoninPlanner", "v7.2 Plan parsed: %s with %zu tools and %zu steps.", 
              out_plan.intent_name.c_str(), out_plan.required_tools.size(), out_plan.plan_steps.size());
