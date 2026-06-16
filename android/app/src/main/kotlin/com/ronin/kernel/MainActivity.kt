@@ -1167,6 +1167,17 @@ fun ModalDrawerSheet(chatViewModel: ChatViewModel, brainPicker: ActivityResultLa
             }
         }
         
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = { engine.runNightlyReflection() },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF6200EE))
+        ) {
+            Icon(Icons.Default.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Run Behavioral Reflection", color = Color.White, fontSize = 12.sp)
+        }
+        
         Spacer(Modifier.weight(1f)); TextButton(onClick = { activity?.clearModelCache() }) { Text("Clear All Cache", color = Color.Red, fontSize = 12.sp) }
     }
 }
