@@ -12,7 +12,7 @@ AdaptiveBudgetController& AdaptiveBudgetController::getInstance() {
     return instance;
 }
 
-void AdaptiveBudgetController::updateWorldState(const WorldState& state) {
+void AdaptiveBudgetController::updateWorldState(const Ronin::Kernel::WorldState& state) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_world_state = state;
 }
