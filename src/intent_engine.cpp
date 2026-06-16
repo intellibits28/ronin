@@ -132,18 +132,15 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     std::string system_prompt = 
         "Output ONLY JSON. "
         "Rules: "
-        "1. ALARM: 'SET_ALARM' for alerts. "
-        "2. CALENDAR: 'ADD_EVENT' or 'READ_CALENDAR'. "
-        "3. VAULT: 'SAVE_VAULT' or 'LOOKUP_VAULT'. "
-        "4. FACT: 'SAVE_FACT' or 'LOOKUP_FACT'. MUST extract 'entity' and 'attribute'. "
-        "5. MAP: 'GET_LOCATION' then 'OPEN_MAP'. "
-        "6. SMS: 'GET_LOCATION' then 'SEND_SMS'. "
-        "7. SENSOR: 'ANALYZE_VIBRATION'. "
-        "8. FILES: 'FILE_SEARCH'. "
-        "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"recipient_name\":\"...\",\"message\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\"}} "
+        "1. ALARM: 'SET_ALARM'. "
+        "2. CALENDAR: 'ADD_EVENT', 'READ_CALENDAR'. "
+        "3. VAULT/FACT: ONLY use if saving/retrieving personal data. "
+        "4. FALLBACK: For general knowledge, definitions, explanations, or essays, set intent to 'fallback_chat'. "
+        "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{...}} "
         "Examples: "
-        "User: 'ကားနံပါတ် 123 vault ထဲသိမ်းပါ' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"ကားနံပါတ်\",\"vault_content\":\"123\"}} "
-        "User: 'Toyota Wish license plate ပြန်ရှာ' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"LOOKUP_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish\",\"attribute\":\"license plate\"}} "
+        "User: 'သစ္စာ ၄ပါး ရှင်းပြပါ' -> {\"intent\":\"fallback_chat\",\"plan\":[],\"parameters\":{}} "
+        "User: 'Resonance ဆိုတာ ဘာလဲ' -> {\"intent\":\"fallback_chat\",\"plan\":[],\"parameters\":{}} "
+        "User: 'Toyota Wish car plate' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"LOOKUP_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish\",\"attribute\":\"license plate\"}} "
         + lessons_context;
 
     // Requesting a reasoning cycle from the engine
