@@ -612,9 +612,12 @@ class MainActivity : FragmentActivity() {
             runOnUiThread {
                 vm.reasoningLogsText += "\n> $msg"
                 
-                // v12.30: If it's a bracketed tool result (e.g. [SENSOR ANALYSIS]), push to chat bubbles too
-                if (msg.startsWith("[") && !msg.startsWith("[AGENT]")) {
-                    vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", msg))
+                // v1.6 Phase 4 Fix: Route [AGENT] results to chat bubble so user sees action feedback
+                if (msg.startsWith("[")) {
+                    // Do not push verbose system logs to chat, only actionable feedback
+                    if (!msg.startsWith("[STATUS]") && !msg.startsWith("[MODEL]") && !msg.startsWith("[SKILLS]")) {
+                        vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", msg))
+                    }
                 }
             }
         }
