@@ -1169,7 +1169,7 @@ fun ModalDrawerSheet(chatViewModel: ChatViewModel, brainPicker: ActivityResultLa
         
         Spacer(Modifier.height(16.dp))
         Button(
-            onClick = { engine.runNightlyReflection() },
+            onClick = { activity?.nativeEngine?.runNightlyReflection() },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF6200EE))
         ) {
