@@ -116,6 +116,7 @@ public:
         bool success;
         uint64_t timestamp;
     };
+    std::vector<EpisodeRecord> getRecentEpisodes(int limit);
     std::vector<EpisodeRecord> getRecentFailures(int limit);
 
     // Segmenter Control

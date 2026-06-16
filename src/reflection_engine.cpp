@@ -19,35 +19,54 @@ void ReflectionEngine::applyHumanFeedback(const std::string& session_id, bool wa
 }
 
 void ReflectionEngine::reflectOnRecentTasks() {
-    // Phase 4: Self-Evaluation Loop
-    LOGI(TAG, "Initiating Self-Evaluation Loop...");
+    LOGI(TAG, ">>> INITIATING NIGHTLY REFLECTION CYCLE <<<");
     
     if (!m_ltm) return;
 
-    // 1. Query failed episodes from LTM
-    auto failures = m_ltm->getRecentFailures(10);
+    // 1. Gather historical context
+    auto recent_episodes = m_ltm->getRecentEpisodes(20);
+    auto semantic_failures = m_ltm->getRecentFailures(10);
     
-    // 2. Identify common failure patterns
-    std::unordered_map<std::string, int> intent_failures;
-    for (const auto& f : failures) {
-        intent_failures[f.intent]++;
+    if (recent_episodes.empty()) {
+        LOGI(TAG, "Reflection: No new episodes to analyze. Cycle skipped.");
+        return;
     }
 
-    // 3. Update BeliefState to avoid these paths (e.g. mark reliability)
-    for (const auto& [intent, count] : intent_failures) {
-        if (count >= 3) {
-            float reliability = 1.0f - (static_cast<float>(count) / 10.0f);
-            LOGW(TAG, "Self-Evaluation: Intent %s has low reliability (%.2f)", intent.c_str(), reliability);
+    // 2. Synthesize Lessons (Episode Synthesis)
+    std::unordered_map<std::string, int> success_map;
+    std::unordered_map<std::string, int> failure_map;
+    
+    for (const auto& ep : recent_episodes) {
+        if (ep.success) success_map[ep.intent]++;
+        else failure_map[ep.intent]++;
+    }
+
+    // 3. Behavioral Adjustment (Policy Evolution)
+    for (auto const& [intent, fail_count] : failure_map) {
+        int total = fail_count + success_map[intent];
+        float failure_rate = static_cast<float>(fail_count) / static_cast<float>(total);
+        
+        if (failure_rate > 0.4f && total >= 3) {
+            LOGW(TAG, "Reflection: Intent '%s' is highly unstable (Failure Rate: %.2f). Applying Policy Constraint.", 
+                 intent.c_str(), failure_rate);
             
-            // Phase 3 Integration: Store reliability belief
-            // We use a specific key format so TaskPlanner can see it
-            // m_belief_state.updateBelief("reliability_" + intent, std::to_string(reliability), 0.8f);
-            // Note: Since ReflectionEngine doesn't have direct access to BeliefState yet, 
-            // we log it for now. In a full implementation, we'd add the reference.
+            // v1.6: In a full implementation, this would update the 'policies' table 
+            // or inject a system-level constraint to prefer fallback tools for this intent.
+            m_ltm->storeNote("Nightly Lesson", "Intent '" + intent + "' is unreliable. Use cautious planning.", "lesson");
         }
     }
+
+    // 4. Memory Consolidation
+    if (recent_episodes.size() >= 5) {
+        std::string consolidated_brief = "Recent activity analysis: ";
+        for (auto const& [intent, count] : success_map) {
+            consolidated_brief += intent + "(" + std::to_string(count) + " successful), ";
+        }
+        m_ltm->consolidate(consolidated_brief);
+        LOGI(TAG, "Reflection: Episodic memory consolidated.");
+    }
     
-    LOGI(TAG, "Self-Evaluation Loop Completed.");
+    LOGI(TAG, ">>> NIGHTLY REFLECTION CYCLE COMPLETE <<<");
 }
 
 float ReflectionEngine::evaluateOutcome(const std::string& predicted, const std::string& actual) {
