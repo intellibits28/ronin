@@ -128,6 +128,7 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "5. MAP: 'GET_LOCATION' then 'OPEN_MAP'. "
         "6. SMS: 'GET_LOCATION' then 'SEND_SMS'. "
         "7. SENSOR: 'ANALYZE_VIBRATION'. "
+        "8. FILES: 'FILE_SEARCH'. "
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"recipient_name\":\"...\",\"message\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\"}} "
         "Examples: "
         "User: 'ကားနံပါတ် 123 vault ထဲသိမ်းပါ' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"ကားနံပါတ်\",\"vault_content\":\"123\"}} "
