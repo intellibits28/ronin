@@ -184,7 +184,7 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
                     is_safe = false; 
                     result = "Cancelled."; 
                     // v1.6: Log HITL Denial
-                    Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, plan.intent_name, FailureType::HITL_DENIED, "User rejected confirmation dialog.");
+                    Execution::FailureTelemetryBus::getInstance().logFailure(exec_ctx->execution_id, plan.intent_name, FailureType::HITL_DENIED, "User rejected confirmation dialog.");
                 }
             }
         }
