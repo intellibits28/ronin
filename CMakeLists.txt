@@ -169,6 +169,9 @@ if(NOT ANDROID)
     add_executable(ronin_self_healing_test tests/self_healing_test.cpp)
     target_link_libraries(ronin_self_healing_test ronin_core gtest_main)
 
+    add_executable(ronin_evolution_test tests/evolution_test.cpp)
+    target_link_libraries(ronin_evolution_test ronin_core gtest_main)
+
     add_executable(ronin_segmenter_test tests/segmenter_stress_test.cpp)
     target_link_libraries(ronin_segmenter_test ronin_core)
 endif()

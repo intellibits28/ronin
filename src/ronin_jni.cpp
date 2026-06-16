@@ -184,8 +184,15 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
                     is_safe = false; 
                     result = "Cancelled."; 
                     LOGW("RoninJNI", "[HITL] User explicitly REJECTED the action: %s", plan.intent_name.c_str());
-                    // v1.6: Log HITL Denial
+                    
+                    // v1.6: Log HITL Denial and Apply Bayesian Penalty (Phase 1.2 RLHF)
                     Execution::FailureTelemetryBus::getInstance().logFailure(exec_ctx->execution_id, plan.intent_name, FailureType::HITL_DENIED, "User rejected confirmation dialog.");
+                    
+                    if (g_graph_executor) {
+                        // Apply high-risk penalty to the root node (0) for this intent selection
+                        // This will decrease the probability of selecting this path/tool in similar contexts
+                        g_graph_executor->reportOutcome(0, intent.id, false, RiskLevel::HIGH);
+                    }
                 }
             }
         }
@@ -297,6 +304,13 @@ JNIEXPORT void JNICALL native_reportSemanticFailure(JNIEnv *env, jobject thiz, j
     std::string nid = ConvertJStringToString(env, nodeId);
     std::string det = ConvertJStringToString(env, details);
     Execution::FailureTelemetryBus::getInstance().logFailure(eid, nid, static_cast<FailureType>(failureType), det);
+}
+
+JNIEXPORT void JNICALL native_runNightlyReflection(JNIEnv *env, jobject thiz) {
+    LOGI("RoninJNI", ">>> INITIATING NIGHTLY REFLECTION CYCLE [Phase 2] <<<");
+    if (g_graph_executor) {
+        g_graph_executor->getReflectionEngine().reflectOnRecentTasks();
+    }
 }
 
 JNIEXPORT void JNICALL native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
@@ -411,6 +425,7 @@ static JNINativeMethod g_methods[] = {
     {"loadMyanmarDictionaryNative", "(Ljava/lang/String;)Z", (void*)native_loadMyanmarDictionary},
     {"reportOutcomeNative", "(IIZI)V", (void*)native_reportOutcome},
     {"reportSemanticFailureNative", "(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;)V", (void*)native_reportSemanticFailure},
+    {"runNightlyReflectionNative", "()V", (void*)native_runNightlyReflection},
     {"cancelExecutionNative", "(Ljava/lang/String;)V", (void*)native_cancelExecution},
     {"requestCancellationNative", "()V", (void*)native_requestCancellation},
     {"setInferenceSilenceNative", "(Z)V", (void*)native_setInferenceSilence},

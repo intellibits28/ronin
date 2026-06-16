@@ -387,6 +387,27 @@ void LongTermMemory::applyDecay(uint64_t) {}
 int LongTermMemory::runMaintenance(bool) { return 0; }
 bool LongTermMemory::storeAuditLog(const std::string& action, const std::string& details) { return true; }
 
+std::vector<LongTermMemory::EpisodeRecord> LongTermMemory::getRecentEpisodes(int limit) {
+    if (!m_db) return {};
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<EpisodeRecord> results;
+    const char* sql = "SELECT intent, summary, outcome_enum, timestamp FROM episodes ORDER BY timestamp DESC LIMIT ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, limit);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            EpisodeRecord rec;
+            rec.intent = columnText(stmt, 0);
+            rec.summary = columnText(stmt, 1);
+            rec.success = (sqlite3_column_int(stmt, 2) != 0);
+            rec.timestamp = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
+            results.push_back(rec);
+        }
+    }
+    if (stmt) sqlite3_finalize(stmt);
+    return results;
+}
+
 std::vector<LongTermMemory::EpisodeRecord> LongTermMemory::getRecentFailures(int limit) {
     if (!m_db) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -404,7 +425,7 @@ std::vector<LongTermMemory::EpisodeRecord> LongTermMemory::getRecentFailures(int
             results.push_back(rec);
         }
     }
-    sqlite3_finalize(stmt);
+    if (stmt) sqlite3_finalize(stmt);
     return results;
 }
 
