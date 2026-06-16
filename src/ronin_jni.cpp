@@ -183,6 +183,7 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
                 if (env->CallBooleanMethod(thiz, mid, ji, jm) == JNI_FALSE) { 
                     is_safe = false; 
                     result = "Cancelled."; 
+                    LOGW("RoninJNI", "[HITL] User explicitly REJECTED the action: %s", plan.intent_name.c_str());
                     // v1.6: Log HITL Denial
                     Execution::FailureTelemetryBus::getInstance().logFailure(exec_ctx->execution_id, plan.intent_name, FailureType::HITL_DENIED, "User rejected confirmation dialog.");
                 }

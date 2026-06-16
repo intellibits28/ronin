@@ -1,5 +1,8 @@
 #include "failure_telemetry_bus.h"
+#include "ronin_log.h"
 #include <chrono>
+
+#define TAG "FailureTelemetry"
 
 namespace Ronin::Kernel::Execution {
 
@@ -9,9 +12,10 @@ FailureTelemetryBus& FailureTelemetryBus::getInstance() {
 }
 
 void FailureTelemetryBus::logFailure(const std::string& exec_id, const std::string& node_id, FailureType type, const std::string& details) {
+    LOGW(TAG, "[SEMANTIC FAILURE] ExecID: %s | Node: %s | Type: %d | Details: %s", 
+         exec_id.c_str(), node_id.c_str(), static_cast<int>(type), details.c_str());
+         
     if (!m_ltm) return;
-    // In a real system, you might want a more complex resolution logic.
-    // For now, we just store the details.
     m_ltm->storeFailure(node_id, static_cast<int>(type), 0, details);
 }
 
