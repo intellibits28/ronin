@@ -156,7 +156,12 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
         HardwareBridge::setInferenceSilence(true);
         auto plan = g_intent_engine->getPlanner()->createPlan(rawInput);
         HardwareBridge::setInferenceSilence(false);
-        if (plan.intent_name == "fallback_chat") { return env->NewStringUTF("{\"result\":\"Agent planning failed.\"}"); }
+        if (plan.intent_name == "fallback_chat") { 
+            if (g_graph_executor) {
+                g_graph_executor->recordEpisode("PLANNING_FAILURE", "Agent failed to generate a valid plan for input: " + rawInput, "{}", false);
+            }
+            return env->NewStringUTF("{\"result\":\"Agent planning failed.\"}"); 
+        }
         auto session = SessionManager::getInstance().createSession(plan.intent_name);
         sid = session->getSessionId();
         session->bindExecutionContext(exec_ctx); // v1.4 Bind UEC

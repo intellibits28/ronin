@@ -85,14 +85,15 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input, const 
     std::string result = Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
 
     // v1.5 Self-Healing: Check for LiteRT internal invocation errors
-    if (result.find("Status Code: 13") != std::string::npos || result.find("Failed to invoke") != std::string::npos) {
-        LOGE(TAG, "L15 Self-Healing: LiteRT Invocation Failed (Code 13). Attempting Local Recovery...");
+    if (result.find("Status Code: 13") != std::string::npos || result.find("Failed to invoke") != std::string::npos || 
+        result.find("Hydration Failed") != std::string::npos || result.find("Active Conversation is null") != std::string::npos) {
+        LOGE(TAG, "L15 Self-Healing: LiteRT Invocation Failed. Attempting Local Recovery...");
         
         // 1. Log failure for learning loop
-        Execution::FailureTelemetryBus::getInstance().logFailure("inference", "Gemma", FailureType::UNKNOWN, "LITERT_INVOKE_ERROR_13");
+        Execution::FailureTelemetryBus::getInstance().logFailure("inference", "Gemma", FailureType::UNKNOWN, "LITERT_INVOKE_ERROR");
         
         // 2. Notify User and Reset Context (Self-Healing Step)
-        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[SYSTEM] Neural Spine Unstable (Code 13). Resetting engine...");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[SYSTEM] Neural Spine Unstable. Resetting engine...");
         
         // 3. Brief sleep to allow Kotlin side to release resources
         std::this_thread::sleep_for(std::chrono::milliseconds(800));
@@ -101,7 +102,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input, const 
         LOGI(TAG, "L15: Retrying inference after hard reset...");
         result = Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
         
-        if (result.find("Status Code: 13") != std::string::npos) {
+        if (result.find("Status Code: 13") != std::string::npos || result.find("Error:") != std::string::npos) {
             LOGE(TAG, "L15: Terminal instability after reset. Aborting turn.");
             return result;
         }
