@@ -106,6 +106,7 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
         engine->setBasePath(base_path);
         g_llm_context.engine = engine.get();
         g_intent_engine->setInferenceEngine(std::move(engine));
+        if (g_graph_executor) g_graph_executor->getReflectionEngine().setInferenceEngine(g_llm_context.engine);
         
         HardwareBridge::initialize(g_vm, g_instance);
         HandlerRegistry registry;
