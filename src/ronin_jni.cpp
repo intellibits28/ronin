@@ -265,7 +265,18 @@ JNIEXPORT jobjectArray JNICALL native_searchEpisodes(JNIEnv *env, jobject thiz, 
 
 JNIEXPORT jboolean JNICALL native_storeVault(JNIEnv *env, jobject thiz, jstring t, jstring b) { return (g_ltm && g_ltm->storeVault(ConvertJStringToString(env, t), ConvertJStringToString(env, b))) ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT jboolean JNICALL native_storePrediction(JNIEnv *env, jobject thiz, jstring g, jstring n, jstring p, jstring a, jfloat e) { return (g_ltm && g_ltm->storePrediction(ConvertJStringToString(env, g), ConvertJStringToString(env, n), ConvertJStringToString(env, p), ConvertJStringToString(env, a), e)) ? JNI_TRUE : JNI_FALSE; }
-JNIEXPORT void JNICALL native_injectWorldState(JNIEnv *env, jobject thiz, jfloat b, jfloat r, jboolean g, jboolean n, jboolean c) {}
+JNIEXPORT void JNICALL native_injectWorldState(JNIEnv *env, jobject thiz, jfloat b, jfloat r, jboolean g, jboolean n, jboolean c, jint h) {
+    g_world_state.battery_percent = b;
+    g_world_state.ram_available_mb = r;
+    g_world_state.gps_available = (g == JNI_TRUE);
+    g_world_state.network_available = (n == JNI_TRUE);
+    g_world_state.charging = (c == JNI_TRUE);
+    g_world_state.hour_of_day = h;
+    g_world_state.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    
+    if (g_kernel) g_kernel->updateWorldState(g_world_state);
+    Execution::AdaptiveBudgetController::getInstance().updateWorldState(g_world_state);
+}
 JNIEXPORT void JNICALL native_applyHumanFeedback(JNIEnv *env, jobject thiz, jstring s, jboolean h) { if (g_graph_executor) g_graph_executor->getReflectionEngine().applyHumanFeedback(ConvertJStringToString(env, s), h == JNI_TRUE); }
 JNIEXPORT jfloat JNICALL native_getFreeRamGB(JNIEnv *env, jobject thiz) { return HardwareBridge::getFreeRamGB(); }
 JNIEXPORT void JNICALL native_shutdownKernel(JNIEnv *env, jobject thiz) {
@@ -450,7 +461,7 @@ static JNINativeMethod g_methods[] = {
     {"pushSensorSamplesNative", "([F[F[FLjava/lang/String;)Z", (void*)native_pushSensorSamples},
     {"getSensorAnalysisNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_getSensorAnalysis},
     {"storePredictionNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;F)Z", (void*)native_storePrediction},
-    {"injectWorldStateNative", "(FFZZZ)V", (void*)native_injectWorldState},
+    {"injectWorldStateNative", "(FFZZZI)V", (void*)native_injectWorldState},
     {"applyHumanFeedbackNative", "(Ljava/lang/String;Z)V", (void*)native_applyHumanFeedback},
     {"notifyModelLoadedNative", "(Ljava/lang/String;)V", (void*)native_notifyModelLoaded},
     {"setSafeModeNative", "(Z)V", (void*)native_setSafeMode},

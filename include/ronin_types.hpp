@@ -193,6 +193,10 @@ struct WorldState {
     bool network_available;
     bool charging;
     uint64_t timestamp;
+    
+    // v1.6 Phase 4: Context-Aware Execution
+    int hour_of_day; // 0-23
+    std::string location_context; // e.g., "HOME", "WORK", "TRANSIT", "UNKNOWN"
 };
 
 /**
