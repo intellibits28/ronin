@@ -180,7 +180,12 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
                 jstring ji = env->NewStringUTF(plan.intent_name.c_str());
                 std::string msg = needs_sms_hitl ? "Allow SMS?" : "Allow Calendar Event?";
                 jstring jm = env->NewStringUTF(msg.c_str());
-                if (env->CallBooleanMethod(thiz, mid, ji, jm) == JNI_FALSE) { is_safe = false; result = "Cancelled."; }
+                if (env->CallBooleanMethod(thiz, mid, ji, jm) == JNI_FALSE) { 
+                    is_safe = false; 
+                    result = "Cancelled."; 
+                    // v1.6: Log HITL Denial
+                    Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, plan.intent_name, FailureType::HITL_DENIED, "User rejected confirmation dialog.");
+                }
             }
         }
         if (is_safe) { AgentScheduler::getInstance().schedule(session, 5); result = "Executing plan: " + plan.intent_name; }
@@ -285,6 +290,13 @@ JNIEXPORT jobjectArray JNICALL native_getChatHistory(JNIEnv *env, jobject thiz, 
 JNIEXPORT void JNICALL native_resetContext(JNIEnv *env, jobject thiz) { if (g_kernel) g_kernel->clearSuggestedSubject(); }
 JNIEXPORT jboolean JNICALL native_loadMyanmarDictionary(JNIEnv *env, jobject thiz, jstring p) { return (g_ltm && g_ltm->loadSegmenter(ConvertJStringToString(env, p))) ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT void JNICALL native_reportOutcome(JNIEnv *env, jobject thiz, jint s, jint t, jboolean success, jint r) { if (g_graph_executor) g_graph_executor->reportOutcome(s, t, success == JNI_TRUE, static_cast<RiskLevel>(r)); }
+
+JNIEXPORT void JNICALL native_reportSemanticFailure(JNIEnv *env, jobject thiz, jstring execId, jstring nodeId, jint failureType, jstring details) {
+    std::string eid = ConvertJStringToString(env, execId);
+    std::string nid = ConvertJStringToString(env, nodeId);
+    std::string det = ConvertJStringToString(env, details);
+    Execution::FailureTelemetryBus::getInstance().logFailure(eid, nid, static_cast<FailureType>(failureType), det);
+}
 
 JNIEXPORT void JNICALL native_notifyModelLoaded(JNIEnv *env, jobject thiz, jstring path) {
     std::string modelPath = ConvertJStringToString(env, path);
@@ -397,6 +409,7 @@ static JNINativeMethod g_methods[] = {
     {"resetContextNativeJNI", "()V", (void*)native_resetContext},
     {"loadMyanmarDictionaryNative", "(Ljava/lang/String;)Z", (void*)native_loadMyanmarDictionary},
     {"reportOutcomeNative", "(IIZI)V", (void*)native_reportOutcome},
+    {"reportSemanticFailureNative", "(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;)V", (void*)native_reportSemanticFailure},
     {"cancelExecutionNative", "(Ljava/lang/String;)V", (void*)native_cancelExecution},
     {"requestCancellationNative", "()V", (void*)native_requestCancellation},
     {"setInferenceSilenceNative", "(Z)V", (void*)native_setInferenceSilence},
