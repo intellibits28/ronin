@@ -6,8 +6,8 @@
 
 namespace Ronin::Kernel::Reasoning {
 
-ReflectionEngine::ReflectionEngine(Memory::LongTermMemory* ltm, ThompsonSampler* sampler)
-    : m_ltm(ltm), m_sampler(sampler) {}
+ReflectionEngine::ReflectionEngine(Memory::LongTermMemory* ltm, ThompsonSampler* sampler, Model::InferenceEngine* engine)
+    : m_ltm(ltm), m_sampler(sampler), m_engine(engine) {}
 
 void ReflectionEngine::applyHumanFeedback(const std::string& session_id, bool was_helpful) {
     LOGI(TAG, "RLHF: Received manual feedback for session %s. Helpful: %d", session_id.c_str(), was_helpful);
@@ -27,36 +27,45 @@ void ReflectionEngine::reflectOnRecentTasks() {
     auto recent_episodes = m_ltm->getRecentEpisodes(20);
     auto semantic_failures = m_ltm->getRecentFailures(10);
     
-    if (recent_episodes.empty()) {
+    if (recent_episodes.empty() && semantic_failures.empty()) {
         LOGI(TAG, "Reflection: No new episodes to analyze. Cycle skipped.");
         return;
     }
 
-    // 2. Synthesize Lessons (Episode Synthesis)
-    std::unordered_map<std::string, int> success_map;
-    std::unordered_map<std::string, int> failure_map;
-    
-    for (const auto& ep : recent_episodes) {
-        if (ep.success) success_map[ep.intent]++;
-        else failure_map[ep.intent]++;
-    }
-
-    // 3. Behavioral Adjustment (Policy Evolution)
-    for (auto const& [intent, fail_count] : failure_map) {
-        int total = fail_count + success_map[intent];
-        float failure_rate = static_cast<float>(fail_count) / static_cast<float>(total);
+    // 2. Synthesize Lessons (LLM-driven Evolutionary Planning)
+    if (m_engine && !semantic_failures.empty()) {
+        std::string context = "Recent Agent Failures:\n";
+        for (const auto& fail : semantic_failures) {
+            context += "- Intent: " + fail.intent + ". Summary: " + fail.summary + "\n";
+        }
         
-        if (failure_rate > 0.4f && total >= 3) {
-            LOGW(TAG, "Reflection: Intent '%s' is highly unstable (Failure Rate: %.2f). Applying Policy Constraint.", 
-                 intent.c_str(), failure_rate);
+        std::string prompt = 
+            "Analyze the following failures and write a single, concise behavioral rule (1 sentence) to prevent the agent from repeating these mistakes. "
+            "Output ONLY the rule.\n" + context;
             
-            // v1.6: In a full implementation, this would update the 'policies' table 
-            // or inject a system-level constraint to prefer fallback tools for this intent.
-            m_ltm->storeNote("Nightly Lesson", "Intent '" + intent + "' is unreliable. Use cautious planning.", "lesson");
+        std::string lesson = m_engine->runLiteRTReasoning("", prompt);
+        
+        // Sanitize LLM output
+        if (!lesson.empty() && lesson.find("Error") == std::string::npos && lesson.find("Status Code") == std::string::npos) {
+            LOGI(TAG, "Reflection: Derived new lesson: %s", lesson.c_str());
+            m_ltm->storeNote("Nightly Lesson", lesson, "lesson");
+        } else {
+            LOGW(TAG, "Reflection: LLM failed to synthesize a valid lesson.");
+        }
+    } else if (!semantic_failures.empty()) {
+        // Fallback static analysis if LLM is unavailable
+        for (const auto& fail : semantic_failures) {
+            m_ltm->storeNote("Nightly Lesson", "Intent '" + fail.intent + "' failed recently. " + fail.summary, "lesson");
+            LOGI(TAG, "Reflection: Generated static lesson for %s", fail.intent.c_str());
         }
     }
 
-    // 4. Memory Consolidation
+    // 3. Memory Consolidation
+    std::unordered_map<std::string, int> success_map;
+    for (const auto& ep : recent_episodes) {
+        if (ep.success) success_map[ep.intent]++;
+    }
+
     if (recent_episodes.size() >= 5) {
         std::string consolidated_brief = "Recent activity analysis: ";
         for (auto const& [intent, count] : success_map) {

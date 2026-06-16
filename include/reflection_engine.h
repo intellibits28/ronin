@@ -6,6 +6,7 @@
 #include "ronin_types.hpp"
 #include "long_term_memory.h"
 #include "thompson_sampler.h"
+#include "models/inference_engine.h"
 
 namespace Ronin::Kernel::Reasoning {
 
@@ -15,7 +16,9 @@ namespace Ronin::Kernel::Reasoning {
  */
 class ReflectionEngine {
 public:
-    ReflectionEngine(Memory::LongTermMemory* ltm, ThompsonSampler* sampler);
+    ReflectionEngine(Memory::LongTermMemory* ltm, ThompsonSampler* sampler, Model::InferenceEngine* engine = nullptr);
+
+    void setInferenceEngine(Model::InferenceEngine* engine) { m_engine = engine; }
 
     // Callback to trigger weight updates in the main graph
     void setWeightUpdateCallback(std::function<void(const std::string&, bool)> cb) {
@@ -41,6 +44,7 @@ public:
 private:
     Memory::LongTermMemory* m_ltm;
     ThompsonSampler* m_sampler;
+    Model::InferenceEngine* m_engine;
     std::function<void(const std::string&, bool)> m_weight_update_cb;
 };
 
