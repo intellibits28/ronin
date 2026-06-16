@@ -126,6 +126,9 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
 JNIEXPORT void JNICALL native_setEngineInstance(JNIEnv *env, jobject thiz) {}
 JNIEXPORT void JNICALL native_stopLowPriorityTasks(JNIEnv *env, jobject thiz) { if (g_intent_engine) g_intent_engine->stopLowPriorityTasks(); }
 
+// --- Forward Declarations ---
+JNIEXPORT void JNICALL native_runNightlyReflection(JNIEnv *env, jobject thiz);
+
 JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring jSessionId, jstring jExecId, jstring jCorrId, jstring input, jstring systemPrompt) {
     auto uec_result = JniExecutionGateway::getInstance().createAndValidateContext(env, jSessionId, jExecId, jCorrId);
     if (!uec_result.isOk()) {
