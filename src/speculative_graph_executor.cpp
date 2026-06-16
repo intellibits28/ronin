@@ -44,7 +44,7 @@ void SpeculativeGraphExecutor::rollbackNode(uint32_t node_id) {
     }
 }
 
-std::future<bool> SpeculativeGraphExecutor::optimizeAndDispatch(CapabilityType type, const std::string& payload, Execution::ExecutionContextPtr ctx) {
+std::future<bool> SpeculativeGraphExecutor::optimizeAndDispatch(Ronin::Kernel::CapabilityType type, const std::string& payload, Ronin::Kernel::Execution::ExecutionContextPtr ctx) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     
     if (m_speculative_mode) {

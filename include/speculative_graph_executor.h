@@ -17,7 +17,7 @@ public:
     void rollbackNode(uint32_t node_id);
 
     // Overridden dispatch to handle speculative buffering
-    std::future<bool> optimizeAndDispatch(CapabilityType type, const std::string& payload, Execution::ExecutionContextPtr ctx);
+    std::future<bool> optimizeAndDispatch(Ronin::Kernel::CapabilityType type, const std::string& payload, Ronin::Kernel::Execution::ExecutionContextPtr ctx);
 
 private:
     bool m_speculative_mode = false;
