@@ -13,8 +13,8 @@
 
 namespace Ronin::Kernel::Intent {
 
-TaskPlanner::TaskPlanner(Model::InferenceEngine* engine, Reasoning::BeliefState* belief_state) 
-    : m_engine(engine), m_belief_state(belief_state) {}
+TaskPlanner::TaskPlanner(Model::InferenceEngine* engine, Reasoning::BeliefState* belief_state, Memory::LongTermMemory* ltm) 
+    : m_engine(engine), m_belief_state(belief_state), m_ltm(ltm) {}
 
 bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
     try {
@@ -69,6 +69,20 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
     if (!m_engine) return plan;
 
+    // v1.6: Behavioral Evolution - Dynamic Lesson Injection
+    std::string lessons_context = "";
+    if (m_ltm) {
+        auto lessons = m_ltm->searchNotes("lesson");
+        if (!lessons.empty()) {
+            lessons_context = "\n[LESSONS LEARNED FROM PREVIOUS FAILURES]:\n";
+            for (const auto& lesson : lessons) {
+                lessons_context += "- " + lesson + "\n";
+            }
+            lessons_context += "[End of Lessons. DO NOT repeat these mistakes.]\n";
+            LOGI("RoninPlanner", "Injected %zu behavioral lessons into prompt.", lessons.size());
+        }
+    }
+
     // v12.14: Constrained Prompting (Rigid JSON Enforcement)
     std::string system_prompt = 
         "Output ONLY JSON. "
@@ -83,7 +97,8 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{\"entity\":\"...\",\"attribute\":\"...\",\"value\":\"...\",\"recipient_name\":\"...\",\"message\":\"...\",\"vault_title\":\"...\",\"vault_content\":\"...\"}} "
         "Examples: "
         "User: 'ကားနံပါတ် 123 vault ထဲသိမ်းပါ' -> {\"intent\":\"ADD_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"ကားနံပါတ်\",\"vault_content\":\"123\"}} "
-        "User: 'Toyota Wish license plate ပြန်ရှာ' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"LOOKUP_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish\",\"attribute\":\"license plate\"}} ";
+        "User: 'Toyota Wish license plate ပြန်ရှာ' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"LOOKUP_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish\",\"attribute\":\"license plate\"}} "
+        + lessons_context;
 
     // Requesting a reasoning cycle from the engine
     std::string llm_json = m_engine->runLiteRTReasoning(input, system_prompt); 

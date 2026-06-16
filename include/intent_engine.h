@@ -25,7 +25,7 @@ namespace Ronin::Kernel::Intent {
  */
 class TaskPlanner {
 public:
-    explicit TaskPlanner(Model::InferenceEngine* engine, Reasoning::BeliefState* belief_state = nullptr);
+    explicit TaskPlanner(Model::InferenceEngine* engine, Reasoning::BeliefState* belief_state = nullptr, Memory::LongTermMemory* ltm = nullptr);
     
     // Generates a structured JSON plan from raw user input
     AgentPlan createPlan(const std::string& input);
@@ -39,6 +39,7 @@ public:
 private:
     Model::InferenceEngine* m_engine;
     Reasoning::BeliefState* m_belief_state;
+    Memory::LongTermMemory* m_ltm;
 };
 
 enum class ThermalState {
@@ -78,7 +79,7 @@ public:
     void setBeliefState(Reasoning::BeliefState* bs) {
         m_belief_state = bs;
         if (m_inference_engine) {
-            m_planner = std::make_unique<TaskPlanner>(m_inference_engine.get(), m_belief_state);
+            m_planner = std::make_unique<TaskPlanner>(m_inference_engine.get(), m_belief_state, m_ltm);
         }
     }
 
