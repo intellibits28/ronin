@@ -56,6 +56,31 @@ bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
             }
         }
         
+        // v1.6 Cognitive Hardening: Forceful Intent Correction (Anti-Hallucination)
+        std::string original_query = "";
+        if (out_plan.parameters.count("original_query")) {
+            original_query = out_plan.parameters["original_query"];
+        }
+        std::string lower_query = original_query;
+        std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
+        
+        if (lower_query.find("api key") != std::string::npos || lower_query.find("password") != std::string::npos || 
+            lower_query.find("secret") != std::string::npos || lower_query.find("vault") != std::string::npos) {
+            if (out_plan.intent_name.find("FACT") != std::string::npos) {
+                LOGW("RoninPlanner", "v1.6 Hardening: Overriding Hallucinated FACT intent to VAULT for sensitive query.");
+                out_plan.intent_name = (out_plan.intent_name == "SAVE_FACT" || out_plan.intent_name == "ADD_FACT") ? "SAVE_VAULT" : "LOOKUP_VAULT";
+                if (out_plan.plan_steps.size() > 0) out_plan.plan_steps[0] = out_plan.intent_name;
+            }
+        }
+        
+        if (lower_query.find("နှိုး") != std::string::npos || lower_query.find("alarm") != std::string::npos || lower_query.find("wake") != std::string::npos) {
+            if (out_plan.intent_name.find("EVENT") != std::string::npos || out_plan.intent_name.find("CALENDAR") != std::string::npos) {
+                LOGW("RoninPlanner", "v1.6 Hardening: Overriding Hallucinated EVENT intent to ALARM for wake query.");
+                out_plan.intent_name = "SET_ALARM";
+                if (out_plan.plan_steps.size() > 0) out_plan.plan_steps[0] = "SET_ALARM";
+            }
+        }
+        
         LOGI("RoninPlanner", "v7.2 Plan parsed: %s with %zu tools and %zu steps.", 
              out_plan.intent_name.c_str(), out_plan.required_tools.size(), out_plan.plan_steps.size());
         return true;
@@ -114,13 +139,13 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     
     LOGI("RoninPlanner", "v9.1 Extracted JSON: %s", llm_json.c_str());
 
+    // v12.20: Inject original query into parameters for better tool context and anti-hallucination overrides
+    plan.parameters["original_query"] = input;
+
     if (!parsePlan(llm_json, plan)) {
         LOGE("RoninPlanner", "v9.1 Parser Failed for raw output: %s", llm_json.c_str());
         plan.intent_name = "fallback_chat";
     }
-    
-    // v12.20: Inject original query into parameters for better tool context
-    plan.parameters["original_query"] = input;
     
     return plan;
 }
