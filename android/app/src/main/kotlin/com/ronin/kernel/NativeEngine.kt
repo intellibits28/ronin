@@ -405,6 +405,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String = runBlocking(Dispatchers.IO) {
         Log.d(TAG, "Native Trigger: Initiating Hardened AIDL Reasoning...")
+        
+        if (inferenceService == null) {
+            Log.e(TAG, "Inference Service is null or not bound. Aborting reasoning.")
+            return@runBlocking "Error: Inference Service is disconnected."
+        }
+
         val fullResult = StringBuilder()
         val latch = CountDownLatch(1)
         
