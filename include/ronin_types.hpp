@@ -130,7 +130,13 @@ enum class FailureType {
     BUDGET_EXCEEDED = 3,
     CYCLE_DETECTED = 4,
     NATIVE_CRASH = 5,
-    UNKNOWN = 6
+    UNKNOWN = 6,
+    
+    // v1.6 Behavioral Evolution (Semantic Failures)
+    USER_REJECTED = 10,     // User explicitly canceled or disliked the result
+    HITL_DENIED = 11,       // User denied permission during confirmation dialog
+    CONTEXT_MISMATCH = 12,  // Tool execution succeeded but result was contextually wrong
+    LOGICAL_MISMATCH = 13   // Agent reasoning path was flawed according to user
 };
 
 struct FailureRecord {

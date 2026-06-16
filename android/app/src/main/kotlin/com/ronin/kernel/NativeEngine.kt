@@ -250,6 +250,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun resetContextNativeJNI()
     private external fun loadMyanmarDictionaryNative(path: String): Boolean
     private external fun reportOutcomeNative(sourceId: Int, targetId: Int, success: Boolean, risk: Int)
+    private external fun reportSemanticFailureNative(execId: String, nodeId: String, failureType: Int, details: String)
     private external fun requestCancellationNative()
     private external fun setInferenceSilenceNative(silent: Boolean)
     private external fun storeNoteNative(title: String, content: String, tags: String): Boolean
@@ -688,6 +689,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     fun reportOutcome(sourceId: Int, targetId: Int, success: Boolean, risk: RiskLevel = RiskLevel.MEDIUM) {
         if (isLibLoaded) try { reportOutcomeNative(sourceId, targetId, success, risk.value) } catch (e: Exception) {}
+    }
+
+    fun reportSemanticFailure(execId: String, nodeId: String, type: Int, details: String) {
+        if (isLibLoaded) try { reportSemanticFailureNative(execId, nodeId, type, details) } catch (e: Exception) {}
     }
 
     suspend fun getChatHistoryAsync(limit: Int, offset: Int): List<Pair<String, String>> = withContext(Dispatchers.IO) {
