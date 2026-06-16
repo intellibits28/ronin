@@ -49,6 +49,9 @@ struct LLMContext {
 };
 static LLMContext g_llm_context;
 
+// v1.6 World State
+static WorldState g_world_state;
+
 // --- Helper: exec_handler to bridge Kernel to JNI ---
 static Result exec_handler(uint32_t nodeId, const CognitiveState& state) {
     if (g_intent_engine) {
