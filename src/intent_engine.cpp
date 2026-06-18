@@ -85,14 +85,16 @@ bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
         if (lower_query.find("မှတ်ထား") != std::string::npos || lower_query.find("သိမ်းထား") != std::string::npos || 
             lower_query.find("save") != std::string::npos || lower_query.find("store") != std::string::npos) {
             
-            if (out_plan.intent_name == "LOOKUP_FACT" || out_plan.intent_name == "QUERY_FACT") {
+            if (out_plan.intent_name.find("FACT") != std::string::npos) {
                 LOGW("RoninPlanner", "v1.6 Hardening: Overriding Hallucinated LOOKUP intent to SAVE for memory query.");
                 out_plan.intent_name = "SAVE_FACT";
-                if (out_plan.plan_steps.size() > 0) out_plan.plan_steps[0] = "SAVE_FACT";
-            } else if (out_plan.intent_name == "LOOKUP_VAULT" || out_plan.intent_name == "QUERY_VAULT") {
+                out_plan.plan_steps.clear();
+                out_plan.plan_steps.push_back("SAVE_FACT");
+            } else if (out_plan.intent_name.find("VAULT") != std::string::npos) {
                 LOGW("RoninPlanner", "v1.6 Hardening: Overriding Hallucinated LOOKUP_VAULT intent to SAVE_VAULT for vault query.");
                 out_plan.intent_name = "SAVE_VAULT";
-                if (out_plan.plan_steps.size() > 0) out_plan.plan_steps[0] = "SAVE_VAULT";
+                out_plan.plan_steps.clear();
+                out_plan.plan_steps.push_back("SAVE_VAULT");
             }
         }
         
@@ -140,16 +142,16 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "Rules: "
         "1. ALARM: 'SET_ALARM'. "
         "2. CALENDAR: 'ADD_EVENT', 'READ_CALENDAR'. "
-        "3. VAULT/FACT: ONLY use if saving/retrieving personal data. "
-        "4. FALLBACK: For general knowledge, definitions, explanations, or essays, set intent to 'fallback_chat'. "
-        "5. MAP: 'GET_LOCATION' then 'OPEN_MAP'. "
-        "6. SMS: 'GET_LOCATION' then 'SEND_SMS'. "
-        "7. SENSOR: 'ANALYZE_VIBRATION'. "
-        "8. FILES: 'FILE_SEARCH'. "
+        "3. VAULT: 'SAVE_VAULT', 'LOOKUP_VAULT'. For sensitive data. "
+        "4. FACT: 'SAVE_FACT', 'LOOKUP_FACT'. For personal facts. "
+        "5. FALLBACK: For general chat/essays, use 'fallback_chat'. "
+        "6. MAP: 'GET_LOCATION', 'OPEN_MAP'. "
+        "7. SMS: 'GET_LOCATION', 'SEND_SMS'. "
+        "8. SENSOR: 'ANALYZE_VIBRATION'. "
+        "9. FILES: 'FILE_SEARCH'. "
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{...}} "
         "Examples: "
-        "User: 'သစ္စာ ၄ပါး ရှင်းပြပါ' -> {\"intent\":\"fallback_chat\",\"plan\":[],\"parameters\":{}} "
-        "User: 'Resonance ဆိုတာ ဘာလဲ' -> {\"intent\":\"fallback_chat\",\"plan\":[],\"parameters\":{}} "
+        "User: 'ကားနံပါတ် 123 vault ထဲသိမ်းပါ' -> {\"intent\":\"SAVE_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"ကားနံပါတ်\",\"vault_content\":\"123\"}} "
         "User: 'Toyota Wish car plate' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"LOOKUP_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish\",\"attribute\":\"license plate\"}} "
         + lessons_context;
 
