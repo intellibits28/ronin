@@ -81,12 +81,18 @@ bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
             }
         }
 
-        // Force SAVE_FACT if user explicitly asks to save/remember
-        if (lower_query.find("မှတ်ထား") != std::string::npos || lower_query.find("save") != std::string::npos || lower_query.find("store") != std::string::npos) {
+        // Force SAVE_FACT or SAVE_VAULT if user explicitly asks to save/remember
+        if (lower_query.find("မှတ်ထား") != std::string::npos || lower_query.find("သိမ်းထား") != std::string::npos || 
+            lower_query.find("save") != std::string::npos || lower_query.find("store") != std::string::npos) {
+            
             if (out_plan.intent_name == "LOOKUP_FACT" || out_plan.intent_name == "QUERY_FACT") {
                 LOGW("RoninPlanner", "v1.6 Hardening: Overriding Hallucinated LOOKUP intent to SAVE for memory query.");
                 out_plan.intent_name = "SAVE_FACT";
                 if (out_plan.plan_steps.size() > 0) out_plan.plan_steps[0] = "SAVE_FACT";
+            } else if (out_plan.intent_name == "LOOKUP_VAULT" || out_plan.intent_name == "QUERY_VAULT") {
+                LOGW("RoninPlanner", "v1.6 Hardening: Overriding Hallucinated LOOKUP_VAULT intent to SAVE_VAULT for vault query.");
+                out_plan.intent_name = "SAVE_VAULT";
+                if (out_plan.plan_steps.size() > 0) out_plan.plan_steps[0] = "SAVE_VAULT";
             }
         }
         
@@ -136,6 +142,10 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "2. CALENDAR: 'ADD_EVENT', 'READ_CALENDAR'. "
         "3. VAULT/FACT: ONLY use if saving/retrieving personal data. "
         "4. FALLBACK: For general knowledge, definitions, explanations, or essays, set intent to 'fallback_chat'. "
+        "5. MAP: 'GET_LOCATION' then 'OPEN_MAP'. "
+        "6. SMS: 'GET_LOCATION' then 'SEND_SMS'. "
+        "7. SENSOR: 'ANALYZE_VIBRATION'. "
+        "8. FILES: 'FILE_SEARCH'. "
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{...}} "
         "Examples: "
         "User: 'သစ္စာ ၄ပါး ရှင်းပြပါ' -> {\"intent\":\"fallback_chat\",\"plan\":[],\"parameters\":{}} "
