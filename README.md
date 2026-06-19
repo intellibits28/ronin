@@ -4,6 +4,8 @@ Ronin is a mobile AI runtime for Android with a C++20 native kernel, Kotlin/JNI 
 
 The repository contains both the Android application and the native runtime it loads. The current implementation is best read as a native cognitive kernel plus an Android shell that provides UI, permissions, hardware access, cloud provider configuration, and an isolated inference worker process.
 
+This project is currently developed from Termux/Codex CLI on Android. Full host and APK validation is expected to run in GitHub Actions.
+
 ## Current Architecture
 
 At runtime the Android app initializes the native kernel through `NativeEngine`, then binds an `InferenceService` running in the `:inference_core` process. User input flows from Kotlin into JNI, through the native intent and graph layers, and either dispatches a deterministic skill or asks the LiteRT-LM reasoning spine for planning or response generation.
@@ -62,7 +64,7 @@ The codebase currently includes:
 - Sensor sample ingestion and native DSP summary generation.
 - Runtime health features such as cancellation, safe mode hooks, memory pressure handling, checkpoint storage, telemetry, speculative graph execution, and self-healing controllers.
 
-Some design documents describe older or aspirational architecture details. The Android manifest and current Kotlin code use a separate `:inference_core` service for LiteRT-LM, while several older docs still discuss a single-process direct-callback design. Treat the source code as authoritative for current behavior.
+Some legacy design documents described older architecture details. Those files are archived under `old_logs_and_context/`. Treat `docs/ARCHITECTURE_CURRENT.md`, `docs/TECHNICAL_SPECS.md`, and the source code as authoritative for current behavior.
 
 ## Build Requirements
 
@@ -82,6 +84,8 @@ Android development:
 - arm64-v8a device or emulator for the Android native build
 
 The Android app depends on LiteRT-LM 0.12.0 and builds `libronin_kernel.so` from the repository root `CMakeLists.txt`.
+
+Local Termux development does not need to run every build command before each commit. Use the commands below when the required tools are available locally; otherwise rely on `.github/workflows/build.yml`.
 
 ## Build And Test
 
@@ -143,16 +147,27 @@ Useful in-app slash commands include `/status`, `/reset`, `/model`, `/skills`, a
 
 ## Design Documents
 
-The project docs capture both implemented subsystems and architecture direction:
+Current source-of-truth docs:
 
-- `docs/MANIFEST.md`: project goals, stack, and repository mapping.
-- `docs/TECHNICAL_SPECS.md`: platform constraints and historical architecture notes.
+- `docs/ARCHITECTURE_CURRENT.md`: active process model, request flow, inference flow, ownership, and CI model.
+- `docs/MANIFEST.md`: current project goals, stack, repository mapping, and engineering priorities.
+- `docs/TECHNICAL_SPECS.md`: current native, Android, inference, persistence, capability, and CI specs.
+- `docs/MEMORY_MODEL_V2.md`: current SQLite memory schema and migration targets.
+- `docs/IMPLEMENTATION_IMPROVEMENT_PLAN.md`: staged plan for JNI split, runtime context, migrations, typed bridge results, policy, and observability.
+
+Design and roadmap context:
+
 - `docs/BLUEPRINT_V1_3.md`: cognitive loop, memory tiers, belief state, reflection, and graph reasoning model.
-- `docs/MEMORY_MODEL_V2.md`: SQLite/FTS5 memory model and Myanmar lexical search strategy.
 - `docs/SENSOR_DSP_V1.md`: event-driven sensor DSP and tool-calling contract.
 - `docs/EVOLUTION_V1_6.md`: behavioral evolution, semantic failure, reflection, and macro-skill roadmap.
 - `docs/BETA_TESTING.md`: APK/model setup and beta usage notes.
-- `docs/HARDENED_ARCH_V3.pdf`: hardened architecture blueprint.
+
+Legacy context that should not be treated as current implementation:
+
+- `old_logs_and_context/MANIFEST_legacy.md`
+- `old_logs_and_context/TECHNICAL_SPECS_v3_legacy.md`
+- `old_logs_and_context/MEMORY_MODEL_V2_legacy.md`
+- `old_logs_and_context/HARDENED_ARCH_V3_legacy.pdf`
 
 ## Development Notes
 

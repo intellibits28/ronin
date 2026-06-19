@@ -1,109 +1,141 @@
-# Ronin Memory Model v2.1 
-*(Revised for Single Gemma 4 E2B-it Architecture)*
+# Current Memory Model
 
-## 1. Architectural Overview & Philosophy
+This document replaces the legacy `memories`/`memories_fts` memory model description. The old document is archived at `old_logs_and_context/MEMORY_MODEL_V2_legacy.md`.
 
-The Ronin Memory Model operates on a **Single Gemma 4 (E2B-it) Architecture**. 
-* **Core Philosophy:** "Derive More, Store Less." 
-* **Deprecation Notice:** The Multilingual-E5-Small embedding model and its associated Vector DB architecture have been completely removed.
-* **Storage Strategy:** All representations of `embedding_vector` (BLOB) and `translated_text_en` (TEXT) are permanently eliminated.
-* **Search Strategy:** Ronin relies exclusively on ultra-fast, lexical **SQLite FTS5 Search** focusing solely on Myanmar word segmentation strings (`segmented_text_mm`), targeting **0ms search latency** on mobile hardware.
+## Overview
 
----
+Ronin uses local SQLite as the authoritative long-term memory store. The current implementation is lexical-first: it uses direct structured lookup for facts and FTS5 search for notes, episodes, and files. Myanmar segmentation support is provided by the native `MyanmarSegmenter`, but the current database schema is organized by memory tier rather than a single `memories` table.
 
-## ⚠️ UPGRADE NOTICE (v10.0 Hardened)
-As of June 2026, this memory model is integrated into the broader **Ronin Cognitive Systems Architecture**. 
-For the expanded tiering logic (NOTE, FACT, VAULT) and Bayesian reasoning integration, please refer to:
-👉 **[Ronin_Cognitive_Systems_Blueprint_v1_0.md](./Ronin_Cognitive_Systems_Blueprint_v1_0.md)**
+## Database Owner
 
----
+Native implementation:
 
-## 2. Core SQLite Schema (E5-Free & State-Aware)
+- `include/long_term_memory.h`
+- `src/long_term_memory.cpp`
 
-The schema is optimized for internal rowid mapping and cognitive state management.
+Runtime initialization:
 
-### Base Table: `memories`
+- `src/ronin_jni.cpp` creates `LongTermMemory(base_path + "/ronin_cognitive.db")`.
+- `LongTermMemory::initSchema()` creates the active schema.
+
+## Active Tables
+
+Current schema:
+
 ```sql
-CREATE TABLE IF NOT EXISTS memories (
+CREATE TABLE IF NOT EXISTS notes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    raw_text_mm TEXT NOT NULL,
-    segmented_text_mm TEXT NOT NULL,
-    state_enum INTEGER DEFAULT 0, -- 0:Active, 1:Cold, 2:Archived, 3:Forgotten, 4:Tombstoned
-    timestamp INTEGER NOT NULL,
-    source TEXT DEFAULT 'user'
+    title TEXT,
+    content TEXT,
+    tags TEXT,
+    created_at INTEGER,
+    updated_at INTEGER
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts
+USING fts5(title, content, content='notes', content_rowid='id');
+
+CREATE TABLE IF NOT EXISTS facts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity TEXT,
+    attribute TEXT,
+    value TEXT,
+    source_type INTEGER DEFAULT 0,
+    confidence REAL DEFAULT 1.0,
+    last_verified_at INTEGER,
+    created_at INTEGER,
+    updated_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_facts_lookup ON facts(entity, attribute);
+
+CREATE TABLE IF NOT EXISTS vault (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    encrypted_blob TEXT,
+    created_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS episodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp INTEGER,
+    intent TEXT,
+    goal_id TEXT,
+    node_id TEXT,
+    summary TEXT,
+    payload_json TEXT,
+    outcome_enum INTEGER,
+    latency_ms INTEGER,
+    confidence_before REAL,
+    confidence_after REAL
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts
+USING fts5(summary, content='episodes', content_rowid='id');
+
+CREATE TABLE IF NOT EXISTS predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp INTEGER,
+    goal_id TEXT,
+    node_id TEXT,
+    predicted_json TEXT,
+    actual_json TEXT,
+    error_score REAL
+);
+
+CREATE TABLE IF NOT EXISTS chat_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT,
+    content TEXT,
+    timestamp INTEGER
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS file_index
+USING fts5(name, path, extension, last_modified UNINDEXED);
+
+CREATE TABLE IF NOT EXISTS audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT,
+    details TEXT,
+    timestamp INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS failures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id TEXT,
+    failure_type INTEGER,
+    timestamp INTEGER,
+    retry_count INTEGER,
+    resolution TEXT
 );
 ```
 
-### FTS5 Virtual Table: `memories_fts`
-The FTS5 table uses `content_rowid='id'` to map directly to the primary key of the `memories` table for sub-millisecond keyword and BM25 queries.
-```sql
-CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-    segmented_text_mm,
-    content='memories',
-    content_rowid='id'
-);
-```
+## Current Memory APIs
 
----
+Exposed through JNI and Kotlin `NativeEngine`:
 
-## 3. Triggers & FTS5 Ghost Data Prevention
+- `storeNote`, `searchNotes`
+- `storeFact`, `lookupFact`
+- `storeVault`, `lookupVault`
+- `storePrediction`
+- `searchEpisodes`
+- `indexFiles`, `searchFiles`
+- `getChatHistory`, `clearHistory` through native command/runtime paths
+- failure storage and failure lookup for runtime healing
 
-To ensure absolute integrity and prevent "Ghost Data" in the FTS5 index during updates, explicit triggers are defined using the `id` identifier.
+## Current Gaps
 
-### The UPDATE Trigger (`memories_au`)
-When a memory state or text is updated, we perform an explicit `delete` followed by a fresh `insert` into the FTS5 index.
+- There is no explicit `schema_version` table.
+- FTS triggers currently cover insert synchronization for notes and episodes, but update/delete trigger coverage should be expanded and tested.
+- Legacy table cleanup exists for old `facts.key` shape, but migration behavior is not generalized.
+- Vault encryption is provided by Android-side `SecurityProvider`; native storage currently stores encrypted blobs and does not enforce biometric policy itself.
+- Memory tier policy exists across code paths but is not yet centralized as one classifier/policy module.
 
-```sql
-CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories 
-BEGIN
-    -- 1. Explicitly DELETE old content from FTS5 index
-    INSERT INTO memories_fts (memories_fts, id, segmented_text_mm) 
-        VALUES ('delete', old.id, old.segmented_text_mm);
-        
-    -- 2. Explicitly INSERT new content into FTS5 index
-    INSERT INTO memories_fts (id, segmented_text_mm) 
-        VALUES (new.id, new.segmented_text_mm);
-END;
-```
+## Improvement Targets
 
-### Supporting Triggers (AI/AD)
-```sql
--- Sync on INSERT
-CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-  INSERT INTO memories_fts(id, segmented_text_mm) VALUES (new.id, new.segmented_text_mm);
-END;
-
--- Sync on DELETE
-CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-  INSERT INTO memories_fts(memories_fts, id, segmented_text_mm) VALUES('delete', old.id, old.segmented_text_mm);
-END;
-```
-
----
-
-## 4. Context-Safe Resurrection Logic (Token Budget)
-
-When retrieving "Forgotten Memories" (State 3) via BM25, strict context bounds are enforced for Gemma 4.
-
-* **Top-K Chunk Limit:** Return no more than **Top-K = 3** chunks per search.
-* **Max Reflection Token Budget:** Total context injected from memories must NOT exceed **800 Tokens**.
-* **State Filtering:** Search queries should ideally filter by `state_enum` to prioritize Active (0) or Cold (1) memories before digging into Forgotten (3) ones.
-
----
-
-## 5. Hardware Guard-rails: Per-Token Cancellation
-
-To ensure system responsiveness, foreground user requests must be able to interrupt background reflection tasks instantly.
-
-* **Atomic Flag Check:** The Native C++ Inference Engine MUST check a `std::atomic<bool>` cancellation flag at the start of every token generation step.
-* **Latency Bound:** Background inference MUST abort within **< 50ms** upon receiving a new User Message.
-* **Memory Ordering:** Use `std::memory_order_relaxed` for the frequent per-token checks, and `std::memory_order_acquire/release` for the final signal propagation.
-
----
-
-## 6. Tool Calling Bounds
-
-Gemma 4 is authorized to use Tool Calling for memory management, with a strict safety cap.
-
-* **Tool Depth Restriction:** `MAX_TOOL_CALL_DEPTH` is hardcoded to **1**.
-* **Infinite Loop Prevention:** If the model attempts to call a tool recursively or chain multiple tools without a terminal response, the Intent Engine will force a break and return the current state to the user.
+1. Add a `schema_version` table and incremental migrations.
+2. Add migration tests for legacy facts and FTS rebuild behavior.
+3. Add FTS update/delete triggers for notes and episodes.
+4. Define one memory classification entry point for NOTE, FACT, VAULT, EPISODE, and PREDICTION.
+5. Keep Myanmar segmentation dictionary loading explicit and testable.
+6. Ensure vault lookup and sensitive fact access route through centralized policy and audit.

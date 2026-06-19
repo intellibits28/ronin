@@ -46,6 +46,9 @@ build_check/
 libllm_inference_engine_jni.so
 repomix-output.md
 review.md
-old_logs_and_context/
+old_logs_and_context/*
+!old_logs_and_context/
+!old_logs_and_context/*_legacy.md
+!old_logs_and_context/*_legacy.pdf
 Screenshot_*.jpg
 ronin_advice.txt

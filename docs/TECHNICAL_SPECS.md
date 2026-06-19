@@ -1,58 +1,109 @@
-# Technical Specifications: Mobile AI Cognitive Kernel (Ronin) v3.0
+# Current Technical Specifications
 
-## 1. Architecture Overview: Hardened Unified Infrastructure
-The "Ronin" v3.0 architecture implements a hardened, single-process autonomous AI assistant infrastructure. The core cognitive engine—including the Lexical Intent Spine, Memory Manager, and Native Direct Bridge—is implemented in **C++20**. The Android UI, JNI Direct Callbacks, and LiteRT-LM reasoning spine are implemented in **Kotlin/JNI**.
+This document describes the current implementation. Legacy specs that described a single-process direct-JNI inference model are archived under `old_logs_and_context/`.
 
-Key Components:
- * **Kernel Core (C++20):** Manages high-level orchestration, intent routing, and long-term memory.
- * **Lexical Intent Spine:** Strict token-based hardware routing using SQLite FTS5 for zero-latency capability selection.
- * **Native Direct Bridge:** Eliminates AIDL/IPC overhead by utilizing direct JNI callbacks from the Inference Spine to the UI flow within a single process.
- * **Neural Spine (LiteRT-LM):** High-performance Gemma 4 inference optimized for Snapdragon 778G+ with prefill stability hardening.
- * **RAM Guard:** Real-time LMK-aware KV-cache pruning triggered at 0.8GB free RAM threshold.
+## Runtime Architecture
 
-## 2. Logic & Algorithms
-### Lexical Intent Matching
-The core hardware matching is performed via exact token comparison.
- * **Logic:** Input is tokenized and compared against a defined `capabilities.json` registry.
- * **Hardening:** Requires both a **Subject** and an **Action** match to trigger hardware nodes (e.g., "Location" + "Show"), preventing general reasoning from misrouting.
+Ronin currently uses a hybrid native/Android runtime:
 
-### Context Management (Hardening v3.0)
- * **Instruction Isolation:** System prompts are injected ONCE at the start of a conversation to maximize KV cache efficiency.
- * **Thinking Filter:** Model reasoning tokens (`[THINK]`) are parsed in the UI for display but stripped via regex before SQLite persistence to prevent context poisoning.
- * **Token Capping:** `maxNumTokens` is hard-set to **512** to align with SD778G+ prefill buffer limits.
+- C++20 native kernel built as `ronin_core`.
+- Android JNI shared library built as `libronin_kernel.so`.
+- Kotlin `NativeEngine` as the app-facing JNI facade.
+- Kotlin `InferenceService` in process `:inference_core`.
+- AIDL contracts for inference calls and token streaming.
+- SQLite databases under the app files directory.
 
-## 3. Data Structures
-### Lexical Persistence (SQLite FTS5)
- * **FTS5 Virtual Tables:** Used for high-speed keyword retrieval in `ronin_memory.db`.
- * **Chat History:** Cleaned (thinking-free) turns stored in `ronin_cognitive.db` for turn-based context reconstruction.
+The active inference design is **isolated service + AIDL streaming**, not single-process direct inference callbacks.
 
-### JNI Direct Callback Table
-Designed for zero-lag token streaming:
- * **pushTokenToUI:** Direct JNI jump from background inference thread to UI SharedFlow.
- * **runNeuralReasoning:** Synchronous kernel-to-UI bridge for multi-step tool calls.
+## Native Core
 
-## 4. Platform Constraints
-### Mobile Hardware targeting
- * **Architecture:** Snapdragon 778G / Cortex-A78.
- * **Memory Guard:** Dynamic KV-cache reset triggered if `OS_FREE_RAM < 800MB`.
- * **Thermal Guard:** Scaling to scalar paths or cloud fallback if `TEMP > 42°C`.
+The native core is compiled from `RONIN_CORE_SOURCES` in `CMakeLists.txt`.
 
-### Operating System (Android)
- * **Single Process Mandate:** InferenceService must share the Main process to ensure JNI Direct Bridge reliability.
- * **Storage:** Mandatory filename resolution and compiled-cache purging to prevent storage bloat (>1GB).
+Major subsystems:
 
-## 5. Implementation Roadmap (Hardened v3.0)
-### JNI Direct Bridge (src/ronin_jni.cpp)
- 1. Implement `native_pushTokenToKernel` for direct token ingestion.
- 2. Ensure thread-safe GlobalRef for `MainActivity` instance.
- 3. Use `ScopedJniEnv` for all worker-to-UI callbacks.
+- `RoninKernel`: top-level observe/orient/decide/act loop and world-state state hooks.
+- `IntentEngine`: command handling, intent classification, planner wiring, skill registry, and skill execution.
+- `LongTermMemory`: SQLite schema creation, memory APIs, FTS5 search, chat history, failure records, and file indexing.
+- `GraphExecutor`: capability graph execution, Thompson-sampling outcome updates, episode and prediction recording.
+- `AgentScheduler`: priority queue for multi-step agent sessions.
+- `HardwareBridge`: C++ to Kotlin callback surface for Android-only capabilities and inference.
+- `ResonanceAnalyzer`: native DSP summary generation for batched sensor samples.
+- Execution governance: `JniExecutionGateway`, checkpoints, failure telemetry, adaptive budgets, speculative execution, and runtime healing.
 
-### Lexical Intent Spine (src/intent_engine.cpp)
- 1. Transition from fuzzy substring search to exact token-set comparison.
- 2. Implement dual-condition Subject+Action check.
- 3. Default to `ChatSkill (ID 1)` for all non-hardware queries.
+## Android Layer
 
-### RAM Guard & Stability (InferenceService.kt)
- 1. Set `maxNumTokens = 512` in `EngineConfig`.
- 2. Monitor `getAvailableRAM()` before every inference.
- 3. Execute `resetConversation()` if RAM pressure is critical.
+Key Android classes:
+
+- `MainActivity.kt`: Compose UI and high-level interaction surface.
+- `NativeEngine.kt`: JNI facade, service binding, cloud inference, capability callbacks, memory APIs, and native lifecycle.
+- `InferenceService.kt`: foreground service running in `:inference_core`; owns LiteRT-LM engine/conversation lifecycle.
+- `SecurityProvider.kt`: Android-side secret encryption/decryption provider.
+- `LocationDriver.kt`, `SmsDriver.kt`, `SensorDriver.kt`, `FileSearchNode.kt`: Android capability implementations and adapters.
+
+The app manifest declares `InferenceService` with:
+
+```xml
+android:process=":inference_core"
+```
+
+## Inference
+
+Current local inference path:
+
+1. User selects/imports a `.litertlm` model.
+2. `NativeEngine.loadModel(path)` waits for `InferenceService`.
+3. `InferenceService.loadModel(path)` creates LiteRT-LM `EngineConfig`.
+4. Current source sets `maxNumTokens = 1536`.
+5. `NativeEngine.notifyModelLoadedNative(path)` notifies native state after successful worker hydration.
+6. Native planner or chat skill calls back into Kotlin through `runNeuralReasoning`.
+7. `NativeEngine` streams over AIDL and forwards token fragments to UI flow.
+
+The service includes RAM-pressure guards, conversation reset, model auto-rehydration after unstable failures, and summarization/reset support.
+
+## Persistence
+
+Native persistence is SQLite-backed. CMake fetches SQLite amalgamation and compiles it with `SQLITE_ENABLE_FTS5=1`.
+
+Current native memory database schema is defined in `LongTermMemory::initSchema()` and includes:
+
+- `notes` and `notes_fts`
+- `facts`
+- `vault`
+- `episodes` and `episodes_fts`
+- `predictions`
+- `chat_history`
+- `file_index`
+- `audit`
+- `failures`
+
+Current gap: schema changes are not yet managed through an explicit `schema_version` migration system.
+
+## Capabilities And Safety
+
+Capabilities are split between:
+
+- Native skills in `src/capabilities/`.
+- Android drivers/callbacks in Kotlin.
+- Capability graph nodes persisted through `GraphStorage`.
+- Human-in-the-loop confirmation for sensitive planner actions such as SMS and calendar operations.
+
+Current gap: sensitive capability policy is distributed across JNI, planner logic, manifests, and Android permission handling. It should be centralized in a policy engine.
+
+## Build And CI
+
+The project is developed on Termux, but full validation should run in GitHub Actions.
+
+Primary workflow:
+
+- `.github/workflows/build.yml`
+
+The workflow runs host tests, then builds the Android debug APK and uploads it as an artifact. Local Termux work should prioritize small edits, static review, and focused commands; CI should be treated as the build authority.
+
+## Known Technical Debt
+
+- `src/ronin_jni.cpp` is too broad and should be split into focused binding files.
+- Native runtime ownership relies on process-global pointers.
+- SQLite migration strategy is ad hoc.
+- Several bridge APIs return plain strings for typed failures.
+- Capability policy and audit rules are not centralized.
+- Structured observability is incomplete for multi-step agent sessions.
