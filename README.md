@@ -1,85 +1,168 @@
-ok# Ronin Kernel: Mobile AI Runtime Spine
+# Ronin Kernel
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/intellibits28/ronin/build.yml?branch=main&style=flat-square)
-![Version](https://img.shields.io/badge/version-4.7.27.05.27--HARDENED--v4.0-blue?style=flat-square)
-![Platform](https://img.shields.io/badge/platform-Android%20(SD778G%2B)-green?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
+Ronin is a mobile AI runtime for Android with a C++20 native kernel, Kotlin/JNI integration, on-device LiteRT-LM inference, local SQLite memory, and hardware/tool capabilities. The project is aimed at sovereign mobile agent behavior: observe device state, classify intent, retrieve memory, plan actions, execute capabilities, record outcomes, and adapt future routing through feedback.
 
-**Ronin Kernel** is a sovereign, modular AI agent runtime optimized for Android (Snapdragon 778G+ / Mid-range). It utilizes the **Hardened v4.0 Production Architecture**, featuring dual-process isolation, OkHttp networking, and a 23k+ word Trie-based Myanmar segmenter for superior edge intelligence.
+The repository contains both the Android application and the native runtime it loads. The current implementation is best read as a native cognitive kernel plus an Android shell that provides UI, permissions, hardware access, cloud provider configuration, and an isolated inference worker process.
 
----
+## Current Architecture
 
-## 🧪 BETA TESTING IS ACTIVE!
-We are currently in a public Beta phase. If you want to try Ronin on your device, please follow our:
-👉 **[BETA TESTING GUIDE](docs/BETA_TESTING.md)** 👈
+At runtime the Android app initializes the native kernel through `NativeEngine`, then binds an `InferenceService` running in the `:inference_core` process. User input flows from Kotlin into JNI, through the native intent and graph layers, and either dispatches a deterministic skill or asks the LiteRT-LM reasoning spine for planning or response generation.
 
----
+Key runtime pieces:
 
-## 🏗️ Architecture & Blueprints
-Explore the detailed technical foundations of Ronin:
-*   **[Core Cognitive Blueprint v1.3](docs/BLUEPRINT_V1_3.md)**
-*   **[Hardened Architecture Blueprint](docs/HARDENED_ARCH_V3.pdf)**
-*   **[Memory Model Spec v2.1](docs/MEMORY_MODEL_V2.md)**
-*   **[Sensor DSP Tool Spec v1.0](docs/SENSOR_DSP_V1.md)**
-*   **[Technical Specifications](docs/TECHNICAL_SPECS.md)**
-*   **[Project Manifest](docs/MANIFEST.md)**
+- Native kernel: `ronin_core`, built from `src/` and exposed to Android through `src/ronin_jni.cpp`.
+- Android bridge: `NativeEngine.kt`, which owns JNI calls, capability callbacks, cloud inference, model loading coordination, and service binding.
+- Inference worker: `InferenceService.kt`, a foreground Android service in `:inference_core` using `com.google.ai.edge.litertlm:litertlm-android:0.12.0`.
+- Persistence: SQLite with FTS5 for notes, facts, vault records, episodes, predictions, failures, chat history, graph state, and file indexes.
+- Capability execution: C++ skill dispatch plus Kotlin drivers for Android-only actions such as location, SMS, contacts, calendar, files, sensors, and UI-mediated human confirmation.
+- Learning and recovery: graph execution, Thompson sampling, failure telemetry, checkpoints, adaptive budgets, speculative execution, and runtime healing controllers.
 
----
+## Source Map
 
-## 📖 Description
-Ronin Kernel v4.0 is optimized for **Mid-range Stability** and **Myanmar Linguistic Precision**. It addresses critical limitations in token handling and UI responsiveness.
+Native source is organized around the kernel subsystems:
 
-### Key Features (Hardened v4.0)
-*   **Dual-Process Isolation:** Inference runs in a separate `:inference_core` process, ensuring the UI stays buttery smooth even under heavy load.
-*   **1024 Token Default:** Optimized for Myanmar UTF-8 text. Slider allows up to **2048 tokens** for extended reasoning.
-*   **OkHttp Networking:** Robust cloud provider integration replacing legacy stacks.
-*   **Trie-based BWS:** Pure C++ segmenter with 23k+ words for precise memory recall.
-*   **Reactive Gemma 4 Streaming:** Zero-lag token rendering via reactive state.
+| Path | Purpose |
+| --- | --- |
+| `src/ronin_kernel.cpp`, `include/ronin_kernel.hpp` | Top-level observe/orient/decide/act kernel loop and world-state hooks. |
+| `src/ronin_jni.cpp`, `src/jni_utils.cpp`, `src/jni_gateway.cpp` | JNI registration, Kotlin bridge methods, execution governance, cancellation, memory APIs, sensor APIs, and model notifications. |
+| `src/intent_engine.cpp`, `include/intent_engine.h` | Intent classification, slash commands, task planning, skill registry, cloud/offline metadata, and skill execution. |
+| `src/agent_scheduler.cpp`, `src/agent_session.cpp`, `include/agent_scheduler.h` | Priority-based background execution of multi-step agent sessions. |
+| `src/graph_executor.cpp`, `src/capability_graph.cpp`, `src/graph_storage.cpp` | Capability graph planning, Thompson-sampling route selection, graph persistence, and episode/prediction recording. |
+| `src/long_term_memory.cpp`, `src/memory_manager.cpp` | SQLite-backed notes, facts, vault entries, episodes, predictions, files, failures, chat history, memory pressure, and maintenance. |
+| `src/capabilities/` | Native skill implementations and Android hardware bridge nodes. |
+| `src/models/` | Native inference abstraction and model hydration support used by the planner/bridge. |
+| `src/dsp/resonance_analyzer.cpp` | Batched sensor DSP analysis using PFFFT. |
+| `src/*healing*`, `src/*budget*`, `src/*checkpoint*`, `src/failure_telemetry_bus.cpp` | Governance, checkpointing, retry, telemetry, and recovery infrastructure. |
+| `include/` | Public/native headers mirroring the source modules. |
 
----
+Android source is under `android/app/src/main/`:
 
-## 🏗️ Hardened Architecture
+| Path | Purpose |
+| --- | --- |
+| `kotlin/com/ronin/kernel/MainActivity.kt` | Compose UI and app-level interaction surface. |
+| `kotlin/com/ronin/kernel/NativeEngine.kt` | Main Android facade for JNI, AIDL service binding, cloud requests, memory/search APIs, and capability callbacks. |
+| `kotlin/com/ronin/kernel/InferenceService.kt` | Isolated LiteRT-LM worker service with streaming AIDL callbacks, model hydration, RAM guard, KV-cache reset, and conversation summarization. |
+| `aidl/com/ronin/kernel/` | `IInferenceService` and `IInferenceCallback` contracts for cross-process inference calls. |
+| `kotlin/com/ronin/kernel/*Driver.kt` | Android capability drivers for location, SMS, sensors, security, and file/search integration. |
+| `assets/capabilities.json`, `assets/providers.json`, `assets/myanmar_dictionary.txt` | Packaged capability/provider config and Myanmar segmentation dictionary. |
 
-Ronin Kernel utilizes a **Unified Single-Process Model**:
-*   **Kernel Core (C++20):** Manages Intent Routing, Memory Database, and Cognitive Orchestration.
-*   **Neural Spine (Kotlin/JNI):** Leverages **LiteRT-LM 0.12.0** for on-device Gemma 4 inference with Direct JNI callback streaming.
-*   **Persistence Layer:** SQLite FTS5 for keyword retrieval and encrypted Preferences for secure API keys.
+Tests live in `tests/` for native host checks and `android/app/src/test/` for JVM-side Android tests.
 
----
+## Implemented Capabilities
 
-## 📄 API Documentation
+The codebase currently includes:
 
-### JNI Bridge (`NativeEngine.kt`)
-| Method | Description | Return |
-| :--- | :--- | :--- |
-| `initializeAsync()` | Loads native libraries and initializes the Kernel Core. | `Unit` |
-| `processInputAsync(input)` | Executes the cognitive loop (Intent -> Local LM -> UI). | `String` |
-| `loadModel(path)` | Hydrates the Gemma 4 reasoning spine using LiteRT-LM. | `Boolean` |
-| `performCloudInferenceAsync()` | Executes secure off-device reasoning on Background IO thread. | `String` |
-| `fetchAvailableModels()` | Dynamically fetches Cloud reasoning options via API. | `FetchResult` |
+- On-device Gemma/LiteRT-LM model loading from `.litertlm` files through the isolated inference service.
+- Streaming model output over AIDL back to the UI-facing `NativeEngine`.
+- Cloud fallback/provider requests through OkHttp using provider configuration JSON.
+- Tiered long-term memory APIs for notes, facts, vault data, episodes, predictions, failures, files, and chat history.
+- SQLite FTS5 lexical search with Myanmar segmentation support.
+- Agent planning and multi-step session scheduling with human-in-the-loop gates for sensitive actions.
+- Device world-state injection for battery, RAM, GPS, network, charging, and time-of-day context.
+- Sensor sample ingestion and native DSP summary generation.
+- Runtime health features such as cancellation, safe mode hooks, memory pressure handling, checkpoint storage, telemetry, speculative graph execution, and self-healing controllers.
 
----
+Some design documents describe older or aspirational architecture details. The Android manifest and current Kotlin code use a separate `:inference_core` service for LiteRT-LM, while several older docs still discuss a single-process direct-callback design. Treat the source code as authoritative for current behavior.
 
-## 🧪 Testing & Diagnostics
+## Build Requirements
 
-### Real-time Logs
-Monitor kernel decision-making via the in-app **Reasoning Console** (Cyan logs) or Logcat:
-`adb logcat -s RoninKernel_Native:V RoninKernel_Worker:V`
+Host/native development:
 
-### Host-side Verification
+- CMake 3.22.1 or newer
+- C++20 compiler
+- Network access during first CMake configure to fetch SQLite amalgamation, FlatBuffers, nlohmann/json, and GoogleTest
+
+Android development:
+
+- Android Gradle Plugin 8.4.2
+- Kotlin 2.3.21
+- JDK 17
+- Android SDK 34
+- NDK/CMake integration
+- arm64-v8a device or emulator for the Android native build
+
+The Android app depends on LiteRT-LM 0.12.0 and builds `libronin_kernel.so` from the repository root `CMakeLists.txt`.
+
+## Build And Test
+
+Configure and build native host targets:
+
 ```bash
-mkdir build_host && cd build_host
-cmake -DCMAKE_BUILD_TYPE=Debug ..
-make ronin_atomic_test && ./ronin_integration_test
+cmake -S . -B build_host -DCMAKE_BUILD_TYPE=Debug
+cmake --build build_host
 ```
 
----
+Run registered native tests:
 
-## 📜 License
-Ronin Kernel is released under the **MIT License**. See [LICENSE](LICENSE) for details.
+```bash
+cd build_host
+ctest --output-on-failure
+```
 
----
+Run the main native test binaries directly:
 
-## 👥 Authors & Acknowledgments
-*   **Architect:** intellibits28, Gemini CLI (Auto-Edit Mode)
-*   **Inspiration:** Ronin Kernel v3.0 Hardened Architecture Blueprint.
+```bash
+cd build_host
+./ronin_atomic_test
+./ronin_integration_test
+./ronin_governance_test
+./ronin_self_healing_test
+./ronin_evolution_test
+./ronin_segmenter_test
+```
+
+Build the Android debug APK:
+
+```bash
+cd android
+gradle assembleDebug
+```
+
+Run Android/JVM tests:
+
+```bash
+cd android
+gradle test
+```
+
+## Runtime Setup
+
+For offline inference, install the APK and import a `.litertlm` model through the app. The beta guide documents the intended flow and model choices:
+
+- `docs/BETA_TESTING.md`
+
+Cloud inference requires provider configuration and API keys managed through the Android app. Do not commit API keys, model files, logs, or device-specific secrets.
+
+Useful logcat filters:
+
+```bash
+adb logcat -s RoninKernel_Native:V RoninKernel_Worker:V RoninKernel_JNI:V
+```
+
+Useful in-app slash commands include `/status`, `/reset`, `/model`, `/skills`, and `/reflect` where supported by the native command handler.
+
+## Design Documents
+
+The project docs capture both implemented subsystems and architecture direction:
+
+- `docs/MANIFEST.md`: project goals, stack, and repository mapping.
+- `docs/TECHNICAL_SPECS.md`: platform constraints and historical architecture notes.
+- `docs/BLUEPRINT_V1_3.md`: cognitive loop, memory tiers, belief state, reflection, and graph reasoning model.
+- `docs/MEMORY_MODEL_V2.md`: SQLite/FTS5 memory model and Myanmar lexical search strategy.
+- `docs/SENSOR_DSP_V1.md`: event-driven sensor DSP and tool-calling contract.
+- `docs/EVOLUTION_V1_6.md`: behavioral evolution, semantic failure, reflection, and macro-skill roadmap.
+- `docs/BETA_TESTING.md`: APK/model setup and beta usage notes.
+- `docs/HARDENED_ARCH_V3.pdf`: hardened architecture blueprint.
+
+## Development Notes
+
+- Keep native module structure mirrored between `src/` and `include/`.
+- Register new native sources in `CMakeLists.txt`.
+- Keep JNI-facing code in `src/ronin_jni.cpp`, `src/jni_utils.cpp`, `src/jni_gateway.cpp`, and the matching Kotlin facade.
+- Keep packaged capability manifests synchronized when behavior changes: `assets/capabilities.json` if present and `android/app/src/main/assets/capabilities.json`.
+- Add host tests under `tests/` and register them in `CMakeLists.txt`.
+- Add Android/JVM tests under `android/app/src/test/kotlin/`.
+
+## License
+
+No license file is currently present in this repository. Add a `LICENSE` file before distributing or accepting external contributions.
