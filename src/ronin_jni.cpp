@@ -22,6 +22,7 @@
 #include "memory_manager.h"
 #include "capabilities/hardware_bridge.h"
 #include "dsp/resonance_analyzer.h"
+#include "jni/ronin_jni_context.h"
 
 #define TAG "RoninKernel_JNI"
 
@@ -36,11 +37,11 @@ using namespace Ronin::Kernel::DSP;
 // --- Global Contexts ---
 static std::shared_ptr<RoninKernel> g_kernel = nullptr;
 static std::shared_ptr<IntentEngine> g_intent_engine = nullptr;
-static std::shared_ptr<LongTermMemory> g_ltm = nullptr;
+std::shared_ptr<LongTermMemory> g_ltm = nullptr;
 static std::shared_ptr<ResonanceAnalyzer> g_resonance_analyzer = nullptr;
 static std::unique_ptr<GraphStorage> g_graph_storage = nullptr;
 static std::unique_ptr<CapabilityGraph> g_cap_graph = nullptr;
-static std::unique_ptr<GraphExecutor> g_graph_executor = nullptr;
+std::unique_ptr<GraphExecutor> g_graph_executor = nullptr;
 static std::unique_ptr<MemoryManager> g_memory_manager = nullptr;
 jobject g_instance = nullptr;
 JavaVM* g_vm = nullptr;
@@ -230,45 +231,6 @@ JNIEXPORT void JNICALL native_cancelExecution(JNIEnv *env, jobject thiz, jstring
 
 JNIEXPORT void JNICALL native_requestCancellation(JNIEnv *env, jobject thiz) { if (g_llm_context.engine) g_llm_context.engine->requestCancellation(); }
 JNIEXPORT void JNICALL native_setInferenceSilence(JNIEnv *env, jobject thiz, jboolean silent) { HardwareBridge::setInferenceSilence(silent == JNI_TRUE); }
-JNIEXPORT jboolean JNICALL native_storeNote(JNIEnv *env, jobject thiz, jstring t, jstring c, jstring tg) { return (g_ltm && g_ltm->storeNote(ConvertJStringToString(env, t), ConvertJStringToString(env, c), ConvertJStringToString(env, tg))) ? JNI_TRUE : JNI_FALSE; }
-JNIEXPORT jboolean JNICALL native_storeFact(JNIEnv *env, jobject thiz, jstring e, jstring a, jstring v) { return (g_ltm && g_ltm->storeFact(ConvertJStringToString(env, e), ConvertJStringToString(env, a), ConvertJStringToString(env, v))) ? JNI_TRUE : JNI_FALSE; }
-JNIEXPORT jstring JNICALL native_lookupFact(JNIEnv *env, jobject thiz, jstring e, jstring a) { return env->NewStringUTF(g_ltm ? g_ltm->lookupFact(ConvertJStringToString(env, e), ConvertJStringToString(env, a)).c_str() : ""); }
-JNIEXPORT jstring JNICALL native_lookupVault(JNIEnv *env, jobject thiz, jstring t) { return env->NewStringUTF(g_ltm ? g_ltm->lookupVault(ConvertJStringToString(env, t)).c_str() : ""); }
-
-JNIEXPORT jobjectArray JNICALL native_searchNotes(JNIEnv *env, jobject thiz, jstring q) {
-    if (!g_ltm) return nullptr;
-    auto res = g_ltm->searchNotes(ConvertJStringToString(env, q));
-    jclass sc = env->FindClass("java/lang/String");
-    jstring empty = env->NewStringUTF("");
-    jobjectArray ja = env->NewObjectArray(res.size(), sc, empty);
-    env->DeleteLocalRef(empty);
-    for (size_t i = 0; i < res.size(); ++i) {
-        jstring item = env->NewStringUTF(res[i].c_str());
-        env->SetObjectArrayElement(ja, i, item);
-        env->DeleteLocalRef(item);
-    }
-    env->DeleteLocalRef(sc);
-    return ja;
-}
-
-JNIEXPORT jobjectArray JNICALL native_searchEpisodes(JNIEnv *env, jobject thiz, jstring q) {
-    if (!g_ltm) return nullptr;
-    auto res = g_ltm->searchEpisodes(ConvertJStringToString(env, q));
-    jclass sc = env->FindClass("java/lang/String");
-    jstring empty = env->NewStringUTF("");
-    jobjectArray ja = env->NewObjectArray(res.size(), sc, empty);
-    env->DeleteLocalRef(empty);
-    for (size_t i = 0; i < res.size(); ++i) {
-        jstring item = env->NewStringUTF(res[i].c_str());
-        env->SetObjectArrayElement(ja, i, item);
-        env->DeleteLocalRef(item);
-    }
-    env->DeleteLocalRef(sc);
-    return ja;
-}
-
-JNIEXPORT jboolean JNICALL native_storeVault(JNIEnv *env, jobject thiz, jstring t, jstring b) { return (g_ltm && g_ltm->storeVault(ConvertJStringToString(env, t), ConvertJStringToString(env, b))) ? JNI_TRUE : JNI_FALSE; }
-JNIEXPORT jboolean JNICALL native_storePrediction(JNIEnv *env, jobject thiz, jstring g, jstring n, jstring p, jstring a, jfloat e) { return (g_ltm && g_ltm->storePrediction(ConvertJStringToString(env, g), ConvertJStringToString(env, n), ConvertJStringToString(env, p), ConvertJStringToString(env, a), e)) ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT void JNICALL native_injectWorldState(JNIEnv *env, jobject thiz, jfloat b, jfloat r, jboolean g, jboolean n, jboolean c, jint h) {
     g_world_state.battery_percent = b;
     g_world_state.ram_available_mb = r;
@@ -281,7 +243,6 @@ JNIEXPORT void JNICALL native_injectWorldState(JNIEnv *env, jobject thiz, jfloat
     if (g_kernel) g_kernel->updateWorldState(g_world_state);
     Execution::AdaptiveBudgetController::getInstance().updateWorldState(g_world_state);
 }
-JNIEXPORT void JNICALL native_applyHumanFeedback(JNIEnv *env, jobject thiz, jstring s, jboolean h) { if (g_graph_executor) g_graph_executor->getReflectionEngine().applyHumanFeedback(ConvertJStringToString(env, s), h == JNI_TRUE); }
 JNIEXPORT jfloat JNICALL native_getFreeRamGB(JNIEnv *env, jobject thiz) { return HardwareBridge::getFreeRamGB(); }
 JNIEXPORT void JNICALL native_shutdownKernel(JNIEnv *env, jobject thiz) {
     if (g_kernel) g_kernel->shutdown();
@@ -303,25 +264,7 @@ JNIEXPORT jboolean JNICALL native_isValidModel(JNIEnv *env, jobject thiz, jstrin
     return (r == 4 && memcmp(h, "TFL3", 4) == 0) || path.find(".litertlm") != std::string::npos;
 }
 
-JNIEXPORT jobjectArray JNICALL native_getChatHistory(JNIEnv *env, jobject thiz, jint l, jint o) {
-    if (!g_ltm) return nullptr;
-    auto h = g_ltm->getHistory(l, o);
-    jclass sc = env->FindClass("java/lang/String");
-    jobjectArray ja = env->NewObjectArray(h.size() * 2, sc, nullptr);
-    for (size_t i = 0; i < h.size(); ++i) {
-        jstring role = env->NewStringUTF(h[i].first.c_str());
-        jstring content = env->NewStringUTF(h[i].second.c_str());
-        env->SetObjectArrayElement(ja, i * 2, role);
-        env->SetObjectArrayElement(ja, i * 2 + 1, content);
-        env->DeleteLocalRef(role);
-        env->DeleteLocalRef(content);
-    }
-    env->DeleteLocalRef(sc);
-    return ja;
-}
-
 JNIEXPORT void JNICALL native_resetContext(JNIEnv *env, jobject thiz) { if (g_kernel) g_kernel->clearSuggestedSubject(); }
-JNIEXPORT jboolean JNICALL native_loadMyanmarDictionary(JNIEnv *env, jobject thiz, jstring p) { return (g_ltm && g_ltm->loadSegmenter(ConvertJStringToString(env, p))) ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT void JNICALL native_reportOutcome(JNIEnv *env, jobject thiz, jint s, jint t, jboolean success, jint r) { if (g_graph_executor) g_graph_executor->reportOutcome(s, t, success == JNI_TRUE, static_cast<RiskLevel>(r)); }
 
 JNIEXPORT void JNICALL native_reportSemanticFailure(JNIEnv *env, jobject thiz, jstring execId, jstring nodeId, jint failureType, jstring details) {
@@ -366,48 +309,12 @@ JNIEXPORT jstring JNICALL native_checkFileAccess(JNIEnv *env, jobject thiz, jstr
 JNIEXPORT void JNICALL native_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) {}
 JNIEXPORT void JNICALL native_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) {}
 
-JNIEXPORT void JNICALL native_indexFiles(JNIEnv *env, jobject thiz, jobjectArray paths, jobjectArray names, jlongArray dates) {
-    if (!g_ltm) return;
-    if (!paths || !names || !dates) return;
-    int len = env->GetArrayLength(paths);
-    if (env->GetArrayLength(names) != len || env->GetArrayLength(dates) != len) return;
-    jlong* dates_ptr = env->GetLongArrayElements(dates, nullptr);
-    if (!dates_ptr) return;
-    for (int i = 0; i < len; ++i) {
-        jstring jPath = (jstring)env->GetObjectArrayElement(paths, i);
-        jstring jName = (jstring)env->GetObjectArrayElement(names, i);
-        std::string path = ConvertJStringToString(env, jPath);
-        std::string name = ConvertJStringToString(env, jName);
-        std::string ext = "";
-        size_t dot = path.find_last_of(".");
-        if (dot != std::string::npos) ext = path.substr(dot);
-        g_ltm->indexFile(name, path, ext, static_cast<uint64_t>(dates_ptr[i]));
-        env->DeleteLocalRef(jPath);
-        env->DeleteLocalRef(jName);
-    }
-    env->ReleaseLongArrayElements(dates, dates_ptr, JNI_ABORT);
-}
-
 JNIEXPORT void JNICALL native_submitCapabilityResponse(JNIEnv *env, jobject thiz, jstring request_id, jboolean success, jstring payload) {
     Ronin::Kernel::CapabilityResponse response;
     response.request_id = ConvertJStringToString(env, request_id);
     response.success = (success == JNI_TRUE);
     response.payload_json = ConvertJStringToString(env, payload);
     Ronin::Kernel::CapabilityDispatcher::getInstance().onResponse(response);
-}
-
-JNIEXPORT jobjectArray JNICALL native_searchFiles(JNIEnv *env, jobject thiz, jstring q) {
-    if (!g_ltm) return nullptr;
-    auto results = g_ltm->searchFiles(ConvertJStringToString(env, q));
-    jclass sc = env->FindClass("java/lang/String");
-    jobjectArray ja = env->NewObjectArray(results.size(), sc, nullptr);
-    for (size_t i = 0; i < results.size(); ++i) {
-        jstring item = env->NewStringUTF(results[i].c_str());
-        env->SetObjectArrayElement(ja, i, item);
-        env->DeleteLocalRef(item);
-    }
-    env->DeleteLocalRef(sc);
-    return ja;
 }
 
 JNIEXPORT jboolean JNICALL native_pushSensorSamples(JNIEnv *env, jobject thiz, jfloatArray jx, jfloatArray jy, jfloatArray jz, jstring jtype) {

@@ -31,6 +31,8 @@ Acceptance:
 
 Goal: reduce `src/ronin_jni.cpp` size and risk.
 
+Status: in progress. The first slice moved memory, history, file indexing, file search, Myanmar dictionary, prediction storage, and human-feedback JNI bindings into `src/jni/jni_memory_bindings.cpp`.
+
 Proposed files:
 
 - `src/jni/jni_registration.cpp`

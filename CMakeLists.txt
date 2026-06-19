@@ -123,11 +123,16 @@ target_include_directories(ronin_core PUBLIC
 target_link_libraries(ronin_core PUBLIC sqlite3_lib nlohmann_json::nlohmann_json)
 
 # --- JNI Implementation ---
+set(RONIN_JNI_SOURCES
+    src/ronin_jni.cpp
+    src/jni/jni_memory_bindings.cpp
+)
+
 if(ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
     
-    add_library(ronin_kernel SHARED src/ronin_jni.cpp)
+    add_library(ronin_kernel SHARED ${RONIN_JNI_SOURCES})
     target_include_directories(ronin_kernel PRIVATE include)
     
     target_link_libraries(ronin_kernel 
@@ -142,7 +147,7 @@ if(ANDROID)
         target_compile_definitions(ronin_core PRIVATE PFFFT_ENABLE_NEON)
     endif()
 else()
-    add_library(ronin_kernel SHARED src/ronin_jni.cpp)
+    add_library(ronin_kernel SHARED ${RONIN_JNI_SOURCES})
     target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib)
 endif()
 
