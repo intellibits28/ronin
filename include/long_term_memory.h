@@ -137,6 +137,11 @@ private:
     std::unique_ptr<Ronin::Kernel::NLP::MyanmarSegmenter> m_segmenter;
 
     bool initSchema();
+    int getSchemaVersion();
+    bool setSchemaVersion(int version);
+    bool runMigrations(int current_version);
+    bool migrateLegacyFactsTable();
+    bool executeStatements(const std::vector<const char*>& statements);
 };
 
 } // namespace Ronin::Kernel::Memory

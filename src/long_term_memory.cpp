@@ -14,9 +14,29 @@
 namespace Ronin::Kernel::Memory {
 
 namespace {
+constexpr int kCurrentSchemaVersion = 2;
+
 std::string columnText(sqlite3_stmt* stmt, int column) {
     const unsigned char* text = sqlite3_column_text(stmt, column);
     return text ? reinterpret_cast<const char*>(text) : "";
+}
+
+bool tableHasColumn(sqlite3* db, const char* table, const char* column) {
+    std::string sql = "PRAGMA table_info(" + std::string(table) + ");";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    bool found = false;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (columnText(stmt, 1) == column) {
+            found = true;
+            break;
+        }
+    }
+    sqlite3_finalize(stmt);
+    return found;
 }
 }
 
@@ -38,15 +58,8 @@ LongTermMemory::~LongTermMemory() {
 }
 
 bool LongTermMemory::initSchema() {
-    // v13.0 Migration: Drop legacy facts table if it exists (checks for old 'key' column)
-    sqlite3_stmt* check_stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, "SELECT key FROM facts LIMIT 1;", -1, &check_stmt, nullptr) == SQLITE_OK) {
-        sqlite3_finalize(check_stmt);
-        sqlite3_exec(m_db, "DROP TABLE facts;", nullptr, nullptr, nullptr);
-        LOGI(TAG, "v13.0 Migration: Dropped legacy facts table.");
-    }
-
     std::vector<const char*> statements = {
+        "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);",
         "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, tags TEXT, created_at INTEGER, updated_at INTEGER);",
         "CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, content, content='notes', content_rowid='id');",
         "CREATE TABLE IF NOT EXISTS facts (id INTEGER PRIMARY KEY AUTOINCREMENT, entity TEXT, attribute TEXT, value TEXT, source_type INTEGER DEFAULT 0, confidence REAL DEFAULT 1.0, last_verified_at INTEGER, created_at INTEGER, updated_at INTEGER);",
@@ -61,17 +74,103 @@ bool LongTermMemory::initSchema() {
         "CREATE TABLE IF NOT EXISTS failures (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, failure_type INTEGER, timestamp INTEGER, retry_count INTEGER, resolution TEXT);"
     };
 
+    if (sqlite3_exec(m_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "Failed to begin schema migration: %s", sqlite3_errmsg(m_db));
+        return false;
+    }
+
+    const int schema_version = getSchemaVersion();
+    if (!runMigrations(schema_version) || !executeStatements(statements) || !setSchemaVersion(kCurrentSchemaVersion)) {
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    std::vector<const char*> fts_statements = {
+        "CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content); END;",
+        "CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.id, old.title, old.content); END;",
+        "CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.id, old.title, old.content); INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content); END;",
+        "CREATE TRIGGER IF NOT EXISTS episodes_ai AFTER INSERT ON episodes BEGIN INSERT INTO episodes_fts(rowid, summary) VALUES (new.id, new.summary); END;",
+        "CREATE TRIGGER IF NOT EXISTS episodes_ad AFTER DELETE ON episodes BEGIN INSERT INTO episodes_fts(episodes_fts, rowid, summary) VALUES ('delete', old.id, old.summary); END;",
+        "CREATE TRIGGER IF NOT EXISTS episodes_au AFTER UPDATE ON episodes BEGIN INSERT INTO episodes_fts(episodes_fts, rowid, summary) VALUES ('delete', old.id, old.summary); INSERT INTO episodes_fts(rowid, summary) VALUES (new.id, new.summary); END;",
+        "INSERT INTO notes_fts(notes_fts) VALUES('rebuild');",
+        "INSERT INTO episodes_fts(episodes_fts) VALUES('rebuild');"
+    };
+
+    if (!executeStatements(fts_statements)) {
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    if (sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "Failed to commit schema migration: %s", sqlite3_errmsg(m_db));
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    return true;
+}
+
+int LongTermMemory::getSchemaVersion() {
+    sqlite3_stmt* stmt = nullptr;
+    int version = 0;
+    if (sqlite3_prepare_v2(m_db, "SELECT version FROM schema_version LIMIT 1;", -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            version = sqlite3_column_int(stmt, 0);
+        }
+    }
+    if (stmt) sqlite3_finalize(stmt);
+    return version;
+}
+
+bool LongTermMemory::setSchemaVersion(int version) {
+    if (sqlite3_exec(m_db, "DELETE FROM schema_version;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "Failed to clear schema_version: %s", sqlite3_errmsg(m_db));
+        return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, "INSERT INTO schema_version(version) VALUES (?);", -1, &stmt, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "Failed to prepare schema_version insert: %s", sqlite3_errmsg(m_db));
+        return false;
+    }
+    sqlite3_bind_int(stmt, 1, version);
+    bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+    if (!ok) {
+        LOGE(TAG, "Failed to set schema_version: %s", sqlite3_errmsg(m_db));
+    }
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+bool LongTermMemory::runMigrations(int current_version) {
+    if (current_version < 1 && !migrateLegacyFactsTable()) {
+        return false;
+    }
+    return true;
+}
+
+bool LongTermMemory::migrateLegacyFactsTable() {
+    if (!tableHasColumn(m_db, "facts", "key")) {
+        return true;
+    }
+
+    const char* sql =
+        "ALTER TABLE facts RENAME TO facts_legacy_v0;";
+    if (sqlite3_exec(m_db, sql, nullptr, nullptr, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "Failed to archive legacy facts table: %s", sqlite3_errmsg(m_db));
+        return false;
+    }
+    LOGI(TAG, "Schema migration: archived legacy facts table as facts_legacy_v0.");
+    return true;
+}
+
+bool LongTermMemory::executeStatements(const std::vector<const char*>& statements) {
     for (const char* sql : statements) {
         if (sqlite3_exec(m_db, sql, nullptr, nullptr, nullptr) != SQLITE_OK) {
             LOGE(TAG, "Schema error on [%s]: %s", sql, sqlite3_errmsg(m_db));
-            // Don't return false yet, try to create as much as possible
+            return false;
         }
     }
-
-    // FTS5 Triggers
-    sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content); END;", nullptr, nullptr, nullptr);
-    sqlite3_exec(m_db, "CREATE TRIGGER IF NOT EXISTS episodes_ai AFTER INSERT ON episodes BEGIN INSERT INTO episodes_fts(rowid, summary) VALUES (new.id, new.summary); END;", nullptr, nullptr, nullptr);
-    
     return true;
 }
 

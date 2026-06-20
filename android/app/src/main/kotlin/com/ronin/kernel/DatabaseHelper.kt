@@ -44,9 +44,24 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
 
     override fun onUpgrade(db: SQLiteDatabase?, oldVersion: Int, newVersion: Int) {
-        // Purge legacy data for Phase 11 hardening
-        db?.execSQL("DROP TABLE IF EXISTS $TABLE_MEMORIES")
-        onCreate(db)
+        if (db == null) return
+        if (oldVersion < 2) {
+            addColumnIfMissing(db, TABLE_MEMORIES, COLUMN_SEGMENTED_MM, "TEXT")
+            addColumnIfMissing(db, TABLE_MEMORIES, COLUMN_IMPORTANCE, "REAL DEFAULT 1.0")
+            addColumnIfMissing(db, TABLE_MEMORIES, COLUMN_RECALL_COUNT, "INTEGER DEFAULT 0")
+            addColumnIfMissing(db, TABLE_MEMORIES, COLUMN_CREATION_TIME, "INTEGER")
+            addColumnIfMissing(db, TABLE_MEMORIES, COLUMN_LAST_ACCESSED, "INTEGER")
+            addColumnIfMissing(db, TABLE_MEMORIES, COLUMN_STATE, "INTEGER DEFAULT 0")
+        }
+    }
+
+    private fun addColumnIfMissing(db: SQLiteDatabase, table: String, column: String, definition: String) {
+        db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            while (cursor.moveToNext()) {
+                if (cursor.getString(1) == column) return
+            }
+        }
+        db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
     }
 
     fun storeMemory(mm: String, segmented: String = "", importance: Float = 1.0f) {

@@ -76,7 +76,7 @@ Current native memory database schema is defined in `LongTermMemory::initSchema(
 - `audit`
 - `failures`
 
-Current gap: schema changes are not yet managed through an explicit `schema_version` migration system.
+Schema changes are managed through the native `schema_version` table. Current migrations archive the legacy `facts(key, value)` shape as `facts_legacy_v0`, create the current facts schema, rebuild FTS content, and keep notes/episodes FTS rows synchronized on insert, update, and delete.
 
 ## Capabilities And Safety
 

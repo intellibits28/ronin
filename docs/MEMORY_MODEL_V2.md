@@ -125,17 +125,15 @@ Exposed through JNI and Kotlin `NativeEngine`:
 
 ## Current Gaps
 
-- There is no explicit `schema_version` table.
-- FTS triggers currently cover insert synchronization for notes and episodes, but update/delete trigger coverage should be expanded and tested.
-- Legacy table cleanup exists for old `facts.key` shape, but migration behavior is not generalized.
+- Native memory now has an explicit `schema_version` table with incremental migration entry points.
+- Notes and episodes FTS tables are synchronized on insert, update, and delete, with rebuild during schema initialization.
+- Legacy `facts.key` cleanup is handled as a migration that archives the old table as `facts_legacy_v0` before creating the current `facts` shape.
 - Vault encryption is provided by Android-side `SecurityProvider`; native storage currently stores encrypted blobs and does not enforce biometric policy itself.
 - Memory tier policy exists across code paths but is not yet centralized as one classifier/policy module.
 
 ## Improvement Targets
 
-1. Add a `schema_version` table and incremental migrations.
-2. Add migration tests for legacy facts and FTS rebuild behavior.
-3. Add FTS update/delete triggers for notes and episodes.
-4. Define one memory classification entry point for NOTE, FACT, VAULT, EPISODE, and PREDICTION.
-5. Keep Myanmar segmentation dictionary loading explicit and testable.
-6. Ensure vault lookup and sensitive fact access route through centralized policy and audit.
+1. Keep migration tests covering legacy facts and FTS insert/update/delete behavior.
+2. Define one memory classification entry point for NOTE, FACT, VAULT, EPISODE, and PREDICTION.
+3. Keep Myanmar segmentation dictionary loading explicit and testable.
+4. Ensure vault lookup and sensitive fact access route through centralized policy and audit.

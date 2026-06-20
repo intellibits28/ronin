@@ -95,6 +95,8 @@ Acceptance:
 
 Goal: make memory schema evolution safe.
 
+Status: complete for the first migration pass. Native long-term memory now records `schema_version`, archives the legacy `facts(key, value)` table through a migration step instead of ad hoc deletion, rebuilds FTS indexes, and maintains notes/episodes FTS rows through insert, update, and delete triggers. Android's local `DatabaseHelper` upgrade path now preserves existing memory rows by adding missing columns instead of dropping the table.
+
 Tasks:
 
 - Add `schema_version`.
