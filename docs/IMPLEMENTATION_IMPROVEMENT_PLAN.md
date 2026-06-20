@@ -31,7 +31,7 @@ Acceptance:
 
 Goal: reduce `src/ronin_jni.cpp` size and risk.
 
-Status: in progress. The first slice moved memory, history, file indexing, file search, Myanmar dictionary, prediction storage, and human-feedback JNI bindings into `src/jni/jni_memory_bindings.cpp`.
+Status: complete for the first structural pass. Memory/history/file-search bindings moved into `src/jni/jni_memory_bindings.cpp`, and JNI registration moved into `src/jni/jni_registration.cpp`.
 
 Proposed files:
 
@@ -58,6 +58,8 @@ Acceptance:
 ## Phase 2: KernelRuntimeContext
 
 Goal: replace scattered global runtime ownership with explicit lifecycle state.
+
+Status: in progress. `KernelRuntimeContext` now owns the native runtime pointers, JNI instance, Java VM pointer, LLM bridge pointer, and world state. `ronin_jni.cpp` and Android bridge callbacks access runtime state through `runtimeContext()`, and shutdown now releases owned state in a defined order.
 
 Proposed object:
 

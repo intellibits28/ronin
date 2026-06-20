@@ -126,6 +126,7 @@ target_link_libraries(ronin_core PUBLIC sqlite3_lib nlohmann_json::nlohmann_json
 set(RONIN_JNI_SOURCES
     src/ronin_jni.cpp
     src/jni/jni_memory_bindings.cpp
+    src/jni/jni_registration.cpp
 )
 
 if(ANDROID)

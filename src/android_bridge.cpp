@@ -7,11 +7,9 @@
 #ifdef __ANDROID__
 #include <jni.h>
 #include "jni_utils.h"
+#include "jni/ronin_jni_context.h"
 
 #define TAG "RoninAndroidBridge"
-
-extern JavaVM* g_vm;
-extern jobject g_instance;
 
 namespace Ronin::Kernel {
 
@@ -27,10 +25,11 @@ void AndroidBridge::sendRequest(const CapabilityRequest& req) {
 
     JNIEnv* env = nullptr;
     bool attached = false;
-    if (g_vm && g_instance) {
-        jint get_env_res = g_vm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    auto& runtime = JNI::runtimeContext();
+    if (runtime.vm && runtime.instance) {
+        jint get_env_res = runtime.vm->GetEnv((void**)&env, JNI_VERSION_1_6);
         if (get_env_res == JNI_EDETACHED) {
-            if (g_vm->AttachCurrentThread(&env, nullptr) != 0) {
+            if (runtime.vm->AttachCurrentThread(&env, nullptr) != 0) {
                 LOGE(TAG, "Failed to attach bridge thread to JVM.");
                 return;
             }
@@ -38,11 +37,11 @@ void AndroidBridge::sendRequest(const CapabilityRequest& req) {
         }
 
         if (env) {
-            jclass cls = env->GetObjectClass(g_instance);
+            jclass cls = env->GetObjectClass(runtime.instance);
             jmethodID method = env->GetMethodID(cls, "onCapabilityRequest", "(Ljava/lang/String;)Ljava/lang/String;");
             if (method) {
                 jstring jStr = env->NewStringUTF(json_str.c_str());
-                jstring jRes = (jstring)env->CallObjectMethod(g_instance, method, jStr);
+                jstring jRes = (jstring)env->CallObjectMethod(runtime.instance, method, jStr);
                 
                 if (jRes) {
                     const char* cstr = env->GetStringUTFChars(jRes, nullptr);
@@ -61,7 +60,7 @@ void AndroidBridge::sendRequest(const CapabilityRequest& req) {
                             env->ReleaseStringUTFChars(jRes, cstr);
                             env->DeleteLocalRef(jRes);
                             env->DeleteLocalRef(jStr);
-                            if (attached) g_vm->DetachCurrentThread();
+                            if (attached) runtime.vm->DetachCurrentThread();
                             return; // Do not call onResponse here; wait for submitCapabilityResponseNative
                         }
                         
@@ -81,9 +80,9 @@ void AndroidBridge::sendRequest(const CapabilityRequest& req) {
             }
             env->DeleteLocalRef(cls);
         }
-        
+
         if (attached) {
-            g_vm->DetachCurrentThread();
+            runtime.vm->DetachCurrentThread();
         }
     }
 }

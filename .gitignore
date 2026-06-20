@@ -1,6 +1,7 @@
 # C++ Build Artifacts
 build/
 build_host/
+build_host_linux/
 build_android/
 bin/
 obj/

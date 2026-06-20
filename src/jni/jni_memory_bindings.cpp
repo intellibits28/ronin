@@ -7,6 +7,7 @@
 #include "jni_utils.h"
 
 using Ronin::Kernel::JNI::ConvertJStringToString;
+using Ronin::Kernel::JNI::runtimeContext;
 
 namespace {
 
@@ -27,43 +28,51 @@ jobjectArray toStringArray(JNIEnv* env, const std::vector<std::string>& values) 
 extern "C" {
 
 JNIEXPORT jboolean JNICALL native_storeNote(JNIEnv* env, jobject thiz, jstring t, jstring c, jstring tg) {
-    return (g_ltm && g_ltm->storeNote(ConvertJStringToString(env, t), ConvertJStringToString(env, c), ConvertJStringToString(env, tg)))
+    auto& runtime = runtimeContext();
+    return (runtime.ltm && runtime.ltm->storeNote(ConvertJStringToString(env, t), ConvertJStringToString(env, c), ConvertJStringToString(env, tg)))
         ? JNI_TRUE
         : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL native_storeFact(JNIEnv* env, jobject thiz, jstring e, jstring a, jstring v) {
-    return (g_ltm && g_ltm->storeFact(ConvertJStringToString(env, e), ConvertJStringToString(env, a), ConvertJStringToString(env, v)))
+    auto& runtime = runtimeContext();
+    return (runtime.ltm && runtime.ltm->storeFact(ConvertJStringToString(env, e), ConvertJStringToString(env, a), ConvertJStringToString(env, v)))
         ? JNI_TRUE
         : JNI_FALSE;
 }
 
 JNIEXPORT jstring JNICALL native_lookupFact(JNIEnv* env, jobject thiz, jstring e, jstring a) {
-    return env->NewStringUTF(g_ltm ? g_ltm->lookupFact(ConvertJStringToString(env, e), ConvertJStringToString(env, a)).c_str() : "");
+    auto& runtime = runtimeContext();
+    return env->NewStringUTF(runtime.ltm ? runtime.ltm->lookupFact(ConvertJStringToString(env, e), ConvertJStringToString(env, a)).c_str() : "");
 }
 
 JNIEXPORT jstring JNICALL native_lookupVault(JNIEnv* env, jobject thiz, jstring t) {
-    return env->NewStringUTF(g_ltm ? g_ltm->lookupVault(ConvertJStringToString(env, t)).c_str() : "");
+    auto& runtime = runtimeContext();
+    return env->NewStringUTF(runtime.ltm ? runtime.ltm->lookupVault(ConvertJStringToString(env, t)).c_str() : "");
 }
 
 JNIEXPORT jobjectArray JNICALL native_searchNotes(JNIEnv* env, jobject thiz, jstring q) {
-    if (!g_ltm) return nullptr;
-    return toStringArray(env, g_ltm->searchNotes(ConvertJStringToString(env, q)));
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return nullptr;
+    return toStringArray(env, runtime.ltm->searchNotes(ConvertJStringToString(env, q)));
 }
 
 JNIEXPORT jobjectArray JNICALL native_searchEpisodes(JNIEnv* env, jobject thiz, jstring q) {
-    if (!g_ltm) return nullptr;
-    return toStringArray(env, g_ltm->searchEpisodes(ConvertJStringToString(env, q)));
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return nullptr;
+    return toStringArray(env, runtime.ltm->searchEpisodes(ConvertJStringToString(env, q)));
 }
 
 JNIEXPORT jboolean JNICALL native_storeVault(JNIEnv* env, jobject thiz, jstring t, jstring b) {
-    return (g_ltm && g_ltm->storeVault(ConvertJStringToString(env, t), ConvertJStringToString(env, b)))
+    auto& runtime = runtimeContext();
+    return (runtime.ltm && runtime.ltm->storeVault(ConvertJStringToString(env, t), ConvertJStringToString(env, b)))
         ? JNI_TRUE
         : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL native_storePrediction(JNIEnv* env, jobject thiz, jstring g, jstring n, jstring p, jstring a, jfloat e) {
-    return (g_ltm && g_ltm->storePrediction(
+    auto& runtime = runtimeContext();
+    return (runtime.ltm && runtime.ltm->storePrediction(
         ConvertJStringToString(env, g),
         ConvertJStringToString(env, n),
         ConvertJStringToString(env, p),
@@ -74,14 +83,16 @@ JNIEXPORT jboolean JNICALL native_storePrediction(JNIEnv* env, jobject thiz, jst
 }
 
 JNIEXPORT void JNICALL native_applyHumanFeedback(JNIEnv* env, jobject thiz, jstring s, jboolean h) {
-    if (g_graph_executor) {
-        g_graph_executor->getReflectionEngine().applyHumanFeedback(ConvertJStringToString(env, s), h == JNI_TRUE);
+    auto& runtime = runtimeContext();
+    if (runtime.graph_executor) {
+        runtime.graph_executor->getReflectionEngine().applyHumanFeedback(ConvertJStringToString(env, s), h == JNI_TRUE);
     }
 }
 
 JNIEXPORT jobjectArray JNICALL native_getChatHistory(JNIEnv* env, jobject thiz, jint l, jint o) {
-    if (!g_ltm) return nullptr;
-    auto history = g_ltm->getHistory(l, o);
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return nullptr;
+    auto history = runtime.ltm->getHistory(l, o);
     jclass string_class = env->FindClass("java/lang/String");
     jobjectArray array = env->NewObjectArray(history.size() * 2, string_class, nullptr);
     for (size_t i = 0; i < history.size(); ++i) {
@@ -97,11 +108,13 @@ JNIEXPORT jobjectArray JNICALL native_getChatHistory(JNIEnv* env, jobject thiz, 
 }
 
 JNIEXPORT jboolean JNICALL native_loadMyanmarDictionary(JNIEnv* env, jobject thiz, jstring p) {
-    return (g_ltm && g_ltm->loadSegmenter(ConvertJStringToString(env, p))) ? JNI_TRUE : JNI_FALSE;
+    auto& runtime = runtimeContext();
+    return (runtime.ltm && runtime.ltm->loadSegmenter(ConvertJStringToString(env, p))) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL native_indexFiles(JNIEnv* env, jobject thiz, jobjectArray paths, jobjectArray names, jlongArray dates) {
-    if (!g_ltm) return;
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return;
     if (!paths || !names || !dates) return;
     int len = env->GetArrayLength(paths);
     if (env->GetArrayLength(names) != len || env->GetArrayLength(dates) != len) return;
@@ -117,7 +130,7 @@ JNIEXPORT void JNICALL native_indexFiles(JNIEnv* env, jobject thiz, jobjectArray
         std::string ext;
         size_t dot = path.find_last_of(".");
         if (dot != std::string::npos) ext = path.substr(dot);
-        g_ltm->indexFile(name, path, ext, static_cast<uint64_t>(dates_ptr[i]));
+        runtime.ltm->indexFile(name, path, ext, static_cast<uint64_t>(dates_ptr[i]));
         env->DeleteLocalRef(j_path);
         env->DeleteLocalRef(j_name);
     }
@@ -126,8 +139,9 @@ JNIEXPORT void JNICALL native_indexFiles(JNIEnv* env, jobject thiz, jobjectArray
 }
 
 JNIEXPORT jobjectArray JNICALL native_searchFiles(JNIEnv* env, jobject thiz, jstring q) {
-    if (!g_ltm) return nullptr;
-    return toStringArray(env, g_ltm->searchFiles(ConvertJStringToString(env, q)));
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return nullptr;
+    return toStringArray(env, runtime.ltm->searchFiles(ConvertJStringToString(env, q)));
 }
 
 } // extern "C"
