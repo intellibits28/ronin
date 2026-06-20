@@ -35,6 +35,7 @@ class InferenceService : Service() {
     private var currentTemp = 0.7f
     private var currentTopK = 40
     private var currentTopP = 0.9f
+    private var currentMaxTokens = 1024
     
     private var isConversationFresh = true
     private var lastSummary: String? = null
@@ -82,11 +83,21 @@ class InferenceService : Service() {
         synchronized(this) {
             try {
                 litertConversation?.close()
-                litertConversation = litertEngine?.createConversation()
+                litertConversation = createConversationLocked()
                 isConversationFresh = true
                 Log.i(TAG, "Conversation Reset: KV Cache Pruned.")
             } catch (e: Exception) { Log.e(TAG, "Reset failed: ${e.message}") }
         }
+    }
+
+    private fun createConversationLocked(): Conversation? {
+        val sampler = SamplerConfig(
+            topK = currentTopK.coerceAtLeast(1),
+            topP = currentTopP.coerceIn(0.0f, 1.0f).toDouble(),
+            temperature = currentTemp.coerceAtLeast(0.0f).toDouble(),
+            seed = 42
+        )
+        return litertEngine?.createConversation(ConversationConfig(samplerConfig = sampler))
     }
 
     private fun resetConversationInternal() {
@@ -151,7 +162,23 @@ class InferenceService : Service() {
         }
 
         override fun updateSamplingParams(temp: Float, topK: Int, topP: Float) {
-            currentTemp = temp; currentTopK = topK; currentTopP = topP
+            updateGenerationConfig(temp, topK, topP, currentMaxTokens)
+        }
+
+        override fun updateGenerationConfig(temp: Float, topK: Int, topP: Float, maxTokens: Int) {
+            val nextMaxTokens = maxTokens.coerceIn(128, 2048)
+            val requiresRehydrate = nextMaxTokens != currentMaxTokens && currentModelPath.isNotEmpty()
+
+            currentTemp = temp.coerceAtLeast(0.0f)
+            currentTopK = topK.coerceAtLeast(1)
+            currentTopP = topP.coerceIn(0.0f, 1.0f)
+            currentMaxTokens = nextMaxTokens
+
+            if (requiresRehydrate) {
+                serviceScope.launch { tryHydrate(currentModelPath) }
+            } else if (litertEngine != null) {
+                resetConversationInternal()
+            }
         }
     }
 
@@ -163,18 +190,17 @@ class InferenceService : Service() {
             inferenceMutex.withLock {
                 releaseResourcesLocked()
                 try {
-                    // Hardened v5.1: Balanced EngineConfig for SD778G+
-                    // Set to 1536 to allow context for Planner + History while maintaining GPU memory stability
+                    // Keep the engine token window aligned with the UI generation config.
                     val config = EngineConfig(
                         modelPath = path, 
-                        maxNumTokens = 1536
+                        maxNumTokens = currentMaxTokens
                     )
                     val engine = Engine(config)
                     engine.initialize()
                     litertEngine = engine
-                    litertConversation = engine.createConversation()
+                    litertConversation = createConversationLocked()
                     isConversationFresh = true; currentModelPath = path
-                    Log.i(TAG, "Hardened Spine Hydrated (768 Token Window): $path")
+                    Log.i(TAG, "Hardened Spine Hydrated (MaxTokens=$currentMaxTokens, T=$currentTemp, P=$currentTopP, K=$currentTopK): $path")
                     true
                 } catch (e: Throwable) { 
                     Log.e(TAG, "Hydration Failed: ${e.message}")

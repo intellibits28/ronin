@@ -12,6 +12,7 @@ interface IInferenceService {
     void streamReasoning(String input, IInferenceCallback callback);
     void resetConversation();
     void updateSamplingParams(float temperature, int topK, float topP);
+    void updateGenerationConfig(float temperature, int topK, float topP, int maxTokens);
     boolean isLowPerformanceMode();
     String summarizeAndReset();
 }

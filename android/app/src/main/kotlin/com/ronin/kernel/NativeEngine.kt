@@ -180,6 +180,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private var inferenceService: IInferenceService? = null
     private var isServiceBound = false
+    private var generationTemp = 0.7f
+    private var generationTopK = 40
+    private var generationTopP = 0.9f
+    private var generationMaxTokens = 1024
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -195,6 +199,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             inferenceService = IInferenceService.Stub.asInterface(service)
             isServiceBound = true
             Log.i(TAG, "Inference Service Bound (Isolated Process).")
+            applyGenerationConfigToService()
             if (currentModelPath.isNotEmpty()) scope.launch { loadModel(currentModelPath) }
         }
         override fun onServiceDisconnected(name: android.content.ComponentName?) {
@@ -320,6 +325,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         while (inferenceService == null && (System.currentTimeMillis() - start) < 5000) delay(200)
         if (inferenceService == null) return@withContext false
 
+        applyGenerationConfigToService()
         val workerSuccess = try { inferenceService?.loadModel(path) ?: false } catch (e: Exception) { false }
         if (!workerSuccess) return@withContext false
 
@@ -649,7 +655,21 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     fun updateSamplingParams(temp: Float, topK: Int, topP: Float) {
-        try { inferenceService?.updateSamplingParams(temp, topK, topP) } catch (e: Exception) {}
+        updateGenerationConfig(temp, topK, topP, generationMaxTokens)
+    }
+
+    fun updateGenerationConfig(temp: Float, topK: Int, topP: Float, maxTokens: Int) {
+        generationTemp = temp
+        generationTopK = topK
+        generationTopP = topP
+        generationMaxTokens = maxTokens
+        applyGenerationConfigToService()
+    }
+
+    private fun applyGenerationConfigToService() {
+        try {
+            inferenceService?.updateGenerationConfig(generationTemp, generationTopK, generationTopP, generationMaxTokens)
+        } catch (e: Exception) {}
     }
 
     private fun trimChatHistory(history: List<Pair<String, String>>, maxChars: Int = 4000): String {

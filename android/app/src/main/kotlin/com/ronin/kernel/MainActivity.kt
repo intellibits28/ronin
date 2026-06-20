@@ -233,7 +233,7 @@ class MainActivity : FragmentActivity() {
             nativeEngine.loadMyanmarDictionary(File(filesDir, "assets/myanmar_dictionary.txt").absolutePath)
             savePrimaryCloudProvider(sharedPreferences.getString("primary_cloud_provider", "Gemini") ?: "Gemini")
             saveOfflineMode(sharedPreferences.getBoolean("offline_mode", false))
-            nativeEngine.updateSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP)
+            nativeEngine.updateGenerationConfig(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP, chatViewModel.maxTokens)
 
             chatViewModel.kernelStatus = "Neural Bridge Active"
             checkAndRequestPermissions()
@@ -371,8 +371,16 @@ class MainActivity : FragmentActivity() {
     fun deleteCloudProvider(name: String) { val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]; chatViewModel.cloudProviders.removeAll { it.name == name }; saveCloudProvidersToDisk() }
     fun saveOfflineMode(offline: Boolean) { sharedPreferences.edit().putBoolean("offline_mode", offline).apply(); nativeEngine.setOfflineModeSafe(offline) }
     fun saveSystemPrompt(p: String) { sharedPreferences.edit().putString("system_prompt", p).apply() }
-    fun saveMaxTokens(t: Int) { sharedPreferences.edit().putInt("max_tokens", t).apply() }
-    fun saveSamplingParams(t: Float, k: Int, p: Float) { sharedPreferences.edit().putFloat("temperature", t).putInt("top_k", k).putFloat("top_p", p).apply(); nativeEngine.updateSamplingParams(t, k, p) }
+    fun saveMaxTokens(t: Int) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        sharedPreferences.edit().putInt("max_tokens", t).apply()
+        nativeEngine.updateGenerationConfig(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP, t)
+    }
+    fun saveSamplingParams(t: Float, k: Int, p: Float) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        sharedPreferences.edit().putFloat("temperature", t).putInt("top_k", k).putFloat("top_p", p).apply()
+        nativeEngine.updateGenerationConfig(t, k, p, chatViewModel.maxTokens)
+    }
     fun saveThinkingToggle(enabled: Boolean) { sharedPreferences.edit().putBoolean("is_thinking_enabled", enabled).apply() }
     fun saveCloudOnlyMode(enabled: Boolean) { sharedPreferences.edit().putBoolean("cloud_only_mode", enabled).apply() }
 
@@ -1163,16 +1171,16 @@ fun ModalDrawerSheet(chatViewModel: ChatViewModel, brainPicker: ActivityResultLa
         Divider(Modifier.padding(vertical = 16.dp))
         Text("Sampling Parameters (T,P,K)", fontSize = 12.sp, color = Color.Gray)
         Text("Temperature: ${"%.2f".format(chatViewModel.samplingTemperature)}", color = Color.White, fontSize = 13.sp)
-        Slider(value = chatViewModel.samplingTemperature, onValueChange = { chatViewModel.samplingTemperature = it; activity?.saveSamplingParams(it, chatViewModel.topK, chatViewModel.topP) }, valueRange = 0.1f..1.5f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
+        Slider(value = chatViewModel.samplingTemperature, onValueChange = { chatViewModel.samplingTemperature = it }, onValueChangeFinished = { activity?.saveSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP) }, valueRange = 0.1f..1.5f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
         
         Text("Top-K: ${chatViewModel.topK}", color = Color.White, fontSize = 13.sp)
-        Slider(value = chatViewModel.topK.toFloat(), onValueChange = { chatViewModel.topK = it.toInt(); activity?.saveSamplingParams(chatViewModel.samplingTemperature, it.toInt(), chatViewModel.topP) }, valueRange = 1f..100f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
+        Slider(value = chatViewModel.topK.toFloat(), onValueChange = { chatViewModel.topK = it.toInt() }, onValueChangeFinished = { activity?.saveSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP) }, valueRange = 1f..100f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
         
         Text("Top-P: ${"%.2f".format(chatViewModel.topP)}", color = Color.White, fontSize = 13.sp)
-        Slider(value = chatViewModel.topP, onValueChange = { chatViewModel.topP = it; activity?.saveSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, it) }, valueRange = 0.1f..1.0f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
+        Slider(value = chatViewModel.topP, onValueChange = { chatViewModel.topP = it }, onValueChangeFinished = { activity?.saveSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP) }, valueRange = 0.1f..1.0f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
         
         Text("Max Tokens: ${chatViewModel.maxTokens}", color = Color.White, fontSize = 13.sp)
-        Slider(value = chatViewModel.maxTokens.toFloat(), onValueChange = { chatViewModel.maxTokens = it.toInt(); activity?.saveMaxTokens(it.toInt()) }, valueRange = 128f..2048f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
+        Slider(value = chatViewModel.maxTokens.toFloat(), onValueChange = { chatViewModel.maxTokens = it.toInt() }, onValueChangeFinished = { activity?.saveMaxTokens(chatViewModel.maxTokens) }, valueRange = 128f..2048f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
 
         Divider(Modifier.padding(vertical = 16.dp))
         Text("System Prompt", fontSize = 12.sp, color = Color.Gray)
