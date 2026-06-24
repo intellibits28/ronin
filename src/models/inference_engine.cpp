@@ -3,6 +3,7 @@
 #include "ronin_log.h"
 #include "capabilities/hardware_bridge.h"
 #include "failure_telemetry_bus.h"
+#include <nlohmann/json.hpp>
 #include <thread>
 #include <atomic>
 #include <mutex>
