@@ -52,6 +52,49 @@ TEST_F(EvolutionTest, NightlyReflectionCycle) {
     EXPECT_FALSE(notes.empty());
 }
 
+#include "intent_engine.h"
+
+using namespace Ronin::Kernel::Intent;
+
+TEST_F(EvolutionTest, FastPathSemanticRouterBypass) {
+    TaskPlanner planner(nullptr, nullptr, ltm.get());
+    
+    // 1. Alarm test
+    {
+        AgentPlan alarm_plan = planner.createPlan("မနက် ၆ နာရီ နှိုးစက်ပေးပါ");
+        EXPECT_EQ(alarm_plan.intent_name, "SET_ALARM");
+        EXPECT_FALSE(alarm_plan.plan_steps.empty());
+        EXPECT_EQ(alarm_plan.plan_steps[0], "SET_ALARM");
+        EXPECT_EQ(alarm_plan.parameters["time"], "06:00");
+    }
+
+    // 2. Map test
+    {
+        AgentPlan map_plan = planner.createPlan("get my location");
+        EXPECT_EQ(map_plan.intent_name, "LOCATION");
+        EXPECT_FALSE(map_plan.plan_steps.empty());
+        EXPECT_EQ(map_plan.plan_steps[0], "GET_LOCATION");
+    }
+
+    // 3. Vault test
+    {
+        AgentPlan vault_plan = planner.createPlan("lookup gemini api key from vault");
+        EXPECT_EQ(vault_plan.intent_name, "LOOKUP_VAULT");
+        EXPECT_FALSE(vault_plan.plan_steps.empty());
+        EXPECT_EQ(vault_plan.plan_steps[0], "LOOKUP_VAULT");
+        EXPECT_EQ(vault_plan.parameters["vault_title"], "gemini api key");
+    }
+
+    // 4. File search test
+    {
+        AgentPlan file_plan = planner.createPlan("find file invoice.pdf");
+        EXPECT_EQ(file_plan.intent_name, "FILE_SEARCH");
+        EXPECT_FALSE(file_plan.plan_steps.empty());
+        EXPECT_EQ(file_plan.plan_steps[0], "FILE_SEARCH");
+        EXPECT_EQ(file_plan.parameters["query"], "invoice.pdf");
+    }
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

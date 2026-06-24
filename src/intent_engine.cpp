@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <sstream>
 #include <fstream>
+#include <regex>
+#include <chrono>
 #include <iomanip>
 #include <nlohmann/json.hpp>
 #include "ronin_log.h"
@@ -109,6 +111,13 @@ bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
 
 AgentPlan TaskPlanner::createPlan(const std::string& input) {
     AgentPlan plan;
+    plan.parameters["original_query"] = input;
+
+    if (tryFastPathRoute(input, plan)) {
+        LOGI("RoninPlanner", "Bypassed LLM via Fast-Path Semantic Router");
+        return plan;
+    }
+
     if (!m_engine) return plan;
 
     // v1.6: Behavioral Evolution - Dynamic Lesson Injection
@@ -520,6 +529,197 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
     LOGI(TAG, "v6.0 Intent: Category %u", static_cast<uint32_t>(final_cat));
     return {1, 1.0f, true, final_cat}; 
+}
+
+static std::string normalizeBurmeseDigits(const std::string& s) {
+    std::string out = s;
+    std::string burmese_digits[] = {"၀", "၁", "၂", "၃", "၄", "၅", "၆", "၇", "၈", "၉"};
+    for (int i = 0; i < 10; ++i) {
+        size_t pos = 0;
+        while ((pos = out.find(burmese_digits[i], pos)) != std::string::npos) {
+            out.replace(pos, burmese_digits[i].length(), std::to_string(i));
+            pos += 1;
+        }
+    }
+    return out;
+}
+
+bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan) {
+    std::string norm = input;
+    std::transform(norm.begin(), norm.end(), norm.begin(), ::tolower);
+    
+    // 1. Normalize Burmese digits
+    norm = normalizeBurmeseDigits(norm);
+    
+    // Normalize time phrases: "နာရီခွဲ" -> ":30", "နာရီ" -> ":00"
+    {
+        std::string kw = "နာရီခွဲ";
+        size_t p = 0;
+        while ((p = norm.find(kw, p)) != std::string::npos) {
+            norm.replace(p, kw.length(), ":30");
+            p += 3;
+        }
+    }
+    {
+        std::string kw = "နာရီ";
+        size_t p = 0;
+        while ((p = norm.find(kw, p)) != std::string::npos) {
+            norm.replace(p, kw.length(), ":00");
+            p += 3;
+        }
+    }
+
+    // 2. Alarm Check
+    bool has_alarm_kw = (norm.find("alarm") != std::string::npos || norm.find("wake") != std::string::npos || 
+                         norm.find("နှိုးစက်") != std::string::npos || norm.find("နှိုး") != std::string::npos);
+    if (has_alarm_kw) {
+        std::regex time_rx_colon("(\\d{1,2}):(\\d{2})");
+        std::regex time_rx_hours("(\\d{1,2})\\s*(?:am|pm|o'clock|hours)", std::regex_constants::icase);
+        std::smatch match;
+        
+        int hour = -1;
+        int minute = 0;
+        bool found_time = false;
+        
+        if (std::regex_search(norm, match, time_rx_colon)) {
+            hour = std::stoi(match[1].str());
+            minute = std::stoi(match[2].str());
+            found_time = true;
+        } else if (std::regex_search(norm, match, time_rx_hours)) {
+            hour = std::stoi(match[1].str());
+            minute = 0;
+            found_time = true;
+        }
+        
+        if (found_time && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+            bool is_pm = (norm.find("pm") != std::string::npos || norm.find("ည") != std::string::npos || norm.find("ညနေ") != std::string::npos);
+            if (is_pm && hour < 12) {
+                hour += 12;
+            }
+            
+            char time_buf[16];
+            snprintf(time_buf, sizeof(time_buf), "%02d:%02d", hour, minute);
+            
+            out_plan.intent_name = "SET_ALARM";
+            out_plan.plan_steps = {"SET_ALARM"};
+            out_plan.parameters["time"] = time_buf;
+            out_plan.parameters["original_query"] = input;
+            
+            auto now = std::chrono::system_clock::now().time_since_epoch().count();
+            out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
+            
+            return true;
+        }
+        return false;
+    }
+    
+    // 3. Location/Map Check
+    bool has_loc_kw = (norm.find("location") != std::string::npos || norm.find("gps") != std::string::npos || 
+                       norm.find("map") != std::string::npos || norm.find("တည်နေရာ") != std::string::npos || 
+                       norm.find("မြေပုံ") != std::string::npos || norm.find("နေရာ") != std::string::npos);
+    if (has_loc_kw) {
+        bool is_sending = (norm.find("sms") != std::string::npos || norm.find("message") != std::string::npos || 
+                           norm.find("ပို့") != std::string::npos || norm.find("email") != std::string::npos || 
+                           norm.find("mail") != std::string::npos || norm.find("send") != std::string::npos);
+        if (!is_sending) {
+            bool is_map = (norm.find("map") != std::string::npos || norm.find("မြေပုံ") != std::string::npos ||
+                           norm.find("open") != std::string::npos || norm.find("show") != std::string::npos ||
+                           norm.find("navigate") != std::string::npos);
+            
+            if (is_map) {
+                out_plan.intent_name = "MAP";
+                out_plan.plan_steps = {"OPEN_MAP"};
+            } else {
+                out_plan.intent_name = "LOCATION";
+                out_plan.plan_steps = {"GET_LOCATION"};
+            }
+            out_plan.parameters["original_query"] = input;
+            auto now = std::chrono::system_clock::now().time_since_epoch().count();
+            out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
+            return true;
+        }
+    }
+    
+    auto trim = [](const std::string& str) -> std::string {
+        size_t first = str.find_first_not_of(" \t\r\n'\"");
+        if (first == std::string::npos) return "";
+        size_t last = str.find_last_not_of(" \t\r\n'\"");
+        return str.substr(first, (last - first + 1));
+    };
+
+    auto extractSearchTarget = [&](const std::string& raw_in) -> std::string {
+        std::string target = raw_in;
+        std::vector<std::string> to_remove = {
+            "lookup", "get", "find", "show", "vault", "secret", "in", "for", "from",
+            "search", "files", "file", "query",
+            "ရှာပေးပါ", "ရှာပါ", "ပြပါ", "တောင်းပါ", "လုံခြုံရေး", "ထဲက", "ထဲမှ", "ဖိုင်"
+        };
+        for (const auto& word : to_remove) {
+            size_t p = 0;
+            std::string w_lower = word;
+            std::transform(w_lower.begin(), w_lower.end(), w_lower.begin(), ::tolower);
+            while ((p = target.find(w_lower, p)) != std::string::npos) {
+                target.replace(p, w_lower.length(), " ");
+                p += 1;
+            }
+        }
+        return trim(target);
+    };
+
+    // 4. Vault / Memory Lookup Check
+    bool has_vault_kw = (norm.find("vault") != std::string::npos || norm.find("secret") != std::string::npos || 
+                         norm.find("key") != std::string::npos || norm.find("api") != std::string::npos || 
+                         norm.find("password") != std::string::npos || norm.find("လုံခြုံ") != std::string::npos);
+    if (has_vault_kw) {
+        bool is_saving = (norm.find("save") != std::string::npos || norm.find("store") != std::string::npos || 
+                          norm.find("add") != std::string::npos || norm.find("သိမ်း") != std::string::npos || 
+                          norm.find("မှတ်") != std::string::npos);
+        bool is_sending = (norm.find("sms") != std::string::npos || norm.find("message") != std::string::npos || 
+                           norm.find("ပို့") != std::string::npos || norm.find("email") != std::string::npos || 
+                           norm.find("mail") != std::string::npos || norm.find("send") != std::string::npos);
+        if (!is_saving && !is_sending) {
+            std::string target = extractSearchTarget(norm);
+            if (!target.empty()) {
+                out_plan.intent_name = "LOOKUP_VAULT";
+                out_plan.plan_steps = {"LOOKUP_VAULT"};
+                out_plan.parameters["vault_title"] = target;
+                out_plan.parameters["original_query"] = input;
+                auto now = std::chrono::system_clock::now().time_since_epoch().count();
+                out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
+                return true;
+            }
+        }
+    }
+    
+    // 5. File Search Check
+    bool has_file_kw = (norm.find("file") != std::string::npos || norm.find("find") != std::string::npos || 
+                        norm.find("search") != std::string::npos || norm.find("ဖိုင်") != std::string::npos || 
+                        norm.find("ရှာ") != std::string::npos);
+    if (has_file_kw) {
+        bool has_other_kws = (norm.find("sms") != std::string::npos || norm.find("message") != std::string::npos || 
+                              norm.find("ပို့") != std::string::npos || norm.find("email") != std::string::npos || 
+                              norm.find("mail") != std::string::npos || norm.find("send") != std::string::npos || 
+                              norm.find("alarm") != std::string::npos || norm.find("wake") != std::string::npos || 
+                              norm.find("နှိုးစက်") != std::string::npos || norm.find("နှိုး") != std::string::npos || 
+                              norm.find("calendar") != std::string::npos || norm.find("event") != std::string::npos || 
+                              norm.find("meeting") != std::string::npos || norm.find("တည်နေရာ") != std::string::npos || 
+                              norm.find("location") != std::string::npos || norm.find("gps") != std::string::npos || 
+                              norm.find("map") != std::string::npos || norm.find("မြေပုံ") != std::string::npos);
+        if (!has_other_kws) {
+            std::string target = extractSearchTarget(norm);
+            if (!target.empty()) {
+                out_plan.intent_name = "FILE_SEARCH";
+                out_plan.plan_steps = {"FILE_SEARCH"};
+                out_plan.parameters["query"] = target;
+                out_plan.parameters["original_query"] = input;
+                auto now = std::chrono::system_clock::now().time_since_epoch().count();
+                out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
+                return true;
+            }
+        }
+    }
+    
+    return false;
 }
 
 } // namespace Ronin::Kernel::Intent

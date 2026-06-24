@@ -212,6 +212,9 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
         auto session = SessionManager::getInstance().createSession(plan.intent_name);
         sid = session->getSessionId();
         session->bindExecutionContext(exec_ctx); // v1.4 Bind UEC
+        if (plan.parameters.find("corr_id") != plan.parameters.end() && exec_ctx) {
+            exec_ctx->correlation_id = plan.parameters.at("corr_id");
+        }
         session->setPlan(plan.plan_steps);
         for (const auto& [k, v] : plan.parameters) session->setParameter(k, v);
         bool is_safe = true;

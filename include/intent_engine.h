@@ -37,6 +37,8 @@ public:
     CapabilityType mapIntentToCapability(const std::string& intent_name);
 
 private:
+    bool tryFastPathRoute(const std::string& input, AgentPlan& out_plan);
+
     Model::InferenceEngine* m_engine;
     Reasoning::BeliefState* m_belief_state;
     Memory::LongTermMemory* m_ltm;
