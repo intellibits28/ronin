@@ -139,6 +139,8 @@ Acceptance:
 
 Goal: centralize sensitive action rules.
 
+Status: complete.
+
 Policy fields:
 
 - capability ID/name
