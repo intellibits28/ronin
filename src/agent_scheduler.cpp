@@ -88,7 +88,7 @@ void AgentScheduler::workerLoop() {
                 LOGI(TAG, "L8 Scheduler: Executing Step -> '%s'", step.c_str());
                 Capability::HardwareBridge::pushMessage("[AGENT] Step: " + step);
                 
-
+                auto exec_ctx = current_session->getExecutionContext();
                 
                 // v7.7 Robust Step-to-Capability Mapping
                 CapabilityType type = CapabilityType::NONE;
@@ -150,7 +150,7 @@ void AgentScheduler::workerLoop() {
                     jParams["action"] = step;
                     jParams["intent"] = current_session->getIntent(); // Pass intent context to Kotlin
                     
-                    auto exec_ctx = current_session->getExecutionContext();
+                    exec_ctx = current_session->getExecutionContext();
                     std::string exec_id = exec_ctx ? exec_ctx->execution_id : "legacy";
                     
                     // v1.5: Adaptive Budget Allocation
