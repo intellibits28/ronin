@@ -12,7 +12,7 @@ This plan turns the current architecture review into staged implementation work.
 
 ## Phase 0: Documentation Realignment
 
-Status: in progress.
+Status: complete.
 
 Tasks:
 
@@ -59,7 +59,7 @@ Acceptance:
 
 Goal: replace scattered global runtime ownership with explicit lifecycle state.
 
-Status: in progress. `KernelRuntimeContext` now owns the native runtime pointers, JNI instance, Java VM pointer, LLM bridge pointer, and world state. `ronin_jni.cpp` and Android bridge callbacks access runtime state through `runtimeContext()`, and shutdown now releases owned state in a defined order.
+Status: complete. `KernelRuntimeContext` now owns the native runtime pointers, JNI instance, Java VM pointer, LLM bridge pointer, and world state. `ronin_jni.cpp` and Android bridge callbacks access runtime state through `runtimeContext()`, and shutdown now releases owned state in a defined order.
 
 Proposed object:
 
