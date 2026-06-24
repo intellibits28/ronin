@@ -102,6 +102,15 @@ object CapabilityPolicyEngine {
             RiskLevel.LOW,
             allowOffline = true,
             allowCloud = true
+        ),
+        "MAIL" to Policy(
+            "MAIL",
+            emptyList(),
+            requiresHITL = true,
+            requiresAudit = true,
+            RiskLevel.MEDIUM,
+            allowOffline = true,
+            allowCloud = true
         )
     )
 

@@ -18,7 +18,8 @@ enum class CapabilityType {
     TEST = 9,
     CONTACTS = 10,
     ALARM = 11,
-    CALENDAR = 12
+    CALENDAR = 12,
+    MAIL = 13
 };
 
 inline const char* CapabilityTypeToString(CapabilityType type) {
@@ -35,6 +36,7 @@ inline const char* CapabilityTypeToString(CapabilityType type) {
         case CapabilityType::CONTACTS: return "CONTACTS";
         case CapabilityType::ALARM: return "ALARM";
         case CapabilityType::CALENDAR: return "CALENDAR";
+        case CapabilityType::MAIL: return "MAIL";
         default: return "NONE";
     }
 }

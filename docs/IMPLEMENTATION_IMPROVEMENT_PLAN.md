@@ -161,6 +161,8 @@ Acceptance:
 
 Goal: make multi-step agent failures traceable.
 
+Status: complete.
+
 Required fields:
 
 - `session_id`

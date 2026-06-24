@@ -143,7 +143,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             val payload = request.optString("payload", "{}")
 
             // v9.5: Direct UI Delegation (Deterministic Routing)
-            if (capability == "MAP" || capability == "SMS" || capability == "CONTACTS" || capability == "MEMORY" || capability == "TEST" || capability == "ALARM" || capability == "CALENDAR" || capability == "FILES" || capability == "SENSOR") {
+            if (capability == "MAP" || capability == "SMS" || capability == "CONTACTS" || capability == "MEMORY" || capability == "TEST" || capability == "ALARM" || capability == "CALENDAR" || capability == "FILES" || capability == "SENSOR" || capability == "MAIL") {
                 val action = try { org.json.JSONObject(payload).optString("action", capability) } catch (e: Exception) { capability }
                 
                 // Inject request_id and session_id into payload for async HITL callbacks and policy evaluation

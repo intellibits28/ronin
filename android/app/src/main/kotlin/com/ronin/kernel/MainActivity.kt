@@ -555,6 +555,24 @@ class MainActivity : FragmentActivity() {
         return "NOT_FOUND:$name"
     }
 
+    private fun resolveContactEmail(name: String): String {
+        if (name.isEmpty() || name == "Unknown") return ""
+        if (name.contains("@")) return name
+        if (checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return ""
+        try {
+            val uri = ContactsContract.CommonDataKinds.Email.CONTENT_URI
+            val projection = arrayOf(ContactsContract.CommonDataKinds.Email.ADDRESS)
+            val selections = listOf("${ContactsContract.CommonDataKinds.Email.DISPLAY_NAME} = ?", "${ContactsContract.CommonDataKinds.Email.DISPLAY_NAME} LIKE ?")
+            for (selection in selections) {
+                val arg = if (selection.contains("LIKE")) "%$name%" else name
+                contentResolver.query(uri, projection, selection, arrayOf(arg), null)?.use { cursor ->
+                    if (cursor.moveToFirst()) return cursor.getString(0)
+                }
+            }
+        } catch (e: Exception) { Log.e("RoninKernel_MainActivity", "Email Resolver Error: ${e.message}") }
+        return ""
+    }
+
     private fun normalizeAttribute(attr: String): String {
         val lower = attr.lowercase()
         return when {
@@ -981,6 +999,57 @@ class MainActivity : FragmentActivity() {
                         }
                         runOnUiThread { val intent = Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("smsto:${Uri.encode(recipient)}"); putExtra("sms_body", body); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }; startActivity(intent) }
                         "Opened SMS composer for $recipient"
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+
+                // 9. MAIL
+                actionName.contains("MAIL") || actionName.contains("EMAIL") || toolName == "MAIL" -> {
+                    try {
+                        val conJson = params["context_result_CONTACTS"]
+                        var recipient = params["recipient_name"] ?: params["recipient_email"] ?: params["recipient"] ?: ""
+                        if (conJson != null && conJson.startsWith("{")) {
+                            recipient = JSONObject(conJson).optString("email", recipient)
+                        } else if (conJson != null && !conJson.startsWith("Error")) {
+                            recipient = conJson
+                        }
+                        
+                        // Resolve recipient to email address if it is not an email
+                        if (!recipient.isEmpty() && !recipient.contains("@")) {
+                            val resolved = resolveContactEmail(recipient)
+                            if (resolved.isNotEmpty()) {
+                                recipient = resolved
+                            } else {
+                                recipient = "" // Clear to force choose recipient in email app chooser
+                            }
+                        }
+                        
+                        val subject = params["subject"] ?: "Ronin Mail"
+                        var body = params["message"] ?: params["mail_body"] ?: params["content"] ?: ""
+                        
+                        val vaultJson = params["context_result_VAULT"] ?: params["context_result_MEMORY"]
+                        if (!vaultJson.isNullOrEmpty() && !vaultJson.startsWith("Error")) {
+                            body = vaultJson
+                        }
+
+                        runOnUiThread {
+                            val intent = if (recipient.isEmpty()) {
+                                Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("mailto:")
+                                    putExtra(Intent.EXTRA_SUBJECT, subject)
+                                    putExtra(Intent.EXTRA_TEXT, body)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                            } else {
+                                Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("mailto:${Uri.encode(recipient)}")
+                                    putExtra(Intent.EXTRA_SUBJECT, subject)
+                                    putExtra(Intent.EXTRA_TEXT, body)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                            }
+                            startActivity(intent)
+                        }
+                        if (recipient.isEmpty()) "Opened mail composer (Choose recipient)" else "Opened mail composer for $recipient"
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
 

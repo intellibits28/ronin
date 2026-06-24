@@ -10,8 +10,8 @@ namespace Ronin::Kernel::Execution {
 class ExecutionTelemetryBus {
 public:
     static ExecutionTelemetryBus& getInstance();
-    void logNodeStart(const std::string& session_id, const std::string& exec_id, const std::string& node_id);
-    void logNodeEnd(const std::string& session_id, const std::string& exec_id, const std::string& node_id, int64_t latency_ms, const std::string& result, int budget_consumed);
+    void logNodeStart(const std::string& session_id, const std::string& exec_id, const std::string& node_id, const std::string& capability, const std::string& corr_id = "");
+    void logNodeEnd(const std::string& session_id, const std::string& exec_id, const std::string& node_id, const std::string& capability, int64_t latency_ms, const std::string& result, int budget_consumed, const std::string& corr_id = "", int failure_type = 0);
     void logCancellation(const std::string& session_id, const std::string& exec_id, const std::string& reason);
     void logGatewayHop(const std::string& session_id, const std::string& exec_id, const std::string& direction);
 private:

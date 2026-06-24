@@ -12,13 +12,14 @@ ExecutionTelemetryBus& ExecutionTelemetryBus::getInstance() {
     return instance;
 }
 
-void ExecutionTelemetryBus::logNodeStart(const std::string& session_id, const std::string& exec_id, const std::string& node_id) {
-    LOGI(TAG, "[%s | %s | NODE:%s] Node Execution Started", session_id.c_str(), exec_id.c_str(), node_id.c_str());
+void ExecutionTelemetryBus::logNodeStart(const std::string& session_id, const std::string& exec_id, const std::string& node_id, const std::string& capability, const std::string& corr_id) {
+    LOGI(TAG, "[STRUCTURED_OBSERVABILITY] session_id: %s | exec_id: %s | corr_id: %s | node_id: %s | capability: %s | status: STARTED", 
+         session_id.c_str(), exec_id.c_str(), corr_id.c_str(), node_id.c_str(), capability.c_str());
 }
 
-void ExecutionTelemetryBus::logNodeEnd(const std::string& session_id, const std::string& exec_id, const std::string& node_id, int64_t latency_ms, const std::string& result, int budget_consumed) {
-    LOGI(TAG, "[%s | %s | NODE:%s] Node Execution Ended | Latency: %lld ms | Budget Used: %d ms | Result: %s", 
-         session_id.c_str(), exec_id.c_str(), node_id.c_str(), (long long)latency_ms, budget_consumed, result.c_str());
+void ExecutionTelemetryBus::logNodeEnd(const std::string& session_id, const std::string& exec_id, const std::string& node_id, const std::string& capability, int64_t latency_ms, const std::string& result, int budget_consumed, const std::string& corr_id, int failure_type) {
+    LOGI(TAG, "[STRUCTURED_OBSERVABILITY] session_id: %s | exec_id: %s | corr_id: %s | node_id: %s | capability: %s | latency_ms: %lld | outcome: %s | failure_type: %d", 
+         session_id.c_str(), exec_id.c_str(), corr_id.c_str(), node_id.c_str(), capability.c_str(), (long long)latency_ms, result.c_str(), failure_type);
 }
 
 void ExecutionTelemetryBus::logCancellation(const std::string& session_id, const std::string& exec_id, const std::string& reason) {

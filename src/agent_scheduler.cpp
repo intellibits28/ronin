@@ -88,10 +88,7 @@ void AgentScheduler::workerLoop() {
                 LOGI(TAG, "L8 Scheduler: Executing Step -> '%s'", step.c_str());
                 Capability::HardwareBridge::pushMessage("[AGENT] Step: " + step);
                 
-                auto exec_ctx = current_session->getExecutionContext();
-                if (exec_ctx) {
-                    Execution::ExecutionTelemetryBus::getInstance().logNodeStart(exec_ctx->session_id, exec_ctx->execution_id, step);
-                }
+
                 
                 // v7.7 Robust Step-to-Capability Mapping
                 CapabilityType type = CapabilityType::NONE;
@@ -107,6 +104,8 @@ void AgentScheduler::workerLoop() {
                 }
                 else if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
                     type = CapabilityType::MAP;
+                else if (s_lower.find("mail") != std::string::npos || s_lower.find("email") != std::string::npos)
+                    type = CapabilityType::MAIL;
                 else if (s_lower.find("sms") != std::string::npos || s_lower.find("message") != std::string::npos || s_lower.find("ပို့") != std::string::npos || s_lower.find("send") != std::string::npos || s_lower.find("mock_sms") != std::string::npos) 
                     type = CapabilityType::SMS;
                 else if (s_lower.find("location") != std::string::npos || s_lower.find("တည်နေရာ") != std::string::npos || s_lower.find("နေရာ") != std::string::npos || s_lower.find("mock_location") != std::string::npos) 
@@ -134,6 +133,11 @@ void AgentScheduler::workerLoop() {
                     type = CapabilityType::SENSOR;
                 else if (s_lower.find("mock_test") != std::string::npos)
                     type = CapabilityType::TEST;
+                
+                std::string cap_str = Ronin::Kernel::CapabilityTypeToString(type);
+                if (exec_ctx) {
+                    Execution::ExecutionTelemetryBus::getInstance().logNodeStart(exec_ctx->session_id, exec_ctx->execution_id, step, cap_str, exec_ctx->correlation_id);
+                }
                 
                 if (type != CapabilityType::NONE) {
                     LOGI(TAG, "L8 Scheduler: Dispatching Capability %d to L10 Optimizer...", static_cast<int>(type));
@@ -207,7 +211,17 @@ void AgentScheduler::workerLoop() {
                                     all_steps_success = false;
                                     break;
                                 }
-                                Execution::ExecutionTelemetryBus::getInstance().logNodeEnd(exec_ctx->session_id, exec_id, step, cost, step_success ? "SUCCESS" : "FAILURE", cost);
+                                Execution::ExecutionTelemetryBus::getInstance().logNodeEnd(
+                                    exec_ctx->session_id, 
+                                    exec_id, 
+                                    step, 
+                                    cap_str,
+                                    cost, 
+                                    step_success ? "SUCCESS" : "FAILURE", 
+                                    cost, 
+                                    exec_ctx->correlation_id, 
+                                    step_success ? 0 : 500
+                                );
                             }
 
                             // v1.5 Adaptive feedback
@@ -252,6 +266,14 @@ void AgentScheduler::workerLoop() {
                     nlohmann::json jPayload;
                     for (const auto& [k, v] : current_session->getParameters()) jPayload[k] = v;
                     
+                    // Phase 6: Correlation context
+                    auto exec_ctx = current_session->getExecutionContext();
+                    if (exec_ctx) {
+                        jPayload["session_id"] = exec_ctx->session_id;
+                        jPayload["exec_id"] = exec_ctx->execution_id;
+                        jPayload["corr_id"] = exec_ctx->correlation_id;
+                    }
+
                     // v1.6 Phase 5: Embed execution sequence for Macro-Skill mining
                     nlohmann::json stepsArray = nlohmann::json::array();
                     for (const auto& s : current_session->getPlan()) stepsArray.push_back(s);
@@ -263,7 +285,14 @@ void AgentScheduler::workerLoop() {
             } else {
                 Capability::HardwareBridge::updateDevHUD("FAILED", current_session->getIntent(), 0.0f, "");
                 if (m_executor) {
-                    m_executor->recordEpisode(current_session->getIntent(), "Failed task: " + current_session->getIntent(), "{}", false);
+                    nlohmann::json jPayload;
+                    auto exec_ctx = current_session->getExecutionContext();
+                    if (exec_ctx) {
+                        jPayload["session_id"] = exec_ctx->session_id;
+                        jPayload["exec_id"] = exec_ctx->execution_id;
+                        jPayload["corr_id"] = exec_ctx->correlation_id;
+                    }
+                    m_executor->recordEpisode(current_session->getIntent(), "Failed task: " + current_session->getIntent(), jPayload.dump(), false);
                 }
             }
 

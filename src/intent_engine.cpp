@@ -149,12 +149,15 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "7. SMS: 'GET_LOCATION', 'SEND_SMS'. "
         "8. SENSOR: 'ANALYZE_VIBRATION'. "
         "9. FILES: 'FILE_SEARCH'. "
+        "10. MAIL: 'SEND_MAIL'. "
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{...}} "
         "Examples: "
         "User: 'ကားနံပါတ် 123 vault ထဲသိမ်းပါ' -> {\"intent\":\"SAVE_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"ကားနံပါတ်\",\"vault_content\":\"123\"}} "
         "User: 'Toyota Wish car plate' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"LOOKUP_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish\",\"attribute\":\"license plate\"}} "
         "User: 'gemini api key ကို aung aung ဆီ sms ပို့ပေးပါ' -> {\"intent\":\"SEND_SMS\",\"plan\":[\"LOOKUP_VAULT\",\"CONTACTS\",\"SEND_SMS\"],\"parameters\":{\"vault_title\":\"gemini api key\",\"recipient_name\":\"aung aung\"}} "
         "User: 'aung aung ဆီ sms ပို့ပါ' -> {\"intent\":\"SEND_SMS\",\"plan\":[\"CONTACTS\",\"SEND_SMS\"],\"parameters\":{\"recipient_name\":\"aung aung\"}} "
+        "User: 'gemini api key ကို aung aung ဆီ email ပို့ပါ' -> {\"intent\":\"SEND_MAIL\",\"plan\":[\"LOOKUP_VAULT\",\"CONTACTS\",\"SEND_MAIL\"],\"parameters\":{\"vault_title\":\"gemini api key\",\"recipient_name\":\"aung aung\"}} "
+        "User: 'aung aung ဆီ email ပို့ပါ' -> {\"intent\":\"SEND_MAIL\",\"plan\":[\"CONTACTS\",\"SEND_MAIL\"],\"parameters\":{\"recipient_name\":\"aung aung\"}} "
         + lessons_context;
 
     // Requesting a reasoning cycle from the engine
@@ -211,12 +214,16 @@ CapabilityType TaskPlanner::mapIntentToCapability(const std::string& intent_name
     if (i_lower == "alarm" || i_lower == "set_alarm") {
         return CapabilityType::ALARM;
     }
+    if (i_lower == "mail" || i_lower == "send_mail" || i_lower == "email") {
+        return CapabilityType::MAIL;
+    }
     
     // v12.16: Substring fallback for LLM hallucinations
     if (i_lower.find("location") != std::string::npos || i_lower.find("map") != std::string::npos) return CapabilityType::LOCATION;
     if (i_lower.find("sms") != std::string::npos) return CapabilityType::SMS;
     if (i_lower.find("sensor") != std::string::npos || i_lower.find("vibration") != std::string::npos) return CapabilityType::SENSOR;
     if (i_lower.find("calendar") != std::string::npos || i_lower.find("meeting") != std::string::npos) return CapabilityType::CALENDAR;
+    if (i_lower.find("mail") != std::string::npos || i_lower.find("email") != std::string::npos) return CapabilityType::MAIL;
 
     return CapabilityType::NONE;
 }
