@@ -568,6 +568,15 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    private fun normalizeBurmeseDigits(input: String): String {
+        var out = input
+        val burmeseDigits = charArrayOf('၀', '၁', '၂', '၃', '၄', '၅', '၆', '၇', '၈', '၉')
+        for (i in 0..9) {
+            out = out.replace(burmeseDigits[i], ('0' + i))
+        }
+        return out
+    }
+
     private fun authenticateAndExecute(title: String, subtitle: String, onAuthSuccess: () -> String): String {
         val biometricManager = BiometricManager.from(this)
         if (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL) != BiometricManager.BIOMETRIC_SUCCESS) {
@@ -833,7 +842,8 @@ class MainActivity : FragmentActivity() {
                 // 4. ALARM
                 actionName.contains("ALARM") || actionName.contains("WAKE") || actionName.contains("နှိုး") || toolName == "ALARM" -> {
                     try {
-                        val timeStr = params["value"] ?: params["time"] ?: "06:00"
+                        val rawTimeStr = params["value"] ?: params["time"] ?: "06:00"
+                        val timeStr = normalizeBurmeseDigits(rawTimeStr)
                         val message = params["message"] ?: params["label"] ?: "Ronin Alarm"
                         
                         // v10.2.17: Robust Time Extraction (handles "၅ နာရီ", "5:00", "5 AM")
@@ -869,7 +879,11 @@ class MainActivity : FragmentActivity() {
                         if (isRead) {
                             var keyword = params["keyword"] ?: params["query"] ?: ""
                             val cal = java.util.Calendar.getInstance()
-                            if (params["time"]?.contains("tomorrow") == true || params["original_query"]?.contains("မနက်ဖြန်") == true) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                            val isTomorrow = (params["time"]?.lowercase()?.contains("tomorrow") == true) ||
+                                             (params["original_query"]?.lowercase()?.contains("tomorrow") == true) ||
+                                             (params["original_query"]?.contains("မနက်ဖြန်") == true) ||
+                                             (params["date"]?.lowercase()?.contains("tomorrow") == true)
+                            if (isTomorrow) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
                             cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
                             val start = cal.timeInMillis; cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 59)
                             val end = cal.timeInMillis
@@ -881,7 +895,8 @@ class MainActivity : FragmentActivity() {
                         } else {
                             val title = params["title"] ?: params["event"] ?: "Ronin Event"
                             var desc = params["description"] ?: params["details"] ?: ""
-                            val timeStr = params["time"] ?: params["original_query"] ?: ""
+                            val rawTimeStr = params["time"] ?: params["original_query"] ?: ""
+                            val timeStr = normalizeBurmeseDigits(rawTimeStr)
                             val cal = java.util.Calendar.getInstance()
                             
                             // v10.2.17: Robust Time Extraction for Calendar
@@ -899,7 +914,11 @@ class MainActivity : FragmentActivity() {
                                 if (!timeStr.lowercase().contains("am") && !timeStr.lowercase().contains("pm") && hour > 0 && hour < 8) hour += 12
                             }
 
-                            if (timeStr.lowercase().contains("tomorrow") || timeStr.contains("မနက်ဖြန်")) {
+                            val isTomorrow = (params["time"]?.lowercase()?.contains("tomorrow") == true) ||
+                                             (params["original_query"]?.lowercase()?.contains("tomorrow") == true) ||
+                                             (params["original_query"]?.contains("မနက်ဖြန်") == true) ||
+                                             (params["date"]?.lowercase()?.contains("tomorrow") == true)
+                            if (isTomorrow) {
                                 cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
                             }
                             
