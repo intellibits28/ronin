@@ -614,6 +614,25 @@ class MainActivity : FragmentActivity() {
         return result
     }
 
+    private fun requestHITLConfirmationInKotlin(intentName: String, message: String): Boolean {
+        var approved = false
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val vm = ViewModelProvider(this)[ChatViewModel::class.java]
+        runOnUiThread {
+            vm.hitlIntentName = intentName
+            vm.hitlMessage = message
+            vm.onHITLResult = { result ->
+                approved = result
+                latch.countDown()
+            }
+            vm.showHITLDialog = true
+        }
+        try {
+            latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (e: Exception) {}
+        return approved
+    }
+
     private fun setupHardwareCallbacks() {
         val vm = ViewModelProvider(this)[ChatViewModel::class.java]
         nativeEngine.getSecureApiKeyProvider = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
@@ -665,7 +684,38 @@ class MainActivity : FragmentActivity() {
             val intentContext = (params["intent"] ?: "").uppercase()
             Log.i("RoninKernel_MainActivity", "Executing Tool: $toolName (Action: $actionName, Intent: $intentContext)")
             
-            when {
+            val eval = CapabilityPolicyEngine.evaluate(
+                context = this,
+                nativeEngine = nativeEngine,
+                capabilityId = toolName,
+                params = params,
+                isOffline = chatViewModel.offlineMode,
+                isCloudOnly = chatViewModel.cloudOnlyMode
+            )
+            
+            if (eval is CapabilityPolicyEngine.EvaluationResult.Denied) {
+                "Error: Policy Denied - ${eval.reason}"
+            } else {
+                val policy = CapabilityPolicyEngine.getPolicy(toolName)
+                val hitlApproved = if (policy != null && policy.requiresHITL && toolName.uppercase() != "VAULT") {
+                    requestHITLConfirmationInKotlin(
+                        intentName = toolName,
+                        message = "Agent requests permission to execute sensitive action: $toolName (${params["message"] ?: params["sms_body"] ?: params["title"] ?: ""})"
+                    )
+                } else {
+                    true
+                }
+
+                if (!hitlApproved) {
+                    CapabilityPolicyEngine.auditAndReportFailure(
+                        nativeEngine = nativeEngine,
+                        policy = policy ?: CapabilityPolicyEngine.Policy(toolName, emptyList(), true, true, CapabilityPolicyEngine.RiskLevel.MEDIUM, true, true),
+                        params = params,
+                        reason = "User denied HITL confirmation prompt"
+                    )
+                    "Error: User denied HITL confirmation prompt"
+                } else {
+                    val toolResult = when {
                 // 1. MEMORY & DATA (Facts, Notes, Vault)
                 actionName.contains("NOTE") || actionName.contains("FACT") || actionName.contains("VAULT") || 
                 actionName.contains("MEMORY") || actionName.contains("DATABASE") || actionName.contains("RECORD") ||
@@ -903,9 +953,26 @@ class MainActivity : FragmentActivity() {
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
 
+                // 8. FILES
+                actionName.contains("FILE") || toolName == "FILES" -> {
+                    try {
+                        val query = params["query"] ?: ""
+                        val results = nativeEngine.searchFiles(query)
+                        if (results.isNotEmpty()) {
+                            nativeEngine.pushKernelMessage("\n[FILES FOUND]\n" + results.joinToString("\n"))
+                            "Found ${results.size} files matching: $query"
+                        } else {
+                            "Error: No files found matching: $query"
+                        }
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+
                 else -> "Tool $toolName executed with params: $params"
             }
+            toolResult
         }
+    }
+}
     }
 
     override fun onResume() { 

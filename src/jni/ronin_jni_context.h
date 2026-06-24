@@ -82,6 +82,7 @@ JNIEXPORT jboolean JNICALL native_pushSensorSamples(JNIEnv* env, jobject thiz, j
 JNIEXPORT jstring JNICALL native_getSensorAnalysis(JNIEnv* env, jobject thiz, jstring jtype);
 JNIEXPORT jboolean JNICALL native_storeNote(JNIEnv* env, jobject thiz, jstring t, jstring c, jstring tg);
 JNIEXPORT jboolean JNICALL native_storeFact(JNIEnv* env, jobject thiz, jstring e, jstring a, jstring v);
+JNIEXPORT jboolean JNICALL native_storeAuditLog(JNIEnv* env, jobject thiz, jstring a, jstring d);
 JNIEXPORT jstring JNICALL native_lookupFact(JNIEnv* env, jobject thiz, jstring e, jstring a);
 JNIEXPORT jstring JNICALL native_lookupVault(JNIEnv* env, jobject thiz, jstring t);
 JNIEXPORT jobjectArray JNICALL native_searchNotes(JNIEnv* env, jobject thiz, jstring q);

@@ -167,6 +167,8 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
     // Inject all blackboard data into payload
     nlohmann::json jPayload = nlohmann::json::parse(payload.empty() ? "{}" : payload);
     for (const auto& [key, val] : m_blackboard.storage) jPayload["context_" + key] = val;
+    jPayload["exec_id"] = ctx ? ctx->execution_id : "";
+    jPayload["node_id"] = std::to_string(best_node_id);
 
     // Phase 3 (Task 4): Integrate Belief State to allow world-knowledge-aware planning
     auto capability_belief = m_belief_state.getBelief(type_str);

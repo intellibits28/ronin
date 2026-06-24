@@ -484,7 +484,24 @@ std::vector<std::string> LongTermMemory::search(const std::string& query) { retu
 bool LongTermMemory::consolidate(const std::string& summary) { return storeNote("Consolidated Summary", summary, "auto"); }
 void LongTermMemory::applyDecay(uint64_t) {}
 int LongTermMemory::runMaintenance(bool) { return 0; }
-bool LongTermMemory::storeAuditLog(const std::string& action, const std::string& details) { return true; }
+bool LongTermMemory::storeAuditLog(const std::string& action, const std::string& details) {
+    if (!m_db) { LOGE(TAG, "storeAuditLog failed: DB is null."); return false; }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "INSERT INTO audit (action, details, timestamp) VALUES (?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, action.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, details.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 3, std::time(nullptr));
+        bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+        if (!success) { LOGE(TAG, "storeAuditLog step failed: %s", sqlite3_errmsg(m_db)); }
+        sqlite3_finalize(stmt);
+        return success;
+    } else {
+        LOGE(TAG, "storeAuditLog prepare failed: %s", sqlite3_errmsg(m_db));
+    }
+    return false;
+}
 
 std::vector<LongTermMemory::EpisodeRecord> LongTermMemory::getRecentEpisodes(int limit) {
     if (!m_db) return {};

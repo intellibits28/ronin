@@ -31,6 +31,7 @@ JNINativeMethod g_methods[] = {
     {"setInferenceSilenceNative", "(Z)V", (void*)native_setInferenceSilence},
     {"storeNoteNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeNote},
     {"storeFactNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeFact},
+    {"storeAuditLogNative", "(Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeAuditLog},
     {"storeVaultNative", "(Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_storeVault},
     {"lookupFactNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", (void*)native_lookupFact},
     {"lookupVaultNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_lookupVault},

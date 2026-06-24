@@ -76,6 +76,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Keep
     @Suppress("unused")
+    fun storeAuditLog(action: String, details: String): Boolean = if (isLibLoaded) storeAuditLogNative(action, details) else false
+
+    @Keep
+    @Suppress("unused")
     fun lookupFact(entity: String, attr: String): String = if (isLibLoaded) lookupFactNative(entity, attr) else ""
 
     @Keep
@@ -142,10 +146,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             if (capability == "MAP" || capability == "SMS" || capability == "CONTACTS" || capability == "MEMORY" || capability == "TEST" || capability == "ALARM" || capability == "CALENDAR" || capability == "FILES" || capability == "SENSOR") {
                 val action = try { org.json.JSONObject(payload).optString("action", capability) } catch (e: Exception) { capability }
                 
-                // Inject request_id into payload for async HITL callbacks
+                // Inject request_id and session_id into payload for async HITL callbacks and policy evaluation
                 val enrichedPayload = try {
                     val j = org.json.JSONObject(payload)
                     j.put("request_id", request.optString("request_id", ""))
+                    j.put("session_id", request.optString("session_id", ""))
                     j.toString()
                 } catch (e: Exception) { payload }
 
@@ -266,6 +271,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun setInferenceSilenceNative(silent: Boolean)
     private external fun storeNoteNative(title: String, content: String, tags: String): Boolean
     private external fun storeFactNative(entity: String, attr: String, value: String): Boolean
+    private external fun storeAuditLogNative(action: String, details: String): Boolean
     private external fun lookupFactNative(entity: String, attr: String): String
     private external fun lookupVaultNative(title: String): String
     private external fun searchNotesNative(query: String): Array<String>

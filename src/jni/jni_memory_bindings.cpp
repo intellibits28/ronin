@@ -41,6 +41,13 @@ JNIEXPORT jboolean JNICALL native_storeFact(JNIEnv* env, jobject thiz, jstring e
         : JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL native_storeAuditLog(JNIEnv* env, jobject thiz, jstring a, jstring d) {
+    auto& runtime = runtimeContext();
+    return (runtime.ltm && runtime.ltm->storeAuditLog(ConvertJStringToString(env, a), ConvertJStringToString(env, d)))
+        ? JNI_TRUE
+        : JNI_FALSE;
+}
+
 JNIEXPORT jstring JNICALL native_lookupFact(JNIEnv* env, jobject thiz, jstring e, jstring a) {
     auto& runtime = runtimeContext();
     return env->NewStringUTF(runtime.ltm ? runtime.ltm->lookupFact(ConvertJStringToString(env, e), ConvertJStringToString(env, a)).c_str() : "");
