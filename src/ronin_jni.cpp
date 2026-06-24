@@ -152,18 +152,38 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
     auto uec_result = JniExecutionGateway::getInstance().createAndValidateContext(env, jSessionId, jExecId, jCorrId);
     if (!uec_result.isOk()) {
         LOGE("RoninJNI", "Execution Context Validation Failed: %s", uec_result.error().c_str());
-        return env->NewStringUTF("{\"result\":\"Execution Blocked by Governance Layer.\"}");
+        nlohmann::json err_res;
+        err_res["success"] = false;
+        err_res["result"] = "Error: Execution Blocked by Governance Layer.";
+        err_res["session_id"] = "";
+        err_res["error"] = {
+            {"code", "POLICY_DENIED"},
+            {"message", uec_result.error()}
+        };
+        return env->NewStringUTF(err_res.dump().c_str());
     }
     auto exec_ctx = uec_result.value();
 
-    if (!runtimeContext().intent_engine) return env->NewStringUTF("{\"result\":\"Error\"}");
+    if (!runtimeContext().intent_engine) {
+        nlohmann::json err_res;
+        err_res["success"] = false;
+        err_res["result"] = "Error: Intent engine not initialized.";
+        err_res["session_id"] = "";
+        err_res["error"] = {
+            {"code", "SERVICE_DISCONNECTED"},
+            {"message", "Intent engine not initialized."}
+        };
+        return env->NewStringUTF(err_res.dump().c_str());
+    }
     std::string rawInput = ConvertJStringToString(env, input);
     if (runtimeContext().graph_executor) runtimeContext().graph_executor->clearContext();
     std::string cmdOutput;
     if (runtimeContext().intent_engine->handleCommand(rawInput, cmdOutput)) {
         if (rawInput == "/reset" && runtimeContext().llm_context.engine) runtimeContext().llm_context.engine->purgeKVCache();
         if (rawInput == "/reflect") native_runNightlyReflection(env, thiz);
-        nlohmann::json cmdRes; cmdRes["result"] = cmdOutput;
+        nlohmann::json cmdRes;
+        cmdRes["success"] = true;
+        cmdRes["result"] = cmdOutput;
         return env->NewStringUTF(cmdRes.dump().c_str());
     }
     std::string customSystem = ConvertJStringToString(env, systemPrompt);
@@ -179,7 +199,15 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
             if (runtimeContext().graph_executor) {
                 runtimeContext().graph_executor->recordEpisode("PLANNING_FAILURE", "Agent failed to generate a valid plan for input: " + rawInput, "{}", false);
             }
-            return env->NewStringUTF("{\"result\":\"Agent planning failed.\"}");
+            nlohmann::json err_res;
+            err_res["success"] = false;
+            err_res["result"] = "Error: Agent planning failed.";
+            err_res["session_id"] = "";
+            err_res["error"] = {
+                {"code", "PLANNING_FAILED"},
+                {"message", "Agent failed to generate a valid plan for input."}
+            };
+            return env->NewStringUTF(err_res.dump().c_str());
         }
         auto session = SessionManager::getInstance().createSession(plan.intent_name);
         sid = session->getSessionId();
@@ -226,7 +254,19 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
         }
         if (is_safe) { AgentScheduler::getInstance().schedule(session, 5); result = "Executing plan: " + plan.intent_name; }
     } else { result = runtimeContext().intent_engine->executeSkill(intent.id, rawInput); }
-    nlohmann::json fr; fr["result"] = result; fr["session_id"] = sid;
+    nlohmann::json fr;
+    fr["session_id"] = sid;
+    if (result == "Cancelled.") {
+        fr["success"] = false;
+        fr["result"] = "Error: Cancelled.";
+        fr["error"] = {
+            {"code", "CANCELLED"},
+            {"message", "User rejected confirmation dialog."}
+        };
+    } else {
+        fr["success"] = true;
+        fr["result"] = result;
+    }
     return env->NewStringUTF(fr.dump().c_str());
 }
 

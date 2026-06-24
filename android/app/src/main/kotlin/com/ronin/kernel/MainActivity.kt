@@ -354,11 +354,18 @@ class MainActivity : FragmentActivity() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
             chatViewModel.kernelStatus = "Hydrating..."
-            if (nativeEngine.loadModel(path)) {
-                chatViewModel.isGemmaReady = true
-                sharedPreferences.edit().putString("local_model_path", path).apply()
-                chatViewModel.localModelPath = path; chatViewModel.kernelStatus = "Kernel Ready"
-            } else { Toast.makeText(this@MainActivity, "Hydration Failed", Toast.LENGTH_SHORT).show(); chatViewModel.kernelStatus = "Bridge Active" }
+            when (val result = nativeEngine.loadModelResult(path)) {
+                is BridgeResult.Success -> {
+                    chatViewModel.isGemmaReady = true
+                    sharedPreferences.edit().putString("local_model_path", path).apply()
+                    chatViewModel.localModelPath = path
+                    chatViewModel.kernelStatus = "Kernel Ready"
+                }
+                is BridgeResult.Error -> {
+                    Toast.makeText(this@MainActivity, "Hydration Failed: ${result.message} (${result.code})", Toast.LENGTH_SHORT).show()
+                    chatViewModel.kernelStatus = "Bridge Active"
+                }
+            }
         }
     }
 
@@ -1027,9 +1034,16 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         chatViewModel.isGenerating = true
                                         scope.launch {
                                             val continuePrompt = "ဆက်ရေးပေးပါ။"
-                                            val result = engine.processInputAsync(continuePrompt, chatViewModel.systemPrompt)
-                                            msg.content += result.result
-                                            msg.isTruncated = result.result.isNotEmpty() && !result.result.trim().let { it.endsWith("။") || it.endsWith(".") || it.endsWith("?") || it.endsWith("!") }
+                                            when (val result = engine.processInputResult(continuePrompt, chatViewModel.systemPrompt)) {
+                                                is BridgeResult.Success -> {
+                                                    val processRes = result.value
+                                                    msg.content += processRes.result
+                                                    msg.isTruncated = processRes.result.isNotEmpty() && !processRes.result.trim().let { it.endsWith("။") || it.endsWith(".") || it.endsWith("?") || it.endsWith("!") }
+                                                }
+                                                is BridgeResult.Error -> {
+                                                    Toast.makeText(this@MainActivity, "Continue failed: ${result.message} (${result.code})", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
                                             msg.isContinuing = false
                                             chatViewModel.isGenerating = false
                                         }
@@ -1093,16 +1107,39 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         try {
                                             if (!isCommand && (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady)) { 
                                                 val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
-                                                val res = engine.performCloudInferenceAsync(raw, chatViewModel.primaryCloudProvider, apiKey)
-                                                roninMsg.content = res
-                                            } else { 
-                                                val result = engine.processInputAsync(raw, chatViewModel.systemPrompt)
-                                                if (isCommand || result.result.startsWith("Executing plan:")) {
-                                                    roninMsg.content = result.result
-                                                } else if (roninMsg.content.isEmpty()) {
-                                                    roninMsg.content = result.result
+                                                val resJsonStr = engine.performCloudInferenceAsync(raw, chatViewModel.primaryCloudProvider, apiKey)
+                                                try {
+                                                    val resJson = JSONObject(resJsonStr)
+                                                    if (resJson.optBoolean("success", false)) {
+                                                        roninMsg.content = resJson.optString("payload", "")
+                                                    } else {
+                                                        val error = resJson.optJSONObject("error")
+                                                        val errorMsg = error?.optString("message") ?: "Cloud Inference Failed"
+                                                        val errorCode = error?.optString("code") ?: "UNKNOWN"
+                                                        roninMsg.content = "Error: $errorMsg ($errorCode)"
+                                                    }
+                                                } catch (e: Exception) {
+                                                    if (resJsonStr.startsWith("Error:")) {
+                                                        roninMsg.content = resJsonStr
+                                                    } else {
+                                                        roninMsg.content = "Error: $resJsonStr"
+                                                    }
                                                 }
-                                                roninMsg.sessionId = result.sessionId
+                                            } else { 
+                                                when (val result = engine.processInputResult(raw, chatViewModel.systemPrompt)) {
+                                                    is BridgeResult.Success -> {
+                                                        val processRes = result.value
+                                                        if (isCommand || processRes.result.startsWith("Executing plan:")) {
+                                                            roninMsg.content = processRes.result
+                                                        } else if (roninMsg.content.isEmpty()) {
+                                                            roninMsg.content = processRes.result
+                                                        }
+                                                        roninMsg.sessionId = processRes.sessionId
+                                                    }
+                                                    is BridgeResult.Error -> {
+                                                        roninMsg.content = "Error: ${result.message} (${result.code})"
+                                                    }
+                                                }
                                             }
                                         } finally {
                                             chatViewModel.isGenerating = false

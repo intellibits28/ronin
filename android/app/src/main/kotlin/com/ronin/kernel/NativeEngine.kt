@@ -22,6 +22,11 @@ import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+sealed class BridgeResult<out T> {
+    data class Success<out T>(val value: T) : BridgeResult<T>()
+    data class Error(val code: String, val message: String) : BridgeResult<Nothing>()
+}
+
 /**
  * Native Engine (Hardened v4.0 Architecture)
  * Optimized for Mid-range stability with OkHttp networking and process isolation.
@@ -319,21 +324,59 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
-    suspend fun loadModel(path: String): Boolean = withContext(Dispatchers.IO) {
-        if (!isLibLoaded) return@withContext false
+    suspend fun loadModel(path: String): String = withContext(Dispatchers.IO) {
+        val response = JSONObject()
+        if (!isLibLoaded) {
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "SERVICE_DISCONNECTED").put("message", "JNI library not loaded"))
+            return@withContext response.toString()
+        }
         val start = System.currentTimeMillis()
         while (inferenceService == null && (System.currentTimeMillis() - start) < 5000) delay(200)
-        if (inferenceService == null) return@withContext false
+        if (inferenceService == null) {
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "SERVICE_DISCONNECTED").put("message", "Inference Service not bound"))
+            return@withContext response.toString()
+        }
 
         applyGenerationConfigToService()
-        val workerSuccess = try { inferenceService?.loadModel(path) ?: false } catch (e: Exception) { false }
-        if (!workerSuccess) return@withContext false
+        val serviceResStr = try { 
+            inferenceService?.loadModel(path) ?: JSONObject().put("success", false).put("error", JSONObject().put("code", "SERVICE_DISCONNECTED").put("message", "Inference Service returned null")).toString()
+        } catch (e: Exception) { 
+            JSONObject().put("success", false).put("error", JSONObject().put("code", "GENERIC_ERROR").put("message", e.message)).toString()
+        }
+        
+        try {
+            val json = JSONObject(serviceResStr)
+            if (json.optBoolean("success", false)) {
+                notifyModelLoadedNative(path)
+                currentModelPath = path
+                response.put("success", true)
+            } else {
+                return@withContext serviceResStr
+            }
+        } catch (e: Exception) {
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "GENERIC_ERROR").put("message", "Hydration parse error: " + e.message))
+        }
+        return@withContext response.toString()
+    }
 
-        return@withContext try {
-            notifyModelLoadedNative(path)
-            currentModelPath = path
-            true
-        } catch (e: Exception) { false }
+    suspend fun loadModelResult(path: String): BridgeResult<Boolean> {
+        val jsonStr = loadModel(path)
+        return try {
+            val json = JSONObject(jsonStr)
+            if (json.optBoolean("success", false)) {
+                BridgeResult.Success(true)
+            } else {
+                val error = json.optJSONObject("error")
+                val code = error?.optString("code") ?: "UNKNOWN"
+                val message = error?.optString("message") ?: "Hydration failed"
+                BridgeResult.Error(code, message)
+            }
+        } catch (e: Exception) {
+            BridgeResult.Error("GENERIC_ERROR", e.message ?: "Failed to parse result")
+        }
     }
 
     fun isLoaded(): Boolean {
@@ -346,7 +389,13 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return currentModelPath
     }
 
-    data class ProcessResult(val result: String, val sessionId: String = "")
+    data class ProcessResult(
+        val result: String, 
+        val sessionId: String = "",
+        val success: Boolean = true,
+        val errorCode: String? = null,
+        val errorMessage: String? = null
+    )
 
     fun cancelExecution(execId: String) {
         if (isLibLoaded) {
@@ -355,7 +404,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     suspend fun processInputAsync(input: String, systemPrompt: String = ""): ProcessResult = withContext(Dispatchers.Default) {
-        if (!isLibLoaded) return@withContext ProcessResult("Error: Lib not loaded.")
+        if (!isLibLoaded) return@withContext ProcessResult("Error: Lib not loaded.", success = false, errorCode = "SERVICE_DISCONNECTED", errorMessage = "JNI library not loaded")
 
         val sessionId = "S-" + System.currentTimeMillis()
         val execId = "E-" + java.util.UUID.randomUUID().toString().substring(0, 8)
@@ -386,10 +435,32 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             Log.i(TAG, "[$sessionId | $execId | JNI_HOP] KOTLIN -> JNI Dispatch")
             val jsonStr = processInputNative(sessionId, execId, corrId, input, systemPrompt)
             val json = org.json.JSONObject(jsonStr)
-            ProcessResult(json.getString("result"), json.optString("session_id", sessionId))
+            val success = json.optBoolean("success", true)
+            val error = json.optJSONObject("error")
+            ProcessResult(
+                result = json.getString("result"), 
+                sessionId = json.optString("session_id", sessionId),
+                success = success,
+                errorCode = error?.optString("code"),
+                errorMessage = error?.optString("message")
+            )
         } catch (e: Exception) { 
             Log.e(TAG, "Process Input failed: ${e.message}")
-            ProcessResult("Error: Kernel failure.") 
+            ProcessResult(
+                result = "Error: Kernel failure.", 
+                success = false,
+                errorCode = "GENERIC_ERROR",
+                errorMessage = e.message
+            ) 
+        }
+    }
+
+    suspend fun processInputResult(input: String, systemPrompt: String = ""): BridgeResult<ProcessResult> {
+        val res = processInputAsync(input, systemPrompt)
+        return if (res.success) {
+            BridgeResult.Success(res)
+        } else {
+            BridgeResult.Error(res.errorCode ?: "UNKNOWN", res.errorMessage ?: "Kernel failed")
         }
     }
 
@@ -414,14 +485,18 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Suppress("unused")
     fun runNeuralReasoning(input: String): String = runBlocking(Dispatchers.IO) {
         Log.d(TAG, "Native Trigger: Initiating Hardened AIDL Reasoning...")
+        val response = JSONObject()
         
         if (inferenceService == null) {
             Log.e(TAG, "Inference Service is null or not bound. Aborting reasoning.")
-            return@runBlocking "Error: Inference Service is disconnected."
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "SERVICE_DISCONNECTED").put("message", "Inference Service is disconnected"))
+            return@runBlocking response.toString()
         }
 
         val fullResult = StringBuilder()
         val latch = CountDownLatch(1)
+        var errorResult: String? = null
         
         try {
             inferenceService?.streamReasoning(input, object : IInferenceCallback.Stub() {
@@ -434,17 +509,40 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     }
                 }
                 override fun onError(message: String) {
-                    fullResult.append("Error: $message")
+                    errorResult = message
                     latch.countDown()
                 }
             })
         } catch (e: Exception) {
-            return@runBlocking "Error: AIDL Bridge Failed"
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "SERVICE_DISCONNECTED").put("message", e.message ?: "AIDL Bridge Failed"))
+            return@runBlocking response.toString()
         }
         
-        latch.await(60, TimeUnit.SECONDS)
+        val finished = latch.await(60, TimeUnit.SECONDS)
         pushTokenToUI("", true)
-        fullResult.toString()
+
+        if (!finished) {
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "TIMEOUT").put("message", "Inference timed out after 60 seconds"))
+            return@runBlocking response.toString()
+        }
+
+        if (errorResult != null) {
+            response.put("success", false)
+            val errCode = when {
+                errorResult!!.contains("hydration", ignoreCase = true) -> "HYDRATION_FAILED"
+                errorResult!!.contains("model", ignoreCase = true) -> "MODEL_MISSING"
+                errorResult!!.contains("cancel", ignoreCase = true) -> "CANCELLED"
+                else -> "GENERIC_ERROR"
+            }
+            response.put("error", JSONObject().put("code", errCode).put("message", errorResult))
+            return@runBlocking response.toString()
+        }
+
+        response.put("success", true)
+        response.put("payload", fullResult.toString())
+        return@runBlocking response.toString()
     }
 
     fun getLMKPressureSafe(): Int {
@@ -469,8 +567,13 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     suspend fun performCloudInferenceAsync(input: String, provider: String, apiKey: String): String = withContext(Dispatchers.IO) {
+        val response = JSONObject()
         val key = if (apiKey.isNotEmpty()) apiKey else (getSecureApiKeyProvider?.invoke(provider)?.trim() ?: "")
-        if (key.isEmpty()) return@withContext "Error: API Key missing for $provider."
+        if (key.isEmpty()) {
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "POLICY_DENIED").put("message", "API Key missing for $provider"))
+            return@withContext response.toString()
+        }
 
         var endpoint = ""
         var modelId = ""
@@ -487,9 +590,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     }
                 }
             }
-        } catch (e: Exception) { return@withContext "Error: Config failure." }
+        } catch (e: Exception) {
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "GENERIC_ERROR").put("message", "Config failure: " + e.message))
+            return@withContext response.toString()
+        }
 
-        if (endpoint.isEmpty()) return@withContext "Error: Endpoint missing for $provider."
+        if (endpoint.isEmpty()) {
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "POLICY_DENIED").put("message", "Endpoint missing for $provider"))
+            return@withContext response.toString()
+        }
 
         try {
             val isGemini = endpoint.contains("generativelanguage")
@@ -511,16 +622,28 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 .apply { if (!isGemini) header("Authorization", "Bearer $key") }
                 .build()
 
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    if (isGemini) JSONObject(body).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
-                    else JSONObject(body).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+            httpClient.newCall(request).execute().use { responseHttp ->
+                if (responseHttp.isSuccessful) {
+                    val body = responseHttp.body?.string() ?: ""
+                    val contentText = if (isGemini) {
+                        JSONObject(body).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                    } else {
+                        JSONObject(body).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+                    }
+                    response.put("success", true)
+                    response.put("payload", contentText)
+                    response.toString()
                 } else {
-                    "Error: HTTP ${response.code} - ${response.message}"
+                    response.put("success", false)
+                    response.put("error", JSONObject().put("code", "GENERIC_ERROR").put("message", "HTTP ${responseHttp.code} - ${responseHttp.message}"))
+                    response.toString()
                 }
             }
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: Exception) {
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "GENERIC_ERROR").put("message", e.message ?: "Unknown cloud error"))
+            response.toString()
+        }
     }
 
     @Keep

@@ -114,6 +114,8 @@ Acceptance:
 
 Goal: replace fragile `"Error: ..."` string handling with typed results.
 
+Status: complete.
+
 Targets:
 
 - Inference hydration result.

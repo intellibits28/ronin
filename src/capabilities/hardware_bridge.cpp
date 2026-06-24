@@ -179,7 +179,22 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
             if (jstr) {
                 const char* cstr = env->GetStringUTFChars(jstr, nullptr);
                 if (cstr) {
-                    result = std::string(cstr);
+                    std::string raw_res(cstr);
+                    try {
+                        auto json_res = nlohmann::json::parse(raw_res);
+                        if (json_res.contains("success") && json_res["success"].get<bool>()) {
+                            result = json_res.value("payload", "");
+                        } else if (json_res.contains("error")) {
+                            auto err = json_res["error"];
+                            std::string msg = err.value("message", "Cloud Inference Failed");
+                            std::string code = err.value("code", "UNKNOWN");
+                            result = "Error: " + msg + " (" + code + ")";
+                        } else {
+                            result = raw_res;
+                        }
+                    } catch (...) {
+                        result = raw_res;
+                    }
                     env->ReleaseStringUTFChars(jstr, cstr);
                 }
                 env->DeleteLocalRef(jstr);

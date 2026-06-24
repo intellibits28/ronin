@@ -84,9 +84,44 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input, const 
     LOGI(TAG, "Requesting Neural Reasoning via Sync JNI Bridge...");
     std::string result = Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
 
+    std::string payload = "";
+    bool needs_retry = false;
+    std::string error_code = "";
+    std::string error_message = "";
+
+    try {
+        auto json_res = nlohmann::json::parse(result);
+        if (json_res.contains("success") && json_res["success"].get<bool>()) {
+            payload = json_res.value("payload", "");
+        } else if (json_res.contains("error")) {
+            auto err = json_res["error"];
+            error_code = err.value("code", "GENERIC_ERROR");
+            error_message = err.value("message", "");
+            
+            LOGE(TAG, "Inference Failed [%s]: %s", error_code.c_str(), error_message.c_str());
+
+            if (error_code == "HYDRATION_FAILED" || error_message.find("Status Code: 13") != std::string::npos) {
+                needs_retry = true;
+            } else {
+                FailureType f_type = FailureType::UNKNOWN;
+                if (error_code == "TIMEOUT") f_type = FailureType::TIMEOUT;
+                else if (error_code == "SERVICE_DISCONNECTED") f_type = FailureType::JNI_EXCEPTION;
+                else if (error_code == "CANCELLED") f_type = FailureType::TIMEOUT;
+                
+                Execution::FailureTelemetryBus::getInstance().logFailure("inference", "Gemma", f_type, error_code + ": " + error_message);
+            }
+        }
+    } catch (const std::exception& e) {
+        LOGW(TAG, "Failed to parse JNI result JSON (Fallback to legacy parsing): %s. Raw: %s", e.what(), result.c_str());
+        if (result.find("Status Code: 13") != std::string::npos || result.find("Error:") != std::string::npos) {
+            needs_retry = true;
+        } else {
+            payload = result;
+        }
+    }
+
     // v1.5 Self-Healing: Check for LiteRT internal invocation errors
-    if (result.find("Status Code: 13") != std::string::npos || result.find("Failed to invoke") != std::string::npos || 
-        result.find("Hydration Failed") != std::string::npos || result.find("Active Conversation is null") != std::string::npos) {
+    if (needs_retry) {
         LOGE(TAG, "L15 Self-Healing: LiteRT Invocation Failed. Attempting Local Recovery...");
         
         // 1. Log failure for learning loop
@@ -102,9 +137,21 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input, const 
         LOGI(TAG, "L15: Retrying inference after hard reset...");
         result = Ronin::Kernel::Capability::HardwareBridge::runNeuralReasoning(wrapped_input);
         
-        if (result.find("Status Code: 13") != std::string::npos || result.find("Error:") != std::string::npos) {
-            LOGE(TAG, "L15: Terminal instability after reset. Aborting turn.");
-            return result;
+        try {
+            auto json_res = nlohmann::json::parse(result);
+            if (json_res.contains("success") && json_res["success"].get<bool>()) {
+                payload = json_res.value("payload", "");
+            } else {
+                auto err = json_res["error"];
+                LOGE(TAG, "L15: Terminal instability after reset (Code: %s). Aborting turn.", err.value("code", "").c_str());
+                return "";
+            }
+        } catch (...) {
+            if (result.find("Status Code: 13") != std::string::npos || result.find("Error:") != std::string::npos) {
+                LOGE(TAG, "L15: Terminal instability after reset (Raw failure). Aborting turn.");
+                return "";
+            }
+            payload = result;
         }
     }
 

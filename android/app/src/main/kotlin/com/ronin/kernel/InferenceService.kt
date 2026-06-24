@@ -17,6 +17,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.annotation.Keep
 import java.io.File
+import org.json.JSONObject
 
 /**
  * Hardened v4.0 Inference Spine
@@ -109,7 +110,7 @@ class InferenceService : Service() {
     }
 
     private val binder = object : IInferenceService.Stub() {
-        override fun loadModel(modelPath: String): Boolean = tryHydrate(modelPath)
+        override fun loadModel(modelPath: String): String = tryHydrate(modelPath)
         
         override fun runReasoning(input: String): String = runBlocking(Dispatchers.IO) {
             val fullResult = StringBuilder()
@@ -184,8 +185,13 @@ class InferenceService : Service() {
 
     override fun onBind(intent: Intent?): IBinder = binder
 
-    private fun tryHydrate(path: String): Boolean {
-        if (!File(path).exists()) return false
+    private fun tryHydrate(path: String): String {
+        val response = JSONObject()
+        if (!File(path).exists()) {
+            response.put("success", false)
+            response.put("error", JSONObject().put("code", "MODEL_MISSING").put("message", "Model file not found at $path"))
+            return response.toString()
+        }
         return runBlocking(Dispatchers.IO) {
             inferenceMutex.withLock {
                 releaseResourcesLocked()
@@ -201,12 +207,15 @@ class InferenceService : Service() {
                     litertConversation = createConversationLocked()
                     isConversationFresh = true; currentModelPath = path
                     Log.i(TAG, "Hardened Spine Hydrated (MaxTokens=$currentMaxTokens, T=$currentTemp, P=$currentTopP, K=$currentTopK): $path")
-                    true
+                    response.put("success", true)
+                    response.toString()
                 } catch (e: Throwable) { 
                     Log.e(TAG, "Hydration Failed: ${e.message}")
                     // v1.5 Self-Healing: If hydration fails, release to prevent zombie state
                     releaseResourcesLocked()
-                    false 
+                    response.put("success", false)
+                    response.put("error", JSONObject().put("code", "HYDRATION_FAILED").put("message", e.message ?: "LiteRT init error"))
+                    response.toString()
                 }
             }
         }
@@ -234,7 +243,8 @@ class InferenceService : Service() {
         // v1.5 Self-Healing: Check and auto-hydrate if engine was released due to instability
         if (litertEngine == null && currentModelPath.isNotEmpty()) {
             Log.i(TAG, "Spine is dry. Attempting Auto-Rehydration before inference...")
-            if (!tryHydrate(currentModelPath)) {
+            val hydRes = tryHydrate(currentModelPath)
+            if (!hydRes.contains("\"success\":true")) {
                 emit("Error: Hydration Failed. Engine could not be initialized.")
                 return@flow
             }

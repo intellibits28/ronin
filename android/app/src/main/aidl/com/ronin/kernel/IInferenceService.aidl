@@ -3,7 +3,7 @@ package com.ronin.kernel;
 import com.ronin.kernel.IInferenceCallback;
 
 interface IInferenceService {
-    boolean loadModel(String modelPath);
+    String loadModel(String modelPath);
     String runReasoning(String input);
     boolean isHydrated();
     String getActiveModelPath();
