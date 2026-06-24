@@ -121,7 +121,7 @@ class ChatViewModel : ViewModel() {
     var samplingTemperature by mutableStateOf(0.7f)
     var topK by mutableStateOf(40)
     var topP by mutableStateOf(0.9f)
-    var maxTokens by mutableStateOf(1024)
+    var maxTokens by mutableStateOf(2048)
     var isThinkingEnabled by mutableStateOf(true)
 
     var systemTemperature by mutableStateOf(0f)
@@ -218,7 +218,7 @@ class MainActivity : FragmentActivity() {
 
         // Load settings
         chatViewModel.systemPrompt = sharedPreferences.getString("system_prompt", chatViewModel.systemPrompt) ?: chatViewModel.systemPrompt
-        chatViewModel.maxTokens = sharedPreferences.getInt("max_tokens", 1024)
+        chatViewModel.maxTokens = sharedPreferences.getInt("max_tokens", 2048).coerceIn(1536, 4000)
         chatViewModel.samplingTemperature = sharedPreferences.getFloat("temperature", 0.7f)
         chatViewModel.topK = sharedPreferences.getInt("top_k", 40)
         chatViewModel.topP = sharedPreferences.getFloat("top_p", 0.9f)
@@ -1217,7 +1217,7 @@ fun ModalDrawerSheet(chatViewModel: ChatViewModel, brainPicker: ActivityResultLa
         Slider(value = chatViewModel.topP, onValueChange = { chatViewModel.topP = it }, onValueChangeFinished = { activity?.saveSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP) }, valueRange = 0.1f..1.0f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
         
         Text("Max Tokens: ${chatViewModel.maxTokens}", color = Color.White, fontSize = 13.sp)
-        Slider(value = chatViewModel.maxTokens.toFloat(), onValueChange = { chatViewModel.maxTokens = it.toInt() }, onValueChangeFinished = { activity?.saveMaxTokens(chatViewModel.maxTokens) }, valueRange = 128f..2048f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
+        Slider(value = chatViewModel.maxTokens.toFloat(), onValueChange = { chatViewModel.maxTokens = it.toInt() }, onValueChangeFinished = { activity?.saveMaxTokens(chatViewModel.maxTokens) }, valueRange = 1536f..4000f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
 
         Divider(Modifier.padding(vertical = 16.dp))
         Text("System Prompt", fontSize = 12.sp, color = Color.Gray)

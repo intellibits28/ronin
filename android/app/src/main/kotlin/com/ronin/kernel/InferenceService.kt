@@ -36,7 +36,7 @@ class InferenceService : Service() {
     private var currentTemp = 0.7f
     private var currentTopK = 40
     private var currentTopP = 0.9f
-    private var currentMaxTokens = 1024
+    private var currentMaxTokens = 2048
     
     private var isConversationFresh = true
     private var lastSummary: String? = null
@@ -167,7 +167,7 @@ class InferenceService : Service() {
         }
 
         override fun updateGenerationConfig(temp: Float, topK: Int, topP: Float, maxTokens: Int) {
-            val nextMaxTokens = maxTokens.coerceIn(128, 2048)
+            val nextMaxTokens = maxTokens.coerceIn(128, 4096)
             val requiresRehydrate = nextMaxTokens != currentMaxTokens && currentModelPath.isNotEmpty()
 
             currentTemp = temp.coerceAtLeast(0.0f)

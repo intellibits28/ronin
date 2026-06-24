@@ -188,7 +188,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private var generationTemp = 0.7f
     private var generationTopK = 40
     private var generationTopP = 0.9f
-    private var generationMaxTokens = 1024
+    private var generationMaxTokens = 2048
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
