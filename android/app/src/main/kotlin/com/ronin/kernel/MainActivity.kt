@@ -1041,7 +1041,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                     msg.isTruncated = processRes.result.isNotEmpty() && !processRes.result.trim().let { it.endsWith("။") || it.endsWith(".") || it.endsWith("?") || it.endsWith("!") }
                                                 }
                                                 is BridgeResult.Error -> {
-                                                    Toast.makeText(this@MainActivity, "Continue failed: ${result.message} (${result.code})", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "Continue failed: ${result.message} (${result.code})", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                             msg.isContinuing = false
