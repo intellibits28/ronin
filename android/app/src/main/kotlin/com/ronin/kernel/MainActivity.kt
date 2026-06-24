@@ -963,10 +963,22 @@ class MainActivity : FragmentActivity() {
                         val locJson = params["context_result_LOCATION"]; val conJson = params["context_result_CONTACTS"]
                         var recipient = params["recipient_name"] ?: params["recipient_number"] ?: params["recipient"] ?: ""
                         var body = params["message"] ?: params["sms_body"] ?: ""
+                        
+                        // v1.6: Fetch secret or memory content if scheduled
+                        val vaultJson = params["context_result_VAULT"] ?: params["context_result_MEMORY"]
+                        if (!vaultJson.isNullOrEmpty() && !vaultJson.startsWith("Error")) {
+                            body = vaultJson
+                        }
+
                         if (conJson != null && conJson.startsWith("{")) recipient = JSONObject(conJson).optString("phone_number", recipient)
                         else if (conJson != null && !conJson.startsWith("Error")) recipient = conJson
                         if (locJson != null && locJson.startsWith("{")) { val j = JSONObject(locJson); val lat = j.opt("lat")?.toString() ?: "0.0"; val lon = j.opt("lon")?.toString() ?: "0.0"; body += "\n\n📍 My Location: https://maps.google.com/?q=$lat,$lon" }
-                        if (!recipient.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) { val resolved = resolveContactName(recipient); if (!resolved.startsWith("NOT_FOUND")) recipient = resolved }
+                        if (!recipient.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) {
+                            val resolved = resolveContactName(recipient)
+                            if (!resolved.startsWith("NOT_FOUND") && resolved != "PERMISSION_DENIED") {
+                                recipient = resolved
+                            }
+                        }
                         runOnUiThread { val intent = Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("smsto:${Uri.encode(recipient)}"); putExtra("sms_body", body); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }; startActivity(intent) }
                         "Opened SMS composer for $recipient"
                     } catch (e: Exception) { "Error: ${e.message}" }

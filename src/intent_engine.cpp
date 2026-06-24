@@ -153,6 +153,8 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "Examples: "
         "User: 'ကားနံပါတ် 123 vault ထဲသိမ်းပါ' -> {\"intent\":\"SAVE_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"ကားနံပါတ်\",\"vault_content\":\"123\"}} "
         "User: 'Toyota Wish car plate' -> {\"intent\":\"LOOKUP_FACT\",\"plan\":[\"LOOKUP_FACT\"],\"parameters\":{\"entity\":\"Toyota Wish\",\"attribute\":\"license plate\"}} "
+        "User: 'gemini api key ကို aung aung ဆီ sms ပို့ပေးပါ' -> {\"intent\":\"SEND_SMS\",\"plan\":[\"LOOKUP_VAULT\",\"CONTACTS\",\"SEND_SMS\"],\"parameters\":{\"vault_title\":\"gemini api key\",\"recipient_name\":\"aung aung\"}} "
+        "User: 'aung aung ဆီ sms ပို့ပါ' -> {\"intent\":\"SEND_SMS\",\"plan\":[\"CONTACTS\",\"SEND_SMS\"],\"parameters\":{\"recipient_name\":\"aung aung\"}} "
         + lessons_context;
 
     // Requesting a reasoning cycle from the engine
@@ -202,6 +204,9 @@ CapabilityType TaskPlanner::mapIntentToCapability(const std::string& intent_name
     }
     if (i_lower.find("fact") != std::string::npos || i_lower.find("vault") != std::string::npos || i_lower == "memory") {
         return CapabilityType::MEMORY;
+    }
+    if (i_lower == "contacts" || i_lower == "resolve_contact" || i_lower.find("contact") != std::string::npos) {
+        return CapabilityType::CONTACTS;
     }
     if (i_lower == "alarm" || i_lower == "set_alarm") {
         return CapabilityType::ALARM;
