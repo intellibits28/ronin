@@ -689,8 +689,8 @@ class MainActivity : FragmentActivity() {
                 nativeEngine = nativeEngine,
                 capabilityId = toolName,
                 params = params,
-                isOffline = chatViewModel.offlineMode,
-                isCloudOnly = chatViewModel.cloudOnlyMode
+                isOffline = vm.offlineMode,
+                isCloudOnly = vm.cloudOnlyMode
             )
             
             if (eval is CapabilityPolicyEngine.EvaluationResult.Denied) {
