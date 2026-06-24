@@ -161,7 +161,7 @@ std::string InferenceEngine::runLiteRTReasoning(const std::string& input, const 
         return "";
     }
 
-    return result;
+    return payload;
 }
 
 std::string InferenceEngine::escalateToCloud(const std::string& input, const std::string& apiKey, const std::string& provider) {
