@@ -1306,10 +1306,15 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 when (val result = engine.processInputResult(raw, chatViewModel.systemPrompt)) {
                                                     is BridgeResult.Success -> {
                                                         val processRes = result.value
+                                                        var displayResult = processRes.result
+                                                        if (displayResult.contains("User denied HITL confirmation prompt")) {
+                                                            val fallbackPrompt = "The user has declined the automatic execution of the action for their query: \"$raw\". Please provide a helpful, conversational textual explanation in Myanmar instead."
+                                                            displayResult = engine.runNeuralReasoning(fallbackPrompt)
+                                                        }
                                                         if (isCommand || processRes.result.startsWith("Executing plan:")) {
-                                                            roninMsg.content = processRes.result
+                                                            roninMsg.content = displayResult
                                                         } else if (roninMsg.content.isEmpty()) {
-                                                            roninMsg.content = processRes.result
+                                                            roninMsg.content = displayResult
                                                         }
                                                         roninMsg.sessionId = processRes.sessionId
                                                     }

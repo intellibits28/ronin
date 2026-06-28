@@ -151,6 +151,7 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
     std::string system_prompt = 
         "Output ONLY JSON. "
         "Rules: "
+        "0. IMPORTANT: If the query asks for instructions, explanations, tutorial, or educational info on how to do something (e.g., 'tell me how to...', 'how do I...', 'explain how to...'), you MUST classify the intent as 'fallback_chat' and do NOT plan any tools. "
         "1. ALARM: 'SET_ALARM'. "
         "2. CALENDAR: 'ADD_EVENT', 'READ_CALENDAR'. "
         "3. VAULT: 'SAVE_VAULT', 'LOOKUP_VAULT'. For sensitive data. "
