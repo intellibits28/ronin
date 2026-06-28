@@ -230,6 +230,7 @@ class MainActivity : FragmentActivity() {
         lifecycleScope.launch(Dispatchers.Main) {
             chatViewModel.kernelStatus = "Booting Engine..."
             NativeEngine.initializeAsync(); nativeEngine.initialize()
+            nativeEngine.seedCapabilitiesIfEmpty()
             setupHardwareCallbacks(); loadCloudProvidersFromDisk()
             nativeEngine.loadCapabilities(File(filesDir, "assets/capabilities.json").absolutePath)
             nativeEngine.loadMyanmarDictionary(File(filesDir, "assets/myanmar_dictionary.txt").absolutePath)

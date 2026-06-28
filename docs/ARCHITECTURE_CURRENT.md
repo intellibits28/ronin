@@ -55,17 +55,16 @@ Current native runtime state is process-global:
 
 This works for the current app but is the main refactor target. The desired direction is a `KernelRuntimeContext` object with explicit init/shutdown/reinit semantics.
 
-## Capability Flow
+## Capability Flow & Sensor Runtime v2.0
 
-Native capabilities use:
+Native capabilities and sensor integrations are managed dynamically:
 
-- `CapabilityGraph`
-- `CapabilityDispatcher`
-- `BaseSkill` implementations
-- `HardwareBridge` for Android callbacks
-- Kotlin `ICapabilityDriver` implementations
-
-Sensitive actions currently gate in native/Kotlin paths. The desired direction is one central policy layer that decides permission requirements, human confirmation, audit level, risk level, and whether offline/cloud execution is allowed.
+- **`ToolRegistry`**: A central dynamic string-based tool registry storing metadata (inputs/outputs, permissions, description) and implementations for both class-based `BaseSkill`s and functional tools (e.g. C++ DSP wrappers like FFT, butterworth filters, peak detection, zero crossing, and RMS).
+- **`CapabilityDiscoveryEngine`**: Resolves requirements semantically using Jaccard index similarity on tool descriptions, and automatically constructs a Directed Acyclic Graph (DAG) using a greedy topological sorting scheduler matching inputs and outputs.
+- **`PerceptionEngine`**: A 10Hz rule-based background thread in Kotlin that fuses accelerometer/DSP signals to classify user context (e.g., `walking`, `running`, `phone_on_table`, `phone_in_pocket`, `building_vibration`), saving updates to the SQLite `perception_history` table and syncing them with the C++ `BeliefState` working memory.
+- **`SkillCompiler`**: A self-learning compiler that scans successful SQLite episodes and promotes recurrent sequences (e.g. `audio_capture` -> `fft`) into virtual compound Macro-Skills registered dynamically in the `ToolRegistry`.
+- **`CapabilityDispatcher` & `HardwareBridge`**: Orchestrate traditional JNI/Android hardware hooks.
+- **Kotlin `ICapabilityDriver`**: Bridges Kotlin/Java capability calls.
 
 ## Persistence Flow
 

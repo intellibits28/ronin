@@ -74,6 +74,40 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Suppress("unused")
     fun updateBelief(key: String, value: String, confidence: Float): Boolean = if (isLibLoaded) updateBeliefNative(key, value, confidence) else false
 
+    fun seedCapabilitiesIfEmpty() {
+        if (!isLibLoaded) return
+        val existing = searchNotes("capabilities")
+        if (existing.isNotEmpty()) return
+
+        storeNote(
+            "Ronin System Capabilities & Architecture",
+            "I am Ronin (v2.0), a native C++20 cognitive kernel running on Android. I feature a dynamic JNI bridge, dynamic capability discovery, native DSP processing, activity perception fusion, and self-learning macro-skills compilation.",
+            "capabilities, overview, architecture, help"
+        )
+        storeNote(
+            "How to use Ronin DSP Tools",
+            "I support five high-performance native DSP tools: " +
+            "1. 'fft': Computes Fast Fourier Transform on float arrays to output frequencies and magnitudes (minimum size 32). " +
+            "2. 'lowpass': Applies a 2nd-order Butterworth lowpass filter. " +
+            "3. 'detect_peaks': Finds indices of peak values above a given threshold. " +
+            "4. 'zero_crossing': Calculates zero crossing rates. " +
+            "5. 'rms': Computes root-mean-square value of a signal. " +
+            "Inputs/Outputs are formatted as JSON arrays.",
+            "dsp, fft, lowpass, peaks, zero_crossing, rms"
+        )
+        storeNote(
+            "Ronin Perception Engine & Sensor Fusion",
+            "My Kotlin Perception Engine runs a background thread at 10Hz to analyze Accelerometer/IMU data from the device. I automatically classify states: 'phone_on_table', 'phone_in_pocket', 'walking', 'running', and 'building_vibration'. These states are logged to the 'perception_history' database table and synchronized with the native C++ 'BeliefState'.",
+            "sensors, accelerometer, perception, states"
+        )
+        storeNote(
+            "Ronin Self-Learning and Macro Skills",
+            "I have a C++ SkillCompiler that analyzes successful session executions. When the same sequence of tools (e.g., capture audio -> FFT) is run successfully 100 times (or test threshold), I compile them into a virtual compound tool named 'macro_skill_<sequence>' and save it to the registry.",
+            "learning, macro_skills, compilation, self_learning"
+        )
+        Log.i("RoninKernel_Native", "Seeded Ronin capabilities documentation notes successfully.")
+    }
+
     @Keep
     @Suppress("unused")
     fun storeFact(entity: String, attr: String, value: String): Boolean = if (isLibLoaded) storeFactNative(entity, attr, value) else false
