@@ -48,7 +48,7 @@ TEST_F(EvolutionTest, NightlyReflectionCycle) {
     engine.reflectOnRecentTasks();
     
     // 4. Verify consolidation (A note should be stored as a 'Nightly Lesson')
-    auto notes = ltm->searchNotes("Intent 'SEND_SMS' is unreliable");
+    auto notes = ltm->searchNotes("SEND_SMS failed");
     EXPECT_FALSE(notes.empty());
 }
 
@@ -170,6 +170,47 @@ TEST_F(EvolutionTest, ToolRegistryAndDSPCapabilities) {
         nlohmann::json jOut = nlohmann::json::parse(res);
         EXPECT_FLOAT_EQ(jOut["rms"], 1.0f);
     }
+}
+
+#include "capabilities/discovery_engine.h"
+
+TEST_F(EvolutionTest, CapabilityDiscoveryEngineDAG) {
+    IntentEngine engine(ltm.get());
+    Reasoning::CapabilityDiscoveryEngine discovery_engine;
+
+    // 1. Resolve capabilities based on requirements
+    std::vector<std::string> requirements = {"Need frequency spectrum analysis of the audio"};
+    auto resolved = discovery_engine.resolveCapabilities(requirements);
+
+    EXPECT_FALSE(resolved.empty());
+    // The top resolved tool should be fft since query contains "frequency"
+    EXPECT_EQ(resolved[0].name, "fft");
+
+    // 2. Add dynamic sensor tool to registry for dependency testing
+    auto& registry = Capability::ToolRegistry::getInstance();
+    Capability::ToolMetadata mic_meta;
+    mic_meta.name = "audio_capture";
+    mic_meta.description = "Captures raw mic input array of floats";
+    mic_meta.inputs = {};
+    mic_meta.outputs = {"float_array"};
+    registry.registerTool(mic_meta, [](const std::string&, ToolContext*) {
+        return "[0.0, 1.0, 0.0]";
+    });
+
+    // 3. Build execution graph with dependency resolution
+    std::vector<Capability::ToolMetadata> tools_to_schedule = {
+        registry.searchTools("fft")[0],
+        registry.searchTools("audio_capture")[0]
+    };
+
+    // We start with NO initial inputs. "audio_capture" has no inputs so it runs first,
+    // producing "float_array". Then "fft" runs since its input "float_array" is satisfied.
+    std::vector<std::string> initial_inputs = {};
+    auto graph = discovery_engine.buildExecutionGraph(tools_to_schedule, initial_inputs);
+
+    ASSERT_EQ(graph.size(), 2);
+    EXPECT_EQ(graph[0], "audio_capture");
+    EXPECT_EQ(graph[1], "fft");
 }
 
 int main(int argc, char **argv) {

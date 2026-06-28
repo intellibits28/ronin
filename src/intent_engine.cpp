@@ -611,7 +611,7 @@ bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan
     bool has_alarm_kw = (norm.find("alarm") != std::string::npos || norm.find("wake") != std::string::npos || 
                          norm.find("နှိုးစက်") != std::string::npos || norm.find("နှိုး") != std::string::npos);
     if (has_alarm_kw) {
-        std::regex time_rx_colon("(\\d{1,2}):(\\d{2})");
+        std::regex time_rx_colon("(\\d{1,2})\\s*:\\s*(\\d{2})");
         std::regex time_rx_hours("(\\d{1,2})\\s*(?:am|pm|o'clock|hours)", std::regex_constants::icase);
         std::smatch match;
         
@@ -697,8 +697,15 @@ bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan
             std::string w_lower = word;
             std::transform(w_lower.begin(), w_lower.end(), w_lower.begin(), ::tolower);
             while ((p = target.find(w_lower, p)) != std::string::npos) {
-                target.replace(p, w_lower.length(), " ");
-                p += 1;
+                bool before_ok = (p == 0 || !std::isalnum(static_cast<unsigned char>(target[p - 1])));
+                bool after_ok = (p + w_lower.length() == target.length() || !std::isalnum(static_cast<unsigned char>(target[p + w_lower.length()])));
+                
+                if (before_ok && after_ok) {
+                    target.replace(p, w_lower.length(), " ");
+                    p += 1;
+                } else {
+                    p += 1;
+                }
             }
         }
         return trim(target);

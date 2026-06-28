@@ -51,6 +51,9 @@ static std::string runFFT(const std::string& payload, ToolContext* context) {
 
         int orig_size = input_array.size();
         int n_fft = isPowerOfTwo(orig_size) ? orig_size : nextPowerOfTwo(orig_size);
+        if (n_fft < 32) {
+            n_fft = 32;
+        }
         if (n_fft > 16384) {
             return "Error: FFT size too large (max 16384).";
         }

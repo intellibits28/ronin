@@ -6,11 +6,19 @@ if(POLICY CMP0135)
 endif()
 
 # Global Configuration for Dependencies (Single Model Hardening)
+option(FORCE_HOST_BUILD "Force host build mode even on Termux/Android host environment" OFF)
+
+if(ANDROID AND NOT FORCE_HOST_BUILD)
+    set(RONIN_BUILD_ANDROID TRUE)
+else()
+    set(RONIN_BUILD_ANDROID FALSE)
+endif()
+
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
 
 # Enable NEON for ARM64 and ARMv7-a
-if(ANDROID)
+if(RONIN_BUILD_ANDROID)
     set(CMAKE_ANDROID_ARM_NEON TRUE)
 endif()
 
@@ -30,7 +38,7 @@ target_include_directories(sqlite3_lib PUBLIC ${sqlite3_src_SOURCE_DIR})
 target_compile_definitions(sqlite3_lib PRIVATE SQLITE_ENABLE_FTS5=1)
 
 # --- Requirement: FlatBuffers ---
-if(ANDROID)
+if(RONIN_BUILD_ANDROID)
     set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "" FORCE)
 else()
     set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "" FORCE)
@@ -97,6 +105,7 @@ set(RONIN_CORE_SOURCES
     src/capabilities/hardware_bridge.cpp
     src/capabilities/chat_skill.cpp
     src/capabilities/tool_registry.cpp
+    src/capabilities/discovery_engine.cpp
     src/myanmar_segmenter.cpp
     src/dsp/resonance_analyzer.cpp
     src/dsp/dsp_tools.cpp
@@ -131,7 +140,7 @@ set(RONIN_JNI_SOURCES
     src/jni/jni_registration.cpp
 )
 
-if(ANDROID)
+if(RONIN_BUILD_ANDROID)
     find_library(log-lib log)
     find_library(android-lib android)
     
@@ -149,13 +158,10 @@ if(ANDROID)
         target_compile_options(ronin_core PRIVATE -march=armv8.2-a+dotprod)
         target_compile_definitions(ronin_core PRIVATE PFFFT_ENABLE_NEON)
     endif()
-else()
-    add_library(ronin_kernel SHARED ${RONIN_JNI_SOURCES})
-    target_link_libraries(ronin_kernel PUBLIC ronin_core sqlite3_lib)
 endif()
 
 # Host-side Unit Tests
-if(NOT ANDROID)
+if(NOT RONIN_BUILD_ANDROID)
     FetchContent_Declare(
       googletest
       GIT_REPOSITORY https://github.com/google/googletest.git
