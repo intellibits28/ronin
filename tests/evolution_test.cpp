@@ -95,6 +95,83 @@ TEST_F(EvolutionTest, FastPathSemanticRouterBypass) {
     }
 }
 
+#include "capabilities/tool_registry.h"
+#include <nlohmann/json.hpp>
+
+TEST_F(EvolutionTest, ToolRegistryAndDSPCapabilities) {
+    // IntentEngine constructor registers everything
+    IntentEngine engine(ltm.get());
+
+    auto& registry = Capability::ToolRegistry::getInstance();
+
+    // Verify default tools are registered
+    auto file_tool = registry.getSkill("file_search");
+    EXPECT_NE(file_tool, nullptr);
+
+    auto flash_tool = registry.getSkill("flashlight");
+    EXPECT_NE(flash_tool, nullptr);
+
+    // Verify DSP tools are searchable
+    auto dsp_list = registry.searchTools("fft");
+    EXPECT_FALSE(dsp_list.empty());
+    EXPECT_EQ(dsp_list[0].name, "fft");
+
+    // Test FFT Execution
+    {
+        nlohmann::json jInput = {0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f, -1.0f}; // Simple sine wave segment
+        std::string res = registry.execute("fft", jInput.dump());
+        EXPECT_FALSE(res.empty());
+        EXPECT_EQ(res.find("Error"), std::string::npos);
+
+        nlohmann::json jOut = nlohmann::json::parse(res);
+        EXPECT_TRUE(jOut.contains("frequencies"));
+        EXPECT_TRUE(jOut.contains("magnitudes"));
+    }
+
+    // Test Lowpass Filter Execution
+    {
+        nlohmann::json jInput;
+        jInput["array"] = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
+        jInput["cutoff_hz"] = 5.0f;
+        jInput["sample_rate"] = 100.0f;
+
+        std::string res = registry.execute("lowpass", jInput.dump());
+        EXPECT_FALSE(res.empty());
+        EXPECT_EQ(res.find("Error"), std::string::npos);
+
+        nlohmann::json jOut = nlohmann::json::parse(res);
+        EXPECT_TRUE(jOut.contains("filtered"));
+        EXPECT_EQ(jOut["filtered"].size(), 5);
+    }
+
+    // Test Peak Detection Execution
+    {
+        nlohmann::json jInput;
+        jInput["array"] = std::vector<float>{0.1f, 0.2f, 1.5f, 0.2f, 0.1f, 1.8f, 0.3f};
+        jInput["threshold"] = 0.5f;
+
+        std::string res = registry.execute("detect_peaks", jInput.dump());
+        nlohmann::json jOut = nlohmann::json::parse(res);
+        EXPECT_EQ(jOut["count"], 2); // indices 2 (1.5) and 5 (1.8)
+    }
+
+    // Test Zero Crossing Execution
+    {
+        std::vector<float> input = {1.0f, -1.0f, 1.0f, -1.0f};
+        std::string res = registry.execute("zero_crossing", nlohmann::json(input).dump());
+        nlohmann::json jOut = nlohmann::json::parse(res);
+        EXPECT_EQ(jOut["crossings"], 3);
+    }
+
+    // Test RMS Execution
+    {
+        std::vector<float> input = {1.0f, 1.0f, 1.0f, 1.0f};
+        std::string res = registry.execute("rms", nlohmann::json(input).dump());
+        nlohmann::json jOut = nlohmann::json::parse(res);
+        EXPECT_FLOAT_EQ(jOut["rms"], 1.0f);
+    }
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

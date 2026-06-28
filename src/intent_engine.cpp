@@ -10,6 +10,8 @@
 #include "capabilities/file_search_node.h"
 #include "capabilities/hardware_nodes.h"
 #include "capabilities/chat_skill.h"
+#include "capabilities/tool_registry.h"
+#include "dsp/dsp_tools.h"
 
 #define TAG "RoninIntent"
 
@@ -401,6 +403,42 @@ IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
     m_skill_registry[7] = std::make_shared<BluetoothNode>();
     m_skill_registry[1] = std::make_shared<ChatSkill>(nullptr, m_ltm);
     m_planner = std::make_unique<TaskPlanner>(nullptr, nullptr); 
+
+    // Register all default capability tools to ToolRegistry
+    auto& reg = ToolRegistry::getInstance();
+    
+    ToolMetadata meta_file;
+    meta_file.name = "file_search";
+    meta_file.description = "Searches for documents, pdf, txt files on the local filesystem";
+    reg.registerSkill(m_skill_registry[2], meta_file);
+
+    ToolMetadata meta_flash;
+    meta_flash.name = "flashlight";
+    meta_flash.description = "Turns the device flashlight on or off";
+    reg.registerSkill(m_skill_registry[4], meta_flash);
+
+    ToolMetadata meta_loc;
+    meta_loc.name = "location";
+    meta_loc.description = "Gets the device GPS latitude and longitude coordinates";
+    reg.registerSkill(m_skill_registry[5], meta_loc);
+
+    ToolMetadata meta_wifi;
+    meta_wifi.name = "wifi";
+    meta_wifi.description = "Scans available WiFi access points";
+    reg.registerSkill(m_skill_registry[6], meta_wifi);
+
+    ToolMetadata meta_bt;
+    meta_bt.name = "bluetooth";
+    meta_bt.description = "Scans for nearby Bluetooth devices";
+    reg.registerSkill(m_skill_registry[7], meta_bt);
+
+    ToolMetadata meta_chat;
+    meta_chat.name = "chat";
+    meta_chat.description = "Generates direct conversational reply to the user";
+    reg.registerSkill(m_skill_registry[1], meta_chat);
+
+    // Register high-performance DSP tools (FFT, Lowpass, Zero Crossing, etc.)
+    Ronin::Kernel::DSP::registerDspTools();
 }
 
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& history) {
