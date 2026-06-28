@@ -213,6 +213,48 @@ TEST_F(EvolutionTest, CapabilityDiscoveryEngineDAG) {
     EXPECT_EQ(graph[1], "fft");
 }
 
+#include "capabilities/skill_compiler.h"
+
+TEST_F(EvolutionTest, SkillCompilerPatternPromotion) {
+    IntentEngine engine(ltm.get());
+    auto& registry = Capability::ToolRegistry::getInstance();
+
+    // 1. Mock 5 successful episodes of audio_capture followed by fft
+    // payload_json contains the executed_steps array
+    for (int i = 0; i < 5; ++i) {
+        std::string payload = "{\"executed_steps\": [\"audio_capture\", \"fft\"]}";
+        sqlite3_stmt* stmt = nullptr;
+        const char* sql = "INSERT INTO episodes (intent, summary, outcome_enum, payload_json, timestamp) VALUES ('TEST_INTENT', 'success', 1, ?, ?);";
+        ASSERT_EQ(sqlite3_prepare_v2(ltm->getDatabase(), sql, -1, &stmt, nullptr), SQLITE_OK);
+        sqlite3_bind_text(stmt, 1, payload.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 2, std::time(nullptr) - i);
+        ASSERT_EQ(sqlite3_step(stmt), SQLITE_DONE);
+        sqlite3_finalize(stmt);
+    }
+
+    // 2. Trigger compiler with threshold 5
+    Reasoning::SkillCompiler::compileAndPromoteSkills(ltm.get(), 5);
+
+    // 3. Verify that the new macro-skill is compiled and registered
+    auto matches = registry.searchTools("macro_skill_audio_capture_fft");
+    ASSERT_FALSE(matches.empty());
+    EXPECT_EQ(matches[0].name, "macro_skill_audio_capture_fft");
+
+    // 4. Verify that execution runs all chained steps (audio_capture -> fft)
+    // audio_capture returns [0.0, 1.0, 0.0] which fft processes
+    std::string result = registry.execute("macro_skill_audio_capture_fft", "{}");
+    EXPECT_FALSE(result.empty());
+    EXPECT_EQ(result.find("Error"), std::string::npos);
+
+    nlohmann::json jOut = nlohmann::json::parse(result);
+    EXPECT_TRUE(jOut.contains("frequencies"));
+    EXPECT_TRUE(jOut.contains("magnitudes"));
+
+    // 5. Verify that it was stored as a consolidated note/lesson in long-term memory
+    auto notes = ltm->searchNotes("macro_skill_audio_capture_fft");
+    EXPECT_FALSE(notes.empty());
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

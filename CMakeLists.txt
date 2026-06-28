@@ -106,6 +106,7 @@ set(RONIN_CORE_SOURCES
     src/capabilities/chat_skill.cpp
     src/capabilities/tool_registry.cpp
     src/capabilities/discovery_engine.cpp
+    src/capabilities/skill_compiler.cpp
     src/myanmar_segmenter.cpp
     src/dsp/resonance_analyzer.cpp
     src/dsp/dsp_tools.cpp
