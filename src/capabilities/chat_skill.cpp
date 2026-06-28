@@ -2,6 +2,9 @@
 #include "ronin_kernel.hpp"
 #include "ronin_log.h"
 
+#include <unordered_set>
+#include <algorithm>
+
 namespace Ronin::Kernel::Capability {
 
 std::string ChatSkill::execute(const std::string& param, ToolContext* context) {
@@ -32,6 +35,36 @@ std::string ChatSkill::execute(const std::string& param, ToolContext* context) {
             sysPrompt += "This state implies physical movement and presence of a person in the immediate vicinity. Respond based on this sensor context if asked about people presence.\n";
         } else if (latest_state == "phone_on_table") {
             sysPrompt += "This state implies the device is resting quietly on a surface (possibly unoccupied room).\n";
+        }
+
+        // v2.0: Inject relevant database documentation notes/facts for user queries
+        if (m_ltm) {
+            auto matched = m_ltm->searchNotes(param);
+            
+            // Check for help/capability queries and auto-load seeded guidelines
+            std::string lower_query = param;
+            std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
+            if (lower_query.find("capability") != std::string::npos ||
+                lower_query.find("capabilities") != std::string::npos ||
+                lower_query.find("ability") != std::string::npos ||
+                lower_query.find("abilities") != std::string::npos ||
+                lower_query.find("help") != std::string::npos ||
+                lower_query.find("dsp") != std::string::npos ||
+                lower_query.find("sensor") != std::string::npos) {
+                
+                auto general_notes = m_ltm->searchNotes("capabilities");
+                matched.insert(matched.end(), general_notes.begin(), general_notes.end());
+            }
+
+            if (!matched.empty()) {
+                sysPrompt += "\n[RELEVANT KNOWLEDGE NOTES]:\n";
+                std::unordered_set<std::string> seen;
+                for (const auto& note : matched) {
+                    if (seen.insert(note).second) {
+                        sysPrompt += "- " + note + "\n";
+                    }
+                }
+            }
         }
 
         // Phase 11.2: Direct prompt passing with custom instructions.
