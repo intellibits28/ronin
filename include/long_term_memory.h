@@ -128,6 +128,7 @@ public:
     void setReadOnly(bool readOnly) { m_read_only.store(readOnly); }
     bool isReadOnly() const { return m_read_only.load(); }
     sqlite3* getDatabase() { return m_db; }
+    std::string getLatestPerceptionState();
 
 private:
     sqlite3* m_db = nullptr;

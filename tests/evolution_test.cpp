@@ -255,6 +255,20 @@ TEST_F(EvolutionTest, SkillCompilerPatternPromotion) {
     EXPECT_FALSE(notes.empty());
 }
 
+TEST_F(EvolutionTest, PerceptionStateInjectionInChat) {
+    // 1. Insert a mock walking state in perception_history table
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "INSERT INTO perception_history (timestamp, state_type, state_value) VALUES (?, 'physical_activity', 'walking');";
+    ASSERT_EQ(sqlite3_prepare_v2(ltm->getDatabase(), sql, -1, &stmt, nullptr), SQLITE_OK);
+    sqlite3_bind_int64(stmt, 1, std::time(nullptr));
+    ASSERT_EQ(sqlite3_step(stmt), SQLITE_DONE);
+    sqlite3_finalize(stmt);
+
+    // 2. Verify state retrieval via getLatestPerceptionState()
+    std::string val = ltm->getLatestPerceptionState();
+    EXPECT_EQ(val, "walking");
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

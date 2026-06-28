@@ -71,7 +71,8 @@ bool LongTermMemory::initSchema() {
         "CREATE TABLE IF NOT EXISTS chat_history (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT, content TEXT, timestamp INTEGER);",
         "CREATE VIRTUAL TABLE IF NOT EXISTS file_index USING fts5(name, path, extension, last_modified UNINDEXED);",
         "CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, details TEXT, timestamp INTEGER);",
-        "CREATE TABLE IF NOT EXISTS failures (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, failure_type INTEGER, timestamp INTEGER, retry_count INTEGER, resolution TEXT);"
+        "CREATE TABLE IF NOT EXISTS failures (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, failure_type INTEGER, timestamp INTEGER, retry_count INTEGER, resolution TEXT);",
+        "CREATE TABLE IF NOT EXISTS perception_history (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, state_type TEXT, state_value TEXT);"
     };
 
     if (sqlite3_exec(m_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
@@ -625,6 +626,22 @@ int LongTermMemory::countFailures(const std::string& node_id, uint64_t since_ms)
     }
     sqlite3_finalize(stmt);
     return count;
+}
+
+std::string LongTermMemory::getLatestPerceptionState() {
+    if (!m_db) return "unknown";
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "SELECT state_value FROM perception_history ORDER BY timestamp DESC LIMIT 1;";
+    sqlite3_stmt* stmt = nullptr;
+    std::string val = "unknown";
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* text = sqlite3_column_text(stmt, 0);
+            if (text) val = reinterpret_cast<const char*>(text);
+        }
+    }
+    if (stmt) sqlite3_finalize(stmt);
+    return val;
 }
 
 } // namespace Ronin::Kernel::Memory

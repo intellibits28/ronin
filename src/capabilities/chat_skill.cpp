@@ -21,6 +21,19 @@ std::string ChatSkill::execute(const std::string& param, ToolContext* context) {
             sysPrompt = m_kernel->getSuggestedSubject();
         }
 
+        // v2.0: Inject dynamic environment sensor fusion state from LTM
+        std::string latest_state = "unknown";
+        if (m_ltm) {
+            latest_state = m_ltm->getLatestPerceptionState();
+        }
+        sysPrompt += "\n[SYSTEM ENVIRONMENT CONTEXT]:\n";
+        sysPrompt += "Current classified physical activity state: " + latest_state + "\n";
+        if (latest_state == "walking" || latest_state == "running" || latest_state == "active") {
+            sysPrompt += "This state implies physical movement and presence of a person in the immediate vicinity. Respond based on this sensor context if asked about people presence.\n";
+        } else if (latest_state == "phone_on_table") {
+            sysPrompt += "This state implies the device is resting quietly on a surface (possibly unoccupied room).\n";
+        }
+
         // Phase 11.2: Direct prompt passing with custom instructions.
         res = m_engine->runLiteRTReasoning(param, sysPrompt);
         if (!res.empty() && !res.starts_with("Error:")) {
