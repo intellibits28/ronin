@@ -41,10 +41,24 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             )
         """.trimIndent()
         db?.execSQL(createMemoriesTable)
+        createPerceptionTable(db)
+    }
+
+    private fun createPerceptionTable(db: SQLiteDatabase?) {
+        val createPerceptionHistoryTable = """
+            CREATE TABLE IF NOT EXISTS perception_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER,
+                state_type TEXT,
+                state_value TEXT
+            )
+        """.trimIndent()
+        db?.execSQL(createPerceptionHistoryTable)
     }
 
     override fun onUpgrade(db: SQLiteDatabase?, oldVersion: Int, newVersion: Int) {
         if (db == null) return
+        createPerceptionTable(db)
         if (oldVersion < 2) {
             addColumnIfMissing(db, TABLE_MEMORIES, COLUMN_SEGMENTED_MM, "TEXT")
             addColumnIfMissing(db, TABLE_MEMORIES, COLUMN_IMPORTANCE, "REAL DEFAULT 1.0")

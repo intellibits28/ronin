@@ -43,6 +43,7 @@ JNINativeMethod g_methods[] = {
     {"storePredictionNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;F)Z", (void*)native_storePrediction},
     {"injectWorldStateNative", "(FFZZZI)V", (void*)native_injectWorldState},
     {"applyHumanFeedbackNative", "(Ljava/lang/String;Z)V", (void*)native_applyHumanFeedback},
+    {"updateBeliefNative", "(Ljava/lang/String;Ljava/lang/String;F)Z", (void*)native_updateBelief},
     {"notifyModelLoadedNative", "(Ljava/lang/String;)V", (void*)native_notifyModelLoaded},
     {"setSafeModeNative", "(Z)V", (void*)native_setSafeMode},
     {"setPriorityNative", "(I)V", (void*)native_setPriority},

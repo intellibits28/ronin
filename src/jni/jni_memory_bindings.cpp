@@ -96,6 +96,19 @@ JNIEXPORT void JNICALL native_applyHumanFeedback(JNIEnv* env, jobject thiz, jstr
     }
 }
 
+JNIEXPORT jboolean JNICALL native_updateBelief(JNIEnv* env, jobject thiz, jstring key, jstring value, jfloat confidence) {
+    auto& runtime = runtimeContext();
+    if (runtime.graph_executor) {
+        runtime.graph_executor->getBeliefState().updateBelief(
+            ConvertJStringToString(env, key),
+            ConvertJStringToString(env, value),
+            confidence
+        );
+        return JNI_TRUE;
+    }
+    return JNI_FALSE;
+}
+
 JNIEXPORT jobjectArray JNICALL native_getChatHistory(JNIEnv* env, jobject thiz, jint l, jint o) {
     auto& runtime = runtimeContext();
     if (!runtime.ltm) return nullptr;

@@ -161,6 +161,7 @@ class ChatViewModel : ViewModel() {
 class MainActivity : FragmentActivity() {
     internal lateinit var nativeEngine: NativeEngine
     private lateinit var sensorDriver: SensorDriver
+    private lateinit var perceptionEngine: PerceptionEngine
     private lateinit var sharedPreferences: android.content.SharedPreferences
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     // ... rest of the class remains same but I need to include the modified methods
@@ -211,6 +212,7 @@ class MainActivity : FragmentActivity() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         nativeEngine = NativeEngine(this)
         sensorDriver = SensorDriver(this, nativeEngine)
+        perceptionEngine = PerceptionEngine(this, nativeEngine)
         val masterKey = MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         sharedPreferences = EncryptedSharedPreferences.create(this, "ronin_secure_prefs", masterKey, EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -1079,6 +1081,13 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         scanLocalModels()
         startWorldStateSync()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::perceptionEngine.isInitialized) {
+            perceptionEngine.shutdown()
+        }
     }
 
     private val android.os.BatteryManager.isCharging: Boolean

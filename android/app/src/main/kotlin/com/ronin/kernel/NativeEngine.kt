@@ -72,6 +72,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     @Keep
     @Suppress("unused")
+    fun updateBelief(key: String, value: String, confidence: Float): Boolean = if (isLibLoaded) updateBeliefNative(key, value, confidence) else false
+
+    @Keep
+    @Suppress("unused")
     fun storeFact(entity: String, attr: String, value: String): Boolean = if (isLibLoaded) storeFactNative(entity, attr, value) else false
 
     @Keep
@@ -281,6 +285,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun pushSensorSamplesNative(samplesX: FloatArray, samplesY: FloatArray, samplesZ: FloatArray, sensorType: String): Boolean
     private external fun getSensorAnalysisNative(sensorType: String): String
     private external fun storePredictionNative(goalId: String, nodeId: String, predicted: String, actual: String, error: Float): Boolean
+    private external fun updateBeliefNative(key: String, value: String, confidence: Float): Boolean
     private external fun applyHumanFeedbackNative(sessionId: String, wasHelpful: Boolean)
 
     fun submitCapabilityResponseSafe(requestId: String, success: Boolean, payload: String) {
