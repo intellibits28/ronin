@@ -15,6 +15,10 @@
 #include "ronin_types.hpp"
 #include "planner_rule_cache.h"
 #include "capability_compiler.h"
+#include "capability_policy_engine.h"
+#include "ronin-runtime/actors/include/actor_supervisor.h"
+#include "optimization/ab_version_manager.h"
+#include "optimization/safe_rollback_manager.h"
 
 namespace Ronin::Kernel {
 namespace JNI {
@@ -37,10 +41,10 @@ public:
     WorldState world_state;
     std::unique_ptr<Reasoning::PlannerRuleCache> planner_rule_cache;
     std::unique_ptr<CapabilityCompiler> capability_compiler;
-    std::unique_ptr<CapabilityPolicyEngine> capability_policy_engine;
+    std::unique_ptr<Ronin::Kernel::CapabilityPolicyEngine> capability_policy_engine;
     std::unique_ptr<Ronin::Kernel::Execution::ActorSupervisor> actor_supervisor;
-std::unique_ptr<Ronin::Kernel::Optimization::ABVersionManager> ab_version_manager;
-std::unique_ptr<Ronin::Kernel::Optimization::SafeRollbackManager> safe_rollback_manager;
+    std::unique_ptr<Ronin::Kernel::Optimization::ABVersionManager> ab_version_manager;
+    std::unique_ptr<Ronin::Kernel::Optimization::SafeRollbackManager> safe_rollback_manager;
     jobject instance = nullptr;
     JavaVM* vm = nullptr;
 

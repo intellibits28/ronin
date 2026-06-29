@@ -92,7 +92,10 @@ set(RONIN_CORE_SOURCES
     src/belief_state.cpp
     src/reflection_engine.cpp
     src/capability_graph.cpp
-    src/capability_dispatcher.cpp
+    src/capability_policy_engine.cpp
+    ronin-runtime/actors/src/actor_supervisor.cpp
+    src/optimization/ab_version_manager.cpp
+    src/optimization/safe_rollback_manager.cpp
     src/android_bridge.cpp
     src/agent_session.cpp
     src/session_manager.cpp
