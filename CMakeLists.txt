@@ -93,6 +93,8 @@ set(RONIN_CORE_SOURCES
     src/reflection_engine.cpp
     src/capability_graph.cpp
     src/capability_policy_engine.cpp
+    src/capability_dispatcher.cpp
+    src/planner_rule_cache.cpp
     ronin-runtime/actors/src/actor_supervisor.cpp
     src/optimization/ab_version_manager.cpp
     src/optimization/safe_rollback_manager.cpp
