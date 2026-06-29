@@ -1,6 +1,6 @@
-# Ronin Cognitive Runtime v1.0: Production Release Spec & Implementation Blueprint
+# Ronin Cognitive Runtime v1.0: Locked Production Release Specification
 
-This document freezes the architectural design scope and establishes the implementation blueprint for the production release of **Ronin Runtime v1.0**. No further architectural layers will be added; focus is shifted entirely to software engineering interfaces, validation, profiling, and resource optimizations on Android.
+This document freezes the architectural design scope and establishes the implementation blueprint for the production release of **Ronin Runtime v1.0**. The architectural specs are locked. Any future changes require a formal RFC (Request for Change) process with design review and benchmark proof.
 
 ---
 
@@ -15,11 +15,11 @@ This document freezes the architectural design scope and establishes the impleme
                                    │
                                    ▼
                     Uniform Kernel Services (IService)
-                      (Asynchronous Futures API)
+                         (TaskHandle Async API)
                                    │
                                    ▼
                         Priority-Based Event Bus
-                (Backpressure & Event Coalescing Queues)
+                (Backpressure, Coalescing & Priority Inversion Prevention)
                                    │
                                    ▼
               Attention Manager   <───>   Resource Manager
@@ -90,8 +90,8 @@ ronin-runtime/
  └── examples/        # Reference implementations (e.g. Guitar Tuner)
 ```
 
-### B. Standard Async Service Contract (`IService`)
-Platform services execute asynchronously to prevent blocking the calling Actor threads:
+### B. Standard TaskHandle & Async Service Contract (`IService`)
+Instead of using `std::future`, platform services utilize a `TaskHandle` supporting cancellation, timeout checks, and state monitoring:
 
 ```cpp
 namespace Ronin::Kernel::Services {
@@ -107,17 +107,25 @@ struct ServiceResult {
     std::string error_message;
 };
 
+class TaskHandle {
+public:
+    virtual ~TaskHandle() = default;
+    virtual bool cancel() = 0;
+    virtual bool isFinished() = 0;
+    virtual ServiceResult await() = 0;
+};
+
 class IService {
 public:
     virtual ~IService() = default;
-    virtual std::future<ServiceResult> execute(const ServiceRequest& request, const ExecutionContext& ctx) = 0;
+    virtual std::unique_ptr<TaskHandle> execute(const ServiceRequest& request, const ExecutionContext& ctx) = 0;
 };
 
 } // namespace Ronin::Kernel::Services
 ```
 
-### C. Capability Manifest (With Schema Versioning)
-Capabilities are declared using schema-versioned manifests to allow easy format migrations:
+### C. Capability Manifest (With Schema Versioning & Execution Metadata)
+Manifest schemas contain explicit schema versions and execution properties to guide graph planner optimizations:
 
 ```json
 {
@@ -129,12 +137,19 @@ Capabilities are declared using schema-versioned manifests to allow easy format 
   "inputs": ["audio_stream"],
   "outputs": ["pitch_frequency"],
   "estimated_power_cost": "LOW",
-  "deterministic": true
+  "deterministic": true,
+  "streaming": true,
+  "cacheable": true,
+  "thread_safe": true,
+  "idempotent": true
 }
 ```
 
-### D. Strongly Typed Blackboard Working Memory
-To avoid string serialization overhead, the `Blackboard` holds strongly typed variants:
+### D. Strongly Typed Blackboard Working Memory (With Write Ownership)
+The `Blackboard` maps strongly typed values and enforces strict write-ownership rules to prevent race conditions:
+* `SensorActor` has write-ownership on sensor keys (e.g., `raw_audio`).
+* `DspActor` has write-ownership on computation keys (e.g., `fft_result`).
+* `PlannerActor` has write-ownership on execution routing keys (e.g., `execution_plan`).
 
 ```cpp
 namespace Ronin::Kernel::Execution {
@@ -150,46 +165,59 @@ using BlackboardValue = std::variant<
 
 class Blackboard {
 public:
-    void write(const std::string& key, const BlackboardValue& val);
+    void write(const std::string& key, const BlackboardValue& val, const std::string& actor_id);
     BlackboardValue read(const std::string& key);
     bool contains(const std::string& key);
     void clear();
     
 private:
     std::unordered_map<std::string, BlackboardValue> m_board;
-    std::shared_mutex m_rw_mutex; // Reader-Writer lock for concurrency
+    std::unordered_map<std::string, std::string> m_ownership; // key -> owner_actor_id
+    std::shared_mutex m_rw_mutex;
 };
 
 } // namespace Ronin::Kernel::Execution
 ```
 
-### E. Event Bus Backpressure & Coalescing
-To prevent event queue overflow from high-frequency sensors (e.g., 200Hz IMU, 48kHz Mic):
-1. **Backpressure**: Standardized queue size limits. If the queue is full, events are dropped or throttled according to the drop policies.
-2. **Coalescing**: Consecutive events of the same sensor type are dynamically coalesced/aggregated before routing to subscribers.
+### E. Event Bus Priority Inversion Prevention
+To prevent low-priority tasks from locking resources required by critical events, the scheduler implements **Priority Inheritance** (temporarily boosting locked resource owner priority to match the critical request) and **Timeout Preemption** policies.
 
-### F. Memory Decay & Retention Rules
-Memory tables are dynamically pruned to maintain storage health:
-* **Recent episodes**: Expire and prune after **30 days**.
-* **User-confirmed facts**: Retained permanently (**never expire**).
-* **Raw sensor telemetry**: Aggregated or downsampled after **24 hours**.
-* **System debug logs**: Automated deletion after **7 days**.
+### F. Relevance-Based Memory Decay
+The memory retention score is calculated dynamically to manage SQLite footprint:
 
-### G. Target Performance Benchmarks
-All changes must satisfy the target performance thresholds on target devices:
+$$\text{Retention Score} = \frac{\text{Importance} \cdot \text{Access Frequency} \cdot \text{User Confirmation}}{\text{Age}}$$
 
-| Metric | Target Threshold |
-| :--- | :--- |
-| **Event dispatch latency** | < 1 ms |
-| **Blackboard read latency** | < 50 µs |
-| **FFT (4096 samples)** | < 10 ms |
-| **Memory query latency** | < 20 ms |
-| **Cold LLM startup time** | < 2 s |
-| **Background RAM footprint**| < 80 MB |
+* Recent episodes: Expire and prune if retention score falls below critical threshold.
+* User-confirmed facts: Retained permanently.
 
 ---
 
-## 3. Feature-Driven Milestone Roadmap
+## 3. Implementation Dependency Graph & Build Order
+
+```
+[Event Bus] ──> [Actor Runtime] ──> [Kernel Services] ──> [DSP Core] ──> [Capability Registry] ──> [Planner] ──> [Policy] ──> [Gemma Engine]
+```
+
+---
+
+## 4. Target Performance Benchmarks & CI/CD Regression Gates
+Every build run inside the CI/CD pipeline executes benchmark tests, failing the build if a performance regression is observed:
+
+| Metric | Target Threshold | Regression Limit |
+| :--- | :--- | :--- |
+| **Event dispatch latency** | < 1 ms | Max +5% deviation |
+| **Blackboard read latency** | < 50 µs | Max +10% deviation |
+| **FFT (4096 samples)** | < 10 ms | Max +5% deviation |
+| **Memory query latency** | < 20 ms | Max +5% deviation |
+| **Cold LLM startup time** | < 2 s | Max +10% deviation |
+| **Background RAM footprint**| < 80 MB | Absolute limit 90MB |
+
+---
+
+## 5. Feature-Driven Milestone Roadmap
+
+### Milestone 0: Infrastructure Setup
+* **Deliverables**: CMake multiplatform configuration, CI/CD automated pipeline, logging harnesses, benchmark runners, unit-test suites.
 
 ### Milestone 1: Hello World Cognitive Runtime
 * **Deliverables**: Priority Event Bus, Actor Runtime, Execution Context, Blackboard State.
