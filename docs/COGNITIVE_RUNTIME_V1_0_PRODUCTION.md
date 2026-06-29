@@ -15,11 +15,11 @@ This document freezes the architectural design scope and establishes the impleme
                                    │
                                    ▼
                     Uniform Kernel Services (IService)
-                 (Location, Audio, Memory, Network)
+                      (Asynchronous Futures API)
                                    │
                                    ▼
                         Priority-Based Event Bus
-                    (TraceID & Correlation ID Routing)
+                (Backpressure & Event Coalescing Queues)
                                    │
                                    ▼
               Attention Manager   <───>   Resource Manager
@@ -43,7 +43,7 @@ This document freezes the architectural design scope and establishes the impleme
                                    │
                                    ▼
                  ExecutionContext & Blackboard Memory
-                     (Shared State Working Blackboard)
+                     (Strongly Typed Shared Blackboard)
                                    │
                                    ▼
                              Goal Monitor
@@ -66,32 +66,32 @@ This document freezes the architectural design scope and establishes the impleme
                                    │
                                    ▼
                           Capability Compiler
-                   (A/B Version Test & Macro Rollback)
+                   (Shadow Tests, A/B & Safe Promotes)
 ```
 
 ---
 
 ## 2. Deep Systems Engineering Specifications (v1.0)
 
-### A. Repository Directory Layout (`ronin-runtime/`)
-To scale maintenance over years, the repository is organized into isolated decoupled folders:
+### A. Modular Repository Architecture (`ronin-runtime/`)
+The runtime is organized into isolated decoupled directories:
 ```
 ronin-runtime/
- ├── kernel/          # Microkernel core scheduler and event bus
+ ├── kernel/          # Microkernel core scheduler and priority event bus
  ├── actors/          # Actor framework and lifecycle handlers
- ├── services/        # Platform service abstractions and Android bridges
+ ├── services/        # Platform service contracts (IService)
+ ├── adapters/        # Android Adapter Layer (WorkManager, Services, Activity bindings)
  ├── capabilities/    # Manifests and capability registry
  ├── dsp/             # High performance stream bus and ring buffers
  ├── memory/          # Event sourcing appends, Knowledge Graph, SQLite
  ├── reasoning/       # Model-agnostic plugins (IReasoningEngine)
- ├── android/         # Kotlin/App wrapper code
  ├── benchmarks/      # Latency, battery, and memory profiling harnesses
  ├── tests/           # Integration and gtest suites
  └── examples/        # Reference implementations (e.g. Guitar Tuner)
 ```
 
-### B. Standard Service Contract (`IService`)
-All platform services implement a uniform interface contract to isolate Actor code from system API shifts:
+### B. Standard Async Service Contract (`IService`)
+Platform services execute asynchronously to prevent blocking the calling Actor threads:
 
 ```cpp
 namespace Ronin::Kernel::Services {
@@ -110,19 +110,21 @@ struct ServiceResult {
 class IService {
 public:
     virtual ~IService() = default;
-    virtual ServiceResult execute(const ServiceRequest& request, const ExecutionContext& ctx) = 0;
+    virtual std::future<ServiceResult> execute(const ServiceRequest& request, const ExecutionContext& ctx) = 0;
 };
 
 } // namespace Ronin::Kernel::Services
 ```
 
-### C. Manifest-Based Capability Registry
-Capabilities are declared via JSON manifests rather than hardcoded registry calls. This allows on-the-fly registration of macros:
+### C. Capability Manifest (With Schema Versioning)
+Capabilities are declared using schema-versioned manifests to allow easy format migrations:
 
 ```json
 {
+  "schema_version": 1,
   "id": "pitch_analysis",
-  "version": "1.2.0",
+  "capability_version": "1.2.0",
+  "dependencies": ["fft>=1.0.0", "detect_peaks>=1.0.0"],
   "permissions": ["android.permission.RECORD_AUDIO"],
   "inputs": ["audio_stream"],
   "outputs": ["pitch_frequency"],
@@ -131,42 +133,59 @@ Capabilities are declared via JSON manifests rather than hardcoded registry call
 }
 ```
 
-### D. Blackboard Working Memory
-Rather than exposing mutable shared objects, actors query and write transaction variables to a thread-safe **Blackboard** bound to the active `ExecutionContext`:
+### D. Strongly Typed Blackboard Working Memory
+To avoid string serialization overhead, the `Blackboard` holds strongly typed variants:
 
 ```cpp
 namespace Ronin::Kernel::Execution {
 
+using BlackboardValue = std::variant<
+    int,
+    float,
+    bool,
+    std::string,
+    std::vector<float>,
+    nlohmann::json
+>;
+
 class Blackboard {
 public:
-    void write(const std::string& key, const std::string& val);
-    std::string read(const std::string& key);
+    void write(const std::string& key, const BlackboardValue& val);
+    BlackboardValue read(const std::string& key);
     bool contains(const std::string& key);
     void clear();
     
 private:
-    std::unordered_map<std::string, std::string> m_board;
+    std::unordered_map<std::string, BlackboardValue> m_board;
     std::shared_mutex m_rw_mutex; // Reader-Writer lock for concurrency
 };
 
 } // namespace Ronin::Kernel::Execution
 ```
 
-### E. Actor Supervisor Strategies (OTP Style)
-The `ActorSupervisor` implements recovery strategies:
-* **OneForOne**: If an Actor crashes, restart only the failed actor.
-* **OneForAll**: If a core actor crashes (e.g. `SensorActor`), restart the entire active sensor pipeline.
-* **Escalate**: Propagate exception to the main Kernel runtime.
-* **Stop**: Immediately abort execution and reclaim JNI resources.
+### E. Event Bus Backpressure & Coalescing
+To prevent event queue overflow from high-frequency sensors (e.g., 200Hz IMU, 48kHz Mic):
+1. **Backpressure**: Standardized queue size limits. If the queue is full, events are dropped or throttled according to the drop policies.
+2. **Coalescing**: Consecutive events of the same sensor type are dynamically coalesced/aggregated before routing to subscribers.
 
-### F. Observability: Tracing and Structured Log
-Every execution carries a unique `TraceID` generated by the `ExecutionContext`. Structured logs and Event Bus messages are tagged with this `TraceID` to allow distributed transaction debugging:
+### F. Memory Decay & Retention Rules
+Memory tables are dynamically pruned to maintain storage health:
+* **Recent episodes**: Expire and prune after **30 days**.
+* **User-confirmed facts**: Retained permanently (**never expire**).
+* **Raw sensor telemetry**: Aggregated or downsampled after **24 hours**.
+* **System debug logs**: Automated deletion after **7 days**.
 
-```
-[2026-06-29 06:15:13] [Trace: tr_84f912] [GoalMonitor] INFO: Triggering audio capture
-[2026-06-29 06:15:14] [Trace: tr_84f912] [Actor: Mic] INFO: Capturing raw samples
-[2026-06-29 06:15:14] [Trace: tr_84f912] [Actor: Dsp] INFO: FFT computed successfully
-```
+### G. Target Performance Benchmarks
+All changes must satisfy the target performance thresholds on target devices:
+
+| Metric | Target Threshold |
+| :--- | :--- |
+| **Event dispatch latency** | < 1 ms |
+| **Blackboard read latency** | < 50 µs |
+| **FFT (4096 samples)** | < 10 ms |
+| **Memory query latency** | < 20 ms |
+| **Cold LLM startup time** | < 2 s |
+| **Background RAM footprint**| < 80 MB |
 
 ---
 
