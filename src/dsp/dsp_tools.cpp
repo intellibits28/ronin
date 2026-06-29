@@ -28,21 +28,109 @@ static int nextPowerOfTwo(int n) {
     return p;
 }
 
+static std::vector<float> extractInputArray(const nlohmann::json& jIn) {
+    if (jIn.is_array()) {
+        return jIn.get<std::vector<float>>();
+    }
+    if (jIn.contains("array") && jIn["array"].is_array()) {
+        return jIn["array"].get<std::vector<float>>();
+    }
+    for (auto& [key, val] : jIn.items()) {
+        if (key.starts_with("context_")) {
+            try {
+                nlohmann::json inner;
+                if (val.is_string()) {
+                    inner = nlohmann::json::parse(val.get<std::string>());
+                } else {
+                    inner = val;
+                }
+                if (inner.is_array()) {
+                    return inner.get<std::vector<float>>();
+                }
+                if (inner.contains("array") && inner["array"].is_array()) {
+                    return inner["array"].get<std::vector<float>>();
+                }
+                if (inner.contains("magnitudes") && inner["magnitudes"].is_array()) {
+                    return inner["magnitudes"].get<std::vector<float>>();
+                }
+                if (inner.contains("frequencies") && inner["frequencies"].is_array()) {
+                    return inner["frequencies"].get<std::vector<float>>();
+                }
+                if (inner.contains("filtered") && inner["filtered"].is_array()) {
+                    return inner["filtered"].get<std::vector<float>>();
+                }
+            } catch (...) {}
+        }
+    }
+    return {};
+}
+
+static double extractFrequency(const nlohmann::json& jIn) {
+    if (jIn.is_number()) {
+        return jIn.get<double>();
+    }
+    if (jIn.contains("frequencies") && jIn["frequencies"].is_array() && !jIn["frequencies"].empty()) {
+        return jIn["frequencies"][0].get<double>();
+    }
+    
+    // Resolve via peak index and frequency bins if possible
+    int peak_idx = -1;
+    std::vector<double> freqs;
+    
+    for (auto& [key, val] : jIn.items()) {
+        if (key.starts_with("context_")) {
+            try {
+                nlohmann::json inner;
+                if (val.is_string()) {
+                    inner = nlohmann::json::parse(val.get<std::string>());
+                } else {
+                    inner = val;
+                }
+                if (inner.contains("peaks") && inner["peaks"].is_array() && !inner["peaks"].empty()) {
+                    peak_idx = inner["peaks"][0].get<int>();
+                }
+                if (inner.contains("frequencies") && inner["frequencies"].is_array()) {
+                    freqs = inner["frequencies"].get<std::vector<double>>();
+                }
+                if (inner.contains("frequency_hz")) {
+                    return inner["frequency_hz"].get<double>();
+                }
+            } catch (...) {}
+        }
+    }
+    
+    if (peak_idx >= 0 && !freqs.empty() && peak_idx < static_cast<int>(freqs.size())) {
+        return freqs[peak_idx];
+    }
+    
+    if (!freqs.empty()) {
+        return freqs[0];
+    }
+    
+    return 0.0; 
+}
+
 // 1. FFT Tool Implementation
 static std::string runFFT(const std::string& payload, ToolContext* context) {
     try {
         nlohmann::json jIn = nlohmann::json::parse(payload);
-        std::vector<float> input_array;
-        float sample_rate = 100.0f; // default
+        std::vector<float> input_array = extractInputArray(jIn);
+        float sample_rate = 8000.0f; // default to 8kHz mic rate
 
-        if (jIn.is_array()) {
-            input_array = jIn.get<std::vector<float>>();
+        if (jIn.contains("sample_rate")) {
+            sample_rate = jIn["sample_rate"].get<float>();
         } else {
-            if (jIn.contains("array")) {
-                input_array = jIn["array"].get<std::vector<float>>();
-            }
-            if (jIn.contains("sample_rate")) {
-                sample_rate = jIn["sample_rate"].get<float>();
+            // Find sample rate in contexts
+            for (auto& [k, v] : jIn.items()) {
+                if (k.starts_with("context_")) {
+                    try {
+                        nlohmann::json inner = v.is_string() ? nlohmann::json::parse(v.get<std::string>()) : v;
+                        if (inner.contains("sample_rate")) {
+                            sample_rate = inner["sample_rate"].get<float>();
+                            break;
+                        }
+                    } catch(...) {}
+                }
             }
         }
 
@@ -104,7 +192,7 @@ static std::string runFFT(const std::string& payload, ToolContext* context) {
 static std::string runLowpass(const std::string& payload, ToolContext* context) {
     try {
         nlohmann::json jIn = nlohmann::json::parse(payload);
-        std::vector<float> input_array = jIn["array"].get<std::vector<float>>();
+        std::vector<float> input_array = extractInputArray(jIn);
         float fc = jIn.value("cutoff_hz", 10.0f);
         float fs = jIn.value("sample_rate", 100.0f);
 
@@ -144,13 +232,10 @@ static std::string runLowpass(const std::string& payload, ToolContext* context) 
 static std::string runDetectPeaks(const std::string& payload, ToolContext* context) {
     try {
         nlohmann::json jIn = nlohmann::json::parse(payload);
-        std::vector<float> input_array;
+        std::vector<float> input_array = extractInputArray(jIn);
         float threshold = 0.5f;
 
-        if (jIn.is_array()) {
-            input_array = jIn.get<std::vector<float>>();
-        } else {
-            input_array = jIn["array"].get<std::vector<float>>();
+        if (!jIn.is_array()) {
             threshold = jIn.value("threshold", 0.5f);
         }
 
@@ -161,6 +246,19 @@ static std::string runDetectPeaks(const std::string& payload, ToolContext* conte
             if (input_array[i] > input_array[i-1] && input_array[i] > input_array[i+1] && input_array[i] >= threshold) {
                 peak_indices.push_back(i);
             }
+        }
+
+        // If no peaks found above threshold, fallback to global absolute maximum index
+        if (peak_indices.empty()) {
+            float max_val = -1e9f;
+            int max_idx = 0;
+            for (size_t i = 0; i < input_array.size(); ++i) {
+                if (input_array[i] > max_val) {
+                    max_val = input_array[i];
+                    max_idx = i;
+                }
+            }
+            peak_indices.push_back(max_idx);
         }
 
         nlohmann::json jOut;
@@ -176,12 +274,7 @@ static std::string runDetectPeaks(const std::string& payload, ToolContext* conte
 static std::string runZeroCrossing(const std::string& payload, ToolContext* context) {
     try {
         nlohmann::json jIn = nlohmann::json::parse(payload);
-        std::vector<float> input_array;
-        if (jIn.is_array()) {
-            input_array = jIn.get<std::vector<float>>();
-        } else {
-            input_array = jIn["array"].get<std::vector<float>>();
-        }
+        std::vector<float> input_array = extractInputArray(jIn);
 
         if (input_array.empty()) return "Error: Array empty.";
 
@@ -208,12 +301,7 @@ static std::string runZeroCrossing(const std::string& payload, ToolContext* cont
 static std::string runRMS(const std::string& payload, ToolContext* context) {
     try {
         nlohmann::json jIn = nlohmann::json::parse(payload);
-        std::vector<float> input_array;
-        if (jIn.is_array()) {
-            input_array = jIn.get<std::vector<float>>();
-        } else {
-            input_array = jIn["array"].get<std::vector<float>>();
-        }
+        std::vector<float> input_array = extractInputArray(jIn);
 
         if (input_array.empty()) return "Error: Array empty.";
 
@@ -241,20 +329,17 @@ std::string runAudioCapture(const std::string& param, ToolContext* ctx) {
     } catch (...) {
         jOut["array"] = nlohmann::json::array();
     }
+    // Also record standard sample rate context info
+    jOut["sample_rate"] = 8000.0f;
     return jOut.dump();
 }
 
 std::string runNoteMapper(const std::string& param, ToolContext* ctx) {
     (void)ctx;
-    double freq = 440.0;
-    try {
-        auto j = nlohmann::json::parse(param);
-        if (j.contains("frequencies") && j["frequencies"].is_array() && !j["frequencies"].empty()) {
-            freq = j["frequencies"][0].get<double>();
-        } else if (j.is_number()) {
-            freq = j.get<double>();
-        }
-    } catch (...) {}
+    nlohmann::json jIn;
+    try { jIn = nlohmann::json::parse(param); } catch (...) {}
+    
+    double freq = extractFrequency(jIn);
     
     if (freq <= 0.0) return "Error: Invalid frequency.";
     
