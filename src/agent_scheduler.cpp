@@ -99,7 +99,13 @@ void AgentScheduler::workerLoop() {
                 std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
 
                 // v10.2.17: Force MAP trigger if intent is MAP
-                if (i_lower.find("map") != std::string::npos && (s_lower.find("location") != std::string::npos || s_lower.find("get") != std::string::npos)) {
+                if (s_lower.find("audio") != std::string::npos || s_lower.find("fft") != std::string::npos || 
+                    s_lower.find("peak") != std::string::npos || s_lower.find("note_mapper") != std::string::npos || 
+                    s_lower.find("zero_crossing") != std::string::npos || s_lower.find("rms") != std::string::npos || 
+                    s_lower.find("lowpass") != std::string::npos) {
+                    type = CapabilityType::AUDIO;
+                }
+                else if (i_lower.find("map") != std::string::npos && (s_lower.find("location") != std::string::npos || s_lower.find("get") != std::string::npos)) {
                     type = CapabilityType::MAP;
                 }
                 else if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
