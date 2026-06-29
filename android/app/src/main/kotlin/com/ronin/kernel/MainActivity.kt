@@ -147,6 +147,17 @@ class ChatViewModel : ViewModel() {
     var sensorPsdDb by mutableStateOf(-100.0f)
     var sensorAnomaly by mutableStateOf(false)
 
+    // v1.1 Guitar Tuner State
+    data class TunerResult(
+        val detectedHz: Double = 0.0,
+        val detectedNote: String = "-",
+        val nearestString: String = "-",
+        val nearestStringHz: Double = 0.0,
+        val deviationCents: Double = 0.0,
+        val status: String = "IDLE" // IN_TUNE | SHARP | FLAT | IDLE
+    )
+    var tunerResult by mutableStateOf(TunerResult())
+
     var systemPrompt by mutableStateOf("You are Ronin. Always reason inside [THINK] [/THINK] and then reply inside [REPLY] [/REPLY] in Myanmar.")
 
     var showAddCloudDialog by mutableStateOf(false)
@@ -1095,6 +1106,82 @@ class MainActivity : FragmentActivity() {
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
 
+                // 10. GUITAR TUNER - note_mapper result comparison against guitar strings
+                actionName.contains("NOTE_MAPPER") || actionName.contains("TUNER") || toolName == "NOTE_MAPPER" -> {
+                    try {
+                        val payloadStr = params["payload"] ?: params.entries.firstOrNull { it.value.startsWith("{") }?.value ?: "{}"
+                        // note_mapper result can be in payload or directly in params
+                        val freqHz = params["frequency_hz"]?.toDoubleOrNull()
+                            ?: params["freq"]?.toDoubleOrNull()
+                            ?: run {
+                                // Try to parse from context result or payload json
+                                val contextKeys = listOf("context_result_AUDIO", "context_result_FFT", "context_result_NOTE_MAPPER")
+                                var f: Double? = null
+                                for (k in contextKeys) {
+                                    val v = params[k] ?: continue
+                                    try {
+                                        f = JSONObject(v).optDouble("frequency_hz", 0.0).takeIf { it > 0 }
+                                        if (f != null) break
+                                    } catch (_: Exception) {}
+                                }
+                                f
+                            }
+                        val noteLabel = params["target_note"] ?: params["note"] ?: "-"
+                        val deviationCents = params["deviation_cents"]?.toDoubleOrNull() ?: 0.0
+
+                        // Guitar string reference frequencies (standard tuning)
+                        val guitarStrings = listOf(
+                            "E2" to 82.41,
+                            "A2" to 110.00,
+                            "D3" to 146.83,
+                            "G3" to 196.00,
+                            "B3" to 246.94,
+                            "E4" to 329.63
+                        )
+                        val freq = freqHz ?: 0.0
+                        val nearest = if (freq > 0) {
+                            guitarStrings.minByOrNull { Math.abs(it.second - freq) }
+                        } else null
+
+                        val nearestCents = if (nearest != null && freq > 0) {
+                            1200.0 * Math.log(freq / nearest.second) / Math.log(2.0)
+                        } else deviationCents
+
+                        val status = when {
+                            freq <= 0 -> "IDLE"
+                            Math.abs(nearestCents) <= 5.0 -> "IN_TUNE"
+                            nearestCents > 0 -> "SHARP"
+                            else -> "FLAT"
+                        }
+
+                        val result = ChatViewModel.TunerResult(
+                            detectedHz = freq,
+                            detectedNote = noteLabel,
+                            nearestString = nearest?.first ?: "-",
+                            nearestStringHz = nearest?.second ?: 0.0,
+                            deviationCents = nearestCents,
+                            status = status
+                        )
+                        vm.tunerResult = result
+
+                        val emoji = when (status) {
+                            "IN_TUNE" -> "✅"
+                            "SHARP" -> "🔺"
+                            "FLAT" -> "🔻"
+                            else -> "⏸"
+                        }
+                        val statusMsg = when (status) {
+                            "IN_TUNE" -> "In Tune!"
+                            "SHARP" -> "Sharp by ${"%.1f".format(Math.abs(nearestCents))}¢"
+                            "FLAT" -> "Flat by ${"%.1f".format(Math.abs(nearestCents))}¢"
+                            else -> "No signal"
+                        }
+                        val msg = "$emoji Guitar Tuner: ${result.nearestString} (${"%.1f".format(freq)}Hz) - $statusMsg"
+                        nativeEngine.pushKernelMessage("\n[TUNER]\n$msg")
+                        msg
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+
                 else -> "Tool $toolName executed with params: $params"
             }
             toolResult
@@ -1286,6 +1373,36 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             val anomalyColor = if(chatViewModel.sensorAnomaly) Color.Red else Color.Green
                                             Text("PEAK: ${"%.1f".format(chatViewModel.sensorFreqHz)}Hz", color = anomalyColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                                             Text("PSD: ${"%.1f".format(chatViewModel.sensorPsdDb)}dB", color = anomalyColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                        }
+
+                                        // v1.1: Guitar Tuner Card
+                                        val tuner = chatViewModel.tunerResult
+                                        if (tuner.status != "IDLE") {
+                                            Divider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 4.dp))
+                                            Text("🎸 GUITAR TUNER", color = Color(0xFFCE93D8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            val (tunerColor, tunerIcon) = when (tuner.status) {
+                                                "IN_TUNE" -> Color(0xFF66BB6A) to "✅"
+                                                "SHARP"   -> Color(0xFFEF5350) to "🔺"
+                                                "FLAT"    -> Color(0xFF42A5F5) to "🔻"
+                                                else      -> Color.Gray to "⏸"
+                                            }
+                                            Text("$tunerIcon ${tuner.nearestString} target", color = tunerColor, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                            Text("DETECTED: ${"%.2f".format(tuner.detectedHz)}Hz (${tuner.detectedNote})", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                                            Text("TARGET:   ${"%.2f".format(tuner.nearestStringHz)}Hz (${tuner.nearestString})", color = Color.Gray, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                                            val deviationLabel = when {
+                                                tuner.deviationCents > 0 -> "+${"%.1f".format(tuner.deviationCents)}¢ SHARP"
+                                                tuner.deviationCents < 0 -> "${"%.1f".format(tuner.deviationCents)}¢ FLAT"
+                                                else -> "0.0¢ IN TUNE"
+                                            }
+                                            Text(deviationLabel, color = tunerColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                            // Visual needle bar: range -50c to +50c
+                                            val needleProgress = ((tuner.deviationCents.coerceIn(-50.0, 50.0) + 50.0) / 100.0).toFloat()
+                                            LinearProgressIndicator(
+                                                progress = needleProgress,
+                                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                                color = tunerColor,
+                                                backgroundColor = Color(0xFF37474F)
+                                            )
                                         }
                                     }
                                 }
