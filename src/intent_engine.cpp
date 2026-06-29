@@ -160,8 +160,8 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "6. MAP: 'GET_LOCATION', 'OPEN_MAP'. "
         "7. SMS: 'GET_LOCATION', 'SEND_SMS'. "
         "8. SENSOR: 'ANALYZE_VIBRATION'. "
-        "9. FILES: 'FILE_SEARCH'. "
         "10. MAIL: 'SEND_MAIL'. "
+        "11. AUDIO/DSP: 'audio_capture', 'fft', 'detect_peaks', 'note_mapper'. For frequency detection or guitar tuning. "
         "Schema: {\"intent\":\"...\",\"plan\":[\"...\"],\"parameters\":{...}} "
         "Examples: "
         "User: 'ကားနံပါတ် 123 vault ထဲသိမ်းပါ' -> {\"intent\":\"SAVE_VAULT\",\"plan\":[\"SAVE_VAULT\"],\"parameters\":{\"vault_title\":\"ကားနံပါတ်\",\"vault_content\":\"123\"}} "
@@ -170,6 +170,8 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "User: 'aung aung ဆီ sms ပို့ပါ' -> {\"intent\":\"SEND_SMS\",\"plan\":[\"CONTACTS\",\"SEND_SMS\"],\"parameters\":{\"recipient_name\":\"aung aung\"}} "
         "User: 'gemini api key ကို aung aung ဆီ email ပို့ပါ' -> {\"intent\":\"SEND_MAIL\",\"plan\":[\"LOOKUP_VAULT\",\"CONTACTS\",\"SEND_MAIL\"],\"parameters\":{\"vault_title\":\"gemini api key\",\"recipient_name\":\"aung aung\"}} "
         "User: 'aung aung ဆီ email ပို့ပါ' -> {\"intent\":\"SEND_MAIL\",\"plan\":[\"CONTACTS\",\"SEND_MAIL\"],\"parameters\":{\"recipient_name\":\"aung aung\"}} "
+        "User: 'I want to tune my guitar' -> {\"intent\":\"PITCH_ANALYSIS\",\"plan\":[\"audio_capture\",\"fft\",\"detect_peaks\",\"note_mapper\"],\"parameters\":{}} "
+        "User: 'guitar tuner run' -> {\"intent\":\"PITCH_ANALYSIS\",\"plan\":[\"audio_capture\",\"fft\",\"detect_peaks\",\"note_mapper\"],\"parameters\":{}} "
         + lessons_context;
 
     // Requesting a reasoning cycle from the engine
@@ -492,7 +494,10 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
 
     // v12.18: Decouple sensor from simple agent to prevent location->sensor misrouting
     bool is_sensor_req = token_set.count("တုန်ခါမှု") || token_set.count("vibration") || 
-                         token_set.count("resonance") || token_set.count("sensor");
+                         token_set.count("resonance") || token_set.count("sensor") ||
+                         token_set.count("guitar") || token_set.count("tune") ||
+                         token_set.count("tuner") || token_set.count("pitch") ||
+                         token_set.count("frequency");
 
     // v12.2: Raw substring fallback for robust detection
     if (!is_simple_agent && !is_sensor_req) {
@@ -509,7 +514,12 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     
     if (!is_sensor_req) {
         is_sensor_req = (input_lower.find("တုန်ခါမှု") != std::string::npos) ||
-                        (input_lower.find("vibration") != std::string::npos);
+                        (input_lower.find("vibration") != std::string::npos) ||
+                        (input_lower.find("guitar") != std::string::npos) ||
+                        (input_lower.find("tune") != std::string::npos) ||
+                        (input_lower.find("tuner") != std::string::npos) ||
+                        (input_lower.find("pitch") != std::string::npos) ||
+                        (input_lower.find("frequency") != std::string::npos);
     }
 
     bool is_inquiry = token_set.count("နည်းလမ်း") || token_set.count("ရှင်းပြပါ") ||
@@ -525,6 +535,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     if (input_lower.find("နှိုး") != std::string::npos || input_lower.find("alarm") != std::string::npos || 
         input_lower.find("meeting") != std::string::npos || input_lower.find("calendar") != std::string::npos ||
         input_lower.find("တုန်ခါမှု") != std::string::npos || input_lower.find("vibration") != std::string::npos ||
+        input_lower.find("guitar") != std::string::npos || input_lower.find("tune") != std::string::npos ||
+        input_lower.find("tuner") != std::string::npos || input_lower.find("pitch") != std::string::npos ||
+        input_lower.find("frequency") != std::string::npos ||
         input_lower.find("မှတ်ထား") != std::string::npos || input_lower.find("မှတ်မိ") != std::string::npos ||
         input_lower.find("ရှာပေး") != std::string::npos || input_lower.find("ရှာပါ") != std::string::npos ||
         input_lower.find("pdf") != std::string::npos || input_lower.find("doc") != std::string::npos ||
