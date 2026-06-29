@@ -500,6 +500,7 @@ class MainActivity : FragmentActivity() {
             android.Manifest.permission.ACCESS_FINE_LOCATION,
             android.Manifest.permission.ACCESS_COARSE_LOCATION,
             android.Manifest.permission.CAMERA,
+            android.Manifest.permission.RECORD_AUDIO,
             android.Manifest.permission.SEND_SMS,
             android.Manifest.permission.READ_CONTACTS,
             android.Manifest.permission.READ_CALENDAR,
