@@ -187,10 +187,18 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
 
     req.payload_json = jPayload.dump();
 
+    std::string action = "";
+    try {
+        auto j = nlohmann::json::parse(payload);
+        if (j.contains("action")) {
+            action = j["action"].get<std::string>();
+        }
+    } catch (...) {}
+
     LOGI(TAG, "L10 Optimizer: Selected Node %u for Capability %d. Dispatching...", 
          best_node_id, static_cast<int>(type));
          
-    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise, completed, type, ctx](const CapabilityResponse& res) {
+    CapabilityDispatcher::getInstance().dispatch(req, [this, best_node_id, promise, completed, type, ctx, action](const CapabilityResponse& res) {
         std::string sid = ctx ? ctx->session_id : "unknown";
         if (completed->exchange(true)) {
             LOGW(TAG, "L10: Duplicate response ignored for session %s.", sid.c_str());
@@ -210,7 +218,12 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
                 // v9.2: Key results by capability name to avoid overwrites
                 std::string cap_str = Ronin::Kernel::CapabilityTypeToString(type);
                 m_blackboard.storage["result_" + cap_str] = res.payload_json;
-                LOGI(TAG, "L10: Blackboard updated with result from %s", cap_str.c_str());
+                
+                // Key by specific tool action to prevent sequential capability overwrites
+                if (!action.empty()) {
+                    m_blackboard.storage["result_" + action] = res.payload_json;
+                }
+                LOGI(TAG, "L10: Blackboard updated with result from %s (%s)", cap_str.c_str(), action.c_str());
             }
         }
         
