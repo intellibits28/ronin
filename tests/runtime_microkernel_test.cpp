@@ -91,3 +91,46 @@ TEST(RuntimeMicrokernelTest, ActorSupervisorSupervisionOTP) {
 
     supervisor->shutdownAll();
 }
+
+#include "../ronin-runtime/services/include/audio_service.h"
+#include "../ronin-runtime/actors/include/mic_actor.h"
+#include "../ronin-runtime/actors/include/dsp_actor.h"
+
+TEST(RuntimeMicrokernelTest, AudioDspTunerPipelineIntegrationFlow) {
+    auto blackboard = std::make_shared<Blackboard>();
+    auto audio_service = std::make_shared<Ronin::Kernel::Services::AudioService>();
+    
+    auto mic_actor = std::make_shared<MicActor>(audio_service, blackboard);
+    auto dsp_actor = std::make_shared<DspActor>(blackboard);
+
+    auto supervisor = &ActorSupervisor::getInstance();
+    supervisor->registerActor(mic_actor, SupervisionStrategy::ONE_FOR_ONE);
+    supervisor->registerActor(dsp_actor, SupervisionStrategy::ONE_FOR_ONE);
+
+    EventBus& bus = EventBus::getInstance();
+    bus.start();
+
+    // DspActor subscribes to "audio_stream" from the event bus
+    bus.subscribe("audio_stream", [&](const Message& msg) {
+        dsp_actor->postMessage(msg);
+    });
+
+    // Send a message request to MicActor to trigger capture
+    Message trigger = {"trace_tuner_1", "User", "MicActor", EventPriority::HIGH, std::string("start")};
+    mic_actor->postMessage(trigger);
+
+    // Wait for the pipeline execution to complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    bus.stop();
+    supervisor->shutdownAll();
+
+    // Verify Blackboard entries populated with write-ownership verified
+    EXPECT_TRUE(blackboard->contains("raw_audio"));
+    EXPECT_TRUE(blackboard->contains("fft_result"));
+    
+    // Check pitch value resolved from 440Hz sine wave (mocked standard tuner pitch)
+    float pitch = std::get<float>(blackboard->read("fft_result"));
+    EXPECT_NEAR(pitch, 440.0f, 10.0f);
+}
+
