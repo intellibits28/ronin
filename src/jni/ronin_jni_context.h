@@ -13,6 +13,8 @@
 #include "models/inference_engine.h"
 #include "ronin_kernel.hpp"
 #include "ronin_types.hpp"
+#include "planner_rule_cache.h"
+#include "capability_compiler.h"
 
 namespace Ronin::Kernel {
 namespace JNI {
@@ -33,11 +35,23 @@ public:
     std::unique_ptr<Memory::MemoryManager> memory_manager;
     LLMContext llm_context;
     WorldState world_state;
+    std::unique_ptr<Reasoning::PlannerRuleCache> planner_rule_cache;
+    std::unique_ptr<CapabilityCompiler> capability_compiler;
+    std::unique_ptr<CapabilityPolicyEngine> capability_policy_engine;
+    std::unique_ptr<Ronin::Kernel::Execution::ActorSupervisor> actor_supervisor;
+std::unique_ptr<Ronin::Kernel::Optimization::ABVersionManager> ab_version_manager;
+std::unique_ptr<Ronin::Kernel::Optimization::SafeRollbackManager> safe_rollback_manager;
     jobject instance = nullptr;
     JavaVM* vm = nullptr;
 
     bool initialized() const { return intent_engine != nullptr; }
-    void release(JNIEnv* env);
+    // Accessors for new components
+    Reasoning::PlannerRuleCache* getPlannerCache() const { return planner_rule_cache.get(); }
+    CapabilityCompiler* getCapabilityCompiler() const { return capability_compiler.get(); }
+    CapabilityPolicyEngine* getPolicyEngine() const { return capability_policy_engine.get(); }
+    Ronin::Kernel::Execution::ActorSupervisor* getActorSupervisor() const { return actor_supervisor.get(); }
+    Ronin::Kernel::Optimization::ABVersionManager* getABVersionManager() const { return ab_version_manager.get(); }
+    Ronin::Kernel::Optimization::SafeRollbackManager* getSafeRollbackManager() const { return safe_rollback_manager.get(); }
 };
 
 KernelRuntimeContext& runtimeContext();

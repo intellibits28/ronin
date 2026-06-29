@@ -139,6 +139,9 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
         };
         static DummyCapManager dummyCap;
         runtimeContext().kernel = std::make_shared<RoninKernel>(registry, dummyCap);
+        runtimeContext().actor_supervisor = std::make_unique<Ronin::Kernel::Execution::ActorSupervisor>();
+        runtimeContext().capability_compiler = std::make_unique<CapabilityCompiler>();
+        // Duplicate actor_supervisor creation removed
     }
 }
 
