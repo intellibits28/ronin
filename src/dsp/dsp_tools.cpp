@@ -361,7 +361,10 @@ std::string runNoteMapper(const std::string& param, ToolContext* ctx) {
     jOut["target_note"] = note_name;
     jOut["frequency_hz"] = freq;
     jOut["deviation_cents"] = deviation;
-    return jOut.dump();
+    
+    std::string out_str = jOut.dump();
+    Capability::HardwareBridge::pushMessage("[TUNER_RESULT] " + out_str);
+    return out_str;
 }
 
 void registerDspTools() {

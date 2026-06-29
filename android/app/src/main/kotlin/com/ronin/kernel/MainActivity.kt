@@ -708,9 +708,53 @@ class MainActivity : FragmentActivity() {
             runOnUiThread {
                 vm.reasoningLogsText += "\n> $msg"
                 
-                // v1.6 Phase 4 Fix: Route [AGENT] results to chat bubble so user sees action feedback
                 val trimmedMsg = msg.trimStart()
-                if (trimmedMsg.startsWith("[")) {
+                if (trimmedMsg.startsWith("[TUNER_RESULT] ")) {
+                    try {
+                        val jsonStr = trimmedMsg.replace("[TUNER_RESULT] ", "")
+                        val j = JSONObject(jsonStr)
+                        val freq = j.optDouble("frequency_hz", 0.0)
+                        val noteLabel = j.optString("target_note", "-")
+                        val deviationCents = j.optDouble("deviation_cents", 0.0)
+                        
+                        // Guitar string reference frequencies (standard tuning)
+                        val guitarStrings = listOf(
+                            "E2" to 82.41,
+                            "A2" to 110.00,
+                            "D3" to 146.83,
+                            "G3" to 196.00,
+                            "B3" to 246.94,
+                            "E4" to 329.63
+                        )
+                        val nearest = if (freq > 0) {
+                            guitarStrings.minByOrNull { Math.abs(it.second - freq) }
+                        } else null
+
+                        val nearestCents = if (nearest != null && freq > 0) {
+                            1200.0 * Math.log(freq / nearest.second) / Math.log(2.0)
+                        } else deviationCents
+
+                        val status = when {
+                            freq <= 0 -> "IDLE"
+                            Math.abs(nearestCents) <= 5.0 -> "IN_TUNE"
+                            nearestCents > 0 -> "SHARP"
+                            else -> "FLAT"
+                        }
+
+                        val result = ChatViewModel.TunerResult(
+                            detectedHz = freq,
+                            detectedNote = noteLabel,
+                            nearestString = nearest?.first ?: "-",
+                            nearestStringHz = nearest?.second ?: 0.0,
+                            deviationCents = nearestCents,
+                            status = status
+                        )
+                        vm.tunerResult = result
+                    } catch (e: Exception) {
+                        Log.e("RoninKernel_MainActivity", "Error parsing tuner result: ${e.message}")
+                    }
+                } else if (trimmedMsg.startsWith("[")) {
+                    // v1.6 Phase 4 Fix: Route [AGENT] results to chat bubble so user sees action feedback
                     // Do not push verbose system logs to chat, only actionable feedback
                     if (!trimmedMsg.startsWith("[STATUS]") && !trimmedMsg.startsWith("[MODEL]") && !trimmedMsg.startsWith("[SKILLS]") &&
                         !trimmedMsg.contains("Starting:") && !trimmedMsg.contains("Step:") && !trimmedMsg.contains("Task completed successfully") && !trimmedMsg.contains("failed after")) {
