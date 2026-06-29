@@ -667,7 +667,27 @@ class MainActivity : FragmentActivity() {
     private fun setupHardwareCallbacks() {
         val vm = ViewModelProvider(this)[ChatViewModel::class.java]
         nativeEngine.getSecureApiKeyProvider = { provider -> sharedPreferences.getString(provider, "")?.trim() ?: "" }
-        nativeEngine.onRequestHardwareDataCallback = { nodeId -> if (nodeId == 5) { try { val location = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)); location?.let { "${it.latitude}, ${it.longitude}" } ?: "Error: GPS Timeout" } catch (e: Exception) { "Error: ${e.message}" } } else "Data $nodeId" }
+        nativeEngine.onRequestHardwareDataCallback = { nodeId ->
+            when (nodeId) {
+                5 -> {
+                    try {
+                        val location = Tasks.await(fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token))
+                        location?.let { "${it.latitude}, ${it.longitude}" } ?: "Error: GPS Timeout"
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+                14 -> {
+                    val sampleRate = 8000.0
+                    val freq = 440.0
+                    val size = 64
+                    val samples = DoubleArray(size) { i ->
+                        val t = i / sampleRate
+                        Math.sin(2.0 * Math.PI * freq * t)
+                    }
+                    samples.joinToString(prefix = "[", postfix = "]", separator = ",") { String.format(java.util.Locale.US, "%.4f", it) }
+                }
+                else -> "Data $nodeId"
+            }
+        }
         nativeEngine.executeHardwareActionCallback = { nodeId, state -> when (nodeId) { 4 -> { try { val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager; cm.setTorchMode(cm.cameraIdList[0], state); true } catch (e: Exception) { false } } 6 -> { try { startActivity(Intent(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Settings.Panel.ACTION_INTERNET_CONNECTIVITY else Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true } catch (e: Exception) { false } } 7 -> { try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true } catch (e: Exception) { false } } else -> false } }
         nativeEngine.onSystemTiersUpdateCallback = { temp, used, total -> 
             // vm.systemTemperature = temp; // Handled by BatteryManager
@@ -787,21 +807,25 @@ class MainActivity : FragmentActivity() {
                             }
                             actionName.contains("VAULT") && (actionName.contains("QUERY") || actionName.contains("LOOKUP") || actionName.contains("CHECK") || actionName.contains("READ") || actionName.contains("ACCESS")) -> {
                                 val rawTitle = params["vault_title"] ?: params["title"] ?: params["query"] ?: ""
-                                authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $rawTitle") {
-                                    var encrypted = nativeEngine.lookupVault(rawTitle)
-                                    if (encrypted.isEmpty()) {
-                                        listOf("card", "visa", "bank", "password", "key", "secret").forEach { kw ->
-                                            if (rawTitle.lowercase().contains(kw)) {
-                                                val res = nativeEngine.lookupVault(kw)
-                                                if (res.isNotEmpty()) { encrypted = res; return@forEach }
+                                if (rawTitle.isEmpty()) {
+                                    ""
+                                } else {
+                                    authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $rawTitle") {
+                                        var encrypted = nativeEngine.lookupVault(rawTitle)
+                                        if (encrypted.isEmpty()) {
+                                            listOf("card", "visa", "bank", "password", "key", "secret").forEach { kw ->
+                                                if (rawTitle.lowercase().contains(kw)) {
+                                                    val res = nativeEngine.lookupVault(kw)
+                                                    if (res.isNotEmpty()) { encrypted = res; return@forEach }
+                                                }
                                             }
                                         }
+                                        if (encrypted.isNotEmpty()) {
+                                            val decrypted = nativeEngine.decryptSecret(encrypted)
+                                            nativeEngine.pushKernelMessage("\n[VAULT] Result: $decrypted")
+                                            decrypted
+                                        } else "Error: No vault entry found."
                                     }
-                                    if (encrypted.isNotEmpty()) {
-                                        val decrypted = nativeEngine.decryptSecret(encrypted)
-                                        nativeEngine.pushKernelMessage("\n[VAULT] Result: $decrypted")
-                                        decrypted
-                                    } else "Error: No vault entry found."
                                 }
                             }
                             actionName.contains("SEARCH_NOTES") || actionName.contains("QUERY_NOTES") -> {

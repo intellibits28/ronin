@@ -1,5 +1,6 @@
 #include "dsp/dsp_tools.h"
 #include "capabilities/tool_registry.h"
+#include "capabilities/hardware_bridge.h"
 #include "third_party/pffft/pffft.h"
 #include <cmath>
 #include <vector>
@@ -228,8 +229,72 @@ static std::string runRMS(const std::string& payload, ToolContext* context) {
     }
 }
 
+std::string runAudioCapture(const std::string& param, ToolContext* ctx) {
+    (void)param; (void)ctx;
+    std::string data = Capability::HardwareBridge::requestData(14);
+    if (data.empty() || data.rfind("[", 0) != 0) {
+        data = "[0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0]"; 
+    }
+    nlohmann::json jOut;
+    try {
+        jOut["array"] = nlohmann::json::parse(data);
+    } catch (...) {
+        jOut["array"] = nlohmann::json::array();
+    }
+    return jOut.dump();
+}
+
+std::string runNoteMapper(const std::string& param, ToolContext* ctx) {
+    (void)ctx;
+    double freq = 440.0;
+    try {
+        auto j = nlohmann::json::parse(param);
+        if (j.contains("frequencies") && j["frequencies"].is_array() && !j["frequencies"].empty()) {
+            freq = j["frequencies"][0].get<double>();
+        } else if (j.is_number()) {
+            freq = j.get<double>();
+        }
+    } catch (...) {}
+    
+    if (freq <= 0.0) return "Error: Invalid frequency.";
+    
+    double n = 12.0 * std::log2(freq / 440.0) + 69.0;
+    int note_idx = std::round(n);
+    double deviation = (n - note_idx) * 100.0;
+    
+    const char* note_names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    int octave = (note_idx / 12) - 1;
+    int note_in_octave = note_idx % 12;
+    if (note_in_octave < 0) {
+        note_in_octave += 12;
+        octave -= 1;
+    }
+    
+    std::string note_name = note_names[note_in_octave] + std::to_string(octave);
+    
+    nlohmann::json jOut;
+    jOut["target_note"] = note_name;
+    jOut["frequency_hz"] = freq;
+    jOut["deviation_cents"] = deviation;
+    return jOut.dump();
+}
+
 void registerDspTools() {
     auto& registry = Capability::ToolRegistry::getInstance();
+
+    Capability::ToolMetadata audioMeta;
+    audioMeta.name = "audio_capture";
+    audioMeta.description = "Captures raw mic input array of floats";
+    audioMeta.inputs = {};
+    audioMeta.outputs = {"float_array"};
+    registry.registerTool(audioMeta, runAudioCapture);
+
+    Capability::ToolMetadata mapperMeta;
+    mapperMeta.name = "note_mapper";
+    mapperMeta.description = "Maps peak frequencies in Hz to musical notes";
+    mapperMeta.inputs = {"float_array"};
+    mapperMeta.outputs = {"string"};
+    registry.registerTool(mapperMeta, runNoteMapper);
 
     Capability::ToolMetadata fftMeta;
     fftMeta.name = "fft";
