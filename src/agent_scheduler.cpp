@@ -84,180 +84,225 @@ void AgentScheduler::workerLoop() {
 
             // v7.0 Layer 10 Integration: Execute each step in the plan
             bool all_steps_success = true;
-            for (const auto& step : current_session->getPlan()) {
-                LOGI(TAG, "L8 Scheduler: Executing Step -> '%s'", step.c_str());
-                Capability::HardwareBridge::pushMessage("[AGENT] Step: " + step);
-                
-                auto exec_ctx = current_session->getExecutionContext();
-                
-                // v7.7 Robust Step-to-Capability Mapping
-                CapabilityType type = CapabilityType::NONE;
-                std::string s_lower = step;
-                std::transform(s_lower.begin(), s_lower.end(), s_lower.begin(), ::tolower);
-                
-                std::string i_lower = current_session->getIntent();
-                std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
+            bool is_pitch_analysis = (current_session->getIntent() == "PITCH_ANALYSIS");
+            int tuning_iteration = 0;
+            const int MAX_TUNING_ITERATIONS = 30;
 
-                // v10.2.17: Force MAP trigger if intent is MAP
-                if (s_lower.find("audio") != std::string::npos || s_lower.find("fft") != std::string::npos || 
-                    s_lower.find("peak") != std::string::npos || s_lower.find("note_mapper") != std::string::npos || 
-                    s_lower.find("zero_crossing") != std::string::npos || s_lower.find("rms") != std::string::npos || 
-                    s_lower.find("lowpass") != std::string::npos) {
-                    type = CapabilityType::AUDIO;
-                }
-                else if (i_lower.find("map") != std::string::npos && (s_lower.find("location") != std::string::npos || s_lower.find("get") != std::string::npos)) {
-                    type = CapabilityType::MAP;
-                }
-                else if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
-                    type = CapabilityType::MAP;
-                else if (s_lower.find("mail") != std::string::npos || s_lower.find("email") != std::string::npos)
-                    type = CapabilityType::MAIL;
-                else if (s_lower.find("sms") != std::string::npos || s_lower.find("message") != std::string::npos || s_lower.find("ပို့") != std::string::npos || s_lower.find("send") != std::string::npos || s_lower.find("mock_sms") != std::string::npos) 
-                    type = CapabilityType::SMS;
-                else if (s_lower.find("location") != std::string::npos || s_lower.find("တည်နေရာ") != std::string::npos || s_lower.find("နေရာ") != std::string::npos || s_lower.find("mock_location") != std::string::npos) 
-                    type = CapabilityType::LOCATION;
-                else if (s_lower.find("contact") != std::string::npos || s_lower.find("resolve") != std::string::npos || s_lower.find("ရှာ") != std::string::npos)
-                    type = CapabilityType::CONTACTS;
-                else if (s_lower.find("save") != std::string::npos || s_lower.find("store") != std::string::npos || 
-                         s_lower.find("add_fact") != std::string::npos || s_lower.find("record") != std::string::npos || 
-                         s_lower.find("query_fact") != std::string::npos || s_lower.find("query_vault") != std::string::npos || 
-                         s_lower.find("lookup") != std::string::npos || s_lower.find("memory") != std::string::npos || 
-                         s_lower.find("မှတ်") != std::string::npos || s_lower.find("vault") != std::string::npos || 
-                         s_lower.find("fact") != std::string::npos || s_lower.find("get_vault_content") != std::string::npos ||
-                         s_lower.find("return_result") != std::string::npos || s_lower.find("return_content") != std::string::npos || 
-                         s_lower.find("search_database") != std::string::npos || s_lower.find("check_vault") != std::string::npos)
-                    type = CapabilityType::MEMORY;
-                else if (s_lower.find("alarm") != std::string::npos || s_lower.find("wake") != std::string::npos || s_lower.find("နှိုး") != std::string::npos)
-                    type = CapabilityType::ALARM;
-                else if (s_lower.find("calendar") != std::string::npos || s_lower.find("event") != std::string::npos || s_lower.find("meeting") != std::string::npos || s_lower.find("check_calendar") != std::string::npos)
-                    type = CapabilityType::CALENDAR;
-                else if (s_lower.find("file") != std::string::npos || s_lower.find("search_file") != std::string::npos || s_lower.find("find_file") != std::string::npos || s_lower.find("ဖိုင်") != std::string::npos)
-                    type = CapabilityType::FILES;
-                else if (s_lower.find("sensor") != std::string::npos || s_lower.find("vibration") != std::string::npos || s_lower.find("resonance") != std::string::npos || s_lower.find("တုန်ခါမှု") != std::string::npos || 
-                         s_lower.find("read_sensor_data") != std::string::npos || s_lower.find("read_vibration_data") != std::string::npos ||
-                         s_lower.find("analyze_vibration") != std::string::npos)
-                    type = CapabilityType::SENSOR;
-                else if (s_lower.find("mock_test") != std::string::npos)
-                    type = CapabilityType::TEST;
-                
-                std::string cap_str = Ronin::Kernel::CapabilityTypeToString(type);
-                if (exec_ctx) {
-                    Execution::ExecutionTelemetryBus::getInstance().logNodeStart(exec_ctx->session_id, exec_ctx->execution_id, step, cap_str, exec_ctx->correlation_id);
-                }
-                
-                if (type != CapabilityType::NONE) {
-                    LOGI(TAG, "L8 Scheduler: Dispatching Capability %d to L10 Optimizer...", static_cast<int>(type));
-
-                    Capability::HardwareBridge::updateDevHUD("EXECUTING", current_session->getIntent(), 1.0f, step);
-
-                    // v9.2: Pass all session parameters to every step
-                    nlohmann::json jParams;
-                    for (const auto& [k, v] : current_session->getParameters()) jParams[k] = v;
-                    jParams["action"] = step;
-                    jParams["intent"] = current_session->getIntent(); // Pass intent context to Kotlin
-                    
-                    exec_ctx = current_session->getExecutionContext();
-                    std::string exec_id = exec_ctx ? exec_ctx->execution_id : "legacy";
-                    
-                    // v1.5: Adaptive Budget Allocation
-                    uint32_t allocated_budget = Execution::AdaptiveBudgetController::getInstance().getAdaptedBudget(exec_id, step);
-                    if (exec_ctx) {
-                        Execution::ExecutionBudgetController::getInstance().allocateBudget(exec_id, allocated_budget);
+            while (tuning_iteration < (is_pitch_analysis ? MAX_TUNING_ITERATIONS : 1)) {
+                tuning_iteration++;
+                if (is_pitch_analysis && tuning_iteration > 1) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                    if (current_session->getToken() && current_session->getToken()->isCancelled()) {
+                        LOGW(TAG, "L8 Scheduler: Tuning session cancelled.");
+                        all_steps_success = false;
+                        break;
                     }
+                }
 
-                    int retry_count = 0;
-                    const int MAX_RETRIES = 3;
-                    bool step_success = false;
+                all_steps_success = true;
+                for (const auto& step : current_session->getPlan()) {
+                    LOGI(TAG, "L8 Scheduler: Executing Step -> '%s'", step.c_str());
+                    if (tuning_iteration == 1 || step == "audio_capture" || step == "fft" || step == "detect_peaks" || step == "note_mapper") {
+                        if (tuning_iteration == 1) Capability::HardwareBridge::pushMessage("[AGENT] Step: " + step);
+                    }
+                
+                    auto exec_ctx = current_session->getExecutionContext();
+                
+                    // v7.7 Robust Step-to-Capability Mapping
+                    CapabilityType type = CapabilityType::NONE;
+                    std::string s_lower = step;
+                    std::transform(s_lower.begin(), s_lower.end(), s_lower.begin(), ::tolower);
+                
+                    std::string i_lower = current_session->getIntent();
+                    std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
 
-                    while (retry_count <= MAX_RETRIES) {
-                        auto start_time = std::chrono::steady_clock::now();
-                        auto future = m_executor->optimizeAndDispatch(type, jParams.dump(), exec_ctx);
-                        
-                        try {
-                            LOGI(TAG, "L8 Scheduler: Waiting for Driver response (Attempt %d)...", retry_count + 1);
-                            bool finished = false;
-                            
-                            while (!finished) {
-                                if (future.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready) {
-                                    step_success = future.get();
-                                    finished = true;
-                                    break;
-                                }
-                                
-                                if (current_session->getToken() && current_session->getToken()->isCancelled()) {
-                                    LOGE(TAG, "L8 Scheduler: Session was cancelled during wait.");
-                                    all_steps_success = false;
-                                    finished = true;
-                                    break;
-                                }
-                                
-                                auto now = std::chrono::steady_clock::now();
-                                uint32_t elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
-                                if (elapsed >= 45000) { // 45s hard timeout per step
-                                    LOGE(TAG, "L8 Scheduler: Step '%s' timed out (Watchdog).", step.c_str());
-                                    Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::TIMEOUT, "ABORT_TIMEOUT");
-                                    Capability::HardwareBridge::pushMessage("[AGENT] Step timed out: " + step);
-                                    current_session->abortSession(AgentSession::Error::TIMEOUT);
-                                    all_steps_success = false;
-                                    finished = true;
-                                    break;
-                                }
-                            }
-                            
-                            if (!finished || !all_steps_success) break;
+                    // v10.2.17: Force MAP trigger if intent is MAP
+                    if (s_lower.find("audio") != std::string::npos || s_lower.find("fft") != std::string::npos || 
+                        s_lower.find("peak") != std::string::npos || s_lower.find("note_mapper") != std::string::npos || 
+                        s_lower.find("zero_crossing") != std::string::npos || s_lower.find("rms") != std::string::npos || 
+                        s_lower.find("lowpass") != std::string::npos) {
+                        type = CapabilityType::AUDIO;
+                    }
+                    else if (i_lower.find("map") != std::string::npos && (s_lower.find("location") != std::string::npos || s_lower.find("get") != std::string::npos)) {
+                        type = CapabilityType::MAP;
+                    }
+                    else if (s_lower.find("map") != std::string::npos || s_lower.find("မြေပုံ") != std::string::npos)
+                        type = CapabilityType::MAP;
+                    else if (s_lower.find("mail") != std::string::npos || s_lower.find("email") != std::string::npos)
+                        type = CapabilityType::MAIL;
+                    else if (s_lower.find("sms") != std::string::npos || s_lower.find("message") != std::string::npos || s_lower.find("ပို့") != std::string::npos || s_lower.find("send") != std::string::npos || s_lower.find("mock_sms") != std::string::npos) 
+                        type = CapabilityType::SMS;
+                    else if (s_lower.find("location") != std::string::npos || s_lower.find("တည်နေရာ") != std::string::npos || s_lower.find("နေရာ") != std::string::npos || s_lower.find("mock_location") != std::string::npos) 
+                        type = CapabilityType::LOCATION;
+                    else if (s_lower.find("contact") != std::string::npos || s_lower.find("resolve") != std::string::npos || s_lower.find("ရှာ") != std::string::npos)
+                        type = CapabilityType::CONTACTS;
+                    else if (s_lower.find("save") != std::string::npos || s_lower.find("store") != std::string::npos || 
+                             s_lower.find("add_fact") != std::string::npos || s_lower.find("record") != std::string::npos || 
+                             s_lower.find("query_fact") != std::string::npos || s_lower.find("query_vault") != std::string::npos || 
+                             s_lower.find("lookup") != std::string::npos || s_lower.find("memory") != std::string::npos || 
+                             s_lower.find("မှတ်") != std::string::npos || s_lower.find("vault") != std::string::npos || 
+                             s_lower.find("fact") != std::string::npos || s_lower.find("get_vault_content") != std::string::npos ||
+                             s_lower.find("return_result") != std::string::npos || s_lower.find("return_content") != std::string::npos || 
+                             s_lower.find("search_database") != std::string::npos || s_lower.find("check_vault") != std::string::npos)
+                        type = CapabilityType::MEMORY;
+                    else if (s_lower.find("alarm") != std::string::npos || s_lower.find("wake") != std::string::npos || s_lower.find("နှိုး") != std::string::npos)
+                        type = CapabilityType::ALARM;
+                    else if (s_lower.find("calendar") != std::string::npos || s_lower.find("event") != std::string::npos || s_lower.find("meeting") != std::string::npos || s_lower.find("check_calendar") != std::string::npos)
+                        type = CapabilityType::CALENDAR;
+                    else if (s_lower.find("file") != std::string::npos || s_lower.find("search_file") != std::string::npos || s_lower.find("find_file") != std::string::npos || s_lower.find("ဖိုင်") != std::string::npos)
+                        type = CapabilityType::FILES;
+                    else if (s_lower.find("sensor") != std::string::npos || s_lower.find("vibration") != std::string::npos || s_lower.find("resonance") != std::string::npos || s_lower.find("တုန်ခါမှု") != std::string::npos || 
+                             s_lower.find("read_sensor_data") != std::string::npos || s_lower.find("read_vibration_data") != std::string::npos ||
+                             s_lower.find("analyze_vibration") != std::string::npos)
+                        type = CapabilityType::SENSOR;
+                    else if (s_lower.find("mock_test") != std::string::npos)
+                        type = CapabilityType::TEST;
+                
+                    std::string cap_str = Ronin::Kernel::CapabilityTypeToString(type);
+                    if (exec_ctx) {
+                        Execution::ExecutionTelemetryBus::getInstance().logNodeStart(exec_ctx->session_id, exec_ctx->execution_id, step, cap_str, exec_ctx->correlation_id);
+                    }
+                
+                    if (type != CapabilityType::NONE) {
+                        LOGI(TAG, "L8 Scheduler: Dispatching Capability %d to L10 Optimizer...", static_cast<int>(type));
 
-                            auto end_time = std::chrono::steady_clock::now();
-                            uint32_t cost = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-                            
-                            if (exec_ctx) {
-                                if (!Execution::ExecutionBudgetController::getInstance().consumeBudget(exec_id, cost)) {
-                                    LOGE(TAG, "L8 Scheduler: Execution Budget Exceeded! %s", exec_ctx->logPrefix().c_str());
-                                    Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::BUDGET_EXCEEDED, "ABORT_BUDGET");
-                                    current_session->abortSession(AgentSession::Error::DEPTH_EXCEEDED);
-                                    all_steps_success = false;
-                                    break;
-                                }
-                                Execution::ExecutionTelemetryBus::getInstance().logNodeEnd(
-                                    exec_ctx->session_id, 
-                                    exec_id, 
-                                    step, 
-                                    cap_str,
-                                    cost, 
-                                    step_success ? "SUCCESS" : "FAILURE", 
-                                    cost, 
-                                    exec_ctx->correlation_id, 
-                                    step_success ? 0 : 500
-                                );
-                            }
+                        Capability::HardwareBridge::updateDevHUD("EXECUTING", current_session->getIntent(), 1.0f, step);
 
-                            // v1.5 Adaptive feedback
-                            Execution::AdaptiveBudgetController::getInstance().reportExecution(step, cost, step_success);
-
-                            if (step_success) break; // Success! exit retry loop
-
-                            // v1.5 Retry logic with exponential backoff
-                            retry_count++;
-                            if (retry_count <= MAX_RETRIES) {
-                                int backoff_ms = (retry_count == 1) ? 100 : (retry_count == 2 ? 500 : 1500);
-                                LOGW(TAG, "L8 Scheduler: Step '%s' failed. Retrying in %d ms...", step.c_str(), backoff_ms);
-                                std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
-                            } else {
-                                LOGE(TAG, "L8 Scheduler: Step '%s' failed after %d retries.", step.c_str(), MAX_RETRIES);
-                                Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::UNKNOWN, "MAX_RETRIES_EXCEEDED");
-                                Execution::RuntimeHealingController::getInstance().detectInstability();
-                                Capability::HardwareBridge::pushMessage("[AGENT] Step failed: " + step);
-                                all_steps_success = false;
-                            }
-                        } catch (const std::exception& e) {
-                            LOGE(TAG, "L8 Scheduler: Exception during step '%s': %s", step.c_str(), e.what());
-                            Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::JNI_EXCEPTION, e.what());
-                            Execution::RuntimeHealingController::getInstance().detectInstability();
-                            all_steps_success = false;
-                            break;
+                        // v9.2: Pass all session parameters to every step
+                        nlohmann::json jParams;
+                        for (const auto& [k, v] : current_session->getParameters()) jParams[k] = v;
+                        jParams["action"] = step;
+                        jParams["intent"] = current_session->getIntent(); // Pass intent context to Kotlin
+                    
+                        exec_ctx = current_session->getExecutionContext();
+                        std::string exec_id = exec_ctx ? exec_ctx->execution_id : "legacy";
+                    
+                        // v1.5: Adaptive Budget Allocation
+                        uint32_t allocated_budget = Execution::AdaptiveBudgetController::getInstance().getAdaptedBudget(exec_id, step);
+                        if (exec_ctx) {
+                            Execution::ExecutionBudgetController::getInstance().allocateBudget(exec_id, allocated_budget);
                         }
-                    } // end retry loop
 
-                    if (!all_steps_success) break; // exit step loop
+                        int retry_count = 0;
+                        const int MAX_RETRIES = 3;
+                        bool step_success = false;
+
+                        while (retry_count <= MAX_RETRIES) {
+                            auto start_time = std::chrono::steady_clock::now();
+                            auto future = m_executor->optimizeAndDispatch(type, jParams.dump(), exec_ctx);
+                        
+                            try {
+                                LOGI(TAG, "L8 Scheduler: Waiting for Driver response (Attempt %d)...", retry_count + 1);
+                                bool finished = false;
+                            
+                                while (!finished) {
+                                    if (future.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready) {
+                                        step_success = future.get();
+                                        finished = true;
+                                        break;
+                                    }
+                                
+                                    if (current_session->getToken() && current_session->getToken()->isCancelled()) {
+                                        LOGE(TAG, "L8 Scheduler: Session was cancelled during wait.");
+                                        all_steps_success = false;
+                                        finished = true;
+                                        break;
+                                    }
+                                
+                                    auto now = std::chrono::steady_clock::now();
+                                    uint32_t elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
+                                    if (elapsed >= 45000) { // 45s hard timeout per step
+                                        LOGE(TAG, "L8 Scheduler: Step '%s' timed out (Watchdog).", step.c_str());
+                                        Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::TIMEOUT, "ABORT_TIMEOUT");
+                                        Capability::HardwareBridge::pushMessage("[AGENT] Step timed out: " + step);
+                                        current_session->abortSession(AgentSession::Error::TIMEOUT);
+                                        all_steps_success = false;
+                                        finished = true;
+                                        break;
+                                    }
+                                }
+                            
+                                if (!finished || !all_steps_success) break;
+
+                                auto end_time = std::chrono::steady_clock::now();
+                                uint32_t cost = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+                            
+                                if (exec_ctx) {
+                                    if (!Execution::ExecutionBudgetController::getInstance().consumeBudget(exec_id, cost)) {
+                                        LOGE(TAG, "L8 Scheduler: Execution Budget Exceeded! %s", exec_ctx->logPrefix().c_str());
+                                        Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::BUDGET_EXCEEDED, "ABORT_BUDGET");
+                                        current_session->abortSession(AgentSession::Error::DEPTH_EXCEEDED);
+                                        all_steps_success = false;
+                                        break;
+                                    }
+                                    Execution::ExecutionTelemetryBus::getInstance().logNodeEnd(
+                                        exec_ctx->session_id, 
+                                        exec_id, 
+                                        step, 
+                                        cap_str,
+                                        cost, 
+                                        step_success ? "SUCCESS" : "FAILURE", 
+                                        cost, 
+                                        exec_ctx->correlation_id, 
+                                        step_success ? 0 : 500
+                                    );
+                                }
+
+                                // v1.5 Adaptive feedback
+                                Execution::AdaptiveBudgetController::getInstance().reportExecution(step, cost, step_success);
+
+                                if (step_success) break; // Success! exit retry loop
+
+                                // v1.5 Retry logic with exponential backoff
+                                retry_count++;
+                                if (retry_count <= MAX_RETRIES) {
+                                    int backoff_ms = (retry_count == 1) ? 100 : (retry_count == 2 ? 500 : 1500);
+                                    LOGW(TAG, "L8 Scheduler: Step '%s' failed. Retrying in %d ms...", step.c_str(), backoff_ms);
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+                                } else {
+                                    LOGE(TAG, "L8 Scheduler: Step '%s' failed after %d retries.", step.c_str(), MAX_RETRIES);
+                                    Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::UNKNOWN, "MAX_RETRIES_EXCEEDED");
+                                    Execution::RuntimeHealingController::getInstance().detectInstability();
+                                    Capability::HardwareBridge::pushMessage("[AGENT] Step failed: " + step);
+                                    all_steps_success = false;
+                                }
+                            } catch (const std::exception& e) {
+                                LOGE(TAG, "L8 Scheduler: Exception during step '%s': %s", step.c_str(), e.what());
+                                Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::JNI_EXCEPTION, e.what());
+                                Execution::RuntimeHealingController::getInstance().detectInstability();
+                                all_steps_success = false;
+                                break;
+                            }
+                        } // end retry loop
+
+                        if (!all_steps_success) break; // exit step loop
+                    }
+                }
+
+                if (!all_steps_success) break;
+
+                if (is_pitch_analysis) {
+                    std::string note_mapper_res = m_executor ? m_executor->getBlackboardValue("result_note_mapper") : "";
+                    if (!note_mapper_res.empty()) {
+                        try {
+                            auto jRes = nlohmann::json::parse(note_mapper_res);
+                            std::string status = jRes.value("status", "");
+                            std::string nearest_str = jRes.value("nearest_string", "");
+                            double freq = jRes.value("frequency_hz", 0.0);
+                            double cents = jRes.value("nearest_cents", 0.0);
+                            
+                            if (status == "IN_TUNE") {
+                                char buf[128];
+                                snprintf(buf, sizeof(buf), "[AGENT] 🎸 Tuning Success! String %s (%.1fHz) is perfectly IN TUNE! 🎶 [BEEP]", nearest_str.c_str(), freq);
+                                Capability::HardwareBridge::pushMessage(buf);
+                                break; // Exit tuning loop!
+                            } else {
+                                char buf[128];
+                                snprintf(buf, sizeof(buf), "[AGENT] Tuning %s: %.1fHz is %s (%.1f cents). Adjust peg...", nearest_str.c_str(), freq, status.c_str(), cents);
+                                Capability::HardwareBridge::pushMessage(buf);
+                            }
+                        } catch (...) {}
+                    }
                 }
             }
             

@@ -77,6 +77,13 @@ public:
     // v1.5 Self-Healing Toggle
     void setRetryMode(bool enabled) { m_retry_graph_mode = enabled; }
 
+    // v1.7 Blackboard accessor for monitoring loops
+    std::string getBlackboardValue(const std::string& key) {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        auto it = m_blackboard.storage.find(key);
+        return (it != m_blackboard.storage.end()) ? it->second : "";
+    }
+
 protected:
     CapabilityGraph& m_graph;
     GraphStorage& m_storage;

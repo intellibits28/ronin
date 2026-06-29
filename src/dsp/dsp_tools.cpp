@@ -357,10 +357,36 @@ std::string runNoteMapper(const std::string& param, ToolContext* ctx) {
     
     std::string note_name = note_names[note_in_octave] + std::to_string(octave);
     
+    // Guitar string reference frequencies (standard tuning)
+    std::vector<std::pair<std::string, double>> guitarStrings = {
+        {"E2", 82.41}, {"A2", 110.00}, {"D3", 146.83},
+        {"G3", 196.00}, {"B3", 246.94}, {"E4", 329.63}
+    };
+    std::string nearest_string = "-";
+    double min_diff = 1e9;
+    double nearest_hz = 0.0;
+    for (const auto& gs : guitarStrings) {
+        if (std::abs(gs.second - freq) < min_diff) {
+            min_diff = std::abs(gs.second - freq);
+            nearest_string = gs.first;
+            nearest_hz = gs.second;
+        }
+    }
+    double nearest_cents = deviation;
+    if (nearest_hz > 0.0) {
+        nearest_cents = 1200.0 * std::log2(freq / nearest_hz);
+    }
+    std::string status = "FLAT";
+    if (std::abs(nearest_cents) <= 5.0) status = "IN_TUNE";
+    else if (nearest_cents > 0) status = "SHARP";
+
     nlohmann::json jOut;
     jOut["target_note"] = note_name;
     jOut["frequency_hz"] = freq;
     jOut["deviation_cents"] = deviation;
+    jOut["nearest_string"] = nearest_string;
+    jOut["nearest_cents"] = nearest_cents;
+    jOut["status"] = status;
     
     std::string out_str = jOut.dump();
     Capability::HardwareBridge::pushMessage("[TUNER_RESULT] " + out_str);

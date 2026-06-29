@@ -173,6 +173,7 @@ class MainActivity : FragmentActivity() {
     internal lateinit var nativeEngine: NativeEngine
     private lateinit var sensorDriver: SensorDriver
     private lateinit var perceptionEngine: PerceptionEngine
+    private var simulatedTunerFreq = 312.0 // v1.7 Simulated tuning peg state
     private lateinit var sharedPreferences: android.content.SharedPreferences
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     // ... rest of the class remains same but I need to include the modified methods
@@ -688,7 +689,12 @@ class MainActivity : FragmentActivity() {
                 }
                 14 -> {
                     val sampleRate = 8000.0
-                    val freq = 440.0
+                    simulatedTunerFreq += 6.0
+                    val freq = if (simulatedTunerFreq >= 329.63) {
+                        val finalFreq = 329.63
+                        simulatedTunerFreq = 312.0 // reset after successful tuning
+                        finalFreq
+                    } else simulatedTunerFreq
                     val size = 64
                     val samples = DoubleArray(size) { i ->
                         val t = i / sampleRate
@@ -741,6 +747,13 @@ class MainActivity : FragmentActivity() {
                             else -> "FLAT"
                         }
 
+                        if (status == "IN_TUNE" && vm.tunerResult.status != "IN_TUNE") {
+                            try {
+                                val toneG = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 100)
+                                toneG.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 300)
+                            } catch (_: Exception) {}
+                        }
+
                         val result = ChatViewModel.TunerResult(
                             detectedHz = freq,
                             detectedNote = noteLabel,
@@ -754,13 +767,19 @@ class MainActivity : FragmentActivity() {
                         Log.e("RoninKernel_MainActivity", "Error parsing tuner result: ${e.message}")
                     }
                 } else if (trimmedMsg.startsWith("[")) {
+                    if (trimmedMsg.contains("[BEEP]")) {
+                        try {
+                            val toneG = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 100)
+                            toneG.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 300)
+                        } catch (_: Exception) {}
+                    }
                     // v1.6 Phase 4 Fix: Route [AGENT] results to chat bubble so user sees action feedback
                     // Do not push verbose system logs to chat, only actionable feedback
                     if (!trimmedMsg.startsWith("[STATUS]") && !trimmedMsg.startsWith("[MODEL]") && !trimmedMsg.startsWith("[SKILLS]") &&
                         !trimmedMsg.contains("Starting:") && !trimmedMsg.contains("Step:") && !trimmedMsg.contains("Task completed successfully") && !trimmedMsg.contains("failed after")) {
                         
                         // Clean up the "[AGENT] " prefix for a more natural conversation feel
-                        val cleanMsg = trimmedMsg.replace("[AGENT] ", "").replace("[VAULT] ", "").replace("[CALENDAR]\n", "").replace("[CALENDAR] ", "").replace("[FACT FOUND] ", "")
+                        val cleanMsg = trimmedMsg.replace("[AGENT] ", "").replace("[VAULT] ", "").replace("[CALENDAR]\n", "").replace("[CALENDAR] ", "").replace("[FACT FOUND] ", "").replace(" [BEEP]", "")
                         vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", cleanMsg.trim()))
                     }
                 }
