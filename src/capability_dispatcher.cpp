@@ -1,6 +1,8 @@
 #include "capability_dispatcher.h"
 #include "android_bridge.h"
 #include "ronin_log.h"
+#include "capabilities/tool_registry.h"
+#include <nlohmann/json.hpp>
 
 #define TAG "RoninDispatcher"
 
@@ -17,6 +19,29 @@ void CapabilityDispatcher::dispatch(const CapabilityRequest& req, ResponseCallba
         LOGI(TAG, "Dispatching capability request: %s (Type: %d)", req.request_id.c_str(), static_cast<int>(req.capability));
         if (callback) {
             m_pending_requests[req.request_id] = callback;
+        }
+    }
+
+    // Check if the requested tool exists in the local C++ ToolRegistry first
+    std::string action = "";
+    try {
+        auto j = nlohmann::json::parse(req.payload_json);
+        if (j.contains("action")) {
+            action = j["action"].get<std::string>();
+        }
+    } catch (...) {}
+
+    if (!action.empty()) {
+        auto& reg = Capability::ToolRegistry::getInstance();
+        std::string res_val = reg.execute(action, req.payload_json);
+        // If the tool is found in registry, complete it locally
+        if (!res_val.starts_with("Error: Tool ") || res_val.find("not found.") == std::string::npos) {
+            CapabilityResponse response;
+            response.request_id = req.request_id;
+            response.success = !res_val.starts_with("Error");
+            response.payload_json = res_val;
+            onResponse(response);
+            return;
         }
     }
 
