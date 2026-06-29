@@ -1,5 +1,5 @@
 #include "capability_policy_engine.h"
-#include "ronin_jni_context.h"
+#include "jni/ronin_jni_context.h"
 #include "ronin_log.h"
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
