@@ -70,10 +70,10 @@ public:
         m_strategies.clear();
     }
 
-private:
     ActorSupervisor() = default;
     ~ActorSupervisor() { shutdownAll(); }
 
+private:
     std::unordered_map<std::string, std::shared_ptr<Actor>> m_actors;
     std::unordered_map<std::string, SupervisionStrategy> m_strategies;
     std::mutex m_mutex;

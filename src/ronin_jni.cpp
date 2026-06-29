@@ -62,6 +62,13 @@ void KernelRuntimeContext::release(JNIEnv* env) {
     graph_storage.reset();
     resonance_analyzer.reset();
     ltm.reset();
+    safe_rollback_manager.reset();
+    ab_version_manager.reset();
+    shadow_testing_manager.reset();
+    actor_supervisor.reset();
+    capability_policy_engine.reset();
+    capability_compiler.reset();
+    planner_rule_cache.reset();
     world_state = {};
 }
 

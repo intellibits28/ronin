@@ -59,6 +59,8 @@ public:
     Ronin::Kernel::Optimization::ShadowTestingManager* getShadowTestingManager() const { return shadow_testing_manager.get(); }
     Ronin::Kernel::Optimization::ABVersionManager* getABVersionManager() const { return ab_version_manager.get(); }
     Ronin::Kernel::Optimization::SafeRollbackManager* getSafeRollbackManager() const { return safe_rollback_manager.get(); }
+
+    void release(JNIEnv* env);
 };
 
 KernelRuntimeContext& runtimeContext();
