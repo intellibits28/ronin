@@ -14,26 +14,26 @@ This document freezes the architectural design scope and establishes the impleme
                        Shared Sensor Stream Bus
                                    │
                                    ▼
-                            Kernel Services
+                    Uniform Kernel Services (IService)
                  (Location, Audio, Memory, Network)
                                    │
                                    ▼
                         Priority-Based Event Bus
-                     (With Correlation ID Routing)
+                    (TraceID & Correlation ID Routing)
                                    │
                                    ▼
               Attention Manager   <───>   Resource Manager
                                    │
                                    ▼
                            Actor Supervisor
-                     (Lifecycle & Crash Recovery)
+                    (OTP-Style Supervision Trees)
                                    │
                                    ▼
                             Actor Framework
                  (Sensor, Memory, Planner, Llm Actors)
                                    │
                                    ▼
-                            Task Decomposer
+                           Task Decomposer
                                    │
                                    ▼
                               Plan Engine  <───>  Planner Rule Cache
@@ -42,7 +42,8 @@ This document freezes the architectural design scope and establishes the impleme
                              Policy Engine
                                    │
                                    ▼
-                           Execution Context
+                 ExecutionContext & Blackboard Memory
+                     (Shared State Working Blackboard)
                                    │
                                    ▼
                              Goal Monitor
@@ -58,129 +59,131 @@ This document freezes the architectural design scope and establishes the impleme
                            Meta-Cognition
                                    │
                                    ▼
-                 Memory Tier Hierarchy & Semantic Index
-               (Working -> Episode Graph -> Knowledge)
+                       Event Sourced Memory Log
+                                   │
+                                   ▼
+                     Knowledge Graph & Semantic Index
                                    │
                                    ▼
                           Capability Compiler
-                       (Versioned Macro Rollback)
+                   (A/B Version Test & Macro Rollback)
 ```
 
 ---
 
-## 2. Kernel & Practicality Specifications (v1.0)
+## 2. Deep Systems Engineering Specifications (v1.0)
 
-### A. Android Device Resource Isolation
-To fit the battery and memory constraints of Android (e.g. Mi 11 Lite 5G NE with 8GB RAM), the runtime is compartmentalized into execution lifecycles:
-
-| Tier | Component Group | Activation Lifecycle | Memory Profile |
-| :--- | :--- | :--- | :--- |
-| **Core Kernel** | Event Bus, Actor Runtime, Scheduler, Policy Engine, World Model, Memory | **Always On** (Runs inside Foreground Service) | Low footprint (~30MB) |
-| **Cognitive Layer** | LLM Coprocessor (Gemma), Reflection, Meta-Cognition, Compiler | **On-Demand** (Woken up via Event Bus triggers) | High footprint (Loads weight parameters to RAM, offloads on idle) |
-| **Background Layer**| Sensor Bus, DSP pipelines, Attention Manager | **Adaptive** (Frequency throttled by battery status) | Medium footprint (~45MB) |
-
-### B. Standardized Event Schema with Correlation ID
-Every system event conforms to a strict struct definition. The `correlation_id` matches the originating `ExecutionContext` to allow tracing execution trees across distributed system actors.
-
-```cpp
-namespace Ronin::Kernel::Event {
-
-enum class EventPriority { CRITICAL, HIGH, NORMAL, LOW };
-
-struct Event {
-    std::string id;
-    std::string type;
-    uint64_t timestamp = 0;
-    EventPriority priority = EventPriority::NORMAL;
-    std::string source;
-    std::string payload_json;
-    std::string correlation_id; // Connects to ExecutionContext
-};
-
-} // namespace Ronin::Kernel::Event
+### A. Repository Directory Layout (`ronin-runtime/`)
+To scale maintenance over years, the repository is organized into isolated decoupled folders:
+```
+ronin-runtime/
+ ├── kernel/          # Microkernel core scheduler and event bus
+ ├── actors/          # Actor framework and lifecycle handlers
+ ├── services/        # Platform service abstractions and Android bridges
+ ├── capabilities/    # Manifests and capability registry
+ ├── dsp/             # High performance stream bus and ring buffers
+ ├── memory/          # Event sourcing appends, Knowledge Graph, SQLite
+ ├── reasoning/       # Model-agnostic plugins (IReasoningEngine)
+ ├── android/         # Kotlin/App wrapper code
+ ├── benchmarks/      # Latency, battery, and memory profiling harnesses
+ ├── tests/           # Integration and gtest suites
+ └── examples/        # Reference implementations (e.g. Guitar Tuner)
 ```
 
-### C. Kernel Service Layer
-To make Actor code platform-agnostic, actors communicate through an abstract service interface instead of directly executing JNI, SQLite, or AAudio wrappers:
+### B. Standard Service Contract (`IService`)
+All platform services implement a uniform interface contract to isolate Actor code from system API shifts:
 
 ```cpp
 namespace Ronin::Kernel::Services {
 
-class ILocationService {
-public:
-    virtual ~ILocationService() = default;
-    virtual std::string getLastKnownLocation() = 0;
+struct ServiceRequest {
+    std::string action;
+    std::string payload_json;
 };
 
-class IAudioService {
-public:
-    virtual ~IAudioService() = default;
-    virtual void startStreaming(std::function<void(const std::vector<float>&)> callback) = 0;
-    virtual void stopStreaming() = 0;
+struct ServiceResult {
+    bool success = false;
+    std::string result_json;
+    std::string error_message;
 };
 
-class IMemoryService {
+class IService {
 public:
-    virtual ~IMemoryService() = default;
-    virtual void writeEpisode(const std::string& episode_json) = 0;
-    virtual std::string queryKnowledge(const std::string& query) = 0;
+    virtual ~IService() = default;
+    virtual ServiceResult execute(const ServiceRequest& request, const ExecutionContext& ctx) = 0;
 };
 
 } // namespace Ronin::Kernel::Services
 ```
 
-### D. Memory Tier Hierarchy & Decay
-Memory is managed dynamically to keep the database size stable:
-1. **Working Memory**: In-RAM state for the active `ExecutionContext`.
-2. **Episodic Memory**: Serialized episode runs stored in SQLite `episodes` table.
-3. **Knowledge Graph**: Consolidated facts and semantic associations extracted from episodes.
-4. **Archive/Decay**: Old episodes are periodically compressed, pruned, or archived based on relevance scores.
+### C. Manifest-Based Capability Registry
+Capabilities are declared via JSON manifests rather than hardcoded registry calls. This allows on-the-fly registration of macros:
 
-### E. Actor Supervisor Tree
-The `ActorSupervisor` acts as a lifecycle monitor. It captures runtime exceptions, manages timeouts, and restarts failed actors based on restart policies:
+```json
+{
+  "id": "pitch_analysis",
+  "version": "1.2.0",
+  "permissions": ["android.permission.RECORD_AUDIO"],
+  "inputs": ["audio_stream"],
+  "outputs": ["pitch_frequency"],
+  "estimated_power_cost": "LOW",
+  "deterministic": true
+}
+```
+
+### D. Blackboard Working Memory
+Rather than exposing mutable shared objects, actors query and write transaction variables to a thread-safe **Blackboard** bound to the active `ExecutionContext`:
 
 ```cpp
 namespace Ronin::Kernel::Execution {
 
-class ActorSupervisor {
+class Blackboard {
 public:
-    static ActorSupervisor& getInstance();
-    void registerActor(std::shared_ptr<Actor> actor);
-    void handleCrash(const std::string& actor_id);
-    void healthCheck();
+    void write(const std::string& key, const std::string& val);
+    std::string read(const std::string& key);
+    bool contains(const std::string& key);
+    void clear();
     
 private:
-    std::vector<std::shared_ptr<Actor>> m_monitored_actors;
-    std::mutex m_mutex;
+    std::unordered_map<std::string, std::string> m_board;
+    std::shared_mutex m_rw_mutex; // Reader-Writer lock for concurrency
 };
 
 } // namespace Ronin::Kernel::Execution
 ```
 
+### E. Actor Supervisor Strategies (OTP Style)
+The `ActorSupervisor` implements recovery strategies:
+* **OneForOne**: If an Actor crashes, restart only the failed actor.
+* **OneForAll**: If a core actor crashes (e.g. `SensorActor`), restart the entire active sensor pipeline.
+* **Escalate**: Propagate exception to the main Kernel runtime.
+* **Stop**: Immediately abort execution and reclaim JNI resources.
+
+### F. Observability: Tracing and Structured Log
+Every execution carries a unique `TraceID` generated by the `ExecutionContext`. Structured logs and Event Bus messages are tagged with this `TraceID` to allow distributed transaction debugging:
+
+```
+[2026-06-29 06:15:13] [Trace: tr_84f912] [GoalMonitor] INFO: Triggering audio capture
+[2026-06-29 06:15:14] [Trace: tr_84f912] [Actor: Mic] INFO: Capturing raw samples
+[2026-06-29 06:15:14] [Trace: tr_84f912] [Actor: Dsp] INFO: FFT computed successfully
+```
+
 ---
 
-## 3. Production Staged Roadmap
+## 3. Feature-Driven Milestone Roadmap
 
-```mermaid
-gantt
-    title Ronin Runtime v1.0 Production Implementation Roadmap
-    dateFormat  YYYY-MM-DD
-    section Phase A: Runtime Core
-    Event Bus & Priority Queues    :active, 2026-07-01, 7d
-    ExecutionContext & Actors      :2026-07-08, 10d
-    Actor Supervisor & Policy      :2026-07-18, 7d
-    section Phase B: Capabilities
-    Kernel Services Abstraction    :2026-07-25, 10d
-    DSP Stream Pipeline            :2026-08-04, 10d
-    section Phase C: Memory Tier
-    Working & Episodic Memory      :2026-08-14, 10d
-    Semantic Index & SQLite Graph  :2026-08-24, 10d
-    section Phase D: Cognition
-    IReasoningEngine Adapter       :2026-09-03, 7d
-    Reflection & Evaluator         :2026-09-10, 10d
-    Capability Compiler            :2026-09-20, 10d
-    section Phase E: Optimization
-    Rule Cache & Invalidation      :2026-09-30, 7d
-    Attention & Resource Managers  :2026-10-07, 10d
-    Profiling & Benchmarking       :2026-10-17, 10d
-```
+### Milestone 1: Hello World Cognitive Runtime
+* **Deliverables**: Priority Event Bus, Actor Runtime, Execution Context, Blackboard State.
+* **Outcome**: Verified multithreaded message dispatcher and JNI execution boundary.
+
+### Milestone 2: Audio & DSP Engine (Guitar Tuner)
+* **Deliverables**: Audio Service implementation (`IService`), PFFFT stream pipeline, Capability Registry parsing, Mic Actor integration.
+* **Outcome**: Fully operational Guitar Tuner processing mic input and calculating pitch offsets.
+
+### Milestone 3: World Memory & Validation (Resonance Analyzer)
+* **Deliverables**: World Model Graph, Reflection Engine, closed-loop Goal Monitor.
+* **Outcome**: Background resonance tracking and environment state synthesis.
+
+### Milestone 4: Self-Optimizing Cognitive OS
+* **Deliverables**: Policy Engine, Actor Supervisor Tree, Capability Compiler, A/B Version Testing, Planner Rule Cache.
+* **Outcome**: Runtime dynamically optimizes paths, versioning macro-capabilities, and throttling budgets on low-power devices.
