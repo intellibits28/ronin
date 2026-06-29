@@ -21,17 +21,15 @@ CapabilityPolicyEngine::CapabilityPolicyEngine() {
 
 void CapabilityPolicyEngine::loadManifest() {
 #ifdef __ANDROID__
-    // Obtain AssetManager from the stored Java VM / instance in RuntimeContext.
-    if (!JNI::runtimeContext().vm) {
-        LOGW(TAG, "CapabilityPolicyEngine: JVM not available – empty policy.");
+    if (!JNI::runtimeContext().vm || !JNI::runtimeContext().instance) {
+        LOGW(TAG, "CapabilityPolicyEngine: JVM or instance not available – empty policy.");
         return;
     }
     JNIEnv* env = nullptr;
     JNI::runtimeContext().vm->AttachCurrentThread(&env, nullptr);
-    // Get AssetManager from the Android Context stored as "instance".
-    jclass ctxCls = env->FindClass("android/content/Context");
-    if (!ctxCls) { LOGE(TAG, "CapabilityPolicyEngine: cannot find Context class"); return; }
-    jmethodID getAssetMgr = env->GetMethodID(ctxCls, "getAssets", "()Landroid/content/res/AssetManager;");
+    jclass instCls = env->GetObjectClass(JNI::runtimeContext().instance);
+    if (!instCls) { LOGE(TAG, "CapabilityPolicyEngine: cannot find class of instance"); return; }
+    jmethodID getAssetMgr = env->GetMethodID(instCls, "getAssets", "()Landroid/content/res/AssetManager;");
     if (!getAssetMgr) { LOGE(TAG, "CapabilityPolicyEngine: cannot find getAssets method"); return; }
     jobject assetMgrObj = env->CallObjectMethod(JNI::runtimeContext().instance, getAssetMgr);
     if (!assetMgrObj) { LOGW(TAG, "CapabilityPolicyEngine: AssetManager is null"); return; }

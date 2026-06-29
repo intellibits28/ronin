@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import android.content.ComponentCallbacks2
 import android.content.res.Configuration
+import android.content.res.AssetManager
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
@@ -258,6 +259,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private val scope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
     private var currentModelPath: String = ""
+
+    @Keep
+    fun getAssets(): AssetManager = context.assets
 
     companion object {
         private const val TAG = "RoninKernel_Native"
