@@ -85,6 +85,7 @@ void AgentScheduler::workerLoop() {
             // v7.0 Layer 10 Integration: Execute each step in the plan
             bool all_steps_success = true;
             bool is_pitch_analysis = (current_session->getIntent() == "PITCH_ANALYSIS");
+            bool is_vibration_analysis = (current_session->getIntent() == "ANALYZE_VIBRATION" || current_session->getIntent() == "SENSOR");
             int tuning_iteration = 0;
             const int MAX_TUNING_ITERATIONS = 30;
 
@@ -301,6 +302,33 @@ void AgentScheduler::workerLoop() {
                                 snprintf(buf, sizeof(buf), "[AGENT] Tuning %s: %.1fHz is %s (%.1f cents). Adjust peg...", nearest_str.c_str(), freq, status.c_str(), cents);
                                 Capability::HardwareBridge::pushMessage(buf);
                             }
+                        } catch (...) {}
+                    }
+                }
+
+                if (is_vibration_analysis && m_executor) {
+                    std::string vib_res = m_executor->getBlackboardValue("result_analyze_vibration");
+                    if (vib_res.empty()) vib_res = m_executor->getBlackboardValue("result_read_vibration_data");
+                    if (!vib_res.empty()) {
+                        try {
+                            auto jRes = nlohmann::json::parse(vib_res);
+                            double freq = jRes.value("resonance_freq_hz", 0.0);
+                            double psd = jRes.value("psd_peak_db", -100.0);
+                            bool anomaly = jRes.value("anomaly_detected", false);
+
+                            m_executor->getBeliefState().updateBelief("world.env.resonance_freq_hz", std::to_string(freq), 0.95f);
+                            m_executor->getBeliefState().updateBelief("world.env.psd_peak_db", std::to_string(psd), 0.90f);
+                            m_executor->getBeliefState().updateBelief("world.env.anomaly_detected", anomaly ? "true" : "false", 1.0f);
+
+                            char buf[256];
+                            if (anomaly) {
+                                snprintf(buf, sizeof(buf), "[AGENT] ⚠️ Vibration Anomaly Detected! Frequency: %.1fHz (PSD: %.1fdB). Environment state synthesized in World Memory.", freq, psd);
+                            } else {
+                                snprintf(buf, sizeof(buf), "[AGENT] ✅ Environment Resonance Normal (%.1fHz, %.1fdB). World Memory validated. Goal achieved.", freq, psd);
+                            }
+                            Capability::HardwareBridge::pushMessage(buf);
+
+                            m_executor->getReflectionEngine().reflectOnRecentTasks();
                         } catch (...) {}
                     }
                 }

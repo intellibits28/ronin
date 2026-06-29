@@ -134,3 +134,30 @@ TEST(RuntimeMicrokernelTest, AudioDspTunerPipelineIntegrationFlow) {
     EXPECT_NEAR(pitch, 440.0f, 10.0f);
 }
 
+#include "dsp/dsp_tools.h"
+#include "capabilities/tool_registry.h"
+#include "belief_state.h"
+#include <nlohmann/json.hpp>
+
+TEST(RuntimeMicrokernelTest, WorldMemoryAndResonanceValidationFlow) {
+    Ronin::Kernel::DSP::registerDspTools();
+    auto& registry = Ronin::Kernel::Capability::ToolRegistry::getInstance();
+    
+    std::string res_json = registry.execute("analyze_vibration", "{}");
+    EXPECT_FALSE(res_json.empty());
+    EXPECT_NE(res_json.find("resonance_freq_hz"), std::string::npos);
+    EXPECT_NE(res_json.find("summary"), std::string::npos);
+
+    auto jRes = nlohmann::json::parse(res_json);
+    double freq = jRes.value("resonance_freq_hz", 0.0);
+    bool anomaly = jRes.value("anomaly_detected", false);
+
+    Ronin::Kernel::Reasoning::BeliefState belief_state;
+    belief_state.updateBelief("world.env.resonance_freq_hz", std::to_string(freq), 0.95f);
+    belief_state.updateBelief("world.env.anomaly_detected", anomaly ? "true" : "false", 1.0f);
+
+    auto belief = belief_state.getBelief("world.env.resonance_freq_hz");
+    EXPECT_EQ(belief.value, std::to_string(freq));
+    EXPECT_NEAR(belief.confidence, 0.95f, 0.01f);
+}
+

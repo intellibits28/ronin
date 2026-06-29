@@ -40,6 +40,7 @@ private:
 
 class ResonanceAnalyzer {
 public:
+    static ResonanceAnalyzer& getInstance();
     ResonanceAnalyzer(int n_samples = 1024);
     ~ResonanceAnalyzer();
 

@@ -100,7 +100,7 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
         Execution::FailureTelemetryBus::getInstance().setMemory(runtimeContext().ltm.get());
         Execution::ExecutionCheckpointStore::getInstance().initialize(runtimeContext().ltm->getDatabase());
         Execution::RuntimeHealingController::getInstance().initialize(&AgentScheduler::getInstance());
-        runtimeContext().resonance_analyzer = std::make_shared<ResonanceAnalyzer>(1024);
+        runtimeContext().resonance_analyzer = std::shared_ptr<ResonanceAnalyzer>(&ResonanceAnalyzer::getInstance(), [](ResonanceAnalyzer*){});
         runtimeContext().graph_storage = std::make_unique<GraphStorage>(base_path + "/ronin_graph.db");
         runtimeContext().cap_graph = std::make_unique<CapabilityGraph>();
         runtimeContext().graph_storage->loadGraph(*runtimeContext().cap_graph);

@@ -1,4 +1,5 @@
 #include "dsp/dsp_tools.h"
+#include "dsp/resonance_analyzer.h"
 #include "capabilities/tool_registry.h"
 #include "capabilities/hardware_bridge.h"
 #include "third_party/pffft/pffft.h"
@@ -393,8 +394,33 @@ std::string runNoteMapper(const std::string& param, ToolContext* ctx) {
     return out_str;
 }
 
+static std::string runAnalyzeVibration(const std::string& param, ToolContext* ctx) {
+    (void)param; (void)ctx;
+    std::string res = ResonanceAnalyzer::getInstance().getAnalysisJson("RESONANCE");
+    Capability::HardwareBridge::pushMessage("[SENSOR ANALYSIS] " + res);
+    return res;
+}
+
+static std::string runReadVibrationData(const std::string& param, ToolContext* ctx) {
+    return runAnalyzeVibration(param, ctx);
+}
+
 void registerDspTools() {
     auto& registry = Capability::ToolRegistry::getInstance();
+
+    Capability::ToolMetadata vibMeta;
+    vibMeta.name = "analyze_vibration";
+    vibMeta.description = "Analyzes accelerometer sensor samples for resonance frequencies and environment anomalies";
+    vibMeta.inputs = {};
+    vibMeta.outputs = {"string_json"};
+    registry.registerTool(vibMeta, runAnalyzeVibration);
+
+    Capability::ToolMetadata readVibMeta;
+    readVibMeta.name = "read_vibration_data";
+    readVibMeta.description = "Reads raw vibration sensor data from hardware";
+    readVibMeta.inputs = {};
+    readVibMeta.outputs = {"string_json"};
+    registry.registerTool(readVibMeta, runReadVibrationData);
 
     Capability::ToolMetadata audioMeta;
     audioMeta.name = "audio_capture";

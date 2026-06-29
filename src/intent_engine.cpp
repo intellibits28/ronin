@@ -172,6 +172,8 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "User: 'aung aung ဆီ email ပို့ပါ' -> {\"intent\":\"SEND_MAIL\",\"plan\":[\"CONTACTS\",\"SEND_MAIL\"],\"parameters\":{\"recipient_name\":\"aung aung\"}} "
         "User: 'I want to tune my guitar' -> {\"intent\":\"PITCH_ANALYSIS\",\"plan\":[\"audio_capture\",\"fft\",\"detect_peaks\",\"note_mapper\"],\"parameters\":{}} "
         "User: 'guitar tuner run' -> {\"intent\":\"PITCH_ANALYSIS\",\"plan\":[\"audio_capture\",\"fft\",\"detect_peaks\",\"note_mapper\"],\"parameters\":{}} "
+        "User: 'တုန်ခါမှု စစ်ဆေးပေးပါ' -> {\"intent\":\"ANALYZE_VIBRATION\",\"plan\":[\"analyze_vibration\"],\"parameters\":{\"sensor_type\":\"RESONANCE\"}} "
+        "User: 'analyze vibration' -> {\"intent\":\"ANALYZE_VIBRATION\",\"plan\":[\"analyze_vibration\"],\"parameters\":{\"sensor_type\":\"RESONANCE\"}} "
         + lessons_context;
 
     // Requesting a reasoning cycle from the engine
