@@ -26,7 +26,7 @@ This document freezes the architectural design scope and establishes the impleme
                                    │
                                    ▼
                            Actor Supervisor
-                    (OTP-Style Supervision Trees)
+                    (Lifecycle & Crash Recovery)
                                    │
                                    ▼
                             Actor Framework
@@ -91,10 +91,22 @@ ronin-runtime/
 ```
 
 ### B. Standard TaskHandle & Async Service Contract (`IService`)
-Instead of using `std::future`, platform services utilize a `TaskHandle` supporting cancellation, timeout checks, and state monitoring:
+Platform services execute asynchronously, returning a `TaskHandle` supporting cancellation, timeout checks, progress updates, and state monitoring:
 
 ```cpp
 namespace Ronin::Kernel::Services {
+
+enum class ErrorCode {
+    NONE = 0,
+    TIMEOUT = 1,
+    PERMISSION_DENIED = 2,
+    SENSOR_UNAVAILABLE = 3,
+    CANCELLED = 4,
+    MEMORY_FULL = 5,
+    NETWORK_LOST = 6,
+    INTERNAL_ERROR = 7,
+    INVALID_PARAMETER = 8
+};
 
 struct ServiceRequest {
     std::string action;
@@ -104,6 +116,7 @@ struct ServiceRequest {
 struct ServiceResult {
     bool success = false;
     std::string result_json;
+    ErrorCode error_code = ErrorCode::NONE;
     std::string error_message;
 };
 
@@ -124,8 +137,8 @@ public:
 } // namespace Ronin::Kernel::Services
 ```
 
-### C. Capability Manifest (With Schema Versioning & Execution Metadata)
-Manifest schemas contain explicit schema versions and execution properties to guide graph planner optimizations:
+### C. Capability Manifest & Dependency Resolver
+Manifest schemas contain explicit schema versions and execution properties. The runtime **Dependency Resolver** verifies graph capabilities on load:
 
 ```json
 {
@@ -145,7 +158,36 @@ Manifest schemas contain explicit schema versions and execution properties to gu
 }
 ```
 
-### D. Strongly Typed Blackboard Working Memory (With Write Ownership)
+### D. Strongly Typed Messages (`Message<T>`)
+To prevent CPU-intensive string JSON parsing across Actor threads, communications utilize strongly typed payload structures wrapped in a unified message class:
+
+```cpp
+namespace Ronin::Kernel::Event {
+
+struct FFTRequest { std::vector<float> signal; };
+struct LocationRequest { bool high_accuracy; };
+struct AudioChunk { std::vector<float> samples; };
+struct SensorEvent { std::string type; float value; };
+
+using MessagePayload = std::variant<
+    FFTRequest,
+    LocationRequest,
+    AudioChunk,
+    SensorEvent,
+    std::string
+>;
+
+struct Message {
+    std::string trace_id;
+    std::string sender_id;
+    std::string recipient_id;
+    MessagePayload payload;
+};
+
+} // namespace Ronin::Kernel::Event
+```
+
+### E. Strongly Typed Blackboard Working Memory (With Write Ownership)
 The `Blackboard` maps strongly typed values and enforces strict write-ownership rules to prevent race conditions:
 * `SensorActor` has write-ownership on sensor keys (e.g., `raw_audio`).
 * `DspActor` has write-ownership on computation keys (e.g., `fft_result`).
@@ -179,16 +221,15 @@ private:
 } // namespace Ronin::Kernel::Execution
 ```
 
-### E. Event Bus Priority Inversion Prevention
-To prevent low-priority tasks from locking resources required by critical events, the scheduler implements **Priority Inheritance** (temporarily boosting locked resource owner priority to match the critical request) and **Timeout Preemption** policies.
+### F. Exponential Memory Decay (Ebbinghaus Curve)
+Memory tables are dynamically pruned using Ebbinghaus exponential decay algorithms to manage storage health:
 
-### F. Relevance-Based Memory Decay
-The memory retention score is calculated dynamically to manage SQLite footprint:
+$$\text{Retention Score} = \text{Importance} \cdot \text{User Confirmation} \cdot e^{-\lambda t}$$
 
-$$\text{Retention Score} = \frac{\text{Importance} \cdot \text{Access Frequency} \cdot \text{User Confirmation}}{\text{Age}}$$
-
-* Recent episodes: Expire and prune if retention score falls below critical threshold.
-* User-confirmed facts: Retained permanently.
+Where:
+* $t$ is age/time difference in seconds.
+* $\lambda$ is a decay coefficient.
+* Memory is pruned or archived if the Retention Score falls below critical threshold.
 
 ---
 
