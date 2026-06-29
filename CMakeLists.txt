@@ -96,6 +96,7 @@ set(RONIN_CORE_SOURCES
     ronin-runtime/actors/src/actor_supervisor.cpp
     src/optimization/ab_version_manager.cpp
     src/optimization/safe_rollback_manager.cpp
+    src/shadow_testing/shadow_testing_manager.cpp
     src/android_bridge.cpp
     src/agent_session.cpp
     src/session_manager.cpp
@@ -130,6 +131,9 @@ add_dependencies(ronin_core generate_fbs)
 target_include_directories(ronin_core PUBLIC 
     include 
     include/third_party
+    ronin-runtime
+    ronin-runtime/actors/include
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${sqlite3_src_SOURCE_DIR} 
     ${flatbuffers_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}

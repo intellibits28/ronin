@@ -141,7 +141,11 @@ JNIEXPORT void JNICALL native_initializeKernel(JNIEnv *env, jobject thiz, jstrin
         runtimeContext().kernel = std::make_shared<RoninKernel>(registry, dummyCap);
         runtimeContext().actor_supervisor = std::make_unique<Ronin::Kernel::Execution::ActorSupervisor>();
         runtimeContext().capability_compiler = std::make_unique<CapabilityCompiler>();
-        // Duplicate actor_supervisor creation removed
+        runtimeContext().planner_rule_cache = std::make_unique<Reasoning::PlannerRuleCache>();
+        runtimeContext().capability_policy_engine = std::make_unique<Ronin::Kernel::CapabilityPolicyEngine>();
+        runtimeContext().shadow_testing_manager = std::make_unique<Ronin::Kernel::Optimization::ShadowTestingManager>();
+        runtimeContext().ab_version_manager = std::make_unique<Ronin::Kernel::Optimization::ABVersionManager>();
+        runtimeContext().safe_rollback_manager = std::make_unique<Ronin::Kernel::Optimization::SafeRollbackManager>(runtimeContext().shadow_testing_manager.get());
     }
 }
 

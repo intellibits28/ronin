@@ -19,6 +19,7 @@
 #include "ronin-runtime/actors/include/actor_supervisor.h"
 #include "optimization/ab_version_manager.h"
 #include "optimization/safe_rollback_manager.h"
+#include "shadow_testing/shadow_testing_manager.h"
 
 namespace Ronin::Kernel {
 namespace JNI {
@@ -43,6 +44,7 @@ public:
     std::unique_ptr<CapabilityCompiler> capability_compiler;
     std::unique_ptr<Ronin::Kernel::CapabilityPolicyEngine> capability_policy_engine;
     std::unique_ptr<Ronin::Kernel::Execution::ActorSupervisor> actor_supervisor;
+    std::unique_ptr<Ronin::Kernel::Optimization::ShadowTestingManager> shadow_testing_manager;
     std::unique_ptr<Ronin::Kernel::Optimization::ABVersionManager> ab_version_manager;
     std::unique_ptr<Ronin::Kernel::Optimization::SafeRollbackManager> safe_rollback_manager;
     jobject instance = nullptr;
@@ -54,6 +56,7 @@ public:
     CapabilityCompiler* getCapabilityCompiler() const { return capability_compiler.get(); }
     CapabilityPolicyEngine* getPolicyEngine() const { return capability_policy_engine.get(); }
     Ronin::Kernel::Execution::ActorSupervisor* getActorSupervisor() const { return actor_supervisor.get(); }
+    Ronin::Kernel::Optimization::ShadowTestingManager* getShadowTestingManager() const { return shadow_testing_manager.get(); }
     Ronin::Kernel::Optimization::ABVersionManager* getABVersionManager() const { return ab_version_manager.get(); }
     Ronin::Kernel::Optimization::SafeRollbackManager* getSafeRollbackManager() const { return safe_rollback_manager.get(); }
 };

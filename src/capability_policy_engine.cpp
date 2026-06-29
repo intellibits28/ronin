@@ -1,11 +1,16 @@
 #include "capability_policy_engine.h"
-#include "jni/ronin_jni_context.h"
 #include "ronin_log.h"
-#include <android/asset_manager.h>
-#include <android/asset_manager_jni.h>
 #include <fstream>
 #include <vector>
 #include <algorithm>
+
+#ifdef __ANDROID__
+#include "jni/ronin_jni_context.h"
+#include <android/asset_manager.h>
+#include <android/asset_manager_jni.h>
+#endif
+
+#define TAG "CapabilityPolicyEngine"
 
 using json = nlohmann::json;
 using namespace Ronin::Kernel;
@@ -15,19 +20,20 @@ CapabilityPolicyEngine::CapabilityPolicyEngine() {
 }
 
 void CapabilityPolicyEngine::loadManifest() {
+#ifdef __ANDROID__
     // Obtain AssetManager from the stored Java VM / instance in RuntimeContext.
-    if (!runtimeContext().vm) {
+    if (!JNI::runtimeContext().vm) {
         LOGW(TAG, "CapabilityPolicyEngine: JVM not available – empty policy.");
         return;
     }
     JNIEnv* env = nullptr;
-    runtimeContext().vm->AttachCurrentThread(&env, nullptr);
+    JNI::runtimeContext().vm->AttachCurrentThread(&env, nullptr);
     // Get AssetManager from the Android Context stored as "instance".
     jclass ctxCls = env->FindClass("android/content/Context");
     if (!ctxCls) { LOGE(TAG, "CapabilityPolicyEngine: cannot find Context class"); return; }
     jmethodID getAssetMgr = env->GetMethodID(ctxCls, "getAssets", "()Landroid/content/res/AssetManager;");
     if (!getAssetMgr) { LOGE(TAG, "CapabilityPolicyEngine: cannot find getAssets method"); return; }
-    jobject assetMgrObj = env->CallObjectMethod(runtimeContext().instance, getAssetMgr);
+    jobject assetMgrObj = env->CallObjectMethod(JNI::runtimeContext().instance, getAssetMgr);
     if (!assetMgrObj) { LOGW(TAG, "CapabilityPolicyEngine: AssetManager is null"); return; }
     AAssetManager* mgr = AAssetManager_fromJava(env, assetMgrObj);
     if (!mgr) { LOGE(TAG, "CapabilityPolicyEngine: AAssetManager_fromJava failed"); return; }
@@ -61,6 +67,9 @@ void CapabilityPolicyEngine::loadManifest() {
         m_policyMap.emplace(key, std::move(entry));
     }
     LOGI(TAG, "CapabilityPolicyEngine: loaded %zu policy entries", m_policyMap.size());
+#else
+    LOGI(TAG, "CapabilityPolicyEngine: host build detected, using default empty policy.");
+#endif
 }
 
 PolicyDecision CapabilityPolicyEngine::evaluate(const std::string &capabilityId,
