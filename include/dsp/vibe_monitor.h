@@ -108,6 +108,8 @@ public:
                                       const std::vector<float>& y, 
                                       const std::vector<float>& z);
 
+    void pushSamples(const std::vector<float>& x, const std::vector<float>& y, const std::vector<float>& z);
+
     std::string executeCommandJson(const std::string& command_json);
 
 private:
@@ -115,6 +117,10 @@ private:
     HighPassBiquad m_hp_filter;
     float m_configured_hp_cutoff;
     float m_configured_sample_rate;
+
+    std::vector<float> m_live_x;
+    std::vector<float> m_live_y;
+    std::vector<float> m_live_z;
 
     // Reusable aligned PFFFT setup cache to minimize memory reallocation
     PFFFT_Setup* m_pffft_setup;

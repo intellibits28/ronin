@@ -72,8 +72,8 @@ void SamplerController::transitionToState(KernelSensorState new_state) {
             m_active_profile = {"IDLE_STANDBY", 20.0f, 256, AnalysisMode::TIME_DOMAIN, 0.1f, 2.5f};
             break;
         case KernelSensorState::STARTUP:
-            // Multi-Resolution Support: Low-frequency structural analysis (e.g. 4096 samples at 20Hz for Building Resonance)
-            m_active_profile = {"STRUCTURAL_RESONANCE", 20.0f, 4096, AnalysisMode::FREQUENCY_DOMAIN, 0.5f, 3.0f};
+            // Multi-Resolution Support: Structural analysis (e.g. 1024 samples at 100Hz for 10.2s window)
+            m_active_profile = {"STRUCTURAL_RESONANCE", 100.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 0.5f, 3.0f};
             break;
         case KernelSensorState::STABLE:
             // Multi-Resolution Support: High-frequency machine diagnostics (e.g. 1024 samples at 200Hz for Motor/Compressor)
@@ -189,6 +189,13 @@ void VibeMonitorEngine::ensurePffftSetup(uint32_t size) {
     }
 }
 
+void VibeMonitorEngine::pushSamples(const std::vector<float>& x, const std::vector<float>& y, const std::vector<float>& z) {
+    std::lock_guard<std::mutex> lock(m_engine_mutex);
+    m_live_x = x;
+    m_live_y = y;
+    m_live_z = z;
+}
+
 VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x, 
                                                    const std::vector<float>& y, 
                                                    const std::vector<float>& z) {
@@ -207,11 +214,15 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
 
     size_t in_size = std::min({x.size(), y.size(), z.size()});
     if (in_size == 0) {
-        // Generate synthetic signal matching the scenario if no live hardware data provided
+        // Generate realistic synthetic signal with dynamic jitter and noise if no live hardware data provided
         float target_freq = (profile.profile_name == "STRUCTURAL_RESONANCE") ? 4.5f : 40.0f;
+        static uint32_t synth_step = 0;
+        synth_step++;
         for (uint32_t i = 0; i < win_size; ++i) {
             float t = (float)i / profile.sample_rate_hz;
-            mag[i] = 1.0f + 0.3f * std::sin(2.0f * (float)M_PI * target_freq * t);
+            float noise = ((float)((i * 1103515245 + synth_step * 12345) & 0x7FFFFFFF) / (float)0x7FFFFFFF - 0.5f) * 0.08f;
+            float amp_jitter = 0.3f + 0.05f * std::sin((float)synth_step * 0.5f);
+            mag[i] = 1.0f + amp_jitter * std::sin(2.0f * (float)M_PI * target_freq * t) + noise;
         }
     } else {
         for (uint32_t i = 0; i < win_size; ++i) {
@@ -329,7 +340,12 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
         }
     }
 
-    VibeMonitorResult res = analyzePipeline({}, {}, {});
+    std::vector<float> lx, ly, lz;
+    {
+        std::lock_guard<std::mutex> lock(m_engine_mutex);
+        lx = m_live_x; ly = m_live_y; lz = m_live_z;
+    }
+    VibeMonitorResult res = analyzePipeline(lx, ly, lz);
     nlohmann::json jOut;
     jOut["state"] = res.state;
     jOut["profile_name"] = res.profile_name;

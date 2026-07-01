@@ -23,6 +23,7 @@
 #include "graph_executor.h"
 #include "long_term_memory.h"
 #include "memory_manager.h"
+#include "dsp/vibe_monitor.h"
 #include "capabilities/hardware_bridge.h"
 #include "dsp/resonance_analyzer.h"
 #include "jni/ronin_jni_context.h"
@@ -392,6 +393,7 @@ JNIEXPORT jboolean JNICALL native_pushSensorSamples(JNIEnv *env, jobject thiz, j
     env->GetFloatArrayRegion(jy, 0, len, y.data());
     env->GetFloatArrayRegion(jz, 0, len, z.data());
     runtimeContext().resonance_analyzer->pushSamples(x, y, z);
+    Ronin::Kernel::DSP::VibeMonitorEngine::getInstance().pushSamples(x, y, z);
     return JNI_TRUE;
 }
 
