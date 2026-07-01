@@ -112,8 +112,7 @@ void SamplerController::pushSignalMetric(float metric) {
     }
 }
 
-float SamplerController::calculateMovingMean() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
+float SamplerController::calculateMovingMeanLocked() const {
     if (m_ring_size == 0) return 0.0f;
     float sum = 0.0f;
     for (size_t i = 0; i < m_ring_size; ++i) {
@@ -122,18 +121,26 @@ float SamplerController::calculateMovingMean() const {
     return sum / (float)m_ring_size;
 }
 
-float SamplerController::calculateMovingStdDev() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_ring_size <= 1) return 1.0f;
-    float sum = 0.0f;
-    for (size_t i = 0; i < m_ring_size; ++i) sum += m_metric_ring[i];
-    float mean = sum / (float)m_ring_size;
+float SamplerController::calculateMovingStdDevLocked() const {
+    if (m_ring_size <= 1) return 0.0f;
+    float mean = calculateMovingMeanLocked();
     float var_sum = 0.0f;
     for (size_t i = 0; i < m_ring_size; ++i) {
         float diff = m_metric_ring[i] - mean;
         var_sum += diff * diff;
     }
-    return std::sqrt(var_sum / (float)m_ring_size);
+    // Unbiased sample standard deviation using Bessel's correction (N - 1)
+    return std::sqrt(var_sum / (float)(m_ring_size - 1));
+}
+
+float SamplerController::calculateMovingMean() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return calculateMovingMeanLocked();
+}
+
+float SamplerController::calculateMovingStdDev() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return calculateMovingStdDevLocked();
 }
 
 float SamplerController::getDynamicThreshold() const {
@@ -141,17 +148,10 @@ float SamplerController::getDynamicThreshold() const {
     if (m_ring_size == 0) {
         return (m_active_profile.mode == AnalysisMode::FREQUENCY_DOMAIN) ? -40.0f : 0.5f;
     }
-    float sum = 0.0f;
-    for (size_t i = 0; i < m_ring_size; ++i) sum += m_metric_ring[i];
-    float mean = sum / (float)m_ring_size;
-    if (m_ring_size <= 1) return mean + 10.0f;
+    float mean = calculateMovingMeanLocked();
+    if (m_ring_size == 1) return mean + 10.0f;
 
-    float var_sum = 0.0f;
-    for (size_t i = 0; i < m_ring_size; ++i) {
-        float diff = m_metric_ring[i] - mean;
-        var_sum += diff * diff;
-    }
-    float std_dev = std::sqrt(var_sum / (float)m_ring_size);
+    float std_dev = calculateMovingStdDevLocked();
     return mean + m_active_profile.dynamic_std_dev_multiplier * std_dev;
 }
 

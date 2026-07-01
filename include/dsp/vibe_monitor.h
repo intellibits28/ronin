@@ -62,6 +62,9 @@ public:
     void resetMetrics();
 
 private:
+    float calculateMovingMeanLocked() const;
+    float calculateMovingStdDevLocked() const;
+
     KernelSensorState m_current_state;
     AdaptiveSamplingProfile m_active_profile;
 
