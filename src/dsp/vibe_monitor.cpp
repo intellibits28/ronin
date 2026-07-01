@@ -261,14 +261,18 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
     }
 
     float sq_sum_pre = 0.0f;
-    for (float val : mag) sq_sum_pre += val * val;
+    float peak_mag = 0.0f;
+    for (float val : mag) {
+        sq_sum_pre += val * val;
+        peak_mag = std::max(peak_mag, std::abs(val));
+    }
     float rms_pre = std::sqrt(sq_sum_pre / (float)win_size);
 
-    float dyn_thresh = m_controller.getDynamicThreshold();
+    float impact_thresh = (profile.mode == AnalysisMode::TIME_DOMAIN) ? std::max(0.4f, m_controller.getDynamicThreshold() * 1.5f) : std::max(0.4f, rms_pre * 3.5f);
     float impact_str = 0.0f;
-    bool impact = detectImpact(rms_pre, dyn_thresh, impact_str);
+    bool impact = detectImpact(peak_mag, impact_thresh, impact_str);
     if (impact && m_controller.getCurrentState() != KernelSensorState::IMPULSE_MODE && m_controller.getCurrentState() != KernelSensorState::SHUTDOWN) {
-        LOGI(TAG, "Impact spike detected (RMS: %.4f > Thresh: %.4f). Transitioning to IMPULSE_MODE.", rms_pre, dyn_thresh);
+        LOGI(TAG, "Impact spike detected (Peak: %.4f > Thresh: %.4f). Transitioning to IMPULSE_MODE.", peak_mag, impact_thresh);
         m_controller.transitionToState(KernelSensorState::IMPULSE_MODE);
         profile = m_controller.getActiveProfile();
         win_size = profile.window_size;
@@ -317,10 +321,10 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         res.psd_peak_db = max_psd;
         res.current_metric = max_psd;
         res.impact_detected = true;
-        res.impact_strength_pct = (impact_str > 0.0f) ? impact_str : std::min(100.0f, (rms_pre / (dyn_thresh + 1e-6f)) * 50.0f);
+        res.impact_strength_pct = (impact_str > 0.0f) ? impact_str : std::min(100.0f, (peak_mag / (impact_thresh + 1e-6f)) * 50.0f);
         res.moving_mean = m_controller.calculateMovingMean();
         res.moving_std_dev = m_controller.calculateMovingStdDev();
-        res.dynamic_threshold = dyn_thresh;
+        res.dynamic_threshold = impact_thresh;
         res.anomaly_detected = true;
 
         char buf[256];
