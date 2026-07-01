@@ -73,7 +73,7 @@ void SamplerController::transitionToState(KernelSensorState new_state) {
             break;
         case KernelSensorState::STARTUP:
             // Multi-Resolution Support: Structural analysis (e.g. 1024 samples at 100Hz for 10.2s window)
-            m_active_profile = {"STRUCTURAL_RESONANCE", 100.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 0.5f, 3.0f};
+            m_active_profile = {"STRUCTURAL_RESONANCE", 100.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 1.0f, 3.0f};
             break;
         case KernelSensorState::STABLE:
             // Multi-Resolution Support: High-frequency machine diagnostics (e.g. 1024 samples at 200Hz for Motor/Compressor)
@@ -249,13 +249,26 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         }
     }
 
-    // 1. Mandatory DC Removal: Subtract mean
+    // 1. Mandatory DC & Linear Drift Removal: Linear Detrending
     float sum_raw = 0.0f;
     for (float val : mag) sum_raw += val;
     float mean_val = sum_raw / (float)win_size;
-    for (float& val : mag) val -= mean_val;
+
+    float x_mean = (float)(win_size - 1) * 0.5f;
+    float num = 0.0f;
+    float den = 0.0f;
+    for (uint32_t i = 0; i < win_size; ++i) {
+        float dx = (float)i - x_mean;
+        num += dx * (mag[i] - mean_val);
+        den += dx * dx;
+    }
+    float slope = (den > 1e-6f) ? (num / den) : 0.0f;
+    for (uint32_t i = 0; i < win_size; ++i) {
+        mag[i] -= (mean_val + slope * ((float)i - x_mean));
+    }
 
     // 2. High-Pass Filtering
+    m_hp_filter.configure(profile.sample_rate_hz, profile.high_pass_cutoff_hz);
     for (float& val : mag) {
         val = m_hp_filter.process(val);
     }
@@ -357,33 +370,80 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                  res.anomaly_detected ? "ANOMALY DETECTED" : "Normal");
         res.summary = buf;
     } else {
-        ensurePffftSetup(win_size);
-        std::vector<float> windowed = mag;
-        for (uint32_t i = 0; i < win_size; ++i) {
-            float win = 0.5f * (1.0f - std::cos(2.0f * (float)M_PI * i / (win_size - 1)));
-            windowed[i] *= win;
-        }
-        float* work = (float*)pffft_aligned_malloc(win_size * sizeof(float));
-        float* output = (float*)pffft_aligned_malloc(win_size * sizeof(float));
-
-        pffft_transform_ordered(m_pffft_setup, windowed.data(), output, work, PFFFT_FORWARD);
-
         float max_psd = -100.0f;
-        uint32_t max_idx = 1;
-        for (uint32_t i = 1; i < win_size / 2; ++i) {
-            float r = output[2*i];
-            float im = output[2*i + 1];
-            float psd = (r*r + im*im) / (float)win_size;
-            float psd_db = 10.0f * std::log10(psd + 1e-12f);
-            if (psd_db > max_psd) {
-                max_psd = psd_db;
-                max_idx = i;
-            }
-        }
-        pffft_aligned_free(work);
-        pffft_aligned_free(output);
+        float resonance_freq = 0.0f;
 
-        res.resonance_freq_hz = (float)max_idx * profile.sample_rate_hz / (float)win_size;
+        if (profile.profile_name == "STRUCTURAL_RESONANCE" && win_size >= 1024) {
+            // Welch's Method: average PSD across multiple overlapping 2.56s (256 samples) Hanning windows
+            uint32_t sub_win = 256;
+            uint32_t step = sub_win / 2; // 50% overlap
+            uint32_t num_segments = 0;
+            std::vector<float> avg_psd(sub_win / 2, 0.0f);
+
+            ensurePffftSetup(sub_win);
+            float* work = (float*)pffft_aligned_malloc(sub_win * sizeof(float));
+            float* output = (float*)pffft_aligned_malloc(sub_win * sizeof(float));
+
+            for (uint32_t start = 0; start + sub_win <= win_size; start += step) {
+                std::vector<float> segment(sub_win);
+                for (uint32_t i = 0; i < sub_win; ++i) {
+                    float win = 0.5f * (1.0f - std::cos(2.0f * (float)M_PI * i / (sub_win - 1)));
+                    segment[i] = mag[start + i] * win;
+                }
+                pffft_transform_ordered(m_pffft_setup, segment.data(), output, work, PFFFT_FORWARD);
+
+                for (uint32_t k = 1; k < sub_win / 2; ++k) {
+                    float r = output[2*k];
+                    float im = output[2*k + 1];
+                    float psd = (r*r + im*im) / (float)sub_win;
+                    avg_psd[k] += psd;
+                }
+                num_segments++;
+            }
+            pffft_aligned_free(work);
+            pffft_aligned_free(output);
+
+            uint32_t max_idx = 1;
+            if (num_segments > 0) {
+                for (uint32_t k = 1; k < sub_win / 2; ++k) {
+                    avg_psd[k] /= (float)num_segments;
+                    float psd_db = 10.0f * std::log10(avg_psd[k] + 1e-12f);
+                    if (psd_db > max_psd) {
+                        max_psd = psd_db;
+                        max_idx = k;
+                    }
+                }
+            }
+            resonance_freq = (float)max_idx * profile.sample_rate_hz / (float)sub_win;
+        } else {
+            ensurePffftSetup(win_size);
+            std::vector<float> windowed = mag;
+            for (uint32_t i = 0; i < win_size; ++i) {
+                float win = 0.5f * (1.0f - std::cos(2.0f * (float)M_PI * i / (win_size - 1)));
+                windowed[i] *= win;
+            }
+            float* work = (float*)pffft_aligned_malloc(win_size * sizeof(float));
+            float* output = (float*)pffft_aligned_malloc(win_size * sizeof(float));
+
+            pffft_transform_ordered(m_pffft_setup, windowed.data(), output, work, PFFFT_FORWARD);
+
+            uint32_t max_idx = 1;
+            for (uint32_t i = 1; i < win_size / 2; ++i) {
+                float r = output[2*i];
+                float im = output[2*i + 1];
+                float psd = (r*r + im*im) / (float)win_size;
+                float psd_db = 10.0f * std::log10(psd + 1e-12f);
+                if (psd_db > max_psd) {
+                    max_psd = psd_db;
+                    max_idx = i;
+                }
+            }
+            pffft_aligned_free(work);
+            pffft_aligned_free(output);
+            resonance_freq = (float)max_idx * profile.sample_rate_hz / (float)win_size;
+        }
+
+        res.resonance_freq_hz = resonance_freq;
         res.psd_peak_db = max_psd;
         res.current_metric = max_psd;
 

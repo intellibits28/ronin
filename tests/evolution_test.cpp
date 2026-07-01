@@ -295,7 +295,7 @@ TEST_F(EvolutionTest, AdaptiveSensorAnalysisPipeline) {
     EXPECT_EQ(engine.getController().getActiveProfile().profile_name, "STRUCTURAL_RESONANCE");
     EXPECT_EQ(engine.getController().getActiveProfile().sample_rate_hz, 100.0f);
     EXPECT_EQ(engine.getController().getActiveProfile().window_size, 1024);
-    EXPECT_EQ(engine.getController().getActiveProfile().high_pass_cutoff_hz, 0.5f);
+    EXPECT_EQ(engine.getController().getActiveProfile().high_pass_cutoff_hz, 1.0f);
 
     engine.getController().transitionToState(Ronin::Kernel::DSP::KernelSensorState::STABLE);
     EXPECT_EQ(engine.getController().getActiveProfile().profile_name, "MACHINE_DIAGNOSTICS");
