@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "reflection_engine.h"
+#include "dsp/vibe_monitor.h"
 #include "long_term_memory.h"
 #include "thompson_sampler.h"
 #include "ronin_types.hpp"
@@ -284,6 +285,37 @@ TEST_F(EvolutionTest, PerceptionStateInjectionInChat) {
     // 2. Verify state retrieval via getLatestPerceptionState()
     std::string val = ltm->getLatestPerceptionState();
     EXPECT_EQ(val, "walking");
+}
+
+TEST_F(EvolutionTest, AdaptiveSensorAnalysisPipeline) {
+    auto& engine = Ronin::Kernel::DSP::VibeMonitorEngine::getInstance();
+
+    // 1. Test State Machine Transitions & Adaptive Profiles
+    engine.getController().transitionToState(Ronin::Kernel::DSP::KernelSensorState::STARTUP);
+    EXPECT_EQ(engine.getController().getActiveProfile().profile_name, "STRUCTURAL_RESONANCE");
+    EXPECT_EQ(engine.getController().getActiveProfile().window_size, 4096);
+    EXPECT_EQ(engine.getController().getActiveProfile().high_pass_cutoff_hz, 0.5f);
+
+    engine.getController().transitionToState(Ronin::Kernel::DSP::KernelSensorState::STABLE);
+    EXPECT_EQ(engine.getController().getActiveProfile().profile_name, "MACHINE_DIAGNOSTICS");
+    EXPECT_EQ(engine.getController().getActiveProfile().sample_rate_hz, 200.0f);
+    EXPECT_EQ(engine.getController().getActiveProfile().window_size, 1024);
+
+    // 2. Test Execution Command JSON switching state
+    std::string res_str = engine.executeCommandJson("{\"state\":\"IDLE\"}");
+    auto jRes = nlohmann::json::parse(res_str);
+    EXPECT_EQ(jRes["state"], "IDLE");
+    EXPECT_EQ(jRes["profile_name"], "IDLE_STANDBY");
+    EXPECT_EQ(jRes["dc_removed"], true);
+
+    // 3. Test Dynamic Thresholding & Moving StdDev
+    engine.getController().resetMetrics();
+    engine.getController().pushSignalMetric(10.0f);
+    engine.getController().pushSignalMetric(12.0f);
+    engine.getController().pushSignalMetric(11.0f);
+    EXPECT_NEAR(engine.getController().calculateMovingMean(), 11.0f, 0.01f);
+    EXPECT_GT(engine.getController().calculateMovingStdDev(), 0.0f);
+    EXPECT_GT(engine.getController().getDynamicThreshold(), 11.0f);
 }
 
 int main(int argc, char **argv) {

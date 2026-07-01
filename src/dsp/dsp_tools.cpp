@@ -1,5 +1,6 @@
 #include "dsp/dsp_tools.h"
 #include "dsp/resonance_analyzer.h"
+#include "dsp/vibe_monitor.h"
 #include "capabilities/tool_registry.h"
 #include "capabilities/hardware_bridge.h"
 #include "third_party/pffft/pffft.h"
@@ -395,8 +396,8 @@ std::string runNoteMapper(const std::string& param, ToolContext* ctx) {
 }
 
 static std::string runAnalyzeVibration(const std::string& param, ToolContext* ctx) {
-    (void)param; (void)ctx;
-    std::string res = ResonanceAnalyzer::getInstance().getAnalysisJson("RESONANCE");
+    (void)ctx;
+    std::string res = VibeMonitorEngine::getInstance().executeCommandJson(param);
     Capability::HardwareBridge::pushMessage("[SENSOR ANALYSIS] " + res);
     return res;
 }

@@ -116,6 +116,7 @@ set(RONIN_CORE_SOURCES
     src/myanmar_segmenter.cpp
     src/dsp/resonance_analyzer.cpp
     src/dsp/dsp_tools.cpp
+    src/dsp/vibe_monitor.cpp
     src/execution_governance.cpp
     src/failure_telemetry_bus.cpp
     src/execution_checkpoint_store.cpp
