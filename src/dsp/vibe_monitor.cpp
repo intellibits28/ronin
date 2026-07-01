@@ -315,8 +315,19 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
             else if (st == "STARTUP") m_controller.transitionToState(KernelSensorState::STARTUP);
             else if (st == "STABLE") m_controller.transitionToState(KernelSensorState::STABLE);
             else if (st == "SHUTDOWN") m_controller.transitionToState(KernelSensorState::SHUTDOWN);
+        } else if ((j.contains("sensor_type") && j["sensor_type"].get<std::string>() == "RESONANCE") ||
+                   (j.contains("mode") && j["mode"].get<std::string>() == "FREQUENCY_DOMAIN")) {
+            if (m_controller.getCurrentState() == KernelSensorState::IDLE) {
+                m_controller.transitionToState(KernelSensorState::STARTUP);
+            }
         }
-    } catch (...) {}
+    } catch (...) {
+        if (command_json.find("RESONANCE") != std::string::npos || command_json.find("resonance") != std::string::npos) {
+            if (m_controller.getCurrentState() == KernelSensorState::IDLE) {
+                m_controller.transitionToState(KernelSensorState::STARTUP);
+            }
+        }
+    }
 
     VibeMonitorResult res = analyzePipeline({}, {}, {});
     nlohmann::json jOut;

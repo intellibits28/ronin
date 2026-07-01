@@ -87,12 +87,12 @@ void AgentScheduler::workerLoop() {
             bool is_pitch_analysis = (current_session->getIntent() == "PITCH_ANALYSIS");
             bool is_vibration_analysis = (current_session->getIntent() == "ANALYZE_VIBRATION" || current_session->getIntent() == "SENSOR");
             int tuning_iteration = 0;
-            const int MAX_TUNING_ITERATIONS = 30;
+            const int MAX_TUNING_ITERATIONS = 100;
 
             while (tuning_iteration < (is_pitch_analysis ? MAX_TUNING_ITERATIONS : 1)) {
                 tuning_iteration++;
                 if (is_pitch_analysis && tuning_iteration > 1) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // v1.8: 10Hz update rate for responsive Guitar Tuner HUD
                     if (current_session->getToken() && current_session->getToken()->isCancelled()) {
                         LOGW(TAG, "L8 Scheduler: Tuning session cancelled.");
                         all_steps_success = false;

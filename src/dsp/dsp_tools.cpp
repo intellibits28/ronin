@@ -397,7 +397,11 @@ std::string runNoteMapper(const std::string& param, ToolContext* ctx) {
 
 static std::string runAnalyzeVibration(const std::string& param, ToolContext* ctx) {
     (void)ctx;
-    std::string res = VibeMonitorEngine::getInstance().executeCommandJson(param);
+    std::string p = param;
+    if (p.empty() || p == "{}") {
+        p = "{\"sensor_type\":\"RESONANCE\"}";
+    }
+    std::string res = VibeMonitorEngine::getInstance().executeCommandJson(p);
     Capability::HardwareBridge::pushMessage("[SENSOR ANALYSIS] " + res);
     return res;
 }

@@ -688,17 +688,50 @@ class MainActivity : FragmentActivity() {
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
                 14 -> {
-                    val sampleRate = 8000.0
-                    simulatedTunerFreq += 6.0
-                    val freq = if (simulatedTunerFreq >= 329.63) {
-                        val finalFreq = 329.63
-                        simulatedTunerFreq = 312.0 // reset after successful tuning
-                        finalFreq
-                    } else simulatedTunerFreq
-                    val size = 64
-                    val samples = DoubleArray(size) { i ->
-                        val t = i / sampleRate
-                        Math.sin(2.0 * Math.PI * freq * t)
+                    val sampleRate = 8000
+                    val bufferSize = 4096 // v1.8: 4096 samples @ 8000Hz gives ~1.95Hz FFT bin precision
+                    var recorded = false
+                    val samples = DoubleArray(bufferSize)
+                    if (androidx.core.content.ContextCompat.checkSelfPermission(this@MainActivity, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        try {
+                            val minBuf = android.media.AudioRecord.getMinBufferSize(sampleRate, android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT)
+                            val recordBufSize = Math.max(minBuf, bufferSize * 2)
+                            val recorder = android.media.AudioRecord(android.media.MediaRecorder.AudioSource.MIC, sampleRate, android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT, recordBufSize)
+                            if (recorder.state == android.media.AudioRecord.STATE_INITIALIZED) {
+                                recorder.startRecording()
+                                val shortBuf = ShortArray(bufferSize)
+                                var readCount = 0
+                                while (readCount < bufferSize) {
+                                    val res = recorder.read(shortBuf, readCount, bufferSize - readCount)
+                                    if (res <= 0) break
+                                    readCount += res
+                                }
+                                recorder.stop()
+                                recorder.release()
+                                if (readCount > 100) {
+                                    var maxAmp = 0.0
+                                    for (i in 0 until readCount) {
+                                        val s = shortBuf[i] / 32768.0
+                                        samples[i] = s
+                                        if (Math.abs(s) > maxAmp) maxAmp = Math.abs(s)
+                                    }
+                                    if (maxAmp > 0.01) recorded = true
+                                }
+                            }
+                        } catch (e: Exception) { Log.w("RoninKernel", "Mic recording failed: ${e.message}") }
+                    }
+                    if (!recorded) {
+                        val simRate = 8000.0
+                        simulatedTunerFreq += 1.0 // v1.8: 10Hz smooth frequency step
+                        val freq = if (simulatedTunerFreq >= 329.63) {
+                            val finalFreq = 329.63
+                            simulatedTunerFreq = 312.0
+                            finalFreq
+                        } else simulatedTunerFreq
+                        for (i in 0 until bufferSize) {
+                            val t = i / simRate
+                            samples[i] = Math.sin(2.0 * Math.PI * freq * t)
+                        }
                     }
                     samples.joinToString(prefix = "[", postfix = "]", separator = ",") { String.format(java.util.Locale.US, "%.4f", it) }
                 }
@@ -808,6 +841,13 @@ class MainActivity : FragmentActivity() {
             val actionName = (params["action"] ?: toolName).uppercase()
             val intentContext = (params["intent"] ?: "").uppercase()
             Log.i("RoninKernel_MainActivity", "Executing Tool: $toolName (Action: $actionName, Intent: $intentContext)")
+            if (!actionName.contains("NOTE_MAPPER") && !actionName.contains("TUNER") && toolName.uppercase() != "NOTE_MAPPER" && toolName.uppercase() != "AUDIO_CAPTURE" && toolName.uppercase() != "FFT" && toolName.uppercase() != "DETECT_PEAKS") {
+                runOnUiThread {
+                    if (vm.tunerResult.status != "IDLE") {
+                        vm.tunerResult = ChatViewModel.TunerResult()
+                    }
+                }
+            }
             
             val eval = CapabilityPolicyEngine.evaluate(
                 context = this,
