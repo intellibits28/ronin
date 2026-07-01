@@ -335,6 +335,9 @@ std::vector<std::string> LongTermMemory::searchNotes(const std::string& query) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             std::string title = columnText(stmt, 0);
             std::string content = columnText(stmt, 1);
+            if (content.length() > 250 || content.find("Analysis of") != std::string::npos || content.find("论") != std::string::npos || content.find("None") != std::string::npos || content.find("Executing plan") != std::string::npos) {
+                continue;
+            }
             results.push_back(title + ": " + content);
         }
     }

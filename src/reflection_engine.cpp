@@ -1,6 +1,7 @@
 #include "reflection_engine.h"
 #include <cmath>
 #include "ronin_log.h"
+#include "capabilities/hardware_bridge.h"
 
 #define TAG "RoninReflection"
 
@@ -22,6 +23,11 @@ void ReflectionEngine::reflectOnRecentTasks() {
     LOGI(TAG, ">>> INITIATING NIGHTLY REFLECTION CYCLE <<<");
     
     if (!m_ltm) return;
+
+    struct SilenceGuard {
+        SilenceGuard() { Ronin::Kernel::Capability::HardwareBridge::setInferenceSilence(true); }
+        ~SilenceGuard() { Ronin::Kernel::Capability::HardwareBridge::setInferenceSilence(false); }
+    } silence_guard;
 
     // 1. Gather historical context
     auto recent_episodes = m_ltm->getRecentEpisodes(20);
@@ -57,7 +63,15 @@ void ReflectionEngine::reflectOnRecentTasks() {
         lesson.erase(0, lesson.find_first_not_of(" \n\r\t"));
         lesson.erase(lesson.find_last_not_of(" \n\r\t") + 1);
 
-        if (!lesson.empty() && lesson.find("Error") == std::string::npos && lesson.find("Status Code") == std::string::npos) {
+        bool is_valid = !lesson.empty() && lesson.length() < 250 && 
+                        lesson.find("Error") == std::string::npos && 
+                        lesson.find("Status Code") == std::string::npos &&
+                        lesson.find("Analyze") == std::string::npos &&
+                        lesson.find("Output ONLY") == std::string::npos &&
+                        lesson.find("Analysis of") == std::string::npos &&
+                        lesson.find("论") == std::string::npos;
+
+        if (is_valid) {
             LOGI(TAG, "Reflection: Derived new lesson: %s", lesson.c_str());
             m_ltm->storeNote("Nightly Lesson", lesson, "lesson");
         } else {
@@ -94,7 +108,17 @@ void ReflectionEngine::reflectOnRecentTasks() {
             macro_skill.erase(0, macro_skill.find_first_not_of(" \n\r\t"));
             macro_skill.erase(macro_skill.find_last_not_of(" \n\r\t") + 1);
 
-            if (!macro_skill.empty() && macro_skill != "NONE" && macro_skill.find("Error") == std::string::npos && macro_skill.find("Status Code") == std::string::npos) {
+            bool is_valid = !macro_skill.empty() && macro_skill != "NONE" && macro_skill.length() < 250 &&
+                            macro_skill.find("Error") == std::string::npos && 
+                            macro_skill.find("Status Code") == std::string::npos &&
+                            macro_skill.find("Analyze") == std::string::npos &&
+                            macro_skill.find("Output ONLY") == std::string::npos &&
+                            macro_skill.find("Analysis of") == std::string::npos &&
+                            macro_skill.find("Recent Successful") == std::string::npos &&
+                            macro_skill.find("论") == std::string::npos &&
+                            macro_skill.find("None") == std::string::npos;
+
+            if (is_valid) {
                 LOGI(TAG, "Phase 5 Macro-Skill Discovered: %s", macro_skill.c_str());
                 m_ltm->storeNote("Discovered Macro-Skill", macro_skill, "macro_skill");
             }
