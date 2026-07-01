@@ -46,9 +46,75 @@ void HighPassBiquad::reset() {
     z2 = 0.0f;
 }
 
+BandPassBiquad::BandPassBiquad() {
+    reset();
+    b0 = 1.0f; b1 = 0.0f; b2 = 0.0f; a1 = 0.0f; a2 = 0.0f;
+}
+
+void BandPassBiquad::configure(float sample_rate_hz, float low_hz, float high_hz) {
+    if (sample_rate_hz <= 0.0f || low_hz <= 0.0f || high_hz <= low_hz || high_hz >= sample_rate_hz * 0.5f) {
+        b0 = 1.0f; b1 = 0.0f; b2 = 0.0f; a1 = 0.0f; a2 = 0.0f;
+        return;
+    }
+    float center_hz = std::sqrt(low_hz * high_hz);
+    float bw_hz = high_hz - low_hz;
+    float w0 = 2.0f * (float)M_PI * center_hz / sample_rate_hz;
+    float alpha = std::sin(w0) * (bw_hz / (2.0f * center_hz));
+
+    float a0 = 1.0f + alpha;
+    b0 = alpha / a0;
+    b1 = 0.0f;
+    b2 = -alpha / a0;
+    a1 = (-2.0f * std::cos(w0)) / a0;
+    a2 = (1.0f - alpha) / a0;
+}
+
+float BandPassBiquad::process(float x) {
+    float y = b0 * x + b1 * z1 + b2 * z2 - a1 * z1 - a2 * z2;
+    z2 = z1;
+    z1 = y;
+    return y;
+}
+
+void BandPassBiquad::reset() {
+    z1 = 0.0f;
+    z2 = 0.0f;
+}
+
 SamplerController::SamplerController() : m_current_state(KernelSensorState::IDLE), m_ring_head(0), m_ring_size(0) {
     for (size_t i = 0; i < RING_CAPACITY; ++i) m_metric_ring[i] = 0.0f;
+    m_tuning_profile = {"NONE", 0.0f, 0.0f, 0.0f};
     transitionToState(KernelSensorState::IDLE);
+}
+
+void SamplerController::setTargetTuningFrequency(float target_hz) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (target_hz <= 0.0f) {
+        m_tuning_profile = {"NONE", 0.0f, 0.0f, 0.0f};
+        return;
+    }
+    std::string name = "CUSTOM";
+    if (std::abs(target_hz - 329.63f) < 5.0f) name = "E4";
+    else if (std::abs(target_hz - 246.94f) < 5.0f) name = "B3";
+    else if (std::abs(target_hz - 196.00f) < 5.0f) name = "G3";
+    else if (std::abs(target_hz - 146.83f) < 5.0f) name = "D3";
+    else if (std::abs(target_hz - 110.00f) < 5.0f) name = "A2";
+    else if (std::abs(target_hz - 82.41f) < 5.0f) name = "E2";
+
+    float low_hz = target_hz * 0.91f;
+    float high_hz = target_hz * 1.21f;
+    if (name == "E4") { low_hz = 300.0f; high_hz = 400.0f; }
+
+    m_tuning_profile = {name, target_hz, low_hz, high_hz};
+    float new_rate = std::max(2000.0f, target_hz * 4.5f);
+    m_active_profile.sample_rate_hz = new_rate;
+    LOGI(TAG, "Dynamic Tuning Profile configured for %s (Target: %.2fHz, Bandpass: %.1f-%.1fHz, Rate: %.1fHz)",
+         name.c_str(), target_hz, low_hz, high_hz, new_rate);
+}
+
+TuningProfile SamplerController::getActiveTuningProfile() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_tuning_profile;
 }
 
 void SamplerController::setProfile(const AdaptiveSamplingProfile& profile) {
@@ -273,6 +339,15 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         val = m_hp_filter.process(val);
     }
 
+    // 3. Dynamic Band-Pass Filtering for Guitar String Tuner Isolation
+    TuningProfile tp = m_controller.getActiveTuningProfile();
+    if (tp.fundamental_hz > 0.0f && tp.bandpass_high_hz > tp.bandpass_low_hz) {
+        m_bp_filter.configure(profile.sample_rate_hz, tp.bandpass_low_hz, tp.bandpass_high_hz);
+        for (float& val : mag) {
+            val = m_bp_filter.process(val);
+        }
+    }
+
     float sq_sum_pre = 0.0f;
     float peak_mag = 0.0f;
     for (float val : mag) {
@@ -428,14 +503,33 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             pffft_transform_ordered(m_pffft_setup, windowed.data(), output, work, PFFFT_FORWARD);
 
             uint32_t max_idx = 1;
-            for (uint32_t i = 1; i < win_size / 2; ++i) {
-                float r = output[2*i];
-                float im = output[2*i + 1];
-                float psd = (r*r + im*im) / (float)win_size;
-                float psd_db = 10.0f * std::log10(psd + 1e-12f);
-                if (psd_db > max_psd) {
-                    max_psd = psd_db;
-                    max_idx = i;
+            if (tp.fundamental_hz > 0.0f) {
+                float max_hps = -1e9f;
+                uint32_t limit = win_size / 6;
+                for (uint32_t i = 1; i < limit; ++i) {
+                    float r1 = output[2*i], im1 = output[2*i+1];
+                    float p1 = (r1*r1 + im1*im1) / (float)win_size;
+                    float r2 = output[4*i], im2 = output[4*i+1];
+                    float p2 = (r2*r2 + im2*im2) / (float)win_size;
+                    float r3 = output[6*i], im3 = output[6*i+1];
+                    float p3 = (r3*r3 + im3*im3) / (float)win_size;
+                    float hps_val = p1 * p2 * p3;
+                    if (hps_val > max_hps) {
+                        max_hps = hps_val;
+                        max_idx = i;
+                        max_psd = 10.0f * std::log10(p1 + 1e-12f);
+                    }
+                }
+            } else {
+                for (uint32_t i = 1; i < win_size / 2; ++i) {
+                    float r = output[2*i];
+                    float im = output[2*i + 1];
+                    float psd = (r*r + im*im) / (float)win_size;
+                    float psd_db = 10.0f * std::log10(psd + 1e-12f);
+                    if (psd_db > max_psd) {
+                        max_psd = psd_db;
+                        max_idx = i;
+                    }
                 }
             }
             pffft_aligned_free(work);
@@ -479,6 +573,18 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
             if (m_controller.getCurrentState() == KernelSensorState::IDLE) {
                 m_controller.transitionToState(KernelSensorState::STARTUP);
             }
+        }
+        if (j.contains("target_frequency")) {
+            m_controller.setTargetTuningFrequency(j["target_frequency"].get<float>());
+        } else if (j.contains("tuner_string")) {
+            std::string s = j["tuner_string"].get<std::string>();
+            if (s == "E4") m_controller.setTargetTuningFrequency(329.63f);
+            else if (s == "B3") m_controller.setTargetTuningFrequency(246.94f);
+            else if (s == "G3") m_controller.setTargetTuningFrequency(196.00f);
+            else if (s == "D3") m_controller.setTargetTuningFrequency(146.83f);
+            else if (s == "A2") m_controller.setTargetTuningFrequency(110.00f);
+            else if (s == "E2") m_controller.setTargetTuningFrequency(82.41f);
+            else if (s == "NONE" || s == "OFF") m_controller.setTargetTuningFrequency(0.0f);
         }
     } catch (...) {
         if (command_json.find("RESONANCE") != std::string::npos || command_json.find("resonance") != std::string::npos) {

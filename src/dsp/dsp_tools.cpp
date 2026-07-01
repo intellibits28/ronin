@@ -94,6 +94,9 @@ static double extractFrequency(const nlohmann::json& jIn) {
                 if (inner.contains("frequencies") && inner["frequencies"].is_array()) {
                     freqs = inner["frequencies"].get<std::vector<double>>();
                 }
+                if (inner.contains("fundamental_frequency_hz") && inner["fundamental_frequency_hz"].get<double>() > 0.0) {
+                    return inner["fundamental_frequency_hz"].get<double>();
+                }
                 if (inner.contains("frequency_hz")) {
                     return inner["frequency_hz"].get<double>();
                 }
@@ -177,6 +180,21 @@ static std::string runFFT(const std::string& payload, ToolContext* context) {
             frequencies.push_back((float)i * sample_rate / n_fft);
         }
 
+        // Calculate Harmonic Product Spectrum (HPS) for fundamental pitch identification
+        int limit = (n_fft / 2) / 3;
+        int fundamental_bin = 0;
+        float max_hps = -1e9f;
+        std::vector<float> hps_magnitudes;
+        for (int i = 1; i < limit; ++i) {
+            float hps_val = magnitudes[i] * magnitudes[2 * i] * magnitudes[3 * i];
+            hps_magnitudes.push_back(hps_val);
+            if (hps_val > max_hps && frequencies[i] >= 60.0f) {
+                max_hps = hps_val;
+                fundamental_bin = i;
+            }
+        }
+        float fundamental_freq_hz = (fundamental_bin > 0) ? frequencies[fundamental_bin] : 0.0f;
+
         pffft_aligned_free(work);
         pffft_aligned_free(output);
         pffft_destroy_setup(setup);
@@ -184,6 +202,8 @@ static std::string runFFT(const std::string& payload, ToolContext* context) {
         nlohmann::json jOut;
         jOut["frequencies"] = frequencies;
         jOut["magnitudes"] = magnitudes;
+        jOut["hps_magnitudes"] = hps_magnitudes;
+        jOut["fundamental_frequency_hz"] = fundamental_freq_hz;
         return jOut.dump();
     } catch (const std::exception& e) {
         return std::string("Error: ") + e.what();

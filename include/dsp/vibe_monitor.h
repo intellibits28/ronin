@@ -31,11 +31,30 @@ struct AdaptiveSamplingProfile {
     float dynamic_std_dev_multiplier;
 };
 
+struct TuningProfile {
+    std::string string_name;
+    float fundamental_hz;
+    float bandpass_low_hz;
+    float bandpass_high_hz;
+};
+
 // Biquad High-Pass filter for sensor drift & DC offset removal
 class HighPassBiquad {
 public:
     HighPassBiquad();
     void configure(float sample_rate_hz, float cutoff_hz);
+    float process(float sample);
+    void reset();
+private:
+    float b0, b1, b2, a1, a2;
+    float z1, z2;
+};
+
+// Biquad Band-Pass filter for isolating target string fundamental frequencies
+class BandPassBiquad {
+public:
+    BandPassBiquad();
+    void configure(float sample_rate_hz, float low_hz, float high_hz);
     float process(float sample);
     void reset();
 private:
@@ -50,6 +69,9 @@ public:
 
     void setProfile(const AdaptiveSamplingProfile& profile);
     const AdaptiveSamplingProfile& getActiveProfile() const;
+
+    void setTargetTuningFrequency(float target_hz);
+    TuningProfile getActiveTuningProfile() const;
 
     void transitionToState(KernelSensorState new_state);
     KernelSensorState getCurrentState() const;
@@ -68,6 +90,7 @@ private:
 
     KernelSensorState m_current_state;
     AdaptiveSamplingProfile m_active_profile;
+    TuningProfile m_tuning_profile;
 
     // Fixed-capacity circular buffer optimized for low memory footprint on mobile
     static constexpr size_t RING_CAPACITY = 32;
@@ -120,6 +143,7 @@ public:
 private:
     SamplerController m_controller;
     HighPassBiquad m_hp_filter;
+    BandPassBiquad m_bp_filter;
     float m_configured_hp_cutoff;
     float m_configured_sample_rate;
 

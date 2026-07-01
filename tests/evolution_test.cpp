@@ -326,6 +326,30 @@ TEST_F(EvolutionTest, AdaptiveSensorAnalysisPipeline) {
     EXPECT_NE(summary_str.find("[IMPULSE] Impact Detected"), std::string::npos);
 }
 
+TEST_F(EvolutionTest, GuitarTunerBandPassAndHPS) {
+    auto& engine = Ronin::Kernel::DSP::VibeMonitorEngine::getInstance();
+
+    // 1. Configure E4 String Tuning Profile
+    std::string res_json = engine.executeCommandJson("{\"tuner_string\":\"E4\"}");
+    auto tp = engine.getController().getActiveTuningProfile();
+    EXPECT_EQ(tp.string_name, "E4");
+    EXPECT_NEAR(tp.fundamental_hz, 329.63f, 0.01f);
+    EXPECT_NEAR(tp.bandpass_low_hz, 300.0f, 0.01f);
+    EXPECT_NEAR(tp.bandpass_high_hz, 400.0f, 0.01f);
+
+    // 2. Test BandPassBiquad isolation
+    Ronin::Kernel::DSP::BandPassBiquad bp;
+    bp.configure(2000.0f, 300.0f, 400.0f);
+    // Low frequency ambient noise (50Hz) should be strongly attenuated
+    float out_50 = 0.0f;
+    for (int i = 0; i < 100; ++i) out_50 = bp.process(std::sin(2.0f * M_PI * 50.0f * i / 2000.0f));
+    EXPECT_LT(std::abs(out_50), 0.15f);
+
+    // Turn off tuner profile
+    engine.executeCommandJson("{\"tuner_string\":\"NONE\"}");
+    EXPECT_EQ(engine.getController().getActiveTuningProfile().fundamental_hz, 0.0f);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
