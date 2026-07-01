@@ -31,7 +31,18 @@ struct AdaptiveSamplingProfile {
     float dynamic_std_dev_multiplier;
 };
 
+enum class InstrumentType {
+    NONE = 0,
+    GUITAR,
+    VIOLIN,
+    UKULELE,
+    BASS,
+    CUSTOM
+};
+
 struct TuningProfile {
+    InstrumentType instrument;
+    std::string instrument_name;
     std::string string_name;
     float fundamental_hz;
     float bandpass_low_hz;
@@ -71,6 +82,7 @@ public:
     const AdaptiveSamplingProfile& getActiveProfile() const;
 
     void setTargetTuningFrequency(float target_hz);
+    void setInstrumentStringProfile(InstrumentType instrument, const std::string& string_name);
     TuningProfile getActiveTuningProfile() const;
 
     void transitionToState(KernelSensorState new_state);

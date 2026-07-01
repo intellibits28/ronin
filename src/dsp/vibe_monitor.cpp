@@ -83,33 +83,92 @@ void BandPassBiquad::reset() {
 
 SamplerController::SamplerController() : m_current_state(KernelSensorState::IDLE), m_ring_head(0), m_ring_size(0) {
     for (size_t i = 0; i < RING_CAPACITY; ++i) m_metric_ring[i] = 0.0f;
-    m_tuning_profile = {"NONE", 0.0f, 0.0f, 0.0f};
+    m_tuning_profile = {InstrumentType::NONE, "NONE", "NONE", 0.0f, 0.0f, 0.0f};
     transitionToState(KernelSensorState::IDLE);
 }
 
 void SamplerController::setTargetTuningFrequency(float target_hz) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (target_hz <= 0.0f) {
-        m_tuning_profile = {"NONE", 0.0f, 0.0f, 0.0f};
+        m_tuning_profile = {InstrumentType::NONE, "NONE", "NONE", 0.0f, 0.0f, 0.0f};
         return;
     }
     std::string name = "CUSTOM";
-    if (std::abs(target_hz - 329.63f) < 5.0f) name = "E4";
-    else if (std::abs(target_hz - 246.94f) < 5.0f) name = "B3";
-    else if (std::abs(target_hz - 196.00f) < 5.0f) name = "G3";
-    else if (std::abs(target_hz - 146.83f) < 5.0f) name = "D3";
-    else if (std::abs(target_hz - 110.00f) < 5.0f) name = "A2";
-    else if (std::abs(target_hz - 82.41f) < 5.0f) name = "E2";
+    InstrumentType inst = InstrumentType::CUSTOM;
+    std::string inst_name = "CUSTOM";
+
+    if (std::abs(target_hz - 329.63f) < 5.0f) { name = "E4"; inst = InstrumentType::GUITAR; inst_name = "GUITAR"; }
+    else if (std::abs(target_hz - 246.94f) < 5.0f) { name = "B3"; inst = InstrumentType::GUITAR; inst_name = "GUITAR"; }
+    else if (std::abs(target_hz - 196.00f) < 5.0f) { name = "G3"; inst = InstrumentType::GUITAR; inst_name = "GUITAR"; }
+    else if (std::abs(target_hz - 146.83f) < 5.0f) { name = "D3"; inst = InstrumentType::GUITAR; inst_name = "GUITAR"; }
+    else if (std::abs(target_hz - 110.00f) < 5.0f) { name = "A2"; inst = InstrumentType::GUITAR; inst_name = "GUITAR"; }
+    else if (std::abs(target_hz - 82.41f) < 5.0f) { name = "E2"; inst = InstrumentType::GUITAR; inst_name = "GUITAR"; }
+    else if (std::abs(target_hz - 440.00f) < 5.0f) { name = "A4"; inst = InstrumentType::VIOLIN; inst_name = "VIOLIN"; }
+    else if (std::abs(target_hz - 659.25f) < 5.0f) { name = "E5"; inst = InstrumentType::VIOLIN; inst_name = "VIOLIN"; }
+    else if (std::abs(target_hz - 261.63f) < 5.0f) { name = "C4"; inst = InstrumentType::UKULELE; inst_name = "UKULELE"; }
+    else if (std::abs(target_hz - 392.00f) < 5.0f) { name = "G4"; inst = InstrumentType::UKULELE; inst_name = "UKULELE"; }
+    else if (std::abs(target_hz - 41.20f) < 3.0f) { name = "E1"; inst = InstrumentType::BASS; inst_name = "BASS"; }
+    else if (std::abs(target_hz - 55.00f) < 3.0f) { name = "A1"; inst = InstrumentType::BASS; inst_name = "BASS"; }
+    else if (std::abs(target_hz - 73.42f) < 3.0f) { name = "D2"; inst = InstrumentType::BASS; inst_name = "BASS"; }
+    else if (std::abs(target_hz - 98.00f) < 3.0f) { name = "G2"; inst = InstrumentType::BASS; inst_name = "BASS"; }
 
     float low_hz = target_hz * 0.91f;
     float high_hz = target_hz * 1.21f;
     if (name == "E4") { low_hz = 300.0f; high_hz = 400.0f; }
 
-    m_tuning_profile = {name, target_hz, low_hz, high_hz};
+    m_tuning_profile = {inst, inst_name, name, target_hz, low_hz, high_hz};
     float new_rate = std::max(2000.0f, target_hz * 4.5f);
     m_active_profile.sample_rate_hz = new_rate;
-    LOGI(TAG, "Dynamic Tuning Profile configured for %s (Target: %.2fHz, Bandpass: %.1f-%.1fHz, Rate: %.1fHz)",
-         name.c_str(), target_hz, low_hz, high_hz, new_rate);
+    LOGI(TAG, "Dynamic Tuning Profile configured for %s:%s (Target: %.2fHz, Bandpass: %.1f-%.1fHz, Rate: %.1fHz)",
+         inst_name.c_str(), name.c_str(), target_hz, low_hz, high_hz, new_rate);
+}
+
+void SamplerController::setInstrumentStringProfile(InstrumentType instrument, const std::string& string_name) {
+    std::string s = string_name;
+    std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+    if (instrument == InstrumentType::NONE || s == "NONE" || s == "OFF") {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_tuning_profile = {InstrumentType::NONE, "NONE", "NONE", 0.0f, 0.0f, 0.0f};
+        return;
+    }
+
+    float target_hz = 0.0f;
+    std::string inst_name = "CUSTOM";
+    if (instrument == InstrumentType::GUITAR) {
+        inst_name = "GUITAR";
+        if (s == "E4") target_hz = 329.63f;
+        else if (s == "B3") target_hz = 246.94f;
+        else if (s == "G3") target_hz = 196.00f;
+        else if (s == "D3") target_hz = 146.83f;
+        else if (s == "A2") target_hz = 110.00f;
+        else if (s == "E2") target_hz = 82.41f;
+    } else if (instrument == InstrumentType::VIOLIN) {
+        inst_name = "VIOLIN";
+        if (s == "G3") target_hz = 196.00f;
+        else if (s == "D4") target_hz = 293.66f;
+        else if (s == "A4") target_hz = 440.00f;
+        else if (s == "E5") target_hz = 659.25f;
+    } else if (instrument == InstrumentType::UKULELE) {
+        inst_name = "UKULELE";
+        if (s == "C4") target_hz = 261.63f;
+        else if (s == "E4") target_hz = 329.63f;
+        else if (s == "G4") target_hz = 392.00f;
+        else if (s == "A4") target_hz = 440.00f;
+    } else if (instrument == InstrumentType::BASS) {
+        inst_name = "BASS";
+        if (s == "E1") target_hz = 41.20f;
+        else if (s == "A1") target_hz = 55.00f;
+        else if (s == "D2") target_hz = 73.42f;
+        else if (s == "G2") target_hz = 98.00f;
+    }
+
+    if (target_hz > 0.0f) {
+        setTargetTuningFrequency(target_hz);
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_tuning_profile.instrument = instrument;
+        m_tuning_profile.instrument_name = inst_name;
+        m_tuning_profile.string_name = s;
+    }
 }
 
 TuningProfile SamplerController::getActiveTuningProfile() const {
@@ -574,17 +633,18 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
                 m_controller.transitionToState(KernelSensorState::STARTUP);
             }
         }
-        if (j.contains("target_frequency")) {
+        if (j.contains("instrument") && j.contains("tuner_string")) {
+            std::string inst_str = j["instrument"].get<std::string>();
+            std::transform(inst_str.begin(), inst_str.end(), inst_str.begin(), ::toupper);
+            InstrumentType inst = InstrumentType::GUITAR;
+            if (inst_str == "VIOLIN") inst = InstrumentType::VIOLIN;
+            else if (inst_str == "UKULELE") inst = InstrumentType::UKULELE;
+            else if (inst_str == "BASS") inst = InstrumentType::BASS;
+            m_controller.setInstrumentStringProfile(inst, j["tuner_string"].get<std::string>());
+        } else if (j.contains("target_frequency")) {
             m_controller.setTargetTuningFrequency(j["target_frequency"].get<float>());
         } else if (j.contains("tuner_string")) {
-            std::string s = j["tuner_string"].get<std::string>();
-            if (s == "E4") m_controller.setTargetTuningFrequency(329.63f);
-            else if (s == "B3") m_controller.setTargetTuningFrequency(246.94f);
-            else if (s == "G3") m_controller.setTargetTuningFrequency(196.00f);
-            else if (s == "D3") m_controller.setTargetTuningFrequency(146.83f);
-            else if (s == "A2") m_controller.setTargetTuningFrequency(110.00f);
-            else if (s == "E2") m_controller.setTargetTuningFrequency(82.41f);
-            else if (s == "NONE" || s == "OFF") m_controller.setTargetTuningFrequency(0.0f);
+            m_controller.setInstrumentStringProfile(InstrumentType::GUITAR, j["tuner_string"].get<std::string>());
         }
     } catch (...) {
         if (command_json.find("RESONANCE") != std::string::npos || command_json.find("resonance") != std::string::npos) {

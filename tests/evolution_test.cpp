@@ -340,14 +340,29 @@ TEST_F(EvolutionTest, GuitarTunerBandPassAndHPS) {
     // 2. Test BandPassBiquad isolation
     Ronin::Kernel::DSP::BandPassBiquad bp;
     bp.configure(2000.0f, 300.0f, 400.0f);
-    // Low frequency ambient noise (50Hz) should be strongly attenuated
     float out_50 = 0.0f;
     for (int i = 0; i < 100; ++i) out_50 = bp.process(std::sin(2.0f * M_PI * 50.0f * i / 2000.0f));
     EXPECT_LT(std::abs(out_50), 0.15f);
 
+    // 3. Test multi-instrument expansion (Violin A4 & Ukulele C4)
+    engine.executeCommandJson("{\"instrument\":\"VIOLIN\", \"tuner_string\":\"A4\"}");
+    auto tp_violin = engine.getController().getActiveTuningProfile();
+    EXPECT_EQ(tp_violin.instrument, Ronin::Kernel::DSP::InstrumentType::VIOLIN);
+    EXPECT_EQ(tp_violin.instrument_name, "VIOLIN");
+    EXPECT_EQ(tp_violin.string_name, "A4");
+    EXPECT_NEAR(tp_violin.fundamental_hz, 440.00f, 0.01f);
+
+    engine.executeCommandJson("{\"instrument\":\"UKULELE\", \"tuner_string\":\"C4\"}");
+    auto tp_uke = engine.getController().getActiveTuningProfile();
+    EXPECT_EQ(tp_uke.instrument, Ronin::Kernel::DSP::InstrumentType::UKULELE);
+    EXPECT_EQ(tp_uke.instrument_name, "UKULELE");
+    EXPECT_EQ(tp_uke.string_name, "C4");
+    EXPECT_NEAR(tp_uke.fundamental_hz, 261.63f, 0.01f);
+
     // Turn off tuner profile
     engine.executeCommandJson("{\"tuner_string\":\"NONE\"}");
     EXPECT_EQ(engine.getController().getActiveTuningProfile().fundamental_hz, 0.0f);
+    EXPECT_EQ(engine.getController().getActiveTuningProfile().instrument, Ronin::Kernel::DSP::InstrumentType::NONE);
 }
 
 int main(int argc, char **argv) {
