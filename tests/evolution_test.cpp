@@ -76,6 +76,17 @@ TEST_F(EvolutionTest, FastPathSemanticRouterBypass) {
         EXPECT_EQ(map_plan.plan_steps[0], "GET_LOCATION");
     }
 
+    // 2.b Location saving test
+    {
+        AgentPlan save_plan = planner.createPlan("Save my current location as Home in memory");
+        EXPECT_EQ(save_plan.intent_name, "MEMORY");
+        EXPECT_EQ(save_plan.plan_steps.size(), 2);
+        EXPECT_EQ(save_plan.plan_steps[0], "GET_LOCATION");
+        EXPECT_EQ(save_plan.plan_steps[1], "SAVE_FACT");
+        EXPECT_EQ(save_plan.parameters["entity"], "Home");
+        EXPECT_EQ(save_plan.parameters["attribute"], "Coordinates");
+    }
+
     // 3. Vault test
     {
         AgentPlan vault_plan = planner.createPlan("lookup gemini api key from vault");

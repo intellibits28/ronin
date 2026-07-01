@@ -861,7 +861,21 @@ class MainActivity : FragmentActivity() {
                                 val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) }?.let { params[it] } ?: "Unknown"
                                 val rawAttr = params["attribute"] ?: params["property"] ?: "General"
                                 val attr = normalizeAttribute(rawAttr)
-                                val value = params["value"] ?: params["content"] ?: params.values.firstOrNull { it != entity && it != rawAttr && it.length > 2 } ?: ""
+                                var value = params["value"] ?: params["content"] ?: params.values.firstOrNull { it != entity && it != rawAttr && it.length > 2 && !it.startsWith("{") } ?: ""
+                                
+                                val locJsonStr = params["context_result_GET_LOCATION"] ?: params["context_result_LOCATION"]
+                                if (locJsonStr != null) {
+                                    try {
+                                        val locJson = org.json.JSONObject(locJsonStr)
+                                        if (locJson.optBoolean("success", false)) {
+                                            val lat = locJson.optDouble("lat")
+                                            val lon = locJson.optDouble("lon")
+                                            value = "$lat, $lon"
+                                            nativeEngine.storeNote("Location: $entity", "Coordinates: $value (Lat: $lat, Lon: $lon)", "location,geofence")
+                                        }
+                                    } catch (e: Exception) {}
+                                }
+
                                 if (value.isEmpty()) "Error: Fact value is empty."
                                 else if (nativeEngine.storeFact(entity, attr, value)) {
                                     nativeEngine.pushKernelMessage("[AGENT] Fact saved: $entity.$attr = $value")

@@ -676,11 +676,27 @@ bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan
                            norm.find("ပို့") != std::string::npos || norm.find("email") != std::string::npos || 
                            norm.find("mail") != std::string::npos || norm.find("send") != std::string::npos);
         if (!is_sending) {
+            bool is_saving = (norm.find("save") != std::string::npos || norm.find("store") != std::string::npos ||
+                              norm.find("remember") != std::string::npos || norm.find("memory") != std::string::npos ||
+                              norm.find("home") != std::string::npos || norm.find("work") != std::string::npos ||
+                              norm.find("မှတ်") != std::string::npos || norm.find("သိမ်း") != std::string::npos ||
+                              norm.find("အိမ်") != std::string::npos || norm.find("ရုံး") != std::string::npos);
             bool is_map = (norm.find("map") != std::string::npos || norm.find("မြေပုံ") != std::string::npos ||
                            norm.find("open") != std::string::npos || norm.find("show") != std::string::npos ||
                            norm.find("navigate") != std::string::npos);
             
-            if (is_map) {
+            if (is_saving) {
+                out_plan.intent_name = "MEMORY";
+                out_plan.plan_steps = {"GET_LOCATION", "SAVE_FACT"};
+                if (norm.find("home") != std::string::npos || norm.find("အိမ်") != std::string::npos) {
+                    out_plan.parameters["entity"] = "Home";
+                } else if (norm.find("work") != std::string::npos || norm.find("ရုံး") != std::string::npos) {
+                    out_plan.parameters["entity"] = "Work";
+                } else {
+                    out_plan.parameters["entity"] = "Location";
+                }
+                out_plan.parameters["attribute"] = "Coordinates";
+            } else if (is_map) {
                 out_plan.intent_name = "MAP";
                 out_plan.plan_steps = {"OPEN_MAP"};
             } else {
