@@ -79,6 +79,10 @@ void SamplerController::transitionToState(KernelSensorState new_state) {
             // Multi-Resolution Support: High-frequency machine diagnostics (e.g. 1024 samples at 200Hz for Motor/Compressor)
             m_active_profile = {"MACHINE_DIAGNOSTICS", 200.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 0.5f, 3.0f};
             break;
+        case KernelSensorState::IMPULSE_MODE:
+            // High-resolution burst capture (1024 samples at 200Hz for FFT impulse decay analysis)
+            m_active_profile = {"IMPULSE_CAPTURE", 200.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 0.5f, 3.0f};
+            break;
         case KernelSensorState::SHUTDOWN:
             m_active_profile = {"SHUTDOWN_DECAY", 50.0f, 512, AnalysisMode::TIME_DOMAIN, 0.5f, 2.0f};
             break;
@@ -98,6 +102,7 @@ std::string SamplerController::getStateString() const {
         case KernelSensorState::IDLE: return "IDLE";
         case KernelSensorState::STARTUP: return "STARTUP";
         case KernelSensorState::STABLE: return "STABLE";
+        case KernelSensorState::IMPULSE_MODE: return "IMPULSE_MODE";
         case KernelSensorState::SHUTDOWN: return "SHUTDOWN";
         default: return "UNKNOWN";
     }
@@ -166,7 +171,7 @@ VibeMonitorEngine& VibeMonitorEngine::getInstance() {
     return instance;
 }
 
-VibeMonitorEngine::VibeMonitorEngine() : m_configured_hp_cutoff(-1.0f), m_configured_sample_rate(-1.0f), m_pffft_setup(nullptr), m_pffft_size(0) {
+VibeMonitorEngine::VibeMonitorEngine() : m_configured_hp_cutoff(-1.0f), m_configured_sample_rate(-1.0f), m_burst_samples_processed(0), m_pffft_setup(nullptr), m_pffft_size(0) {
     LOGI(TAG, "VibeMonitorEngine initialized.");
 }
 
@@ -196,6 +201,15 @@ void VibeMonitorEngine::pushSamples(const std::vector<float>& x, const std::vect
     m_live_z = z;
 }
 
+bool VibeMonitorEngine::detectImpact(float current_rms, float dynamic_threshold, float& out_strength_pct) {
+    if (current_rms > dynamic_threshold && dynamic_threshold > 0.0f) {
+        out_strength_pct = std::min(100.0f, (current_rms / dynamic_threshold) * 50.0f);
+        return true;
+    }
+    out_strength_pct = 0.0f;
+    return false;
+}
+
 VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x, 
                                                    const std::vector<float>& y, 
                                                    const std::vector<float>& z) {
@@ -215,14 +229,18 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
     size_t in_size = std::min({x.size(), y.size(), z.size()});
     if (in_size == 0) {
         // Generate realistic synthetic signal with dynamic jitter and noise if no live hardware data provided
-        float target_freq = (profile.profile_name == "STRUCTURAL_RESONANCE") ? 4.5f : 40.0f;
+        float target_freq = (profile.profile_name == "STRUCTURAL_RESONANCE") ? 4.5f : ((m_controller.getCurrentState() == KernelSensorState::IMPULSE_MODE) ? 85.0f : 40.0f);
         static uint32_t synth_step = 0;
         synth_step++;
         for (uint32_t i = 0; i < win_size; ++i) {
             float t = (float)i / profile.sample_rate_hz;
             float noise = ((float)((i * 1103515245 + synth_step * 12345) & 0x7FFFFFFF) / (float)0x7FFFFFFF - 0.5f) * 0.08f;
-            float amp_jitter = 0.3f + 0.05f * std::sin((float)synth_step * 0.5f);
-            mag[i] = 1.0f + amp_jitter * std::sin(2.0f * (float)M_PI * target_freq * t) + noise;
+            if (m_controller.getCurrentState() == KernelSensorState::IMPULSE_MODE) {
+                mag[i] = 1.0f + 2.5f * std::exp(-t * 8.0f) * std::sin(2.0f * (float)M_PI * target_freq * t) + noise;
+            } else {
+                float amp_jitter = 0.3f + 0.05f * std::sin((float)synth_step * 0.5f);
+                mag[i] = 1.0f + amp_jitter * std::sin(2.0f * (float)M_PI * target_freq * t) + noise;
+            }
         }
     } else {
         for (uint32_t i = 0; i < win_size; ++i) {
@@ -242,6 +260,21 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         val = m_hp_filter.process(val);
     }
 
+    float sq_sum_pre = 0.0f;
+    for (float val : mag) sq_sum_pre += val * val;
+    float rms_pre = std::sqrt(sq_sum_pre / (float)win_size);
+
+    float dyn_thresh = m_controller.getDynamicThreshold();
+    float impact_str = 0.0f;
+    bool impact = detectImpact(rms_pre, dyn_thresh, impact_str);
+    if (impact && m_controller.getCurrentState() != KernelSensorState::IMPULSE_MODE && m_controller.getCurrentState() != KernelSensorState::SHUTDOWN) {
+        LOGI(TAG, "Impact spike detected (RMS: %.4f > Thresh: %.4f). Transitioning to IMPULSE_MODE.", rms_pre, dyn_thresh);
+        m_controller.transitionToState(KernelSensorState::IMPULSE_MODE);
+        profile = m_controller.getActiveProfile();
+        win_size = profile.window_size;
+        m_burst_samples_processed = 0;
+    }
+
     VibeMonitorResult res;
     res.state = m_controller.getStateString();
     res.profile_name = profile.profile_name;
@@ -250,8 +283,58 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
     res.analysis_mode = (profile.mode == AnalysisMode::TIME_DOMAIN) ? "TIME_DOMAIN" : "FREQUENCY_DOMAIN";
     res.dc_removed = true;
     res.high_pass_cutoff_hz = profile.high_pass_cutoff_hz;
+    res.impact_detected = false;
+    res.impact_strength_pct = 0.0f;
 
-    if (profile.mode == AnalysisMode::TIME_DOMAIN) {
+    if (m_controller.getCurrentState() == KernelSensorState::IMPULSE_MODE) {
+        ensurePffftSetup(win_size);
+        std::vector<float> windowed = mag;
+        for (uint32_t i = 0; i < win_size; ++i) {
+            float win = 0.5f * (1.0f - std::cos(2.0f * (float)M_PI * i / (win_size - 1)));
+            windowed[i] *= win;
+        }
+        float* work = (float*)pffft_aligned_malloc(win_size * sizeof(float));
+        float* output = (float*)pffft_aligned_malloc(win_size * sizeof(float));
+
+        pffft_transform_ordered(m_pffft_setup, windowed.data(), output, work, PFFFT_FORWARD);
+
+        float max_psd = -100.0f;
+        uint32_t max_idx = 1;
+        for (uint32_t i = 1; i < win_size / 2; ++i) {
+            float r = output[2*i];
+            float im = output[2*i + 1];
+            float psd = (r*r + im*im) / (float)win_size;
+            float psd_db = 10.0f * std::log10(psd + 1e-12f);
+            if (psd_db > max_psd) {
+                max_psd = psd_db;
+                max_idx = i;
+            }
+        }
+        pffft_aligned_free(work);
+        pffft_aligned_free(output);
+
+        res.resonance_freq_hz = (float)max_idx * profile.sample_rate_hz / (float)win_size;
+        res.psd_peak_db = max_psd;
+        res.current_metric = max_psd;
+        res.impact_detected = true;
+        res.impact_strength_pct = (impact_str > 0.0f) ? impact_str : std::min(100.0f, (rms_pre / (dyn_thresh + 1e-6f)) * 50.0f);
+        res.moving_mean = m_controller.calculateMovingMean();
+        res.moving_std_dev = m_controller.calculateMovingStdDev();
+        res.dynamic_threshold = dyn_thresh;
+        res.anomaly_detected = true;
+
+        char buf[256];
+        snprintf(buf, sizeof(buf), "[IMPULSE] Impact Detected (Strength: %.1f%%) - Resonance: %.1f Hz",
+                 res.impact_strength_pct, res.resonance_freq_hz);
+        res.summary = buf;
+
+        m_burst_samples_processed += win_size;
+        if (m_burst_samples_processed >= profile.window_size) {
+            LOGI(TAG, "Impulse burst processing complete. Seamless transition back to STABLE.");
+            m_controller.transitionToState(KernelSensorState::STABLE);
+            m_burst_samples_processed = 0;
+        }
+    } else if (profile.mode == AnalysisMode::TIME_DOMAIN) {
         float sq_sum = 0.0f;
         for (float val : mag) sq_sum += val * val;
         float rms = std::sqrt(sq_sum / (float)win_size);
@@ -325,6 +408,7 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
             if (st == "IDLE") m_controller.transitionToState(KernelSensorState::IDLE);
             else if (st == "STARTUP") m_controller.transitionToState(KernelSensorState::STARTUP);
             else if (st == "STABLE") m_controller.transitionToState(KernelSensorState::STABLE);
+            else if (st == "IMPULSE_MODE" || st == "IMPULSE") m_controller.transitionToState(KernelSensorState::IMPULSE_MODE);
             else if (st == "SHUTDOWN") m_controller.transitionToState(KernelSensorState::SHUTDOWN);
         } else if ((j.contains("sensor_type") && j["sensor_type"].get<std::string>() == "RESONANCE") ||
                    (j.contains("mode") && j["mode"].get<std::string>() == "FREQUENCY_DOMAIN")) {
@@ -361,6 +445,8 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
     jOut["anomaly_detected"] = res.anomaly_detected;
     jOut["resonance_freq_hz"] = res.resonance_freq_hz;
     jOut["psd_peak_db"] = res.psd_peak_db;
+    jOut["impact_detected"] = res.impact_detected;
+    jOut["impact_strength_pct"] = res.impact_strength_pct;
     jOut["summary"] = res.summary;
     return jOut.dump();
 }

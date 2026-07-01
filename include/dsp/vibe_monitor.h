@@ -18,6 +18,7 @@ enum class KernelSensorState {
     IDLE,
     STARTUP,
     STABLE,
+    IMPULSE_MODE,
     SHUTDOWN
 };
 
@@ -91,6 +92,8 @@ struct VibeMonitorResult {
     bool anomaly_detected;
     float resonance_freq_hz;
     float psd_peak_db;
+    bool impact_detected;
+    float impact_strength_pct;
     std::string summary;
 };
 
@@ -110,6 +113,8 @@ public:
 
     void pushSamples(const std::vector<float>& x, const std::vector<float>& y, const std::vector<float>& z);
 
+    bool detectImpact(float current_rms, float dynamic_threshold, float& out_strength_pct);
+
     std::string executeCommandJson(const std::string& command_json);
 
 private:
@@ -121,6 +126,7 @@ private:
     std::vector<float> m_live_x;
     std::vector<float> m_live_y;
     std::vector<float> m_live_z;
+    uint32_t m_burst_samples_processed;
 
     // Reusable aligned PFFFT setup cache to minimize memory reallocation
     PFFFT_Setup* m_pffft_setup;

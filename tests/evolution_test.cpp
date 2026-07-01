@@ -317,6 +317,13 @@ TEST_F(EvolutionTest, AdaptiveSensorAnalysisPipeline) {
     EXPECT_NEAR(engine.getController().calculateMovingMean(), 11.0f, 0.01f);
     EXPECT_GT(engine.getController().calculateMovingStdDev(), 0.0f);
     EXPECT_GT(engine.getController().getDynamicThreshold(), 11.0f);
+
+    // 4. Test IMPULSE_MODE burst capture and result format
+    std::string imp_str = engine.executeCommandJson("{\"state\":\"IMPULSE_MODE\"}");
+    auto jImp = nlohmann::json::parse(imp_str);
+    EXPECT_EQ(jImp["impact_detected"], true);
+    std::string summary_str = jImp["summary"];
+    EXPECT_NE(summary_str.find("[IMPULSE] Impact Detected"), std::string::npos);
 }
 
 int main(int argc, char **argv) {
