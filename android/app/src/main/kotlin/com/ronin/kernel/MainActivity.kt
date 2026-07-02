@@ -490,6 +490,11 @@ class MainActivity : FragmentActivity() {
                 if (paths.isNotEmpty()) {
                     nativeEngine.indexFilesSafe(paths.toTypedArray(), names.toTypedArray(), dates.toLongArray())
                     Log.i("RoninKernel_MainActivity", "Smart Indexing Complete: ${paths.size} files discovered.")
+                    Log.d("RoninFileSearch", "Indexed ${paths.size} files into LTM. Sample: ${paths.take(5)}")
+                    nativeEngine.pushKernelMessage("[FILES] Indexed ${paths.size} files into search database.")
+                } else {
+                    Log.w("RoninKernel_MainActivity", "Smart Indexing: 0 files found. Check storage permissions.")
+                    Log.d("RoninFileSearch", "0 files found during scan. MediaStore and FS scan both returned empty.")
                 }
             } catch (e: Exception) {
                 Log.e("RoninKernel_MainActivity", "Smart Indexing FAILED: ${e.message}")
@@ -1276,15 +1281,30 @@ class MainActivity : FragmentActivity() {
                 actionName.contains("FILE") || toolName == "FILES" -> {
                     try {
                         val query = params["query"] ?: ""
+                        Log.d("RoninFileSearch", "FILE_SEARCH triggered. query='$query' toolName='$toolName' actionName='$actionName'")
                         val results = nativeEngine.searchFiles(query)
+                        Log.d("RoninFileSearch", "searchFiles returned ${results.size} results for query='$query'")
                         if (results.isNotEmpty()) {
-                            nativeEngine.pushKernelMessage("[FILES FOUND]\n" + results.joinToString("\n"))
-                            "Found ${results.size} files matching: $query\n" + results.joinToString("\n")
+                            results.forEachIndexed { i, r -> Log.d("RoninFileSearch", "  result[$i]: $r") }
+                            val fileList = results.joinToString("\n")
+                            // Push to chat AND push to kernel message channel
+                            runOnUiThread {
+                                vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "📁 Found ${results.size} file(s) matching '$query':\n$fileList"))
+                            }
+                            nativeEngine.pushKernelMessage("[FILES FOUND]\n$fileList")
+                            "Found ${results.size} files matching: $query\n$fileList"
                         } else {
+                            Log.w("RoninFileSearch", "No results from LTM for query='$query'. Checking if indexing ran...")
+                            runOnUiThread {
+                                vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "📁 No files found matching '$query'. Try re-opening the app to re-index."))
+                            }
                             nativeEngine.pushKernelMessage("[FILES FOUND] No files found matching: '$query'.")
                             "No files found matching: $query"
                         }
-                    } catch (e: Exception) { "Error: ${e.message}" }
+                    } catch (e: Exception) {
+                        Log.e("RoninFileSearch", "FILES tool exception: ${e.message}", e)
+                        "Error: ${e.message}"
+                    }
                 }
 
                 // 10. GUITAR TUNER - note_mapper result comparison against guitar strings
