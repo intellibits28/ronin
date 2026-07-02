@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <sstream>
+#include <unordered_set>
 #include "ronin_log.h"
 
 #define TAG "RoninLongTermMemory"
@@ -470,6 +471,7 @@ std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
     if (!m_db || query.empty()) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
+    std::unordered_set<std::string> seen;
 
     std::vector<std::string> tokens;
     std::string current_token;
@@ -486,7 +488,7 @@ std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
     if (!current_token.empty()) tokens.push_back(current_token);
     if (tokens.empty()) tokens.push_back(query);
 
-    std::string sql = "SELECT path FROM file_index WHERE ";
+    std::string sql = "SELECT DISTINCT path FROM file_index WHERE ";
     for (size_t i = 0; i < tokens.size(); ++i) {
         if (i > 0) sql += " AND ";
         sql += "(name LIKE ? OR path LIKE ?)";
@@ -504,12 +506,16 @@ std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
             sqlite3_bind_text(stmt, static_cast<int>(2 * i + 2), like_params[i].c_str(), -1, SQLITE_TRANSIENT);
         }
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            results.push_back(columnText(stmt, 0));
+            std::string path = columnText(stmt, 0);
+            if (seen.insert(path).second) {  // deduplicate
+                results.push_back(path);
+            }
         }
     }
     sqlite3_finalize(stmt);
     return results;
 }
+
 
 std::vector<std::string> LongTermMemory::search(const std::string& query) { return searchNotes(query); }
 bool LongTermMemory::consolidate(const std::string& summary) { return storeNote("Consolidated Summary", summary, "auto"); }

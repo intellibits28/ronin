@@ -491,7 +491,7 @@ class MainActivity : FragmentActivity() {
                     nativeEngine.indexFilesSafe(paths.toTypedArray(), names.toTypedArray(), dates.toLongArray())
                     Log.i("RoninKernel_MainActivity", "Smart Indexing Complete: ${paths.size} files discovered.")
                     Log.d("RoninFileSearch", "Indexed ${paths.size} files into LTM. Sample: ${paths.take(5)}")
-                    nativeEngine.pushKernelMessage("[FILES] Indexed ${paths.size} files into search database.")
+                    // Indexing status goes to Log/reasoning console only — NOT pushed to chat bubble
                 } else {
                     Log.w("RoninKernel_MainActivity", "Smart Indexing: 0 files found. Check storage permissions.")
                     Log.d("RoninFileSearch", "0 files found during scan. MediaStore and FS scan both returned empty.")
