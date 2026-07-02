@@ -1,58 +1,130 @@
 [
   {
+    "schema_version": 1,
     "id": 1,
     "name": "ChatSkill",
+    "capability_version": "1.0.0",
     "subjects": ["hi", "hello", "hey", "ronin", "mingalaba", "ဟယ်လို", "နေကောင်းလား"],
     "actions": ["chat", "talk", "ask", "greet", "ပြော", "မေး"],
-    "confidence_threshold": 0.5
+    "confidence_threshold": 0.5,
+    "dependencies": [],
+    "permissions": [],
+    "inputs": ["text"],
+    "outputs": ["text"],
+    "estimated_power_cost": "LOW",
+    "deterministic": false,
+    "streaming": true
   },
   {
+    "schema_version": 1,
     "id": 2,
     "name": "FileSearchNode",
+    "capability_version": "1.0.0",
     "subjects": ["file", "document", "pdf", "photo", "image", "music", "audio", "video", "movie", "code", "script", "python", "markdown", "ဖိုင်", "စာရွက်စာတမ်း", "သီချင်း", "ဗီဒီယို", "ပုံ"],
     "actions": ["search", "find", "list", "locate", "ထပ်ပြ"],
-    "confidence_threshold": 0.6
+    "confidence_threshold": 0.6,
+    "dependencies": [],
+    "permissions": ["android.permission.READ_EXTERNAL_STORAGE"],
+    "inputs": ["query"],
+    "outputs": ["file_list"],
+    "estimated_power_cost": "LOW",
+    "deterministic": true,
+    "streaming": false
   },
   {
+    "schema_version": 1,
     "id": 4,
     "name": "FlashlightNode",
+    "capability_version": "1.0.0",
     "subjects": ["flashlight", "torch", "light", "ဓါတ်မီး", "မီး"],
     "actions": ["on", "off", "turn", "switch", "enable", "disable", "ဖွင့်", "ပိတ်"],
-    "confidence_threshold": 0.8
+    "confidence_threshold": 0.8,
+    "dependencies": [],
+    "permissions": ["android.permission.CAMERA"],
+    "inputs": ["state"],
+    "outputs": ["status"],
+    "estimated_power_cost": "MEDIUM",
+    "deterministic": true,
+    "streaming": false
   },
   {
+    "schema_version": 1,
     "id": 5,
     "name": "LocationNode",
+    "capability_version": "1.0.0",
     "subjects": ["location", "gps", "coordinates", "where", "နေရာ", "ဘယ်မှာလဲ"],
     "actions": ["show", "get", "locate", "ပြပေး"],
-    "confidence_threshold": 0.8
+    "confidence_threshold": 0.8,
+    "dependencies": [],
+    "permissions": ["android.permission.ACCESS_FINE_LOCATION"],
+    "inputs": ["request"],
+    "outputs": ["coordinates"],
+    "estimated_power_cost": "HIGH",
+    "deterministic": false,
+    "streaming": false
   },
   {
+    "schema_version": 1,
     "id": 6,
     "name": "WiFiNode",
+    "capability_version": "1.0.0",
     "subjects": ["wifi", "internet", "connection", "ဝိုင်ဖိုင်", "အင်တာနက်"],
     "actions": ["on", "off", "enable", "disable", "turn", "switch", "ဖွင့်", "ပိတ်", "stop", "toggle"],
-    "confidence_threshold": 0.8
+    "confidence_threshold": 0.8,
+    "dependencies": [],
+    "permissions": ["android.permission.CHANGE_WIFI_STATE"],
+    "inputs": ["state"],
+    "outputs": ["status"],
+    "estimated_power_cost": "LOW",
+    "deterministic": true,
+    "streaming": false
   },
   {
+    "schema_version": 1,
     "id": 7,
     "name": "BluetoothNode",
+    "capability_version": "1.0.0",
     "subjects": ["bluetooth", "bt", "ဘလူးတု"],
     "actions": ["on", "off", "enable", "disable", "turn", "switch", "ဖွင့်", "ပိတ်", "stop", "toggle"],
-    "confidence_threshold": 0.8
+    "confidence_threshold": 0.8,
+    "dependencies": [],
+    "permissions": ["android.permission.BLUETOOTH_CONNECT"],
+    "inputs": ["state"],
+    "outputs": ["status"],
+    "estimated_power_cost": "LOW",
+    "deterministic": true,
+    "streaming": false
   },
   {
+    "schema_version": 1,
     "id": 11,
     "name": "MemoryNode",
+    "capability_version": "1.0.0",
     "subjects": ["memory", "fact", "note", "vault", "remember", "မှတ်", "သိမ်း"],
     "actions": ["save", "lookup", "search", "store", "မှတ်ထား", "ရှာ"],
-    "confidence_threshold": 0.5
+    "confidence_threshold": 0.5,
+    "dependencies": [],
+    "permissions": [],
+    "inputs": ["memory_request"],
+    "outputs": ["memory_result"],
+    "estimated_power_cost": "LOW",
+    "deterministic": true,
+    "streaming": false
   },
   {
+    "schema_version": 1,
     "id": 12,
     "name": "TestNode",
+    "capability_version": "1.0.0",
     "subjects": ["test", "debug"],
     "actions": ["run", "verify"],
-    "confidence_threshold": 0.0
+    "confidence_threshold": 0.0,
+    "dependencies": [],
+    "permissions": [],
+    "inputs": ["test_param"],
+    "outputs": ["test_result"],
+    "estimated_power_cost": "LOW",
+    "deterministic": true,
+    "streaming": false
   }
 ]

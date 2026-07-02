@@ -27,7 +27,7 @@ jobs:
       - name: KernelCompileTest
         run: |
           cd build_host
-          ninja ronin_atomic_test ronin_integration_test ronin_governance_test ronin_self_healing_test ronin_evolution_test
+          ninja ronin_atomic_test ronin_integration_test ronin_governance_test ronin_self_healing_test ronin_evolution_test ronin_benchmark_test
 
       - name: KernelGovernanceTest
         run: |
@@ -49,6 +49,11 @@ jobs:
           cd build_host
           ./ronin_atomic_test
           ./ronin_integration_test
+
+      - name: Run Performance Regression Benchmarks
+        run: |
+          cd build_host
+          ./ronin_benchmark_test
 
   build-android-jni:
     needs: validate-inference-module

@@ -51,7 +51,17 @@ struct CapabilityEntry {
     std::string name;
     std::vector<std::string> subjects;
     std::vector<std::string> actions;
-    float confidence_threshold;
+    float confidence_threshold = 0.5f;
+    // v1.0 Production Manifest Specification Fields
+    uint32_t schema_version = 1;
+    std::string capability_version = "1.0.0";
+    std::vector<std::string> dependencies;
+    std::vector<std::string> permissions;
+    std::vector<std::string> inputs;
+    std::vector<std::string> outputs;
+    std::string estimated_power_cost = "LOW";
+    bool deterministic = true;
+    bool streaming = false;
 };
 
 /**

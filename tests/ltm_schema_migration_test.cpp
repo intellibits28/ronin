@@ -9,7 +9,7 @@ using Ronin::Kernel::Memory::LongTermMemory;
 namespace {
 
 std::string tempDbPath(const char* name) {
-    return std::string("/tmp/ronin_") + name + ".db";
+    return std::string("./ronin_") + name + ".db";
 }
 
 void execSql(sqlite3* db, const char* sql) {
@@ -92,5 +92,24 @@ TEST(LongTermMemorySchemaMigration, EpisodesFtsTracksInsertUpdateAndDelete) {
 
     execSql(ltm.getDatabase(), "DELETE FROM episodes WHERE intent='TEST';");
     EXPECT_TRUE(ltm.searchEpisodes("marker").empty());
+}
+
+TEST(LongTermMemoryDecay, PrunesLowRetentionFactsAndEpisodes) {
+    LongTermMemory ltm(":memory:");
+    uint64_t now = 10000000;
+    
+    // Inferred fact with confidence 0.20, aged 2000000 seconds -> retention < 0.15 -> should be pruned
+    using Ronin::Kernel::Memory::SourceType;
+    ASSERT_TRUE(ltm.storeFact("env", "noise", "high", SourceType::USER_INFERRED, 0.20f));
+    execSql(ltm.getDatabase(), ("UPDATE facts SET last_verified_at = " + std::to_string(now - 2000000) + ";").c_str());
+    
+    // Explicit user fact aged 2000000 seconds -> retention remains higher -> should NOT be pruned
+    ASSERT_TRUE(ltm.storeFact("user", "preference", "dark_mode", SourceType::USER_EXPLICIT, 0.90f));
+    execSql(ltm.getDatabase(), ("UPDATE facts SET last_verified_at = " + std::to_string(now - 2000000) + " WHERE entity='user';").c_str());
+    
+    ltm.applyDecay(now);
+    
+    EXPECT_EQ(ltm.lookupFact("env", "noise"), "");
+    EXPECT_EQ(ltm.lookupFact("user", "preference"), "dark_mode");
 }
 

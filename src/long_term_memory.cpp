@@ -519,7 +519,60 @@ std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
 
 std::vector<std::string> LongTermMemory::search(const std::string& query) { return searchNotes(query); }
 bool LongTermMemory::consolidate(const std::string& summary) { return storeNote("Consolidated Summary", summary, "auto"); }
-void LongTermMemory::applyDecay(uint64_t) {}
+void LongTermMemory::applyDecay(uint64_t current_timestamp) {
+    if (!m_db || m_read_only.load()) return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (current_timestamp == 0) {
+        current_timestamp = std::time(nullptr);
+    }
+    const double lambda_inferred = 1.0e-6; // Standard Ebbinghaus decay coefficient (~11 days time constant)
+    const double lambda_explicit = 1.0e-7; // Slower decay for explicit user facts (~115 days time constant)
+    
+    // 1. Prune inferred/OCR/belief facts whose retention score falls below critical threshold 0.15
+    // Retention Score = confidence * exp(-lambda * dt)
+    sqlite3_stmt* stmt = nullptr;
+    int pruned_facts = 0;
+    const char* select_sql = "SELECT id, source_type, confidence, last_verified_at FROM facts;";
+    std::vector<int> to_delete;
+    std::vector<std::pair<int, double>> to_update;
+    
+    if (sqlite3_prepare_v2(m_db, select_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            int id = sqlite3_column_int(stmt, 0);
+            int source_type = sqlite3_column_int(stmt, 1);
+            double conf = sqlite3_column_double(stmt, 2);
+            uint64_t last_verified = sqlite3_column_int64(stmt, 3);
+            
+            uint64_t dt = (current_timestamp > last_verified) ? (current_timestamp - last_verified) : 0;
+            double lambda = (source_type == 0) ? lambda_explicit : lambda_inferred;
+            double retention = conf * std::exp(-lambda * static_cast<double>(dt));
+            
+            if (retention < 0.15 && source_type != 0) {
+                to_delete.push_back(id);
+            } else if (std::abs(retention - conf) > 0.01) {
+                to_update.push_back({id, retention});
+            }
+        }
+    }
+    if (stmt) sqlite3_finalize(stmt);
+    
+    for (int id : to_delete) {
+        std::string del_sql = "DELETE FROM facts WHERE id = " + std::to_string(id) + ";";
+        sqlite3_exec(m_db, del_sql.c_str(), nullptr, nullptr, nullptr);
+        pruned_facts++;
+    }
+    for (const auto& [id, new_conf] : to_update) {
+        std::string upd_sql = "UPDATE facts SET confidence = " + std::to_string(new_conf) + " WHERE id = " + std::to_string(id) + ";";
+        sqlite3_exec(m_db, upd_sql.c_str(), nullptr, nullptr, nullptr);
+    }
+    
+    // 2. Prune old failed/unreinforced episodes older than 30 days (2592000 sec)
+    uint64_t thirty_days_ago = (current_timestamp > 2592000) ? (current_timestamp - 2592000) : 0;
+    std::string ep_del_sql = "DELETE FROM episodes WHERE timestamp < " + std::to_string(thirty_days_ago) + " AND outcome_enum = 0;";
+    sqlite3_exec(m_db, ep_del_sql.c_str(), nullptr, nullptr, nullptr);
+    
+    LOGI(TAG, "Applied Ebbinghaus memory decay: pruned %d expired records, updated confidence scores.", pruned_facts);
+}
 int LongTermMemory::runMaintenance(bool) { return 0; }
 bool LongTermMemory::storeAuditLog(const std::string& action, const std::string& details) {
     if (!m_db) { LOGE(TAG, "storeAuditLog failed: DB is null."); return false; }

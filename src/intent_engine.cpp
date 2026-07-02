@@ -304,11 +304,32 @@ void IntentEngine::loadCapabilities(const std::string& json_path) {
         m_capabilities.clear();
         for (const auto& item : j) {
             CapabilityEntry cap;
-            cap.id = item["id"];
-            cap.name = item["name"];
-            for (const auto& s : item["subjects"]) cap.subjects.push_back(s);
-            for (const auto& a : item["actions"]) cap.actions.push_back(a);
-            cap.confidence_threshold = item["confidence_threshold"];
+            if (item.contains("id") && item["id"].is_number()) cap.id = item["id"];
+            if (item.contains("name")) cap.name = item["name"];
+            if (item.contains("subjects")) {
+                for (const auto& s : item["subjects"]) cap.subjects.push_back(s);
+            }
+            if (item.contains("actions")) {
+                for (const auto& a : item["actions"]) cap.actions.push_back(a);
+            }
+            if (item.contains("confidence_threshold")) cap.confidence_threshold = item["confidence_threshold"];
+            if (item.contains("schema_version") && item["schema_version"].is_number()) cap.schema_version = item["schema_version"];
+            if (item.contains("capability_version")) cap.capability_version = item["capability_version"];
+            if (item.contains("dependencies")) {
+                for (const auto& d : item["dependencies"]) cap.dependencies.push_back(d);
+            }
+            if (item.contains("permissions")) {
+                for (const auto& p : item["permissions"]) cap.permissions.push_back(p);
+            }
+            if (item.contains("inputs")) {
+                for (const auto& in_item : item["inputs"]) cap.inputs.push_back(in_item);
+            }
+            if (item.contains("outputs")) {
+                for (const auto& out_item : item["outputs"]) cap.outputs.push_back(out_item);
+            }
+            if (item.contains("estimated_power_cost")) cap.estimated_power_cost = item["estimated_power_cost"];
+            if (item.contains("deterministic")) cap.deterministic = item["deterministic"];
+            if (item.contains("streaming")) cap.streaming = item["streaming"];
             m_capabilities.push_back(cap);
         }
         LOGI(TAG, "Loaded %zu capabilities from manifest.", m_capabilities.size());
