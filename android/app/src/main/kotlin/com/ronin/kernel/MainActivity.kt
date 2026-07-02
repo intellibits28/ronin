@@ -461,10 +461,35 @@ class MainActivity : FragmentActivity() {
                         dates.add(it.getLong(dateIndex))
                     }
                 }
+
+                // 2. Direct filesystem scan of common storage dirs (fallback for Android 11+ non-media scoped storage)
+                try {
+                    val exts = setOf(".md", ".txt", ".pdf", ".doc", ".docx", ".csv", ".json", ".kt", ".cpp", ".h", ".py")
+                    val seen = paths.toMutableSet()
+                    val targetDirs = listOfNotNull(
+                        android.os.Environment.getExternalStorageDirectory(),
+                        android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+                        android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS),
+                        filesDir
+                    )
+                    targetDirs.filter { it.exists() && it.canRead() }.forEach { dir ->
+                        dir.walkTopDown().maxDepth(5).forEach { f ->
+                            if (f.isFile && exts.any { ext -> f.name.endsWith(ext, ignoreCase = true) }) {
+                                if (seen.add(f.absolutePath)) {
+                                    paths.add(f.absolutePath)
+                                    names.add(f.name)
+                                    dates.add(f.lastModified() / 1000)
+                                }
+                            }
+                        }
+                    }
+                } catch (fsErr: Exception) {
+                    Log.w("RoninKernel_MainActivity", "Direct FS scan note: ${fsErr.message}")
+                }
                 
                 if (paths.isNotEmpty()) {
                     nativeEngine.indexFilesSafe(paths.toTypedArray(), names.toTypedArray(), dates.toLongArray())
-                    Log.i("RoninKernel_MainActivity", "Smart Indexing Complete: ${paths.size} files discovered via MediaStore.")
+                    Log.i("RoninKernel_MainActivity", "Smart Indexing Complete: ${paths.size} files discovered.")
                 }
             } catch (e: Exception) {
                 Log.e("RoninKernel_MainActivity", "Smart Indexing FAILED: ${e.message}")
@@ -548,6 +573,7 @@ class MainActivity : FragmentActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 101 && grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }) {
             scanLocalModels()
+            scanFilesSmart()
         }
     }
 
@@ -1348,6 +1374,7 @@ class MainActivity : FragmentActivity() {
     override fun onResume() { 
         super.onResume()
         scanLocalModels()
+        scanFilesSmart()
         startWorldStateSync()
     }
 
