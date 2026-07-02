@@ -467,15 +467,42 @@ bool LongTermMemory::indexFile(const std::string& name, const std::string& path,
 }
 
 std::vector<std::string> LongTermMemory::searchFiles(const std::string& query) {
-    if (!m_db) return {};
+    if (!m_db || query.empty()) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
-    std::string like_query = "%" + query + "%";
-    const char* sql = "SELECT path FROM file_index WHERE name LIKE ? OR path LIKE ? LIMIT 10;";
+
+    std::vector<std::string> tokens;
+    std::string current_token;
+    for (char c : query) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '_' || c == '-') {
+            current_token += c;
+        } else {
+            if (!current_token.empty()) {
+                tokens.push_back(current_token);
+                current_token.clear();
+            }
+        }
+    }
+    if (!current_token.empty()) tokens.push_back(current_token);
+    if (tokens.empty()) tokens.push_back(query);
+
+    std::string sql = "SELECT path FROM file_index WHERE ";
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        if (i > 0) sql += " AND ";
+        sql += "(name LIKE ? OR path LIKE ?)";
+    }
+    sql += " LIMIT 20;";
+
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, like_query.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 2, like_query.c_str(), -1, SQLITE_STATIC);
+    if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        std::vector<std::string> like_params;
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            like_params.push_back("%" + tokens[i] + "%");
+        }
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            sqlite3_bind_text(stmt, static_cast<int>(2 * i + 1), like_params[i].c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, static_cast<int>(2 * i + 2), like_params[i].c_str(), -1, SQLITE_TRANSIENT);
+        }
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             results.push_back(columnText(stmt, 0));
         }

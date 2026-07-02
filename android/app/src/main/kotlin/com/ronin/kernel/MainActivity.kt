@@ -812,6 +812,8 @@ class MainActivity : FragmentActivity() {
                         // Clean up prefixes for a more natural conversation feel
                         val cleanMsg = if (trimmedMsg.startsWith("[REFLECTION] ")) {
                             "🧠 [Reflection] " + trimmedMsg.replace("[REFLECTION] ", "")
+                        } else if (trimmedMsg.startsWith("\n[FILES FOUND]\n") || trimmedMsg.startsWith("[FILES FOUND]\n") || trimmedMsg.startsWith("[FILES FOUND] ")) {
+                            "📁 [Files] " + trimmedMsg.replace("\n[FILES FOUND]\n", "").replace("[FILES FOUND]\n", "").replace("[FILES FOUND] ", "")
                         } else {
                             trimmedMsg.replace("[AGENT] ", "").replace("[VAULT] ", "").replace("[CALENDAR]\n", "").replace("[CALENDAR] ", "").replace("[FACT FOUND] ", "").replace(" [BEEP]", "")
                         }
@@ -1250,10 +1252,10 @@ class MainActivity : FragmentActivity() {
                         val query = params["query"] ?: ""
                         val results = nativeEngine.searchFiles(query)
                         if (results.isNotEmpty()) {
-                            nativeEngine.pushKernelMessage("\n[FILES FOUND]\n" + results.joinToString("\n"))
-                            "Found ${results.size} files matching: $query"
+                            nativeEngine.pushKernelMessage("[FILES FOUND]\n" + results.joinToString("\n"))
+                            "Found ${results.size} files matching: $query\n" + results.joinToString("\n")
                         } else {
-                            nativeEngine.pushKernelMessage("\n[FILES FOUND] No files found matching: '$query'.")
+                            nativeEngine.pushKernelMessage("[FILES FOUND] No files found matching: '$query'.")
                             "No files found matching: $query"
                         }
                     } catch (e: Exception) { "Error: ${e.message}" }
