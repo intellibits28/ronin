@@ -35,6 +35,7 @@ void ReflectionEngine::reflectOnRecentTasks() {
     
     if (recent_episodes.empty() && semantic_failures.empty()) {
         LOGI(TAG, "Reflection: No new episodes to analyze. Cycle skipped.");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[REFLECTION] No new failure episodes or activity to analyze.");
         return;
     }
 
@@ -74,14 +75,17 @@ void ReflectionEngine::reflectOnRecentTasks() {
         if (is_valid) {
             LOGI(TAG, "Reflection: Derived new lesson: %s", lesson.c_str());
             m_ltm->storeNote("Nightly Lesson", lesson, "lesson");
+            Ronin::Kernel::Capability::HardwareBridge::pushMessage("[REFLECTION] Learned new behavioral lesson: " + lesson);
         } else {
             LOGW(TAG, "Reflection: LLM failed to synthesize a valid lesson.");
         }
     } else if (!semantic_failures.empty()) {
         // Fallback static analysis if LLM is unavailable
         for (const auto& fail : semantic_failures) {
-            m_ltm->storeNote("Nightly Lesson", "Intent '" + fail.intent + "' failed recently. " + fail.summary, "lesson");
+            std::string static_lesson = "Intent '" + fail.intent + "' failed recently. " + fail.summary;
+            m_ltm->storeNote("Nightly Lesson", static_lesson, "lesson");
             LOGI(TAG, "Reflection: Generated static lesson for %s", fail.intent.c_str());
+            Ronin::Kernel::Capability::HardwareBridge::pushMessage("[REFLECTION] Learned failure lesson: " + static_lesson);
         }
     }
 
@@ -121,6 +125,7 @@ void ReflectionEngine::reflectOnRecentTasks() {
             if (is_valid) {
                 LOGI(TAG, "Phase 5 Macro-Skill Discovered: %s", macro_skill.c_str());
                 m_ltm->storeNote("Discovered Macro-Skill", macro_skill, "macro_skill");
+                Ronin::Kernel::Capability::HardwareBridge::pushMessage("[REFLECTION] Discovered Macro-Skill pattern: " + macro_skill);
             }
         }
     }
@@ -138,9 +143,11 @@ void ReflectionEngine::reflectOnRecentTasks() {
         }
         m_ltm->consolidate(consolidated_brief);
         LOGI(TAG, "Reflection: Episodic memory consolidated.");
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[REFLECTION] Consolidated activity: " + consolidated_brief);
     }
     
     LOGI(TAG, ">>> NIGHTLY REFLECTION CYCLE COMPLETE <<<");
+    Ronin::Kernel::Capability::HardwareBridge::pushMessage("[REFLECTION] Behavioral reflection cycle complete.");
 }
 
 float ReflectionEngine::evaluateOutcome(const std::string& predicted, const std::string& actual) {

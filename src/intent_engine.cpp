@@ -102,6 +102,30 @@ bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
             }
         }
         
+        if (out_plan.intent_name == "SAVE_FACT" || (!out_plan.plan_steps.empty() && out_plan.plan_steps[0] == "SAVE_FACT")) {
+            std::string val = out_plan.parameters.count("value") ? out_plan.parameters["value"] : "";
+            if (val.empty() || val == "SAVE_FACT" || val == "ADD_FACT" || val == "LOOKUP_FACT") {
+                std::string ent = out_plan.parameters.count("entity") ? out_plan.parameters["entity"] : "";
+                std::string att = out_plan.parameters.count("attribute") ? out_plan.parameters["attribute"] : "";
+                std::string rem = original_query;
+                std::vector<std::string> strip_kws = {ent, att, "မှတ်ထားပေး", "မှတ်ထား", "သိမ်းထား", "save", "store", "remember", "is", "ကားနံပါတ်", "မွေးနေ့"};
+                for (const auto& kw : strip_kws) {
+                    if (!kw.empty() && kw.length() > 1) {
+                        size_t p;
+                        while ((p = rem.find(kw)) != std::string::npos) rem.replace(p, kw.length(), " ");
+                    }
+                }
+                size_t first = rem.find_first_not_of(" \t\r\n'\"");
+                if (first != std::string::npos) {
+                    size_t last = rem.find_last_not_of(" \t\r\n'\"");
+                    rem = rem.substr(first, (last - first + 1));
+                } else {
+                    rem = "";
+                }
+                if (!rem.empty()) out_plan.parameters["value"] = rem;
+            }
+        }
+
         LOGI("RoninPlanner", "v7.2 Plan parsed: %s with %zu tools and %zu steps.", 
              out_plan.intent_name.c_str(), out_plan.required_tools.size(), out_plan.plan_steps.size());
         return true;
@@ -784,6 +808,7 @@ bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan
                               norm.find("map") != std::string::npos || norm.find("မြေပုံ") != std::string::npos);
         if (!has_other_kws) {
             std::string target = extractSearchTarget(norm);
+            if (target.empty()) target = trim(norm);
             if (!target.empty()) {
                 out_plan.intent_name = "FILE_SEARCH";
                 out_plan.plan_steps = {"FILE_SEARCH"};

@@ -294,9 +294,7 @@ class MainActivity : FragmentActivity() {
                                 
                                 if (packet.isFinal) {
                                     chatViewModel.isGenerating = false
-                                    val text = lastMsg.content.trim()
-                                    val endMarkers = listOf("။", ".", "?", "!", "\"", ")", "]", "}", "*", "_", ">", "`", ":", ";", "၊", "}")
-                                    lastMsg.isTruncated = text.isNotEmpty() && endMarkers.none { text.endsWith(it) }
+                                    lastMsg.isTruncated = false
                                 }
                             }
                         }
@@ -811,8 +809,12 @@ class MainActivity : FragmentActivity() {
                     if (!trimmedMsg.startsWith("[STATUS]") && !trimmedMsg.startsWith("[MODEL]") && !trimmedMsg.startsWith("[SKILLS]") &&
                         !trimmedMsg.contains("Starting:") && !trimmedMsg.contains("Step:") && !trimmedMsg.contains("Task completed successfully") && !trimmedMsg.contains("failed after")) {
                         
-                        // Clean up the "[AGENT] " prefix for a more natural conversation feel
-                        val cleanMsg = trimmedMsg.replace("[AGENT] ", "").replace("[VAULT] ", "").replace("[CALENDAR]\n", "").replace("[CALENDAR] ", "").replace("[FACT FOUND] ", "").replace(" [BEEP]", "")
+                        // Clean up prefixes for a more natural conversation feel
+                        val cleanMsg = if (trimmedMsg.startsWith("[REFLECTION] ")) {
+                            "🧠 [Reflection] " + trimmedMsg.replace("[REFLECTION] ", "")
+                        } else {
+                            trimmedMsg.replace("[AGENT] ", "").replace("[VAULT] ", "").replace("[CALENDAR]\n", "").replace("[CALENDAR] ", "").replace("[FACT FOUND] ", "").replace(" [BEEP]", "")
+                        }
                         vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", cleanMsg.trim()))
                     }
                 }
@@ -901,7 +903,24 @@ class MainActivity : FragmentActivity() {
                                 val entity = params["entity"] ?: params["item"] ?: params.keys.find { it.contains("name", true) || it.contains("car", true) }?.let { params[it] } ?: "Unknown"
                                 val rawAttr = params["attribute"] ?: params["property"] ?: "General"
                                 val attr = normalizeAttribute(rawAttr)
-                                var value = params["value"] ?: params["content"] ?: params.values.firstOrNull { it != entity && it != rawAttr && it.length > 2 && !it.startsWith("{") } ?: ""
+                                var value = params["value"] ?: params["content"] ?: params.entries.firstOrNull { 
+                                    val k = it.key.lowercase()
+                                    val v = it.value
+                                    k != "action" && k != "intent" && k != "original_query" && k != "request_id" && k != "session_id" && k != "corr_id" && k != "entity" && k != "attribute" && k != "item" && k != "property" && !k.startsWith("context_") && v != entity && v != rawAttr && v.length > 1 && !v.startsWith("{") && v != "SAVE_FACT" && v != "ADD_FACT" && v != "LOOKUP_FACT"
+                                }?.value ?: ""
+                                
+                                if (value.isEmpty() || value == "SAVE_FACT" || value == "ADD_FACT" || value == "LOOKUP_FACT") {
+                                    val orig = params["original_query"] ?: ""
+                                    if (orig.isNotEmpty()) {
+                                        var cleanOrig = orig
+                                        listOf(entity, rawAttr, attr, "မှတ်ထားပေး", "မှတ်ထား", "သိမ်းထား", "မှတ်ပေး", "save", "store", "remember", "is", "ကားနံပါတ်", "မွေးနေ့").forEach { kw ->
+                                            if (kw.length > 1 && kw != "Unknown" && kw != "General") {
+                                                cleanOrig = cleanOrig.replace(kw, "", ignoreCase = true)
+                                            }
+                                        }
+                                        value = cleanOrig.trim()
+                                    }
+                                }
                                 
                                 val locJsonStr = params["context_result_GET_LOCATION"] ?: params["context_result_LOCATION"]
                                 if (locJsonStr != null) {
@@ -961,7 +980,10 @@ class MainActivity : FragmentActivity() {
                                 if (results.isNotEmpty()) {
                                     nativeEngine.pushKernelMessage("\n[NOTES FOUND]\n" + results.joinToString("\n---\n"))
                                     "Found ${results.size} notes."
-                                } else "Error: No notes found."
+                                } else {
+                                    nativeEngine.pushKernelMessage("\n[NOTES FOUND] No notes found matching query.")
+                                    "No notes found matching query."
+                                }
                             }
                             else -> {
                                 val entity = params["entity"] ?: params["item"] ?: "Unknown"
@@ -970,7 +992,10 @@ class MainActivity : FragmentActivity() {
                                 if (res.isNotEmpty()) {
                                     nativeEngine.pushKernelMessage("\n[FACT FOUND] $entity's $attr is $res")
                                     res
-                                } else "Error: No information found for $entity."
+                                } else {
+                                    nativeEngine.pushKernelMessage("\n[FACT FOUND] No stored information found for $entity ($attr).")
+                                    "No information found for $entity."
+                                }
                             }
                         }
                     } catch (e: Exception) { "Error: ${e.message}" }
@@ -1061,10 +1086,20 @@ class MainActivity : FragmentActivity() {
                             cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
                             val start = cal.timeInMillis; cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 59)
                             val end = cal.timeInMillis
-                            val cursor = contentResolver.query(android.provider.CalendarContract.Events.CONTENT_URI, arrayOf("title", "dtstart"), "dtstart >= ? AND dtstart <= ?", arrayOf(start.toString(), end.toString()), "dtstart ASC")
+                            val cursor = contentResolver.query(android.provider.CalendarContract.Events.CONTENT_URI, arrayOf("title", "dtstart", "dtend"), "dtstart >= ? AND dtstart <= ?", arrayOf(start.toString(), end.toString()), "dtstart ASC")
                             val results = mutableListOf<String>()
-                            cursor?.use { while (it.moveToNext()) { val t = it.getString(0); val time = java.text.SimpleDateFormat("HH:mm").format(java.util.Date(it.getLong(1))); if (keyword.isEmpty() || t.contains(keyword, true)) results.add("[$time] $t") } }
-                            val output = if (results.isEmpty()) "No events found." else results.joinToString("\n")
+                            cursor?.use { 
+                                while (it.moveToNext()) { 
+                                    val t = it.getString(0) ?: "Event"
+                                    val startMs = it.getLong(1)
+                                    val endMs = it.getLong(2)
+                                    val dateFmt = java.text.SimpleDateFormat("MMM dd (EEE)", java.util.Locale.US).format(java.util.Date(startMs))
+                                    val timeStartFmt = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US).format(java.util.Date(startMs))
+                                    val timeStr = if (endMs > startMs) "$timeStartFmt - " + java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US).format(java.util.Date(endMs)) else timeStartFmt
+                                    if (keyword.isEmpty() || t.contains(keyword, true)) results.add("[$dateFmt, $timeStr] $t")
+                                } 
+                            }
+                            val output = if (results.isEmpty()) "No scheduled events found." else results.joinToString("\n")
                             nativeEngine.pushKernelMessage("\n[CALENDAR]\n$output"); output
                         } else {
                             val title = params["title"] ?: params["event"] ?: "Ronin Event"
@@ -1218,7 +1253,8 @@ class MainActivity : FragmentActivity() {
                             nativeEngine.pushKernelMessage("\n[FILES FOUND]\n" + results.joinToString("\n"))
                             "Found ${results.size} files matching: $query"
                         } else {
-                            "Error: No files found matching: $query"
+                            nativeEngine.pushKernelMessage("\n[FILES FOUND] No files found matching: '$query'.")
+                            "No files found matching: $query"
                         }
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
@@ -1444,7 +1480,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 is BridgeResult.Success -> {
                                                     val processRes = result.value
                                                     msg.content += processRes.result
-                                                    msg.isTruncated = processRes.result.isNotEmpty() && !processRes.result.trim().let { it.endsWith("။") || it.endsWith(".") || it.endsWith("?") || it.endsWith("!") }
+                                                    msg.isTruncated = false
                                                 }
                                                 is BridgeResult.Error -> {
                                                     Toast.makeText(context, "Continue failed: ${result.message} (${result.code})", Toast.LENGTH_SHORT).show()
@@ -1915,25 +1951,6 @@ fun ChatBubble(msg: ChatMessage, onContinue: () -> Unit = {}, onFeedback: (Boole
                     } else if (!isUser && msg.feedbackGiven) {
                         Spacer(Modifier.height(8.dp))
                         Text("Thanks for the feedback!", color = Color(0xFF64B5F6), fontSize = 9.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
-                    }
-                    
-                    if (!isUser && msg.isTruncated) {
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = onContinue,
-                            modifier = Modifier.height(32.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, Color(0xFF64B5F6)),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                        ) {
-                            if (msg.isContinuing) {
-                                CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.dp, color = Color(0xFF64B5F6))
-                            } else {
-                                Icon(Icons.Default.PlayArrow, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("ကျန်ရှိသည်များကို ဆက်လက်ဖတ်ရှုမည် (Continue)", color = Color(0xFF64B5F6), fontSize = 11.sp)
-                            }
-                        }
                     }
                 }
             } 

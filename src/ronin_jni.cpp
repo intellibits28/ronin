@@ -211,18 +211,13 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
         auto plan = runtimeContext().intent_engine->getPlanner()->createPlan(rawInput);
         HardwareBridge::setInferenceSilence(false);
         if (plan.intent_name == "fallback_chat") {
-            if (runtimeContext().graph_executor) {
-                runtimeContext().graph_executor->recordEpisode("PLANNING_FAILURE", "Agent failed to generate a valid plan for input: " + rawInput, "{}", false);
-            }
-            nlohmann::json err_res;
-            err_res["success"] = false;
-            err_res["result"] = "Error: Agent planning failed.";
-            err_res["session_id"] = "";
-            err_res["error"] = {
-                {"code", "PLANNING_FAILED"},
-                {"message", "Agent failed to generate a valid plan for input."}
-            };
-            return env->NewStringUTF(err_res.dump().c_str());
+            LOGI("RoninJNI", "Planner returned fallback_chat -> executing ChatSkill (Node 1)");
+            std::string chat_res = runtimeContext().intent_engine->executeSkill(1, rawInput);
+            nlohmann::json succ_res;
+            succ_res["success"] = true;
+            succ_res["result"] = chat_res;
+            succ_res["session_id"] = "";
+            return env->NewStringUTF(succ_res.dump().c_str());
         }
         auto session = SessionManager::getInstance().createSession(plan.intent_name);
         sid = session->getSessionId();
@@ -342,6 +337,7 @@ JNIEXPORT void JNICALL native_reportSemanticFailure(JNIEnv *env, jobject thiz, j
 
 JNIEXPORT void JNICALL native_runNightlyReflection(JNIEnv *env, jobject thiz) {
     LOGI("RoninJNI", ">>> INITIATING NIGHTLY REFLECTION CYCLE [Phase 2] <<<");
+    HardwareBridge::pushMessage("[REFLECTION] Starting Behavioral Reflection analysis on recent activity...");
     if (runtimeContext().graph_executor) {
         runtimeContext().graph_executor->getReflectionEngine().reflectOnRecentTasks();
     }

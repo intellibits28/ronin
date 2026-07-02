@@ -48,10 +48,23 @@ std::string ChatSkill::execute(const std::string& param, ToolContext* context) {
                 lower_query.find("capabilities") != std::string::npos ||
                 lower_query.find("ability") != std::string::npos ||
                 lower_query.find("abilities") != std::string::npos ||
+                lower_query.find("about") != std::string::npos ||
+                lower_query.find("ronin") != std::string::npos ||
+                lower_query.find("who are you") != std::string::npos ||
+                lower_query.find("စွမ်းရည်") != std::string::npos ||
+                lower_query.find("အကြောင်း") != std::string::npos ||
                 lower_query.find("help") != std::string::npos ||
                 lower_query.find("dsp") != std::string::npos ||
                 lower_query.find("sensor") != std::string::npos) {
                 
+                sysPrompt += "\n[ABOUT RONIN & SELF ABILITIES]:\n"
+                             "- Architecture: Native C++20 Cognitive Microkernel with Android Kotlin execution bridge.\n"
+                             "- Memory/Fact Vault: Long-term fact storage, AES encrypted vault, and Myanmar FTS5 semantic indexing.\n"
+                             "- Vibration Sensor: Real-time FFT, Structural Resonance detection, and Impulse Capture mode.\n"
+                             "- Audio DSP: String pitch detection and guitar tuner support.\n"
+                             "- Assistant Tools: Calendar management, alarm scheduling, SMS/Email dispatch, and location tracking.\n"
+                             "- Behavioral Reflection: Evolutionary self-learning, automated lesson extraction, and Macro-Skill synthesis.\n";
+
                 auto general_notes = m_ltm->searchNotes("capabilities");
                 matched.insert(matched.end(), general_notes.begin(), general_notes.end());
             }
