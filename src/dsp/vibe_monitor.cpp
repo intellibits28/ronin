@@ -296,7 +296,7 @@ VibeMonitorEngine& VibeMonitorEngine::getInstance() {
     return instance;
 }
 
-VibeMonitorEngine::VibeMonitorEngine() : m_configured_hp_cutoff(-1.0f), m_configured_sample_rate(-1.0f), m_burst_samples_processed(0), m_pffft_setup(nullptr), m_pffft_size(0) {
+VibeMonitorEngine::VibeMonitorEngine() : m_configured_hp_cutoff(-1.0f), m_configured_sample_rate(-1.0f), m_burst_samples_processed(0), m_pffft_setup(nullptr), m_pffft_size(0), m_filter_samples_processed(0) {
     LOGI(TAG, "VibeMonitorEngine initialized.");
 }
 
@@ -346,6 +346,9 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         m_hp_filter.reset();
         m_configured_hp_cutoff = profile.high_pass_cutoff_hz;
         m_configured_sample_rate = profile.sample_rate_hz;
+        // Fix #2: Reset settling counter whenever filter is reconfigured (cold start)
+        m_filter_samples_processed = 0;
+        LOGI(TAG, "HP filter reconfigured (cutoff=%.2fHz, fs=%.1fHz). Settling counter reset.", profile.high_pass_cutoff_hz, profile.sample_rate_hz);
     }
 
     uint32_t win_size = profile.window_size;
@@ -397,6 +400,8 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
     for (float& val : mag) {
         val = m_hp_filter.process(val);
     }
+    // Fix #2: Accumulate processed sample count for filter settling guard
+    m_filter_samples_processed += win_size;
 
     // 3. Dynamic Band-Pass Filtering for Guitar String Tuner Isolation
     TuningProfile tp = m_controller.getActiveTuningProfile();
@@ -538,16 +543,40 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             pffft_aligned_free(output);
 
             uint32_t max_idx = 1;
+            // Fix #1: Compute minimum valid bin index from high_pass_cutoff_hz
+            // delta_f = sample_rate / sub_win; min_bin = ceil(cutoff / delta_f)
+            uint32_t min_valid_bin = static_cast<uint32_t>(std::ceil(
+                profile.high_pass_cutoff_hz * (float)sub_win / profile.sample_rate_hz));
+            if (min_valid_bin < 1) min_valid_bin = 1;
+
+            uint32_t raw_peak_bin = 1;  // Fix #4: track unmasked peak for debug logging
+            float raw_peak_db = -100.0f;
+
             if (num_segments > 0) {
                 for (uint32_t k = 1; k < sub_win / 2; ++k) {
                     avg_psd[k] /= (float)num_segments;
                     float psd_db = 10.0f * std::log10(avg_psd[k] + 1e-12f);
+                    // Fix #4: track raw (unmasked) peak
+                    if (psd_db > raw_peak_db) { raw_peak_db = psd_db; raw_peak_bin = k; }
+                    // Fix #1: hard frequency-domain mask — skip bins below cutoff
+                    if (k < min_valid_bin) continue;
                     if (psd_db > max_psd) {
                         max_psd = psd_db;
                         max_idx = k;
                     }
                 }
             }
+
+            // Fix #4: Log both raw and masked peaks during STARTUP for diagnostics
+            if (m_controller.getCurrentState() == KernelSensorState::STARTUP ||
+                m_filter_samples_processed < SETTLING_SAMPLES) {
+                float raw_freq = (float)raw_peak_bin * profile.sample_rate_hz / (float)sub_win;
+                float masked_freq = (float)max_idx * profile.sample_rate_hz / (float)sub_win;
+                LOGI(TAG, "[PeakMask DEBUG] RawPeak: bin=%u freq=%.4fHz @ %.1fdB | MaskedPeak: bin=%u freq=%.4fHz @ %.1fdB | min_valid_bin=%u (%.4fHz)",
+                     raw_peak_bin, raw_freq, raw_peak_db, max_idx, masked_freq, max_psd, min_valid_bin,
+                     (float)min_valid_bin * profile.sample_rate_hz / (float)sub_win);
+            }
+
             resonance_freq = (float)max_idx * profile.sample_rate_hz / (float)sub_win;
         } else {
             ensurePffftSetup(win_size);
@@ -562,10 +591,16 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             pffft_transform_ordered(m_pffft_setup, windowed.data(), output, work, PFFFT_FORWARD);
 
             uint32_t max_idx = 1;
+            // Fix #1 (extended): apply frequency-domain mask to non-Welch path as well
+            // delta_f = sample_rate_hz / win_size
+            uint32_t min_valid_bin_full = static_cast<uint32_t>(std::ceil(
+                profile.high_pass_cutoff_hz * (float)win_size / profile.sample_rate_hz));
+            if (min_valid_bin_full < 1) min_valid_bin_full = 1;
+
             if (tp.fundamental_hz > 0.0f) {
                 float max_hps = -1e9f;
                 uint32_t limit = win_size / 6;
-                for (uint32_t i = 1; i < limit; ++i) {
+                for (uint32_t i = std::max(1u, min_valid_bin_full); i < limit; ++i) {
                     float r1 = output[2*i], im1 = output[2*i+1];
                     float p1 = (r1*r1 + im1*im1) / (float)win_size;
                     float r2 = output[4*i], im2 = output[4*i+1];
@@ -580,7 +615,7 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                     }
                 }
             } else {
-                for (uint32_t i = 1; i < win_size / 2; ++i) {
+                for (uint32_t i = std::max(1u, min_valid_bin_full); i < win_size / 2; ++i) {
                     float r = output[2*i];
                     float im = output[2*i + 1];
                     float psd = (r*r + im*im) / (float)win_size;
@@ -596,21 +631,48 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             resonance_freq = (float)max_idx * profile.sample_rate_hz / (float)win_size;
         }
 
-        res.resonance_freq_hz = resonance_freq;
-        res.psd_peak_db = max_psd;
-        res.current_metric = max_psd;
+        // Fix #2 & #3: Validity gate — suppress resonance output while filter is still settling
+        // or while we don't have enough windows for meaningful statistics.
+        bool is_settling = (m_controller.getCurrentState() == KernelSensorState::STARTUP ||
+                            m_filter_samples_processed < SETTLING_SAMPLES);
 
         m_controller.pushSignalMetric(max_psd);
-        res.moving_mean = m_controller.calculateMovingMean();
+        res.moving_mean  = m_controller.calculateMovingMean();
         res.moving_std_dev = m_controller.calculateMovingStdDev();
         res.dynamic_threshold = m_controller.getDynamicThreshold();
-        res.anomaly_detected = (max_psd > res.dynamic_threshold);
 
-        char buf[256];
-        snprintf(buf, sizeof(buf), "[%s - FREQ_DOMAIN] Peak: %.1fHz @ %.1fdB (Dynamic Threshold: %.1fdB, StdDev: %.2fdB). %s",
-                 profile.profile_name.c_str(), res.resonance_freq_hz, res.psd_peak_db, res.dynamic_threshold, res.moving_std_dev,
-                 res.anomaly_detected ? "ANOMALY DETECTED" : "Normal");
-        res.summary = buf;
+        if (is_settling || res.moving_std_dev == 0.0f) {
+            // Fix #3: Mark as INSUFFICIENT_DATA — do not report numeric resonance values
+            res.resonance_freq_hz = 0.0f;
+            res.psd_peak_db = 0.0f;
+            res.current_metric = 0.0f;
+            res.anomaly_detected = false;
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                     "[%s - FREQ_DOMAIN] INSUFFICIENT_DATA: settling=%s samples_processed=%u/%u moving_std_dev=%.4f",
+                     profile.profile_name.c_str(),
+                     is_settling ? "true" : "false",
+                     m_filter_samples_processed, SETTLING_SAMPLES,
+                     res.moving_std_dev);
+            res.summary = buf;
+            if (is_settling && m_filter_samples_processed >= SETTLING_SAMPLES && res.moving_std_dev > 0.0f) {
+                // Both conditions met — auto-advance from STARTUP to STABLE
+                LOGI(TAG, "Filter settled (%u samples) and std_dev=%.4f. Transitioning STARTUP -> STABLE.",
+                     m_filter_samples_processed, res.moving_std_dev);
+                m_controller.transitionToState(KernelSensorState::STABLE);
+            }
+        } else {
+            res.resonance_freq_hz = resonance_freq;
+            res.psd_peak_db = max_psd;
+            res.current_metric = max_psd;
+            res.anomaly_detected = (max_psd > res.dynamic_threshold);
+            char buf[256];
+            snprintf(buf, sizeof(buf), "[%s - FREQ_DOMAIN] Peak: %.4fHz @ %.1fdB (Dynamic Threshold: %.1fdB, StdDev: %.4fdB). %s",
+                     profile.profile_name.c_str(), res.resonance_freq_hz, res.psd_peak_db,
+                     res.dynamic_threshold, res.moving_std_dev,
+                     res.anomaly_detected ? "ANOMALY DETECTED" : "Normal");
+            res.summary = buf;
+        }
     }
 
     return res;

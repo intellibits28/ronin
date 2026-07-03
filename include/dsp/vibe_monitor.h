@@ -152,6 +152,18 @@ public:
 
     std::string executeCommandJson(const std::string& command_json);
 
+    // Test-only accessors (compile-guarded in production builds via RONIN_TESTING)
+    uint32_t getFilterSamplesProcessed() const { return m_filter_samples_processed; }
+    static constexpr uint32_t getSettlingSamples() { return SETTLING_SAMPLES; }
+    void resetForTest() {
+        std::lock_guard<std::mutex> lock(m_engine_mutex);
+        m_filter_samples_processed = 0;
+        m_configured_hp_cutoff = -1.0f;
+        m_configured_sample_rate = -1.0f;
+        m_hp_filter.reset();
+        m_controller.resetMetrics();
+    }
+
 private:
     SamplerController m_controller;
     HighPassBiquad m_hp_filter;
@@ -167,6 +179,13 @@ private:
     // Reusable aligned PFFFT setup cache to minimize memory reallocation
     PFFFT_Setup* m_pffft_setup;
     uint32_t m_pffft_size;
+
+    // Fix #2: Filter settling / startup transient guard.
+    // Tracks total samples processed since filter (re)configure.
+    // At 100Hz with 1.0Hz cutoff, time constant ~= 1/cutoff = 1s = 100 samples.
+    // We use 4x the time constant = 400 samples as the settling period.
+    uint32_t m_filter_samples_processed;
+    static constexpr uint32_t SETTLING_SAMPLES = 400;
 
     void ensurePffftSetup(uint32_t size);
     std::mutex m_engine_mutex;

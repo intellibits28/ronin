@@ -210,4 +210,8 @@ if(NOT RONIN_BUILD_ANDROID)
     add_executable(ronin_benchmark_test tests/ronin_benchmark_test.cpp)
     target_include_directories(ronin_benchmark_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ronin-runtime)
     target_link_libraries(ronin_benchmark_test ronin_core gtest_main)
+
+    add_executable(ronin_resonance_fix_test tests/ronin_resonance_fix_test.cpp)
+    target_include_directories(ronin_resonance_fix_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ronin-runtime)
+    target_link_libraries(ronin_resonance_fix_test ronin_core gtest_main)
 endif()
