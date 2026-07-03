@@ -631,18 +631,31 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             resonance_freq = (float)max_idx * profile.sample_rate_hz / (float)win_size;
         }
 
-        // Fix #2 & #3: Validity gate — suppress resonance output while filter is still settling
-        // or while we don't have enough windows for meaningful statistics.
-        bool is_settling = (m_controller.getCurrentState() == KernelSensorState::STARTUP ||
-                            m_filter_samples_processed < SETTLING_SAMPLES);
-
         m_controller.pushSignalMetric(max_psd);
         res.moving_mean  = m_controller.calculateMovingMean();
         res.moving_std_dev = m_controller.calculateMovingStdDev();
         res.dynamic_threshold = m_controller.getDynamicThreshold();
 
+        // Fix #2 (revised): Auto-transition BEFORE evaluating the gate so this
+        // call — not the next one — benefits from the settled state.
+        // Condition: still in STARTUP, counter has passed threshold, ring buffer
+        // has accumulated enough samples for a meaningful std_dev.
+        if (m_controller.getCurrentState() == KernelSensorState::STARTUP &&
+            m_filter_samples_processed >= SETTLING_SAMPLES &&
+            res.moving_std_dev > 0.0f) {
+            LOGI(TAG, "Filter settled (%u samples, std_dev=%.4f). Auto-transitioning STARTUP -> STABLE.",
+                 m_filter_samples_processed, res.moving_std_dev);
+            m_controller.transitionToState(KernelSensorState::STABLE);
+            // Update the state field so the current result reflects the new state
+            res.state = m_controller.getStateString();
+        }
+
+        // Fix #2 & #3: Validity gate — suppress output while still settling
+        // or when std_dev is zero (static floor / sensor disconnect).
+        bool is_settling = (m_controller.getCurrentState() == KernelSensorState::STARTUP ||
+                            m_filter_samples_processed < SETTLING_SAMPLES);
+
         if (is_settling || res.moving_std_dev == 0.0f) {
-            // Fix #3: Mark as INSUFFICIENT_DATA — do not report numeric resonance values
             res.resonance_freq_hz = 0.0f;
             res.psd_peak_db = 0.0f;
             res.current_metric = 0.0f;
@@ -655,12 +668,6 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                      m_filter_samples_processed, SETTLING_SAMPLES,
                      res.moving_std_dev);
             res.summary = buf;
-            if (is_settling && m_filter_samples_processed >= SETTLING_SAMPLES && res.moving_std_dev > 0.0f) {
-                // Both conditions met — auto-advance from STARTUP to STABLE
-                LOGI(TAG, "Filter settled (%u samples) and std_dev=%.4f. Transitioning STARTUP -> STABLE.",
-                     m_filter_samples_processed, res.moving_std_dev);
-                m_controller.transitionToState(KernelSensorState::STABLE);
-            }
         } else {
             res.resonance_freq_hz = resonance_freq;
             res.psd_peak_db = max_psd;

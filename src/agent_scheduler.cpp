@@ -315,20 +315,32 @@ void AgentScheduler::workerLoop() {
                             double freq = jRes.value("resonance_freq_hz", 0.0);
                             double psd = jRes.value("psd_peak_db", -100.0);
                             bool anomaly = jRes.value("anomaly_detected", false);
+                            std::string summary = jRes.value("summary", "");
+                            bool is_insufficient = (summary.find("INSUFFICIENT_DATA") != std::string::npos);
 
-                            m_executor->getBeliefState().updateBelief("world.env.resonance_freq_hz", std::to_string(freq), 0.95f);
-                            m_executor->getBeliefState().updateBelief("world.env.psd_peak_db", std::to_string(psd), 0.90f);
-                            m_executor->getBeliefState().updateBelief("world.env.anomaly_detected", anomaly ? "true" : "false", 1.0f);
+                            if (!is_insufficient) {
+                                m_executor->getBeliefState().updateBelief("world.env.resonance_freq_hz", std::to_string(freq), 0.95f);
+                                m_executor->getBeliefState().updateBelief("world.env.psd_peak_db", std::to_string(psd), 0.90f);
+                                m_executor->getBeliefState().updateBelief("world.env.anomaly_detected", anomaly ? "true" : "false", 1.0f);
+                            }
 
                             char buf[256];
-                            if (anomaly) {
+                            if (is_insufficient) {
+                                std::string state = jRes.value("state", "STARTUP");
+                                uint32_t samples = jRes.value("samples_processed", 0);
+                                double std_dev = jRes.value("moving_std_dev", 0.0);
+                                snprintf(buf, sizeof(buf), "[AGENT] ⏳ Sensor settling (%s). Waiting for stable data. samples_processed=%u, std_dev=%.4f. Retry required.",
+                                         state.c_str(), samples, std_dev);
+                            } else if (anomaly) {
                                 snprintf(buf, sizeof(buf), "[AGENT] ⚠️ Vibration Anomaly Detected! Frequency: %.1fHz (PSD: %.1fdB). Environment state synthesized in World Memory.", freq, psd);
                             } else {
-                                snprintf(buf, sizeof(buf), "[AGENT] ✅ Environment Resonance Normal (%.1fHz, %.1fdB). World Memory validated. Goal achieved.", freq, psd);
+                                snprintf(buf, sizeof(buf), "[AGENT] ✅ Environment Resonance Normal (%.4fHz, %.1fdB). World Memory validated. Goal achieved.", freq, psd);
                             }
                             Capability::HardwareBridge::pushMessage(buf);
 
-                            m_executor->getReflectionEngine().reflectOnRecentTasks();
+                            if (!is_insufficient) {
+                                m_executor->getReflectionEngine().reflectOnRecentTasks();
+                            }
                         } catch (...) {}
                     }
                 }
