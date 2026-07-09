@@ -15,13 +15,16 @@
 #include <string>
 #include <memory>
 #include "dsp/vibe_monitor.h"
+#include "intent_engine.h"
 #include <nlohmann/json.hpp>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
+using namespace Ronin::Kernel;
 using namespace Ronin::Kernel::DSP;
+using namespace Ronin::Kernel::Intent;
 
 // ──────────────────────────────────────────────────────────────
 // Helpers
@@ -280,3 +283,28 @@ TEST(ShmPipelineTest, PhaseCOutlierGateHysteresisStateMachine) {
     EXPECT_EQ(out6.streak, 6u);
     EXPECT_NEAR(kf.getState(), 18.0f, 0.01f); // State successfully updated without false negative!
 }
+
+TEST(ShmPipelineTest, CompoundSensorEmailPlanBypass) {
+    TaskPlanner planner(nullptr, nullptr);
+    AgentPlan plan_en;
+    bool handled_en = planner.tryFastPathRoute("analyze vibration and send result to မသိမ့် via email", plan_en);
+    EXPECT_TRUE(handled_en);
+    EXPECT_EQ(plan_en.intent_name, "SEND_MAIL");
+    ASSERT_EQ(plan_en.plan_steps.size(), 3u);
+    EXPECT_EQ(plan_en.plan_steps[0], "analyze_vibration");
+    EXPECT_EQ(plan_en.plan_steps[1], "CONTACTS");
+    EXPECT_EQ(plan_en.plan_steps[2], "SEND_MAIL");
+    EXPECT_EQ(plan_en.parameters["recipient_name"], "မသိမ့်");
+    EXPECT_EQ(plan_en.parameters["sensor_type"], "RESONANCE");
+
+    AgentPlan plan_my;
+    bool handled_my = planner.tryFastPathRoute("တုန်ခါမှု စစ်ဆေးပြီး မသိမ့် ဆီ email ပို့ပေးပါ", plan_my);
+    EXPECT_TRUE(handled_my);
+    EXPECT_EQ(plan_my.intent_name, "SEND_MAIL");
+    ASSERT_EQ(plan_my.plan_steps.size(), 3u);
+    EXPECT_EQ(plan_my.plan_steps[0], "analyze_vibration");
+    EXPECT_EQ(plan_my.plan_steps[1], "CONTACTS");
+    EXPECT_EQ(plan_my.plan_steps[2], "SEND_MAIL");
+    EXPECT_EQ(plan_my.parameters["recipient_name"], "မသိမ့်");
+}
+

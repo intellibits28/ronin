@@ -196,7 +196,9 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "User: 'aung aung ဆီ email ပို့ပါ' -> {\"intent\":\"SEND_MAIL\",\"plan\":[\"CONTACTS\",\"SEND_MAIL\"],\"parameters\":{\"recipient_name\":\"aung aung\"}} "
         "User: 'I want to tune my guitar' -> {\"intent\":\"PITCH_ANALYSIS\",\"plan\":[\"audio_capture\",\"fft\",\"detect_peaks\",\"note_mapper\"],\"parameters\":{}} "
         "User: 'guitar tuner run' -> {\"intent\":\"PITCH_ANALYSIS\",\"plan\":[\"audio_capture\",\"fft\",\"detect_peaks\",\"note_mapper\"],\"parameters\":{}} "
+        "User: 'analyze vibration and send result to မသိမ့် via email' -> {\"intent\":\"SEND_MAIL\",\"plan\":[\"analyze_vibration\",\"CONTACTS\",\"SEND_MAIL\"],\"parameters\":{\"sensor_type\":\"RESONANCE\",\"recipient_name\":\"မသိမ့်\"}} "
         "User: 'တုန်ခါမှု စစ်ဆေးပေးပါ' -> {\"intent\":\"ANALYZE_VIBRATION\",\"plan\":[\"analyze_vibration\"],\"parameters\":{\"sensor_type\":\"RESONANCE\"}} "
+        "User: 'တုန်ခါမှု စစ်ဆေးပြီး မသိမ့် ဆီ email ပို့ပေးပါ' -> {\"intent\":\"SEND_MAIL\",\"plan\":[\"analyze_vibration\",\"CONTACTS\",\"SEND_MAIL\"],\"parameters\":{\"sensor_type\":\"RESONANCE\",\"recipient_name\":\"မသိမ့်\"}} "
         "User: 'analyze vibration' -> {\"intent\":\"ANALYZE_VIBRATION\",\"plan\":[\"analyze_vibration\"],\"parameters\":{\"sensor_type\":\"RESONANCE\"}} "
         "User: 'အဆောက်အအုံ ကြံ့ခိုင်မှု စစ်ဆေးပေးပါ (SHM health check)' -> {\"intent\":\"ANALYZE_VIBRATION\",\"plan\":[\"analyze_vibration\"],\"parameters\":{\"sensor_type\":\"STRUCTURAL_RESONANCE\"}} "
         "User: 'check structural health and stability' -> {\"intent\":\"ANALYZE_VIBRATION\",\"plan\":[\"analyze_vibration\"],\"parameters\":{\"sensor_type\":\"STRUCTURAL_RESONANCE\"}} "
@@ -668,6 +670,65 @@ bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan
             norm.replace(p, kw.length(), ":00");
             p += 3;
         }
+    }
+
+    // 1.5 Compound Sensor Reporting Check
+    bool has_sensor_kw = (norm.find("vibration") != std::string::npos || norm.find("တုန်ခါမှု") != std::string::npos ||
+                          norm.find("resonance") != std::string::npos || norm.find("sensor") != std::string::npos);
+    bool has_dispatch_kw = (norm.find("mail") != std::string::npos || norm.find("email") != std::string::npos ||
+                            norm.find("sms") != std::string::npos || norm.find("ပို့") != std::string::npos ||
+                            norm.find("send") != std::string::npos);
+    if (has_sensor_kw && has_dispatch_kw) {
+        bool is_email = (norm.find("mail") != std::string::npos || norm.find("email") != std::string::npos || input.find("email") != std::string::npos);
+        if (is_email) {
+            out_plan.intent_name = "SEND_MAIL";
+            out_plan.plan_steps = {"analyze_vibration", "CONTACTS", "SEND_MAIL"};
+        } else {
+            out_plan.intent_name = "SEND_SMS";
+            out_plan.plan_steps = {"analyze_vibration", "CONTACTS", "SEND_SMS"};
+        }
+        out_plan.parameters["sensor_type"] = "RESONANCE";
+        
+        // Extract recipient name if present ("to <name> via" or "<name> ဆီ")
+        std::string recipient = "";
+        size_t to_pos = norm.find("to ");
+        if (to_pos != std::string::npos) {
+            size_t start_p = to_pos + 3;
+            size_t end_p = norm.find(" via", start_p);
+            if (end_p == std::string::npos) end_p = norm.find(" ", start_p + 15);
+            if (end_p != std::string::npos && end_p > start_p) recipient = trim(norm.substr(start_p, end_p - start_p));
+            else recipient = trim(norm.substr(start_p));
+        } else {
+            size_t si_pos = norm.find("ဆီ");
+            if (si_pos != std::string::npos && si_pos > 0) {
+                size_t search_end = si_pos;
+                while (search_end > 0 && norm[search_end - 1] == ' ') search_end--;
+                size_t start_p = norm.rfind(" ", search_end > 0 ? search_end - 1 : 0);
+                if (start_p != std::string::npos && start_p < search_end) {
+                    recipient = trim(norm.substr(start_p + 1, search_end - (start_p + 1)));
+                } else {
+                    recipient = trim(norm.substr(0, search_end));
+                }
+            }
+        }
+        if (!recipient.empty()) {
+            size_t p_pos = recipient.rfind("ပြီး ");
+            if (p_pos != std::string::npos) {
+                recipient = trim(recipient.substr(p_pos + 6));
+            } else {
+                size_t p_pos2 = recipient.rfind("ပြီး");
+                if (p_pos2 != std::string::npos && p_pos2 + 12 <= recipient.length()) {
+                    recipient = trim(recipient.substr(p_pos2 + 12));
+                }
+            }
+        }
+        if (!recipient.empty() && recipient != "vibration" && recipient != "result") {
+            out_plan.parameters["recipient_name"] = recipient;
+        }
+        out_plan.parameters["original_query"] = input;
+        auto now = std::chrono::system_clock::now().time_since_epoch().count();
+        out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
+        return true;
     }
 
     // 2. Alarm Check

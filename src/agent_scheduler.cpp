@@ -86,6 +86,10 @@ void AgentScheduler::workerLoop() {
             bool all_steps_success = true;
             bool is_pitch_analysis = (current_session->getIntent() == "PITCH_ANALYSIS");
             bool is_vibration_analysis = (current_session->getIntent() == "ANALYZE_VIBRATION" || current_session->getIntent() == "SENSOR");
+            for (const auto& st : current_session->getPlan()) {
+                if (st == "audio_capture" || st == "fft" || st == "detect_peaks" || st == "note_mapper") is_pitch_analysis = true;
+                if (st == "analyze_vibration" || st == "read_vibration_data" || st == "read_sensor_data" || st == "sensor") is_vibration_analysis = true;
+            }
             int tuning_iteration = 0;
             const int MAX_TUNING_ITERATIONS = 100;
             const int MAX_SHM_ITERATIONS = 20;
@@ -105,6 +109,34 @@ void AgentScheduler::workerLoop() {
                 all_steps_success = true;
                 for (const auto& step : current_session->getPlan()) {
                     LOGI(TAG, "L8 Scheduler: Executing Step -> '%s'", step.c_str());
+                    bool is_sensor_step = (step == "analyze_vibration" || step == "read_vibration_data" || step == "read_sensor_data" || step == "sensor" ||
+                                           step == "audio_capture" || step == "fft" || step == "detect_peaks" || step == "note_mapper");
+                    if ((is_vibration_analysis || is_pitch_analysis) && !is_sensor_step) {
+                        bool sensor_ready = false;
+                        if (is_vibration_analysis && m_executor) {
+                            std::string vib_res = m_executor->getBlackboardValue("result_analyze_vibration");
+                            if (vib_res.empty()) vib_res = m_executor->getBlackboardValue("result_read_vibration_data");
+                            if (!vib_res.empty()) {
+                                try {
+                                    auto jRes = nlohmann::json::parse(vib_res);
+                                    std::string summary = jRes.value("summary", "");
+                                    if (summary.find("INSUFFICIENT_DATA") == std::string::npos) {
+                                        sensor_ready = true;
+                                    }
+                                } catch (...) {}
+                            }
+                        }
+                        if (is_pitch_analysis && m_executor) {
+                            std::string note_res = m_executor->getBlackboardValue("result_note_mapper");
+                            if (!note_res.empty() && note_res.find("IN_TUNE") != std::string::npos) {
+                                sensor_ready = true;
+                            }
+                        }
+                        if (!sensor_ready && tuning_iteration < max_iters) {
+                            LOGI(TAG, "L8 Scheduler: Skipping downstream step '%s' while sensor analysis is settling (iteration %d/%d)...", step.c_str(), tuning_iteration, max_iters);
+                            continue;
+                        }
+                    }
                     if (tuning_iteration == 1 || step == "audio_capture" || step == "fft" || step == "detect_peaks" || step == "note_mapper") {
                         if (tuning_iteration == 1) Capability::HardwareBridge::pushMessage("[AGENT] Step: " + step);
                     }

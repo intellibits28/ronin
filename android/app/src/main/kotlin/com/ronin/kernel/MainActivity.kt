@@ -1035,10 +1035,18 @@ class MainActivity : FragmentActivity() {
                 }
                 actionName.contains("CONTACT") || actionName.contains("RESOLVE") || toolName == "CONTACTS" -> {
                     val name = params["recipient_name"] ?: params["recipient"] ?: params["contact_name"] ?: "Unknown"
-                    val resolved = resolveContactName(name)
-                    if (resolved == "PERMISSION_DENIED") "Error: Permission Denied"
-                    else if (resolved.startsWith("NOT_FOUND")) "Error: Contact not found: $name"
-                    else resolved
+                    val resolvedPhone = resolveContactName(name)
+                    val resolvedEmail = resolveContactEmail(name)
+                    if (intentContext.contains("MAIL") || actionName.contains("MAIL")) {
+                        if (resolvedEmail.isNotEmpty()) resolvedEmail
+                        else if (resolvedPhone == "PERMISSION_DENIED") "Error: Permission Denied"
+                        else if (resolvedPhone.startsWith("NOT_FOUND")) name
+                        else name
+                    } else {
+                        if (resolvedPhone == "PERMISSION_DENIED") "Error: Permission Denied"
+                        else if (resolvedPhone.startsWith("NOT_FOUND")) "Error: Contact not found: $name"
+                        else resolvedPhone
+                    }
                 }
                 
                 // 3. LOCATION & MAPS
@@ -1233,8 +1241,12 @@ class MainActivity : FragmentActivity() {
                         var recipient = params["recipient_name"] ?: params["recipient_email"] ?: params["recipient"] ?: ""
                         if (conJson != null && conJson.startsWith("{")) {
                             recipient = JSONObject(conJson).optString("email", recipient)
-                        } else if (conJson != null && !conJson.startsWith("Error")) {
-                            recipient = conJson
+                        } else if (conJson != null && !conJson.startsWith("Error") && !conJson.startsWith("NOT_FOUND")) {
+                            if (conJson.contains("@")) {
+                                recipient = conJson
+                            } else if (!conJson.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) {
+                                if (recipient.isEmpty()) recipient = conJson
+                            }
                         }
                         
                         // Resolve recipient to email address if it is not an email
@@ -1242,17 +1254,45 @@ class MainActivity : FragmentActivity() {
                             val resolved = resolveContactEmail(recipient)
                             if (resolved.isNotEmpty()) {
                                 recipient = resolved
-                            } else {
-                                recipient = "" // Clear to force choose recipient in email app chooser
                             }
+                            // NOTE: Do NOT clear recipient if email is not resolved!
+                            // Keep 'recipient' (e.g., "မသိမ့်") so the user sees who the mail is for in the mail app composer.
                         }
                         
-                        val subject = params["subject"] ?: "Ronin Mail"
+                        val subject = params["subject"] ?: "Ronin Report"
                         var body = params["message"] ?: params["mail_body"] ?: params["content"] ?: ""
                         
-                        val vaultJson = params["context_result_VAULT"] ?: params["context_result_MEMORY"]
-                        if (!vaultJson.isNullOrEmpty() && !vaultJson.startsWith("Error")) {
-                            body = vaultJson
+                        val sensorJson = params["context_result_SENSOR"] ?: params["context_result_analyze_vibration"] ?: params["context_result_read_vibration_data"]
+                        if (!sensorJson.isNullOrEmpty() && !sensorJson.startsWith("Error")) {
+                            try {
+                                val j = JSONObject(sensorJson)
+                                val freq = j.optDouble("filtered_resonance_freq_hz", j.optDouble("resonance_freq_hz", 0.0))
+                                val psd = j.optDouble("psd_peak_db", 0.0)
+                                val health = j.optDouble("health_index_pct", 100.0)
+                                val risk = j.optString("risk_level", "UNKNOWN")
+                                val summary = j.optString("summary", "Vibration analysis complete.")
+                                val shiftDetected = j.optBoolean("structural_shift_detected", false)
+                                val shiftDelta = j.optDouble("shift_delta_hz", 0.0)
+                                
+                                body = """
+                                    Ronin SHM Vibration Analysis Report:
+                                    
+                                    • Resonance Frequency (f0): ${String.format("%.2f", freq)} Hz
+                                    • PSD Peak Power: ${String.format("%.1f", psd)} dB
+                                    • Structural Health Index: ${String.format("%.1f", health)}%
+                                    • Risk Level: $risk
+                                    • Structural Shift Detected: ${if (shiftDetected) "YES (${String.format("%.2f", shiftDelta)} Hz)" else "No"}
+                                    
+                                    Summary: $summary
+                                """.trimIndent()
+                            } catch (e: Exception) {
+                                if (body.isEmpty()) body = sensorJson
+                            }
+                        } else {
+                            val vaultJson = params["context_result_VAULT"] ?: params["context_result_MEMORY"]
+                            if (!vaultJson.isNullOrEmpty() && !vaultJson.startsWith("Error")) {
+                                body = vaultJson
+                            }
                         }
 
                         runOnUiThread {
