@@ -161,14 +161,14 @@ public:
     ShmBayesianHealthScorer() { reset(); }
 
     void reset() {
-        m_posterior_healthy = 1.0f; // Initial belief: 100% healthy at baseline capture
+        m_posterior_healthy = 0.985f; // Initial belief: 98.5% healthy (confidence margin accounting for sensor/environmental noise)
         m_is_active = false;
         m_evidence_count = 0;
     }
 
     void activate() {
         if (!m_is_active) {
-            m_posterior_healthy = 1.0f;
+            m_posterior_healthy = 0.985f;
             m_is_active = true;
             m_evidence_count = 0;
         }
@@ -216,18 +216,18 @@ public:
         float den = num + p_e_given_d * (1.0f - prior_h) + 1e-9f;
         float posterior = num / den;
 
-        // 4. Natural recovery / relaxation towards 1.0 during stable, undisturbed periods
+        // 4. Natural recovery / relaxation towards 0.985 during stable, undisturbed periods
         if (!shift_detected && delta_ratio < 0.015f && kalman_uncertainty < 0.2f) {
-            posterior = posterior * 0.98f + 1.0f * 0.02f;
+            posterior = posterior * 0.98f + 0.985f * 0.02f;
         }
 
-        // Clamp belief between 0.001 and 1.0 to prevent complete numerical trapping
-        m_posterior_healthy = std::clamp(posterior, 0.001f, 1.0f);
+        // Clamp belief between 0.001 and 0.985 to prevent numerical trapping and maintain confidence margin
+        m_posterior_healthy = std::clamp(posterior, 0.001f, 0.985f);
         return getHealthIndexPct();
     }
 
     float getHealthIndexPct() const {
-        return m_posterior_healthy * 100.0f;
+        return std::min(98.5f, m_posterior_healthy * 100.0f);
     }
 
     ShmRiskLevel getRiskLevel(bool is_settling = false) const {
@@ -365,10 +365,18 @@ struct VibeMonitorResult {
     // SHM Phase A: Top-3 Candidate local maxima above noise floor
     std::vector<ShmPeakCandidate> top_candidates;
     // SHM Phase B: Bayesian Structural Health Index ($0-100\%$) & Decision Engine
-    float health_index_pct = 100.0f;
+    float health_index_pct = 98.5f;
     ShmRiskLevel risk_level = ShmRiskLevel::UNKNOWN;
     std::string risk_level_str = "UNKNOWN";
     std::string summary;
+    // SHM Decision Engine v2: Advanced derived engineering metrics & 3-Layer separation
+    float snr_db = 0.0f;
+    float peak_prominence_db = 0.0f;
+    float q_factor = 0.0f;
+    float damping_ratio_pct = 0.0f;
+    float spectral_entropy = 0.0f;
+    float modal_confidence_pct = 0.0f;
+    std::string selection_reason;
 };
 
 // VibeMonitor Engine implementing scenario-based sensor analysis

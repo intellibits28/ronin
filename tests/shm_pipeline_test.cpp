@@ -206,9 +206,12 @@ TEST(ShmPipelineTest, PhaseBBayesianHealthScoringAndDecisionEngine) {
     // Initial stable evaluation at baseline frequency (5.0 Hz)
     auto sig_base = makeShmSignal(5.0f);
     VibeMonitorResult res_base = eng->analyzePipeline(sig_base, sig_base, sig_base);
-    EXPECT_NEAR(res_base.health_index_pct, 100.0f, 2.0f);
+    EXPECT_NEAR(res_base.health_index_pct, 98.5f, 0.5f);
     EXPECT_EQ(res_base.risk_level, ShmRiskLevel::HEALTHY);
     EXPECT_EQ(res_base.risk_level_str, "HEALTHY");
+    EXPECT_GT(res_base.snr_db, 5.0f);
+    EXPECT_GT(res_base.q_factor, 1.0f);
+    EXPECT_GT(res_base.modal_confidence_pct, 50.0f);
 
     // Trigger impulse event and transition back
     eng->getController().transitionToState(KernelSensorState::IMPULSE_MODE);
@@ -224,9 +227,19 @@ TEST(ShmPipelineTest, PhaseBBayesianHealthScoringAndDecisionEngine) {
 
     EXPECT_LT(res_shift.health_index_pct, 50.0f);
     EXPECT_TRUE(res_shift.risk_level == ShmRiskLevel::DEGRADED || res_shift.risk_level == ShmRiskLevel::CRITICAL);
+    EXPECT_NE(res_shift.shift_delta_hz, 0.0f);
 
-    // Check JSON serialization of Phase B fields
+    // Check JSON serialization of Phase B and SHM Decision Engine v2 (3-Layer Hierarchy) fields
     std::string json_str = eng->executeCommandJson("RESONANCE");
     EXPECT_NE(json_str.find("health_index_pct"), std::string::npos);
     EXPECT_NE(json_str.find("risk_level"), std::string::npos);
+    EXPECT_NE(json_str.find("snr_db"), std::string::npos);
+    EXPECT_NE(json_str.find("q_factor"), std::string::npos);
+    EXPECT_NE(json_str.find("damping_ratio_pct"), std::string::npos);
+    EXPECT_NE(json_str.find("spectral_entropy"), std::string::npos);
+    EXPECT_NE(json_str.find("modal_confidence_pct"), std::string::npos);
+    EXPECT_NE(json_str.find("selection_reason"), std::string::npos);
+    EXPECT_NE(json_str.find("layer_1_raw_measurements"), std::string::npos);
+    EXPECT_NE(json_str.find("layer_2_derived_metrics"), std::string::npos);
+    EXPECT_NE(json_str.find("layer_3_decision_outputs"), std::string::npos);
 }
