@@ -114,7 +114,8 @@ void AgentScheduler::workerLoop() {
                     if ((is_vibration_analysis || is_pitch_analysis) && !is_sensor_step) {
                         bool sensor_ready = false;
                         if (is_vibration_analysis && m_executor) {
-                            std::string vib_res = m_executor->getBlackboardValue("result_analyze_vibration");
+                            std::string vib_res = m_executor->getBlackboardValue("result_SENSOR");
+                            if (vib_res.empty()) vib_res = m_executor->getBlackboardValue("result_analyze_vibration");
                             if (vib_res.empty()) vib_res = m_executor->getBlackboardValue("result_read_vibration_data");
                             if (!vib_res.empty()) {
                                 try {
@@ -341,7 +342,8 @@ void AgentScheduler::workerLoop() {
                 }
 
                 if (is_vibration_analysis && m_executor) {
-                    std::string vib_res = m_executor->getBlackboardValue("result_analyze_vibration");
+                    std::string vib_res = m_executor->getBlackboardValue("result_SENSOR");
+                    if (vib_res.empty()) vib_res = m_executor->getBlackboardValue("result_analyze_vibration");
                     if (vib_res.empty()) vib_res = m_executor->getBlackboardValue("result_read_vibration_data");
                     if (!vib_res.empty()) {
                         try {

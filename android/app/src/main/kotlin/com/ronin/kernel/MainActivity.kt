@@ -1245,18 +1245,16 @@ class MainActivity : FragmentActivity() {
                             if (conJson.contains("@")) {
                                 recipient = conJson
                             } else if (!conJson.matches(Regex("^[+]?[0-9\\- ]{5,}+$"))) {
-                                if (recipient.isEmpty()) recipient = conJson
+                                if (recipient.isEmpty() || recipient == "Unknown") recipient = conJson
                             }
                         }
                         
                         // Resolve recipient to email address if it is not an email
-                        if (!recipient.isEmpty() && !recipient.contains("@")) {
+                        if (recipient.isNotEmpty() && !recipient.contains("@")) {
                             val resolved = resolveContactEmail(recipient)
                             if (resolved.isNotEmpty()) {
                                 recipient = resolved
                             }
-                            // NOTE: Do NOT clear recipient if email is not resolved!
-                            // Keep 'recipient' (e.g., "မသိမ့်") so the user sees who the mail is for in the mail app composer.
                         }
                         
                         val subject = params["subject"] ?: "Ronin Report"
@@ -1296,20 +1294,19 @@ class MainActivity : FragmentActivity() {
                         }
 
                         runOnUiThread {
-                            val intent = if (recipient.isEmpty()) {
-                                Intent(Intent.ACTION_SENDTO).apply {
-                                    data = Uri.parse("mailto:")
-                                    putExtra(Intent.EXTRA_SUBJECT, subject)
-                                    putExtra(Intent.EXTRA_TEXT, body)
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                            } else {
-                                Intent(Intent.ACTION_SENDTO).apply {
+                            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                if (recipient.isNotEmpty() && recipient.contains("@")) {
                                     data = Uri.parse("mailto:${Uri.encode(recipient)}")
-                                    putExtra(Intent.EXTRA_SUBJECT, subject)
-                                    putExtra(Intent.EXTRA_TEXT, body)
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    putExtra(Intent.EXTRA_EMAIL, arrayOf(recipient))
+                                } else {
+                                    data = Uri.parse("mailto:")
+                                    if (recipient.isNotEmpty() && recipient != "Unknown") {
+                                        putExtra(Intent.EXTRA_EMAIL, arrayOf(recipient))
+                                    }
                                 }
+                                putExtra(Intent.EXTRA_SUBJECT, subject)
+                                putExtra(Intent.EXTRA_TEXT, body)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             startActivity(intent)
                         }
