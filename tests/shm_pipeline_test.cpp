@@ -229,7 +229,7 @@ TEST(ShmPipelineTest, PhaseBBayesianHealthScoringAndDecisionEngine) {
     EXPECT_TRUE(res_shift.risk_level == ShmRiskLevel::DEGRADED || res_shift.risk_level == ShmRiskLevel::CRITICAL);
     EXPECT_NE(res_shift.shift_delta_hz, 0.0f);
 
-    // Check JSON serialization of Phase B and SHM Decision Engine v2 (3-Layer Hierarchy) fields
+    // Check JSON serialization of Phase B and SHM Decision Engine v2/v3 fields
     std::string json_str = eng->executeCommandJson("RESONANCE");
     EXPECT_NE(json_str.find("health_index_pct"), std::string::npos);
     EXPECT_NE(json_str.find("risk_level"), std::string::npos);
@@ -239,7 +239,44 @@ TEST(ShmPipelineTest, PhaseBBayesianHealthScoringAndDecisionEngine) {
     EXPECT_NE(json_str.find("spectral_entropy"), std::string::npos);
     EXPECT_NE(json_str.find("modal_confidence_pct"), std::string::npos);
     EXPECT_NE(json_str.find("selection_reason"), std::string::npos);
+    EXPECT_NE(json_str.find("selection"), std::string::npos);
+    EXPECT_NE(json_str.find("baseline"), std::string::npos);
+    EXPECT_NE(json_str.find("health_components"), std::string::npos);
+    EXPECT_NE(json_str.find("trend"), std::string::npos);
     EXPECT_NE(json_str.find("layer_1_raw_measurements"), std::string::npos);
     EXPECT_NE(json_str.find("layer_2_derived_metrics"), std::string::npos);
     EXPECT_NE(json_str.find("layer_3_decision_outputs"), std::string::npos);
+}
+
+TEST(ShmPipelineTest, PhaseCOutlierGateHysteresisStateMachine) {
+    ShmKalmanFilter kf(1e-4f, 0.05f);
+
+    // 1. Initial measurement at 5.0 Hz
+    auto out1 = kf.processWithHysteresis(5.0f);
+    EXPECT_TRUE(out1.gate_accepted);
+    EXPECT_EQ(out1.outlier_state, ShmKalmanFilter::OutlierState::NORMAL);
+    EXPECT_NEAR(kf.getState(), 5.0f, 0.01f);
+
+    // 2. Single transient spike at 18.0 Hz -> Rejected by Kalman gate
+    auto out2 = kf.processWithHysteresis(18.0f);
+    EXPECT_FALSE(out2.gate_accepted);
+    EXPECT_EQ(out2.outlier_state, ShmKalmanFilter::OutlierState::NORMAL);
+    EXPECT_EQ(out2.streak, 1u);
+    EXPECT_LT(kf.getState(), 6.0f); // State remains close to 5.0 Hz
+
+    // 3. Repeated spike (Consecutive window 2 & 3) -> Promoted to HYSTERESIS_CANDIDATE
+    kf.processWithHysteresis(18.0f);
+    auto out3 = kf.processWithHysteresis(18.0f);
+    EXPECT_FALSE(out3.gate_accepted);
+    EXPECT_EQ(out3.outlier_state, ShmKalmanFilter::OutlierState::HYSTERESIS_CANDIDATE);
+    EXPECT_EQ(out3.streak, 3u);
+
+    // 4. Persistent shift (Consecutive window 4, 5, 6) -> Confirmed structural shift, force update!
+    kf.processWithHysteresis(18.0f);
+    kf.processWithHysteresis(18.0f);
+    auto out6 = kf.processWithHysteresis(18.0f);
+    EXPECT_TRUE(out6.gate_accepted);
+    EXPECT_EQ(out6.outlier_state, ShmKalmanFilter::OutlierState::HYSTERESIS_CONFIRMED_SHIFT);
+    EXPECT_EQ(out6.streak, 6u);
+    EXPECT_NEAR(kf.getState(), 18.0f, 0.01f); // State successfully updated without false negative!
 }

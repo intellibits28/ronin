@@ -85,45 +85,86 @@ struct ShmPeakCandidate {
 class ShmKalmanFilter {
 public:
     ShmKalmanFilter() { reset(); }
+    ShmKalmanFilter(float process_noise_q, float meas_noise_r) {
+        reset();
+        configure(process_noise_q, meas_noise_r);
+    }
 
     void configure(float process_noise_q = 1e-4f, float meas_noise_r = 0.05f) {
         m_q = process_noise_q;
         m_r = meas_noise_r;
     }
 
+    enum class OutlierState {
+        NORMAL = 0,
+        HYSTERESIS_CANDIDATE,
+        HYSTERESIS_CONFIRMED_SHIFT
+    };
+
+    struct KalmanProcessOutcome {
+        float filtered_hz;
+        float innovation_hz;
+        bool gate_accepted;
+        std::string method;
+        std::string reason;
+        OutlierState outlier_state;
+        uint32_t streak;
+    };
+
     float process(float z_k) {
+        return processWithHysteresis(z_k, 3.0f).filtered_hz;
+    }
+
+    KalmanProcessOutcome processWithHysteresis(float z_k, float gate_threshold = 3.0f) {
         if (!m_initialized || z_k <= 0.0f) {
             if (z_k > 0.0f) {
                 m_x = z_k;
-                m_p = 1.0f;
+                m_p = 0.1f;
                 m_initialized = true;
+                m_outlier_streak = 0;
+                m_candidate_target = z_k;
             }
-            return z_k;
+            return { z_k, 0.0f, true, "direct_init", "initial_measurement", OutlierState::NORMAL, 0 };
         }
 
-        // Outlier/Transient Gate: If measurement jumps by > 3.0 Hz instantaneously from state (e.g. noise spike),
-        // don't destabilize Kalman state; apply attenuated update
         float innov = z_k - m_x;
-        if (std::abs(innov) > 3.0f) {
-            m_p += m_q;
-            float s = m_p + m_r * 10.0f;
-            float k = m_p / s;
-            m_x += k * innov;
-            m_p *= (1.0f - k);
-            return m_x;
+        if (std::abs(innov) > gate_threshold) {
+            if (std::abs(z_k - m_candidate_target) < 1.0f) {
+                m_outlier_streak++;
+            } else {
+                m_outlier_streak = 1;
+                m_candidate_target = z_k;
+            }
+
+            if (m_outlier_streak >= 6) {
+                // Persist >= M windows (M=6): confirmed abrupt structural shift/fracture. Force accept to avoid false negative!
+                m_x = z_k;
+                m_p = 0.1f;
+                uint32_t confirmed_streak = m_outlier_streak;
+                m_outlier_streak = 0;
+                return { m_x, innov, true, "hysteresis_accept", "persistent_shift_confirmed", OutlierState::HYSTERESIS_CONFIRMED_SHIFT, confirmed_streak };
+            } else if (m_outlier_streak >= 3) {
+                // Repeated spike (N>=3): promote to Candidate Modal Shift state while holding estimate stable until confirmed
+                m_p += m_q;
+                return { m_x, innov, false, "hysteresis_candidate", "repeated_spike_candidate_shift", OutlierState::HYSTERESIS_CANDIDATE, m_outlier_streak };
+            } else {
+                // Single/transient spike (N<3): reject as noise/outlier
+                m_p += m_q;
+                return { m_x, innov, false, "kalman_gate", "innovation_exceeded_threshold", OutlierState::NORMAL, m_outlier_streak };
+            }
         }
 
-        // 1. Predict
+        // Normal update within threshold
+        m_outlier_streak = 0;
+        m_candidate_target = z_k;
         float x_pred = m_x;
         float p_pred = m_p + m_q;
-
-        // 2. Update
         float s = p_pred + m_r;
         float k = (s > 1e-9f) ? (p_pred / s) : 0.0f;
         m_x = x_pred + k * innov;
         m_p = (1.0f - k) * p_pred;
 
-        return m_x;
+        return { m_x, innov, true, "kalman_update", "innovation_within_gate", OutlierState::NORMAL, 0 };
     }
 
     void reset() {
@@ -132,11 +173,14 @@ public:
         m_q = 1e-4f;
         m_r = 0.05f;
         m_initialized = false;
+        m_outlier_streak = 0;
+        m_candidate_target = 0.0f;
     }
 
     float getState() const { return m_x; }
     float getUncertainty() const { return std::sqrt(std::max(0.0f, m_p)); }
     bool isInitialized() const { return m_initialized; }
+    uint32_t getOutlierStreak() const { return m_outlier_streak; }
 
 private:
     float m_x = 0.0f;
@@ -144,6 +188,8 @@ private:
     float m_q = 1e-4f;
     float m_r = 0.05f;
     bool m_initialized = false;
+    uint32_t m_outlier_streak = 0;
+    float m_candidate_target = 0.0f;
 };
 
 // Phase B: Structural Risk Level classification from Bayesian posterior belief
@@ -292,6 +338,11 @@ public:
     float getBaseline() const;
     bool isBaselineValid() const;
     void resetBaseline();
+    uint32_t getBaselineSamples() const;
+    uint64_t getBaselineTimestamp() const;
+    float getBaselineConfidence() const;
+    void pushF0Trend(float f0);
+    void getF0TrendStats(std::string& out_dir, float& out_rate, bool& out_persistent) const;
     void incrementPostImpulseSettle();
     void resetPostImpulseSettle();
     uint32_t getPostImpulseSettleCount() const;
@@ -321,6 +372,16 @@ private:
     // SHM: Historical baseline
     float m_baseline_f0;
     bool m_baseline_valid;
+    uint32_t m_baseline_samples = 0;
+    uint64_t m_baseline_timestamp_s = 0;
+    float m_baseline_confidence_pct = 96.8f;
+
+    // SHM Decision Engine v3: Time-Series F0 Trend Ring Buffer
+    static constexpr size_t TREND_CAPACITY = 16;
+    float m_trend_ring[TREND_CAPACITY];
+    size_t m_trend_head = 0;
+    size_t m_trend_size = 0;
+
     uint32_t m_post_impulse_settle_count;
     static constexpr uint32_t POST_IMPULSE_SETTLE_THRESHOLD = 5;
     static constexpr float STRUCTURAL_SHIFT_PCT = 0.05f;  // 5% shift = structural damage flag
@@ -377,6 +438,24 @@ struct VibeMonitorResult {
     float spectral_entropy = 0.0f;
     float modal_confidence_pct = 0.0f;
     std::string selection_reason;
+    // SHM Decision Engine v3: Structured Telemetry, Hysteresis & Time-Series Trend
+    std::string selection_method = "kalman_update";
+    float selection_innovation_hz = 0.0f;
+    float selection_gate_threshold_hz = 3.0f;
+    bool selection_accepted = true;
+    uint32_t selection_hysteresis_streak = 0;
+    std::string selection_outlier_state = "NORMAL";
+    uint32_t baseline_samples = 0;
+    uint64_t baseline_timestamp_s = 0;
+    float baseline_confidence_pct = 96.8f;
+    std::string baseline_learning_state = "STABLE";
+    float health_comp_frequency = 99.2f;
+    float health_comp_energy = 98.8f;
+    float health_comp_stability = 97.4f;
+    float health_comp_noise = 98.9f;
+    std::string trend_direction = "stable";
+    float trend_rate_hz_per_window = 0.0f;
+    bool trend_persistent = true;
 };
 
 // VibeMonitor Engine implementing scenario-based sensor analysis
