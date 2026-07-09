@@ -55,6 +55,13 @@ private:
     mutable std::shared_mutex m_mutex;
     SensorAnalysis m_last_analysis;
 
+    // SHM: Dynamic noise floor tracking
+    static constexpr size_t NF_RING_CAPACITY = 64;
+    float m_noise_floor_ring[NF_RING_CAPACITY];
+    size_t m_nf_head;
+    size_t m_nf_size;
+    float calculateDynamicNoiseFloor() const;
+
     // Phase 2 components
     BiquadFilter m_filter_low1, m_filter_low2; // Cascaded for 4th order
     void initFilters(float sample_rate, float cutoff_hz);

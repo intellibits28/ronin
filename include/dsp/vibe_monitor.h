@@ -96,6 +96,21 @@ public:
     float getDynamicThreshold() const;
     void resetMetrics();
 
+    // SHM: Noise floor tracking
+    void pushNoiseFloor(float db);
+    float getDynamicNoiseFloor() const;
+
+    // SHM: Historical baseline tracking
+    void captureBaseline(float f0);
+    float getBaseline() const;
+    bool isBaselineValid() const;
+    void resetBaseline();
+    void incrementPostImpulseSettle();
+    void resetPostImpulseSettle();
+    uint32_t getPostImpulseSettleCount() const;
+    static constexpr uint32_t getPostImpulseSettleThreshold() { return POST_IMPULSE_SETTLE_THRESHOLD; }
+    static constexpr float getStructuralShiftPct() { return STRUCTURAL_SHIFT_PCT; }
+
 private:
     float calculateMovingMeanLocked() const;
     float calculateMovingStdDevLocked() const;
@@ -110,6 +125,18 @@ private:
     size_t m_ring_head;
     size_t m_ring_size;
     mutable std::mutex m_mutex;
+
+    // SHM: Noise floor ring buffer
+    float m_noise_floor_ring[RING_CAPACITY];
+    size_t m_nf_head;
+    size_t m_nf_size;
+
+    // SHM: Historical baseline
+    float m_baseline_f0;
+    bool m_baseline_valid;
+    uint32_t m_post_impulse_settle_count;
+    static constexpr uint32_t POST_IMPULSE_SETTLE_THRESHOLD = 5;
+    static constexpr float STRUCTURAL_SHIFT_PCT = 0.05f;  // 5% shift = structural damage flag
 };
 
 struct VibeMonitorResult {
@@ -129,6 +156,19 @@ struct VibeMonitorResult {
     float psd_peak_db;
     bool impact_detected;
     float impact_strength_pct;
+    // SHM: Per-axis independent analysis (STRUCTURAL_RESONANCE mode)
+    float resonance_freq_hz_x;
+    float resonance_freq_hz_y;
+    float resonance_freq_hz_z;
+    float psd_peak_db_x;
+    float psd_peak_db_y;
+    float psd_peak_db_z;
+    // SHM: Dynamic noise floor
+    float noise_floor_db;
+    // SHM: Structural shift detection (pre/post-event baseline)
+    bool structural_shift_detected;
+    float baseline_f0_hz;
+    float shift_delta_hz;
     std::string summary;
 };
 
@@ -161,12 +201,21 @@ public:
         m_configured_hp_cutoff = -1.0f;
         m_configured_sample_rate = -1.0f;
         m_hp_filter.reset();
+        m_hp_filter_x.reset();
+        m_hp_filter_y.reset();
+        m_hp_filter_z.reset();
         m_controller.resetMetrics();
+        m_controller.resetBaseline();
+        m_controller.resetPostImpulseSettle();
     }
 
 private:
     SamplerController m_controller;
     HighPassBiquad m_hp_filter;
+    // SHM: Per-axis high-pass filters for independent structural analysis
+    HighPassBiquad m_hp_filter_x;
+    HighPassBiquad m_hp_filter_y;
+    HighPassBiquad m_hp_filter_z;
     BandPassBiquad m_bp_filter;
     float m_configured_hp_cutoff;
     float m_configured_sample_rate;
@@ -179,6 +228,13 @@ private:
     // Reusable aligned PFFFT setup cache to minimize memory reallocation
     PFFFT_Setup* m_pffft_setup;
     uint32_t m_pffft_size;
+    // SHM: Zero-pad FFT for enhanced frequency resolution
+    float* m_zeropad_buf;
+    float* m_zeropad_work;
+    uint32_t m_zeropad_alloc_size;
+    PFFFT_Setup* m_pffft_setup_zeropad;
+    uint32_t m_pffft_size_zeropad;
+    void ensureZeropadSetup(uint32_t padded_size);
 
     // Fix #2: Filter settling / startup transient guard.
     // Tracks total samples processed since filter (re)configure.

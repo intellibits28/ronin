@@ -1,6 +1,7 @@
 #include "dsp/vibe_monitor.h"
 #include <algorithm>
 #include <sstream>
+#include <cstring>
 #include <nlohmann/json.hpp>
 #include "ronin_log.h"
 
@@ -18,11 +19,13 @@ HighPassBiquad::HighPassBiquad() {
 }
 
 void HighPassBiquad::configure(float sample_rate_hz, float cutoff_hz) {
-    if (sample_rate_hz <= 0.0f || cutoff_hz <= 0.0f || cutoff_hz >= sample_rate_hz * 0.5f) {
+    // SHM: Clamp cutoff to safe range for low-frequency structural monitoring
+    float safe_cutoff = std::max(0.05f, std::min(cutoff_hz, sample_rate_hz * 0.45f));
+    if (sample_rate_hz <= 0.0f || safe_cutoff <= 0.0f) {
         b0 = 1.0f; b1 = 0.0f; b2 = 0.0f; a1 = 0.0f; a2 = 0.0f;
         return;
     }
-    float w0 = 2.0f * (float)M_PI * cutoff_hz / sample_rate_hz;
+    float w0 = 2.0f * (float)M_PI * safe_cutoff / sample_rate_hz;
     float cos_w0 = std::cos(w0);
     float alpha = std::sin(w0) / std::sqrt(2.0f);
 
@@ -84,6 +87,13 @@ void BandPassBiquad::reset() {
 SamplerController::SamplerController() : m_current_state(KernelSensorState::IDLE), m_ring_head(0), m_ring_size(0) {
     for (size_t i = 0; i < RING_CAPACITY; ++i) m_metric_ring[i] = 0.0f;
     m_tuning_profile = {InstrumentType::NONE, "NONE", "NONE", 0.0f, 0.0f, 0.0f};
+    // SHM: Initialize noise floor ring buffer and baseline tracking
+    for (size_t i = 0; i < RING_CAPACITY; ++i) m_noise_floor_ring[i] = -75.0f;
+    m_nf_head = 0;
+    m_nf_size = 0;
+    m_baseline_f0 = 0.0f;
+    m_baseline_valid = false;
+    m_post_impulse_settle_count = 0;
     transitionToState(KernelSensorState::IDLE);
 }
 
@@ -201,8 +211,13 @@ void SamplerController::transitionToState(KernelSensorState new_state) {
             m_active_profile = {"STRUCTURAL_RESONANCE", 100.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 1.0f, 3.0f};
             break;
         case KernelSensorState::STABLE:
-            // Multi-Resolution Support: High-frequency machine diagnostics (e.g. 1024 samples at 200Hz for Motor/Compressor)
-            m_active_profile = {"MACHINE_DIAGNOSTICS", 200.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 0.5f, 3.0f};
+            if (m_baseline_valid) {
+                // Settle back to structural monitoring profile if a structural baseline is established
+                m_active_profile = {"STRUCTURAL_RESONANCE", 100.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 1.0f, 3.0f};
+            } else {
+                // Multi-Resolution Support: High-frequency machine diagnostics (e.g. 1024 samples at 200Hz for Motor/Compressor)
+                m_active_profile = {"MACHINE_DIAGNOSTICS", 200.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 0.5f, 3.0f};
+            }
             break;
         case KernelSensorState::IMPULSE_MODE:
             // High-resolution burst capture (1024 samples at 200Hz for FFT impulse decay analysis)
@@ -291,12 +306,66 @@ void SamplerController::resetMetrics() {
     m_ring_size = 0;
 }
 
+void SamplerController::pushNoiseFloor(float db) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_noise_floor_ring[m_nf_head] = db;
+    m_nf_head = (m_nf_head + 1) % RING_CAPACITY;
+    if (m_nf_size < RING_CAPACITY) m_nf_size++;
+}
+
+float SamplerController::getDynamicNoiseFloor() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_nf_size == 0) return -75.0f;
+    float sum = 0.0f;
+    for (size_t i = 0; i < m_nf_size; ++i) sum += m_noise_floor_ring[i];
+    return sum / static_cast<float>(m_nf_size);
+}
+
+void SamplerController::captureBaseline(float f0) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_baseline_f0 = f0;
+    m_baseline_valid = true;
+    LOGI(TAG, "SHM: Baseline f0 captured: %.4f Hz", f0);
+}
+
+float SamplerController::getBaseline() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_baseline_f0;
+}
+
+bool SamplerController::isBaselineValid() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_baseline_valid;
+}
+
+void SamplerController::resetBaseline() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_baseline_f0 = 0.0f;
+    m_baseline_valid = false;
+    m_post_impulse_settle_count = 0;
+}
+
+void SamplerController::incrementPostImpulseSettle() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_post_impulse_settle_count++;
+}
+
+void SamplerController::resetPostImpulseSettle() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_post_impulse_settle_count = 0;
+}
+
+uint32_t SamplerController::getPostImpulseSettleCount() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_post_impulse_settle_count;
+}
+
 VibeMonitorEngine& VibeMonitorEngine::getInstance() {
     static VibeMonitorEngine instance;
     return instance;
 }
 
-VibeMonitorEngine::VibeMonitorEngine() : m_configured_hp_cutoff(-1.0f), m_configured_sample_rate(-1.0f), m_burst_samples_processed(0), m_pffft_setup(nullptr), m_pffft_size(0), m_filter_samples_processed(0) {
+VibeMonitorEngine::VibeMonitorEngine() : m_configured_hp_cutoff(-1.0f), m_configured_sample_rate(-1.0f), m_burst_samples_processed(0), m_pffft_setup(nullptr), m_pffft_size(0), m_zeropad_buf(nullptr), m_zeropad_work(nullptr), m_zeropad_alloc_size(0), m_pffft_setup_zeropad(nullptr), m_pffft_size_zeropad(0), m_filter_samples_processed(0) {
     LOGI(TAG, "VibeMonitorEngine initialized.");
 }
 
@@ -304,6 +373,18 @@ VibeMonitorEngine::~VibeMonitorEngine() {
     if (m_pffft_setup) {
         pffft_destroy_setup(m_pffft_setup);
         m_pffft_setup = nullptr;
+    }
+    if (m_pffft_setup_zeropad) {
+        pffft_destroy_setup(m_pffft_setup_zeropad);
+        m_pffft_setup_zeropad = nullptr;
+    }
+    if (m_zeropad_buf) {
+        pffft_aligned_free(m_zeropad_buf);
+        m_zeropad_buf = nullptr;
+    }
+    if (m_zeropad_work) {
+        pffft_aligned_free(m_zeropad_work);
+        m_zeropad_work = nullptr;
     }
 }
 
@@ -316,6 +397,21 @@ void VibeMonitorEngine::ensurePffftSetup(uint32_t size) {
         if (m_pffft_setup) pffft_destroy_setup(m_pffft_setup);
         m_pffft_setup = pffft_new_setup(size, PFFFT_REAL);
         m_pffft_size = size;
+    }
+}
+
+void VibeMonitorEngine::ensureZeropadSetup(uint32_t padded_size) {
+    if (m_pffft_size_zeropad != padded_size || m_pffft_setup_zeropad == nullptr) {
+        if (m_pffft_setup_zeropad) pffft_destroy_setup(m_pffft_setup_zeropad);
+        m_pffft_setup_zeropad = pffft_new_setup(padded_size, PFFFT_REAL);
+        m_pffft_size_zeropad = padded_size;
+    }
+    if (m_zeropad_alloc_size < padded_size) {
+        if (m_zeropad_buf) pffft_aligned_free(m_zeropad_buf);
+        if (m_zeropad_work) pffft_aligned_free(m_zeropad_work);
+        m_zeropad_buf = (float*)pffft_aligned_malloc(padded_size * sizeof(float));
+        m_zeropad_work = (float*)pffft_aligned_malloc(padded_size * sizeof(float));
+        m_zeropad_alloc_size = padded_size;
     }
 }
 
@@ -344,6 +440,12 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
     if (m_configured_hp_cutoff != profile.high_pass_cutoff_hz || m_configured_sample_rate != profile.sample_rate_hz) {
         m_hp_filter.configure(profile.sample_rate_hz, profile.high_pass_cutoff_hz);
         m_hp_filter.reset();
+        m_hp_filter_x.configure(profile.sample_rate_hz, profile.high_pass_cutoff_hz);
+        m_hp_filter_x.reset();
+        m_hp_filter_y.configure(profile.sample_rate_hz, profile.high_pass_cutoff_hz);
+        m_hp_filter_y.reset();
+        m_hp_filter_z.configure(profile.sample_rate_hz, profile.high_pass_cutoff_hz);
+        m_hp_filter_z.reset();
         m_configured_hp_cutoff = profile.high_pass_cutoff_hz;
         m_configured_sample_rate = profile.sample_rate_hz;
         // Fix #2: Reset settling counter whenever filter is reconfigured (cold start)
@@ -441,6 +543,16 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
     res.high_pass_cutoff_hz = profile.high_pass_cutoff_hz;
     res.impact_detected = false;
     res.impact_strength_pct = 0.0f;
+    res.resonance_freq_hz_x = 0.0f;
+    res.resonance_freq_hz_y = 0.0f;
+    res.resonance_freq_hz_z = 0.0f;
+    res.psd_peak_db_x = 0.0f;
+    res.psd_peak_db_y = 0.0f;
+    res.psd_peak_db_z = 0.0f;
+    res.noise_floor_db = m_controller.getDynamicNoiseFloor();
+    res.structural_shift_detected = false;
+    res.baseline_f0_hz = m_controller.getBaseline();
+    res.shift_delta_hz = 0.0f;
 
     if (m_controller.getCurrentState() == KernelSensorState::IMPULSE_MODE) {
         ensurePffftSetup(win_size);
@@ -489,6 +601,9 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             LOGI(TAG, "Impulse burst processing complete. Seamless transition back to STABLE.");
             m_controller.transitionToState(KernelSensorState::STABLE);
             m_burst_samples_processed = 0;
+            // SHM: Begin post-impulse settling for structural shift comparison
+            m_controller.resetPostImpulseSettle();
+            m_controller.incrementPostImpulseSettle();
         }
     } else if (profile.mode == AnalysisMode::TIME_DOMAIN) {
         float sq_sum = 0.0f;
@@ -513,71 +628,150 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         float resonance_freq = 0.0f;
 
         if (profile.profile_name == "STRUCTURAL_RESONANCE" && win_size >= 1024) {
-            // Welch's Method: average PSD across multiple overlapping 2.56s (256 samples) Hanning windows
-            uint32_t sub_win = 256;
-            uint32_t step = sub_win / 2; // 50% overlap
-            uint32_t num_segments = 0;
-            std::vector<float> avg_psd(sub_win / 2, 0.0f);
+            // SHM: Enhanced Welch with 1024 sub_win + 2x zero-padding (-> 2048pt FFT)
+            // Frequency resolution: 100Hz / 2048 = 0.0488 Hz/bin (sub-0.05Hz target)
+            uint32_t sub_win = 1024;
+            uint32_t padded_size = sub_win * 2;  // 2048 for zero-padding
+            uint32_t step = sub_win / 2;
 
-            ensurePffftSetup(sub_win);
-            float* work = (float*)pffft_aligned_malloc(sub_win * sizeof(float));
-            float* output = (float*)pffft_aligned_malloc(sub_win * sizeof(float));
+            // Ensure zero-pad FFT setup is allocated
+            ensureZeropadSetup(padded_size);
 
-            for (uint32_t start = 0; start + sub_win <= win_size; start += step) {
-                std::vector<float> segment(sub_win);
-                for (uint32_t i = 0; i < sub_win; ++i) {
-                    float win = 0.5f * (1.0f - std::cos(2.0f * (float)M_PI * i / (sub_win - 1)));
-                    segment[i] = mag[start + i] * win;
-                }
-                pffft_transform_ordered(m_pffft_setup, segment.data(), output, work, PFFFT_FORWARD);
-
-                for (uint32_t k = 1; k < sub_win / 2; ++k) {
-                    float r = output[2*k];
-                    float im = output[2*k + 1];
-                    float psd = (r*r + im*im) / (float)sub_win;
-                    avg_psd[k] += psd;
-                }
-                num_segments++;
-            }
-            pffft_aligned_free(work);
-            pffft_aligned_free(output);
-
-            uint32_t max_idx = 1;
-            // Fix #1: Compute minimum valid bin index from high_pass_cutoff_hz
-            // delta_f = sample_rate / sub_win; min_bin = ceil(cutoff / delta_f)
+            // Compute minimum valid bin from high-pass cutoff
             uint32_t min_valid_bin = static_cast<uint32_t>(std::ceil(
-                profile.high_pass_cutoff_hz * (float)sub_win / profile.sample_rate_hz));
+                profile.high_pass_cutoff_hz * (float)padded_size / profile.sample_rate_hz));
             if (min_valid_bin < 1) min_valid_bin = 1;
 
-            uint32_t raw_peak_bin = 1;  // Fix #4: track unmasked peak for debug logging
-            float raw_peak_db = -100.0f;
+            // Lambda: Process a single axis through detrend + HP + zero-pad Welch FFT
+            auto processAxis = [&](const std::vector<float>& axis_raw, HighPassBiquad& hp_filt,
+                                   float& out_freq, float& out_psd_db, float& out_noise_db) {
+                // Fill scratch buffer with axis data
+                std::vector<float> axis_buf(win_size, 0.0f);
+                size_t axis_in_size = axis_raw.size();
+                for (uint32_t i = 0; i < win_size; ++i) {
+                    size_t idx = (i < axis_in_size) ? i : (axis_in_size > 0 ? axis_in_size - 1 : 0);
+                    axis_buf[i] = (axis_in_size > 0) ? axis_raw[idx] : mag[i];
+                }
 
-            if (num_segments > 0) {
-                for (uint32_t k = 1; k < sub_win / 2; ++k) {
-                    avg_psd[k] /= (float)num_segments;
-                    float psd_db = 10.0f * std::log10(avg_psd[k] + 1e-12f);
-                    // Fix #4: track raw (unmasked) peak
-                    if (psd_db > raw_peak_db) { raw_peak_db = psd_db; raw_peak_bin = k; }
-                    // Fix #1: hard frequency-domain mask — skip bins below cutoff
-                    if (k < min_valid_bin) continue;
-                    if (psd_db > max_psd) {
-                        max_psd = psd_db;
-                        max_idx = k;
+                // Linear detrend
+                float ax_sum = 0.0f;
+                for (float v : axis_buf) ax_sum += v;
+                float ax_mean = ax_sum / (float)win_size;
+                float ax_x_mean = (float)(win_size - 1) * 0.5f;
+                float ax_num = 0.0f, ax_den = 0.0f;
+                for (uint32_t i = 0; i < win_size; ++i) {
+                    float dx = (float)i - ax_x_mean;
+                    ax_num += dx * (axis_buf[i] - ax_mean);
+                    ax_den += dx * dx;
+                }
+                float ax_slope = (ax_den > 1e-6f) ? (ax_num / ax_den) : 0.0f;
+                for (uint32_t i = 0; i < win_size; ++i) {
+                    axis_buf[i] -= (ax_mean + ax_slope * ((float)i - ax_x_mean));
+                }
+
+                // HP filter
+                for (float& v : axis_buf) v = hp_filt.process(v);
+
+                // Welch PSD with zero-padding
+                uint32_t num_segments = 0;
+                std::vector<float> avg_psd(padded_size / 2, 0.0f);
+
+                for (uint32_t seg_start = 0; seg_start + sub_win <= win_size; seg_start += step) {
+                    // Zero out the padded buffer
+                    std::memset(m_zeropad_buf, 0, padded_size * sizeof(float));
+                    // Copy windowed segment into first sub_win samples
+                    for (uint32_t i = 0; i < sub_win; ++i) {
+                        float win = 0.5f * (1.0f - std::cos(2.0f * (float)M_PI * i / (sub_win - 1)));
+                        m_zeropad_buf[i] = axis_buf[seg_start + i] * win;
+                    }
+
+                    float* zp_output = (float*)pffft_aligned_malloc(padded_size * sizeof(float));
+                    pffft_transform_ordered(m_pffft_setup_zeropad, m_zeropad_buf, zp_output, m_zeropad_work, PFFFT_FORWARD);
+
+                    for (uint32_t k = 1; k < padded_size / 2; ++k) {
+                        float r = zp_output[2*k];
+                        float im = zp_output[2*k + 1];
+                        float psd = (r*r + im*im) / (float)padded_size;
+                        avg_psd[k] += psd;
+                    }
+                    pffft_aligned_free(zp_output);
+                    num_segments++;
+                }
+
+                // Find peak and noise floor
+                float ax_max_psd = -100.0f;
+                uint32_t ax_max_idx = 1;
+
+                if (num_segments > 0) {
+                    for (uint32_t k = 1; k < padded_size / 2; ++k) {
+                        avg_psd[k] /= (float)num_segments;
+                        float psd_db = 10.0f * std::log10(avg_psd[k] + 1e-12f);
+                        if (k < min_valid_bin) continue;
+                        if (psd_db > ax_max_psd) {
+                            ax_max_psd = psd_db;
+                            ax_max_idx = k;
+                        }
                     }
                 }
+
+                float noise_sum = 0.0f;
+                uint32_t noise_count = 0;
+                if (num_segments > 0) {
+                    for (uint32_t k = std::max(1u, min_valid_bin); k < padded_size / 2; ++k) {
+                        if (std::abs((int)k - (int)ax_max_idx) > 8) {
+                            noise_sum += avg_psd[k];
+                            noise_count++;
+                        }
+                    }
+                }
+
+                out_freq = (float)ax_max_idx * profile.sample_rate_hz / (float)padded_size;
+                out_psd_db = ax_max_psd;
+                out_noise_db = (noise_count > 0) ? (10.0f * std::log10(noise_sum / (float)noise_count + 1e-12f)) : -75.0f;
+            };
+
+            // Process each axis independently
+            float freq_x = 0.0f, psd_x = -100.0f, nf_x = -75.0f;
+            float freq_y = 0.0f, psd_y = -100.0f, nf_y = -75.0f;
+            float freq_z = 0.0f, psd_z = -100.0f, nf_z = -75.0f;
+
+            if (in_size > 0) {
+                processAxis(x, m_hp_filter_x, freq_x, psd_x, nf_x);
+                processAxis(y, m_hp_filter_y, freq_y, psd_y, nf_y);
+                processAxis(z, m_hp_filter_z, freq_z, psd_z, nf_z);
+            } else {
+                // Synthetic mode: use magnitude signal for all axes
+                std::vector<float> mag_copy = mag;
+                processAxis(mag_copy, m_hp_filter_x, freq_x, psd_x, nf_x);
+                freq_y = freq_x; psd_y = psd_x; nf_y = nf_x;
+                freq_z = freq_x; psd_z = psd_x; nf_z = nf_x;
             }
 
-            // Fix #4: Log both raw and masked peaks during STARTUP for diagnostics
+            // Primary resonance = highest PSD peak across axes
+            resonance_freq = freq_x;
+            max_psd = psd_x;
+            if (psd_y > max_psd) { resonance_freq = freq_y; max_psd = psd_y; }
+            if (psd_z > max_psd) { resonance_freq = freq_z; max_psd = psd_z; }
+
+            // Store per-axis results
+            res.resonance_freq_hz_x = freq_x;
+            res.resonance_freq_hz_y = freq_y;
+            res.resonance_freq_hz_z = freq_z;
+            res.psd_peak_db_x = psd_x;
+            res.psd_peak_db_y = psd_y;
+            res.psd_peak_db_z = psd_z;
+
+            // SHM: Push noise floor (average across axes)
+            float avg_nf = (nf_x + nf_y + nf_z) / 3.0f;
+            m_controller.pushNoiseFloor(avg_nf);
+            res.noise_floor_db = m_controller.getDynamicNoiseFloor();
+
+            // Fix #4 (SHM): Debug log during STARTUP
             if (m_controller.getCurrentState() == KernelSensorState::STARTUP ||
                 m_filter_samples_processed < SETTLING_SAMPLES) {
-                float raw_freq = (float)raw_peak_bin * profile.sample_rate_hz / (float)sub_win;
-                float masked_freq = (float)max_idx * profile.sample_rate_hz / (float)sub_win;
-                LOGI(TAG, "[PeakMask DEBUG] RawPeak: bin=%u freq=%.4fHz @ %.1fdB | MaskedPeak: bin=%u freq=%.4fHz @ %.1fdB | min_valid_bin=%u (%.4fHz)",
-                     raw_peak_bin, raw_freq, raw_peak_db, max_idx, masked_freq, max_psd, min_valid_bin,
-                     (float)min_valid_bin * profile.sample_rate_hz / (float)sub_win);
+                LOGI(TAG, "[SHM PeakMask DEBUG] X: %.4fHz @ %.1fdB | Y: %.4fHz @ %.1fdB | Z: %.4fHz @ %.1fdB | min_valid_bin=%u",
+                     freq_x, psd_x, freq_y, psd_y, freq_z, psd_z, min_valid_bin);
             }
-
-            resonance_freq = (float)max_idx * profile.sample_rate_hz / (float)sub_win;
         } else {
             ensurePffftSetup(win_size);
             std::vector<float> windowed = mag;
@@ -625,6 +819,19 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                         max_idx = i;
                     }
                 }
+                float noise_sum = 0.0f;
+                uint32_t noise_count = 0;
+                for (uint32_t i = std::max(1u, min_valid_bin_full); i < win_size / 2; ++i) {
+                    if (std::abs((int)i - (int)max_idx) > 8) {
+                        float r = output[2*i];
+                        float im = output[2*i + 1];
+                        noise_sum += (r*r + im*im) / (float)win_size;
+                        noise_count++;
+                    }
+                }
+                float avg_nf = (noise_count > 0) ? (10.0f * std::log10(noise_sum / (float)noise_count + 1e-12f)) : -75.0f;
+                m_controller.pushNoiseFloor(avg_nf);
+                res.noise_floor_db = m_controller.getDynamicNoiseFloor();
             }
             pffft_aligned_free(work);
             pffft_aligned_free(output);
@@ -635,6 +842,12 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         res.moving_mean  = m_controller.calculateMovingMean();
         res.moving_std_dev = m_controller.calculateMovingStdDev();
         res.dynamic_threshold = m_controller.getDynamicThreshold();
+
+        // SHM: Initial baseline capture when resonance frequency is valid and filter is settled
+        if (!m_controller.isBaselineValid() && resonance_freq > 0.0f && m_filter_samples_processed >= SETTLING_SAMPLES) {
+            m_controller.captureBaseline(resonance_freq);
+        }
+        res.baseline_f0_hz = m_controller.getBaseline();
 
         // Fix #2 (revised): Auto-transition BEFORE evaluating the gate so this
         // call — not the next one — benefits from the settled state.
@@ -651,11 +864,11 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         }
 
         // Fix #2 & #3: Validity gate — suppress output while still settling
-        // or when std_dev is zero (static floor / sensor disconnect).
+        // or when both std_dev is zero and mean is below silence floor (-60 dB, static floor / sensor disconnect).
         bool is_settling = (m_controller.getCurrentState() == KernelSensorState::STARTUP ||
                             m_filter_samples_processed < SETTLING_SAMPLES);
 
-        if (is_settling || res.moving_std_dev == 0.0f) {
+        if (is_settling || (res.moving_std_dev == 0.0f && res.moving_mean < -60.0f)) {
             res.resonance_freq_hz = 0.0f;
             res.psd_peak_db = 0.0f;
             res.current_metric = 0.0f;
@@ -673,6 +886,24 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             res.psd_peak_db = max_psd;
             res.current_metric = max_psd;
             res.anomaly_detected = (max_psd > res.dynamic_threshold);
+
+            // SHM: Post-impulse structural shift comparison
+            if (m_controller.isBaselineValid() && m_controller.getPostImpulseSettleCount() > 0) {
+                m_controller.incrementPostImpulseSettle();
+                if (m_controller.getPostImpulseSettleCount() >= SamplerController::getPostImpulseSettleThreshold()) {
+                    float baseline = m_controller.getBaseline();
+                    float shift = std::abs(resonance_freq - baseline);
+                    float pct = (baseline > 0.0f) ? (shift / baseline) : 0.0f;
+                    if (pct > SamplerController::getStructuralShiftPct() && resonance_freq < baseline) {
+                        res.structural_shift_detected = true;
+                        res.shift_delta_hz = resonance_freq - baseline;
+                        LOGI(TAG, "SHM: STRUCTURAL SHIFT DETECTED! Baseline=%.4fHz, Current=%.4fHz, Shift=%.4fHz (%.1f%%)",
+                             baseline, resonance_freq, res.shift_delta_hz, pct * 100.0f);
+                    }
+                    m_controller.resetPostImpulseSettle();
+                }
+            }
+
             char buf[256];
             snprintf(buf, sizeof(buf), "[%s - FREQ_DOMAIN] Peak: %.4fHz @ %.1fdB (Dynamic Threshold: %.1fdB, StdDev: %.4fdB). %s",
                      profile.profile_name.c_str(), res.resonance_freq_hz, res.psd_peak_db,
@@ -715,6 +946,14 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
         } else if (j.contains("tuner_string")) {
             m_controller.setInstrumentStringProfile(InstrumentType::GUITAR, j["tuner_string"].get<std::string>());
         }
+        // SHM: Dynamic high-pass cutoff from JSON payload
+        if (j.contains("high_pass_cutoff_hz")) {
+            float custom_cutoff = j["high_pass_cutoff_hz"].get<float>();
+            auto prof = m_controller.getActiveProfile();
+            prof.high_pass_cutoff_hz = custom_cutoff;
+            m_controller.setProfile(prof);
+            LOGI(TAG, "SHM: Custom HP cutoff applied: %.2f Hz", custom_cutoff);
+        }
     } catch (...) {
         if (command_json.find("RESONANCE") != std::string::npos || command_json.find("resonance") != std::string::npos) {
             if (m_controller.getCurrentState() == KernelSensorState::IDLE) {
@@ -747,6 +986,18 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
     jOut["impact_detected"] = res.impact_detected;
     jOut["impact_strength_pct"] = res.impact_strength_pct;
     jOut["summary"] = res.summary;
+    // SHM: Per-axis analysis
+    jOut["resonance_freq_hz_x"] = res.resonance_freq_hz_x;
+    jOut["resonance_freq_hz_y"] = res.resonance_freq_hz_y;
+    jOut["resonance_freq_hz_z"] = res.resonance_freq_hz_z;
+    jOut["psd_peak_db_x"] = res.psd_peak_db_x;
+    jOut["psd_peak_db_y"] = res.psd_peak_db_y;
+    jOut["psd_peak_db_z"] = res.psd_peak_db_z;
+    // SHM: Noise floor and structural shift
+    jOut["noise_floor_db"] = res.noise_floor_db;
+    jOut["structural_shift_detected"] = res.structural_shift_detected;
+    jOut["baseline_f0_hz"] = res.baseline_f0_hz;
+    jOut["shift_delta_hz"] = res.shift_delta_hz;
     return jOut.dump();
 }
 

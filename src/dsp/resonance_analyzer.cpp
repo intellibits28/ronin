@@ -22,6 +22,11 @@ ResonanceAnalyzer::ResonanceAnalyzer(int n_samples) : m_n_samples(n_samples) {
     m_pffft_setup = pffft_new_setup(n_samples, PFFFT_REAL);
     m_buffer_mag.resize(n_samples, 0.0f);
     
+    // SHM: Initialize noise floor ring buffer
+    m_nf_head = 0;
+    m_nf_size = 0;
+    for (size_t i = 0; i < NF_RING_CAPACITY; ++i) m_noise_floor_ring[i] = -75.0f;
+
     // v12.5: Hardened 40Hz Low-pass for typical Android Vibration Analysis
     initFilters(100.0f, 40.0f); 
     LOGI(TAG, "ResonanceAnalyzer Hardened initialized (4th Order Butterworth @ 40Hz).");
@@ -29,6 +34,15 @@ ResonanceAnalyzer::ResonanceAnalyzer(int n_samples) : m_n_samples(n_samples) {
 
 ResonanceAnalyzer::~ResonanceAnalyzer() {
     if (m_pffft_setup) pffft_destroy_setup(m_pffft_setup);
+}
+
+float ResonanceAnalyzer::calculateDynamicNoiseFloor() const {
+    if (m_nf_size == 0) return -75.0f;  // Fallback to legacy default
+    float sum = 0.0f;
+    for (size_t i = 0; i < m_nf_size; ++i) {
+        sum += m_noise_floor_ring[i];
+    }
+    return sum / static_cast<float>(m_nf_size);
 }
 
 void ResonanceAnalyzer::initFilters(float fs, float fc) {
@@ -101,12 +115,18 @@ void ResonanceAnalyzer::processBatchWelch(const std::vector<float>& magnitude) {
     m_last_analysis.resonance_freq_hz = (float)max_idx * sample_rate / m_n_samples;
     m_last_analysis.psd_peak_db = max_psd;
     m_last_analysis.noise_floor_db = 10.0f * std::log10(sum_psd / (m_n_samples/2) + 1e-12f);
+
+    // SHM: Push noise floor sample into dynamic tracking ring buffer
+    m_noise_floor_ring[m_nf_head] = m_last_analysis.noise_floor_db;
+    m_nf_head = (m_nf_head + 1) % NF_RING_CAPACITY;
+    if (m_nf_size < NF_RING_CAPACITY) m_nf_size++;
+
     m_last_analysis.sample_count = m_n_samples;
     m_last_analysis.timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     
-    // v12.7: Dynamic Anomaly Threshold (Peak must be 15dB above average noise floor)
-    m_last_analysis.anomaly_detected = (m_last_analysis.psd_peak_db > m_last_analysis.noise_floor_db + 15.0f) && 
+    // v12.7: Dynamic Anomaly Threshold (Peak must be 15dB above dynamic noise floor)
+    m_last_analysis.anomaly_detected = (m_last_analysis.psd_peak_db > calculateDynamicNoiseFloor() + 15.0f) && 
                                        (m_last_analysis.psd_peak_db > -40.0f);
 
     pffft_aligned_free(work);
@@ -129,7 +149,7 @@ std::string ResonanceAnalyzer::getAnalysisJson(const std::string& sensor_type) {
     nlohmann::json j;
     j["resonance_freq_hz"] = m_last_analysis.resonance_freq_hz;
     j["psd_peak_db"] = m_last_analysis.psd_peak_db;
-    j["noise_floor_db"] = -75.0f; // Baseline for now
+    j["noise_floor_db"] = calculateDynamicNoiseFloor();
     j["anomaly_detected"] = m_last_analysis.anomaly_detected;
     j["sample_count"] = m_last_analysis.sample_count;
     j["timestamp_ms"] = m_last_analysis.timestamp_ms;
