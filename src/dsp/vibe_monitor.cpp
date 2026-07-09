@@ -446,6 +446,10 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         m_hp_filter_y.reset();
         m_hp_filter_z.configure(profile.sample_rate_hz, profile.high_pass_cutoff_hz);
         m_hp_filter_z.reset();
+        m_kalman_x.reset();
+        m_kalman_y.reset();
+        m_kalman_z.reset();
+        m_kalman_f0.reset();
         m_configured_hp_cutoff = profile.high_pass_cutoff_hz;
         m_configured_sample_rate = profile.sample_rate_hz;
         // Fix #2: Reset settling counter whenever filter is reconfigured (cold start)
@@ -601,6 +605,11 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             LOGI(TAG, "Impulse burst processing complete. Seamless transition back to STABLE.");
             m_controller.transitionToState(KernelSensorState::STABLE);
             m_burst_samples_processed = 0;
+            // SHM: Reset Kalman state after impulse burst to cleanly track post-impulse modal frequency
+            m_kalman_x.reset();
+            m_kalman_y.reset();
+            m_kalman_z.reset();
+            m_kalman_f0.reset();
             // SHM: Begin post-impulse settling for structural shift comparison
             m_controller.resetPostImpulseSettle();
             m_controller.incrementPostImpulseSettle();
@@ -643,8 +652,8 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             if (min_valid_bin < 1) min_valid_bin = 1;
 
             // Lambda: Process a single axis through detrend + HP + zero-pad Welch FFT
-            auto processAxis = [&](const std::vector<float>& axis_raw, HighPassBiquad& hp_filt,
-                                   float& out_freq, float& out_psd_db, float& out_noise_db) {
+            auto processAxis = [&](const std::vector<float>& axis_raw, HighPassBiquad& hp_filt, ShmKalmanFilter& kalman_filt,
+                                   float& out_freq, float& out_psd_db, float& out_noise_db, std::vector<ShmPeakCandidate>& out_candidates) {
                 // Fill scratch buffer with axis data
                 std::vector<float> axis_buf(win_size, 0.0f);
                 size_t axis_in_size = axis_raw.size();
@@ -725,38 +734,75 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                     }
                 }
 
-                out_freq = (float)ax_max_idx * profile.sample_rate_hz / (float)padded_size;
-                out_psd_db = ax_max_psd;
                 out_noise_db = (noise_count > 0) ? (10.0f * std::log10(noise_sum / (float)noise_count + 1e-12f)) : -75.0f;
+
+                // Phase A: Extract Top-3 Candidate local maxima above noise floor
+                out_candidates.clear();
+                if (num_segments > 0) {
+                    for (uint32_t k = std::max(2u, min_valid_bin); k + 1 < padded_size / 2; ++k) {
+                        if (avg_psd[k] >= avg_psd[k - 1] && avg_psd[k] >= avg_psd[k + 1]) {
+                            float psd_db = 10.0f * std::log10(avg_psd[k] + 1e-12f);
+                            if (psd_db > out_noise_db + 1.0f) {
+                                float freq = (float)k * profile.sample_rate_hz / (float)padded_size;
+                                out_candidates.push_back({freq, psd_db, k});
+                            }
+                        }
+                    }
+                    std::sort(out_candidates.begin(), out_candidates.end(),
+                              [](const ShmPeakCandidate& a, const ShmPeakCandidate& b) {
+                                  return a.psd_db > b.psd_db;
+                              });
+                    if (out_candidates.size() > 3) {
+                        out_candidates.resize(3);
+                    }
+                }
+                if (out_candidates.empty()) {
+                    float raw_f = (float)ax_max_idx * profile.sample_rate_hz / (float)padded_size;
+                    out_candidates.push_back({raw_f, ax_max_psd, ax_max_idx});
+                }
+
+                float raw_freq = out_candidates[0].frequency_hz;
+                out_freq = raw_freq;
+                out_psd_db = out_candidates[0].psd_db;
             };
 
             // Process each axis independently
             float freq_x = 0.0f, psd_x = -100.0f, nf_x = -75.0f;
             float freq_y = 0.0f, psd_y = -100.0f, nf_y = -75.0f;
             float freq_z = 0.0f, psd_z = -100.0f, nf_z = -75.0f;
+            std::vector<ShmPeakCandidate> cand_x, cand_y, cand_z;
 
             if (in_size > 0) {
-                processAxis(x, m_hp_filter_x, freq_x, psd_x, nf_x);
-                processAxis(y, m_hp_filter_y, freq_y, psd_y, nf_y);
-                processAxis(z, m_hp_filter_z, freq_z, psd_z, nf_z);
+                processAxis(x, m_hp_filter_x, m_kalman_x, freq_x, psd_x, nf_x, cand_x);
+                processAxis(y, m_hp_filter_y, m_kalman_y, freq_y, psd_y, nf_y, cand_y);
+                processAxis(z, m_hp_filter_z, m_kalman_z, freq_z, psd_z, nf_z, cand_z);
             } else {
                 // Synthetic mode: use magnitude signal for all axes
                 std::vector<float> mag_copy = mag;
-                processAxis(mag_copy, m_hp_filter_x, freq_x, psd_x, nf_x);
-                freq_y = freq_x; psd_y = psd_x; nf_y = nf_x;
-                freq_z = freq_x; psd_z = psd_x; nf_z = nf_x;
+                processAxis(mag_copy, m_hp_filter_x, m_kalman_x, freq_x, psd_x, nf_x, cand_x);
+                freq_y = freq_x; psd_y = psd_x; nf_y = nf_x; cand_y = cand_x;
+                freq_z = freq_x; psd_z = psd_x; nf_z = nf_x; cand_z = cand_x;
             }
 
             // Primary resonance = highest PSD peak across axes
-            resonance_freq = freq_x;
+            float dominant_raw_freq = cand_x[0].frequency_hz;
+            resonance_freq = dominant_raw_freq;
             max_psd = psd_x;
-            if (psd_y > max_psd) { resonance_freq = freq_y; max_psd = psd_y; }
-            if (psd_z > max_psd) { resonance_freq = freq_z; max_psd = psd_z; }
+            res.top_candidates = cand_x;
+            if (psd_y > max_psd) { dominant_raw_freq = cand_y[0].frequency_hz; resonance_freq = dominant_raw_freq; max_psd = psd_y; res.top_candidates = cand_y; }
+            if (psd_z > max_psd) { dominant_raw_freq = cand_z[0].frequency_hz; resonance_freq = dominant_raw_freq; max_psd = psd_z; res.top_candidates = cand_z; }
+
+            // Consolidated Kalman frequency across the dominant axis
+            res.filtered_resonance_freq_hz = m_kalman_f0.process(dominant_raw_freq);
+            res.kalman_uncertainty_hz = m_kalman_f0.getUncertainty();
 
             // Store per-axis results
-            res.resonance_freq_hz_x = freq_x;
-            res.resonance_freq_hz_y = freq_y;
-            res.resonance_freq_hz_z = freq_z;
+            res.resonance_freq_hz_x = cand_x[0].frequency_hz;
+            res.resonance_freq_hz_y = cand_y[0].frequency_hz;
+            res.resonance_freq_hz_z = cand_z[0].frequency_hz;
+            res.filtered_resonance_freq_hz_x = m_kalman_x.process(cand_x[0].frequency_hz);
+            res.filtered_resonance_freq_hz_y = m_kalman_y.process(cand_y[0].frequency_hz);
+            res.filtered_resonance_freq_hz_z = m_kalman_z.process(cand_z[0].frequency_hz);
             res.psd_peak_db_x = psd_x;
             res.psd_peak_db_y = psd_y;
             res.psd_peak_db_z = psd_z;
@@ -846,6 +892,8 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         // SHM: Initial baseline capture when resonance frequency is valid and filter is settled
         if (!m_controller.isBaselineValid() && resonance_freq > 0.0f && m_filter_samples_processed >= SETTLING_SAMPLES) {
             m_controller.captureBaseline(resonance_freq);
+            m_bayesian_scorer.reset();
+            m_bayesian_scorer.activate();
         }
         res.baseline_f0_hz = m_controller.getBaseline();
 
@@ -873,6 +921,9 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             res.psd_peak_db = 0.0f;
             res.current_metric = 0.0f;
             res.anomaly_detected = false;
+            res.health_index_pct = m_bayesian_scorer.getHealthIndexPct();
+            res.risk_level = m_bayesian_scorer.getRiskLevel(true);
+            res.risk_level_str = ShmBayesianHealthScorer::riskLevelToString(res.risk_level);
             char buf[256];
             snprintf(buf, sizeof(buf),
                      "[%s - FREQ_DOMAIN] INSUFFICIENT_DATA: settling=%s samples_processed=%u/%u moving_std_dev=%.4f",
@@ -903,6 +954,25 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                     m_controller.resetPostImpulseSettle();
                 }
             }
+
+            if (m_controller.isBaselineValid()) {
+                m_bayesian_scorer.activate();
+                float baseline = m_controller.getBaseline();
+                float shift = std::abs(res.filtered_resonance_freq_hz - baseline);
+                float delta_ratio = (baseline > 0.0f) ? (shift / baseline) : 0.0f;
+                res.health_index_pct = m_bayesian_scorer.processEvidence(
+                    delta_ratio,
+                    res.kalman_uncertainty_hz,
+                    res.structural_shift_detected,
+                    0.0f
+                );
+                res.risk_level = m_bayesian_scorer.getRiskLevel(false);
+            } else {
+                res.health_index_pct = 100.0f;
+                res.risk_level = ShmRiskLevel::UNKNOWN;
+                m_bayesian_scorer.reset();
+            }
+            res.risk_level_str = ShmBayesianHealthScorer::riskLevelToString(res.risk_level);
 
             char buf[256];
             snprintf(buf, sizeof(buf), "[%s - FREQ_DOMAIN] Peak: %.4fHz @ %.1fdB (Dynamic Threshold: %.1fdB, StdDev: %.4fdB). %s",
@@ -998,6 +1068,24 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
     jOut["structural_shift_detected"] = res.structural_shift_detected;
     jOut["baseline_f0_hz"] = res.baseline_f0_hz;
     jOut["shift_delta_hz"] = res.shift_delta_hz;
+    // SHM Phase A: Kalman frequency and Top-3 candidates
+    jOut["filtered_resonance_freq_hz"] = res.filtered_resonance_freq_hz;
+    jOut["filtered_resonance_freq_hz_x"] = res.filtered_resonance_freq_hz_x;
+    jOut["filtered_resonance_freq_hz_y"] = res.filtered_resonance_freq_hz_y;
+    jOut["filtered_resonance_freq_hz_z"] = res.filtered_resonance_freq_hz_z;
+    jOut["kalman_uncertainty_hz"] = res.kalman_uncertainty_hz;
+    nlohmann::json jCandidates = nlohmann::json::array();
+    for (const auto& c : res.top_candidates) {
+        jCandidates.push_back({
+            {"frequency_hz", c.frequency_hz},
+            {"psd_db", c.psd_db},
+            {"bin_index", c.bin_index}
+        });
+    }
+    jOut["top_candidates"] = jCandidates;
+    // SHM Phase B: Bayesian Structural Health Index ($0-100\%$) & Decision Engine
+    jOut["health_index_pct"] = res.health_index_pct;
+    jOut["risk_level"] = res.risk_level_str;
     return jOut.dump();
 }
 

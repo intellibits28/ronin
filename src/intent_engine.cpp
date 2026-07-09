@@ -198,6 +198,8 @@ AgentPlan TaskPlanner::createPlan(const std::string& input) {
         "User: 'guitar tuner run' -> {\"intent\":\"PITCH_ANALYSIS\",\"plan\":[\"audio_capture\",\"fft\",\"detect_peaks\",\"note_mapper\"],\"parameters\":{}} "
         "User: 'တုန်ခါမှု စစ်ဆေးပေးပါ' -> {\"intent\":\"ANALYZE_VIBRATION\",\"plan\":[\"analyze_vibration\"],\"parameters\":{\"sensor_type\":\"RESONANCE\"}} "
         "User: 'analyze vibration' -> {\"intent\":\"ANALYZE_VIBRATION\",\"plan\":[\"analyze_vibration\"],\"parameters\":{\"sensor_type\":\"RESONANCE\"}} "
+        "User: 'အဆောက်အအုံ ကြံ့ခိုင်မှု စစ်ဆေးပေးပါ (SHM health check)' -> {\"intent\":\"ANALYZE_VIBRATION\",\"plan\":[\"analyze_vibration\"],\"parameters\":{\"sensor_type\":\"STRUCTURAL_RESONANCE\"}} "
+        "User: 'check structural health and stability' -> {\"intent\":\"ANALYZE_VIBRATION\",\"plan\":[\"analyze_vibration\"],\"parameters\":{\"sensor_type\":\"STRUCTURAL_RESONANCE\"}} "
         + lessons_context;
 
     // Requesting a reasoning cycle from the engine

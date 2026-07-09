@@ -174,3 +174,59 @@ TEST(ShmPipelineTest, StructuralShiftDetection) {
     EXPECT_TRUE(res_shift.structural_shift_detected);
     EXPECT_LT(res_shift.shift_delta_hz, -0.5f);
 }
+
+TEST(ShmPipelineTest, PhaseAKalmanTrackingAndTopCandidates) {
+    auto eng = makeSettledShmEngine(5.0f);
+
+    // Create signal with primary 5.0 Hz mode and secondary 15.0 Hz mode
+    uint32_t win = eng->getController().getActiveProfile().window_size;
+    std::vector<float> dual_mode(win, 0.0f);
+    for (uint32_t i = 0; i < win; ++i) {
+        float t = (float)i / 100.0f;
+        dual_mode[i] = 1.0f * std::sin(2.0f * (float)M_PI * 5.0f * t) +
+                       0.3f * std::sin(2.0f * (float)M_PI * 15.0f * t);
+    }
+
+    // Process window and verify Kalman output & candidates
+    VibeMonitorResult res1 = eng->analyzePipeline(dual_mode, dual_mode, dual_mode);
+    EXPECT_NEAR(res1.filtered_resonance_freq_hz, 5.0f, 0.1f);
+    EXPECT_GT(res1.kalman_uncertainty_hz, 0.0f);
+    EXPECT_GE(res1.top_candidates.size(), 1u);
+    EXPECT_NEAR(res1.top_candidates[0].frequency_hz, 5.0f, 0.1f);
+
+    // Check JSON serialization of Phase A fields
+    std::string json_str = eng->executeCommandJson("RESONANCE");
+    EXPECT_NE(json_str.find("filtered_resonance_freq_hz"), std::string::npos);
+    EXPECT_NE(json_str.find("top_candidates"), std::string::npos);
+}
+
+TEST(ShmPipelineTest, PhaseBBayesianHealthScoringAndDecisionEngine) {
+    auto eng = makeSettledShmEngine(5.0f);
+
+    // Initial stable evaluation at baseline frequency (5.0 Hz)
+    auto sig_base = makeShmSignal(5.0f);
+    VibeMonitorResult res_base = eng->analyzePipeline(sig_base, sig_base, sig_base);
+    EXPECT_NEAR(res_base.health_index_pct, 100.0f, 2.0f);
+    EXPECT_EQ(res_base.risk_level, ShmRiskLevel::HEALTHY);
+    EXPECT_EQ(res_base.risk_level_str, "HEALTHY");
+
+    // Trigger impulse event and transition back
+    eng->getController().transitionToState(KernelSensorState::IMPULSE_MODE);
+    auto sig_impulse = makeShmSignal(85.0f);
+    eng->analyzePipeline(sig_impulse, sig_impulse, sig_impulse);
+
+    // Feed a shifted signal (4.0 Hz) until structural shift / degradation triggers
+    auto sig_shifted = makeShmSignal(4.0f);
+    VibeMonitorResult res_shift;
+    for (uint32_t i = 1; i <= SamplerController::getPostImpulseSettleThreshold() + 2; ++i) {
+        res_shift = eng->analyzePipeline(sig_shifted, sig_shifted, sig_shifted);
+    }
+
+    EXPECT_LT(res_shift.health_index_pct, 50.0f);
+    EXPECT_TRUE(res_shift.risk_level == ShmRiskLevel::DEGRADED || res_shift.risk_level == ShmRiskLevel::CRITICAL);
+
+    // Check JSON serialization of Phase B fields
+    std::string json_str = eng->executeCommandJson("RESONANCE");
+    EXPECT_NE(json_str.find("health_index_pct"), std::string::npos);
+    EXPECT_NE(json_str.find("risk_level"), std::string::npos);
+}

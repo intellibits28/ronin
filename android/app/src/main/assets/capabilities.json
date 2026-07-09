@@ -113,6 +113,22 @@
   },
   {
     "schema_version": 1,
+    "id": 8,
+    "name": "SensorNode",
+    "capability_version": "1.0.0",
+    "subjects": ["vibration", "sensor", "shm", "resonance", "accelerometer", "health", "တုန်ခါမှု", "အဆောက်အအုံ", "ကြံ့ခိုင်မှု"],
+    "actions": ["analyze", "check", "monitor", "inspect", "စစ်ဆေး", "ကြည့်"],
+    "confidence_threshold": 0.7,
+    "dependencies": [],
+    "permissions": [],
+    "inputs": ["sensor_request"],
+    "outputs": ["sensor_analysis"],
+    "estimated_power_cost": "MEDIUM",
+    "deterministic": true,
+    "streaming": false
+  },
+  {
+    "schema_version": 1,
     "id": 12,
     "name": "TestNode",
     "capability_version": "1.0.0",

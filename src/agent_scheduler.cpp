@@ -88,13 +88,15 @@ void AgentScheduler::workerLoop() {
             bool is_vibration_analysis = (current_session->getIntent() == "ANALYZE_VIBRATION" || current_session->getIntent() == "SENSOR");
             int tuning_iteration = 0;
             const int MAX_TUNING_ITERATIONS = 100;
+            const int MAX_SHM_ITERATIONS = 20;
+            int max_iters = is_pitch_analysis ? MAX_TUNING_ITERATIONS : (is_vibration_analysis ? MAX_SHM_ITERATIONS : 1);
 
-            while (tuning_iteration < (is_pitch_analysis ? MAX_TUNING_ITERATIONS : 1)) {
+            while (tuning_iteration < max_iters) {
                 tuning_iteration++;
-                if (is_pitch_analysis && tuning_iteration > 1) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // v1.8: 10Hz update rate for responsive Guitar Tuner HUD
+                if ((is_pitch_analysis || is_vibration_analysis) && tuning_iteration > 1) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // 10Hz update rate for iterative analysis / SHM settling
                     if (current_session->getToken() && current_session->getToken()->isCancelled()) {
-                        LOGW(TAG, "L8 Scheduler: Tuning session cancelled.");
+                        LOGW(TAG, "L8 Scheduler: Analysis session cancelled.");
                         all_steps_success = false;
                         break;
                     }
@@ -318,28 +320,44 @@ void AgentScheduler::workerLoop() {
                             std::string summary = jRes.value("summary", "");
                             bool is_insufficient = (summary.find("INSUFFICIENT_DATA") != std::string::npos);
 
+                            double filtered_freq = jRes.value("filtered_resonance_freq_hz", freq);
+                            double health_idx = jRes.value("health_index_pct", 100.0);
+                            std::string risk_level = jRes.value("risk_level", "UNKNOWN");
+                            bool structural_shift = jRes.value("structural_shift_detected", false);
+                            double shift_delta = jRes.value("shift_delta_hz", 0.0);
+
                             if (!is_insufficient) {
                                 m_executor->getBeliefState().updateBelief("world.env.resonance_freq_hz", std::to_string(freq), 0.95f);
                                 m_executor->getBeliefState().updateBelief("world.env.psd_peak_db", std::to_string(psd), 0.90f);
                                 m_executor->getBeliefState().updateBelief("world.env.anomaly_detected", anomaly ? "true" : "false", 1.0f);
+                                m_executor->getBeliefState().updateBelief("world.shm.filtered_resonance_freq_hz", std::to_string(filtered_freq), 0.98f);
+                                m_executor->getBeliefState().updateBelief("world.shm.health_index_pct", std::to_string(health_idx), 0.99f);
+                                m_executor->getBeliefState().updateBelief("world.shm.risk_level", risk_level, 1.0f);
+                                m_executor->getBeliefState().updateBelief("world.shm.structural_shift_detected", structural_shift ? "true" : "false", 1.0f);
                             }
 
-                            char buf[256];
+                            char buf[300];
                             if (is_insufficient) {
                                 std::string state = jRes.value("state", "STARTUP");
                                 uint32_t samples = jRes.value("samples_processed", 0);
                                 double std_dev = jRes.value("moving_std_dev", 0.0);
-                                snprintf(buf, sizeof(buf), "[AGENT] ⏳ Sensor settling (%s). Waiting for stable data. samples_processed=%u, std_dev=%.4f. Retry required.",
-                                         state.c_str(), samples, std_dev);
-                            } else if (anomaly) {
-                                snprintf(buf, sizeof(buf), "[AGENT] ⚠️ Vibration Anomaly Detected! Frequency: %.1fHz (PSD: %.1fdB). Environment state synthesized in World Memory.", freq, psd);
+                                snprintf(buf, sizeof(buf), "[AGENT] ⏳ Sensor settling (%s). Collecting sample window %u/400 (std_dev=%.4f). Autonomous collection iteration #%d in progress...",
+                                         state.c_str(), samples, std_dev, tuning_iteration);
+                                Capability::HardwareBridge::pushMessage(buf);
                             } else {
-                                snprintf(buf, sizeof(buf), "[AGENT] ✅ Environment Resonance Normal (%.4fHz, %.1fdB). World Memory validated. Goal achieved.", freq, psd);
-                            }
-                            Capability::HardwareBridge::pushMessage(buf);
-
-                            if (!is_insufficient) {
+                                if (structural_shift || risk_level == "CRITICAL") {
+                                    snprintf(buf, sizeof(buf), "[AGENT] 🚨 CRITICAL STRUCTURAL SHIFT DETECTED! Risk: %s (Health Index: %.1f%%). Shift Delta: %.4fHz. Immediate inspection required!",
+                                             risk_level.c_str(), health_idx, shift_delta);
+                                } else if (risk_level == "DEGRADED" || anomaly) {
+                                    snprintf(buf, sizeof(buf), "[AGENT] ⚠️ Vibration/SHM Warning Detected! Risk: %s (Health Index: %.1f%%). Filtered F0: %.2fHz (PSD: %.1fdB).",
+                                             risk_level.c_str(), health_idx, filtered_freq, psd);
+                                } else {
+                                    snprintf(buf, sizeof(buf), "[AGENT] ✅ Structural Health Normal. Risk: %s (Health Index: %.1f%%). Filtered F0: %.4fHz (PSD: %.1fdB). Goal achieved.",
+                                             risk_level.c_str(), health_idx, filtered_freq, psd);
+                                }
+                                Capability::HardwareBridge::pushMessage(buf);
                                 m_executor->getReflectionEngine().reflectOnRecentTasks();
+                                break; // Exit SHM collection loop upon stable data evaluation!
                             }
                         } catch (...) {}
                     }

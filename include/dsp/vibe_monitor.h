@@ -4,6 +4,7 @@
 #include <vector>
 #include <mutex>
 #include <cmath>
+#include <algorithm>
 #include <memory>
 #include "third_party/pffft/pffft.h"
 
@@ -71,6 +72,192 @@ public:
 private:
     float b0, b1, b2, a1, a2;
     float z1, z2;
+};
+
+// Phase A: Top-3 Peak Candidate struct above noise floor
+struct ShmPeakCandidate {
+    float frequency_hz = 0.0f;
+    float psd_db = -100.0f;
+    uint32_t bin_index = 0;
+};
+
+// Phase A: 1D Kalman Filter for zero-allocation structural modal frequency smoothing
+class ShmKalmanFilter {
+public:
+    ShmKalmanFilter() { reset(); }
+
+    void configure(float process_noise_q = 1e-4f, float meas_noise_r = 0.05f) {
+        m_q = process_noise_q;
+        m_r = meas_noise_r;
+    }
+
+    float process(float z_k) {
+        if (!m_initialized || z_k <= 0.0f) {
+            if (z_k > 0.0f) {
+                m_x = z_k;
+                m_p = 1.0f;
+                m_initialized = true;
+            }
+            return z_k;
+        }
+
+        // Outlier/Transient Gate: If measurement jumps by > 3.0 Hz instantaneously from state (e.g. noise spike),
+        // don't destabilize Kalman state; apply attenuated update
+        float innov = z_k - m_x;
+        if (std::abs(innov) > 3.0f) {
+            m_p += m_q;
+            float s = m_p + m_r * 10.0f;
+            float k = m_p / s;
+            m_x += k * innov;
+            m_p *= (1.0f - k);
+            return m_x;
+        }
+
+        // 1. Predict
+        float x_pred = m_x;
+        float p_pred = m_p + m_q;
+
+        // 2. Update
+        float s = p_pred + m_r;
+        float k = (s > 1e-9f) ? (p_pred / s) : 0.0f;
+        m_x = x_pred + k * innov;
+        m_p = (1.0f - k) * p_pred;
+
+        return m_x;
+    }
+
+    void reset() {
+        m_x = 0.0f;
+        m_p = 1.0f;
+        m_q = 1e-4f;
+        m_r = 0.05f;
+        m_initialized = false;
+    }
+
+    float getState() const { return m_x; }
+    float getUncertainty() const { return std::sqrt(std::max(0.0f, m_p)); }
+    bool isInitialized() const { return m_initialized; }
+
+private:
+    float m_x = 0.0f;
+    float m_p = 1.0f;
+    float m_q = 1e-4f;
+    float m_r = 0.05f;
+    bool m_initialized = false;
+};
+
+// Phase B: Structural Risk Level classification from Bayesian posterior belief
+enum class ShmRiskLevel {
+    UNKNOWN = 0,
+    HEALTHY,
+    DEGRADED,
+    CRITICAL
+};
+
+// Phase B: Zero-Allocation Bayesian Structural Health Index Scorer & Decision Engine
+// Tracks posterior probability P(H | E) of structural integrity across sequential evidence updates.
+class ShmBayesianHealthScorer {
+public:
+    ShmBayesianHealthScorer() { reset(); }
+
+    void reset() {
+        m_posterior_healthy = 1.0f; // Initial belief: 100% healthy at baseline capture
+        m_is_active = false;
+        m_evidence_count = 0;
+    }
+
+    void activate() {
+        if (!m_is_active) {
+            m_posterior_healthy = 1.0f;
+            m_is_active = true;
+            m_evidence_count = 0;
+        }
+    }
+
+    // Process sequential evidence from resonance pipeline
+    // delta_ratio: |f_current - f_baseline| / f_baseline
+    // kalman_uncertainty: stddev of Kalman modal state in Hz
+    // shift_detected: hard threshold trigger flag
+    // psd_drop_db: drop in PSD peak compared to expected normal SNR
+    float processEvidence(float delta_ratio, float kalman_uncertainty, bool shift_detected, float psd_drop_db = 0.0f) {
+        if (!m_is_active) {
+            return 100.0f;
+        }
+
+        m_evidence_count++;
+
+        // 1. Likelihood of Evidence given Healthy state P(E | H)
+        // Healthy state expects small delta (< 2%), low uncertainty, small PSD drop
+        float p_e_given_h = 1.0f;
+        if (delta_ratio > 0.02f) {
+            p_e_given_h *= std::max(0.01f, 1.0f - (delta_ratio - 0.02f) * 15.0f);
+        }
+        if (kalman_uncertainty > 0.3f) {
+            p_e_given_h *= std::max(0.1f, 1.0f - (kalman_uncertainty - 0.3f) * 1.5f);
+        }
+        if (psd_drop_db > 6.0f) {
+            p_e_given_h *= std::max(0.05f, 1.0f - (psd_drop_db - 6.0f) * 0.1f);
+        }
+        if (shift_detected) {
+            p_e_given_h *= 0.05f; // Strong penalty when structural shift is flagged
+        }
+
+        // 2. Likelihood of Evidence given Damaged state P(E | D)
+        // Damaged state expects significant delta (> 4%), increased variance/damping
+        float p_e_given_d = 0.1f + std::min(0.9f, delta_ratio * 12.0f);
+        if (shift_detected) {
+            p_e_given_d = 0.95f;
+        }
+
+        // 3. Recursive Bayesian Update:
+        // P(H | E) = P(E | H)*P(H) / [ P(E | H)*P(H) + P(E | D)*(1 - P(H)) ]
+        float prior_h = m_posterior_healthy;
+        float num = p_e_given_h * prior_h;
+        float den = num + p_e_given_d * (1.0f - prior_h) + 1e-9f;
+        float posterior = num / den;
+
+        // 4. Natural recovery / relaxation towards 1.0 during stable, undisturbed periods
+        if (!shift_detected && delta_ratio < 0.015f && kalman_uncertainty < 0.2f) {
+            posterior = posterior * 0.98f + 1.0f * 0.02f;
+        }
+
+        // Clamp belief between 0.001 and 1.0 to prevent complete numerical trapping
+        m_posterior_healthy = std::clamp(posterior, 0.001f, 1.0f);
+        return getHealthIndexPct();
+    }
+
+    float getHealthIndexPct() const {
+        return m_posterior_healthy * 100.0f;
+    }
+
+    ShmRiskLevel getRiskLevel(bool is_settling = false) const {
+        if (!m_is_active || is_settling || m_evidence_count < 1) {
+            return ShmRiskLevel::UNKNOWN;
+        }
+        float idx = getHealthIndexPct();
+        if (idx >= 80.0f) {
+            return ShmRiskLevel::HEALTHY;
+        } else if (idx >= 40.0f) {
+            return ShmRiskLevel::DEGRADED;
+        } else {
+            return ShmRiskLevel::CRITICAL;
+        }
+    }
+
+    static std::string riskLevelToString(ShmRiskLevel risk) {
+        switch (risk) {
+            case ShmRiskLevel::HEALTHY: return "HEALTHY";
+            case ShmRiskLevel::DEGRADED: return "DEGRADED";
+            case ShmRiskLevel::CRITICAL: return "CRITICAL";
+            case ShmRiskLevel::UNKNOWN:
+            default: return "UNKNOWN";
+        }
+    }
+
+private:
+    float m_posterior_healthy = 1.0f;
+    bool m_is_active = false;
+    uint32_t m_evidence_count = 0;
 };
 
 // SamplerController managing sampling profiles, multi-resolution settings, and dynamic thresholding
@@ -168,7 +355,19 @@ struct VibeMonitorResult {
     // SHM: Structural shift detection (pre/post-event baseline)
     bool structural_shift_detected;
     float baseline_f0_hz;
-    float shift_delta_hz;
+    float shift_delta_hz = 0.0f;
+    // SHM Phase A: Kalman frequency tracking & uncertainty
+    float filtered_resonance_freq_hz = 0.0f;
+    float filtered_resonance_freq_hz_x = 0.0f;
+    float filtered_resonance_freq_hz_y = 0.0f;
+    float filtered_resonance_freq_hz_z = 0.0f;
+    float kalman_uncertainty_hz = 0.0f;
+    // SHM Phase A: Top-3 Candidate local maxima above noise floor
+    std::vector<ShmPeakCandidate> top_candidates;
+    // SHM Phase B: Bayesian Structural Health Index ($0-100\%$) & Decision Engine
+    float health_index_pct = 100.0f;
+    ShmRiskLevel risk_level = ShmRiskLevel::UNKNOWN;
+    std::string risk_level_str = "UNKNOWN";
     std::string summary;
 };
 
@@ -204,6 +403,10 @@ public:
         m_hp_filter_x.reset();
         m_hp_filter_y.reset();
         m_hp_filter_z.reset();
+        m_kalman_x.reset();
+        m_kalman_y.reset();
+        m_kalman_z.reset();
+        m_kalman_f0.reset();
         m_controller.resetMetrics();
         m_controller.resetBaseline();
         m_controller.resetPostImpulseSettle();
@@ -217,6 +420,13 @@ private:
     HighPassBiquad m_hp_filter_y;
     HighPassBiquad m_hp_filter_z;
     BandPassBiquad m_bp_filter;
+    // SHM Phase A: Per-axis Kalman filters and consolidated modal Kalman filter
+    ShmKalmanFilter m_kalman_x;
+    ShmKalmanFilter m_kalman_y;
+    ShmKalmanFilter m_kalman_z;
+    ShmKalmanFilter m_kalman_f0;
+    // SHM Phase B: Bayesian Health Scorer & Decision Engine
+    ShmBayesianHealthScorer m_bayesian_scorer;
     float m_configured_hp_cutoff;
     float m_configured_sample_rate;
 
