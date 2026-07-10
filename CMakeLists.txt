@@ -131,13 +131,13 @@ set(RONIN_CORE_SOURCES
 add_library(ronin_core STATIC ${RONIN_CORE_SOURCES})
 add_dependencies(ronin_core generate_fbs)
 
-target_include_directories(ronin_core PUBLIC 
-    include 
+target_include_directories(ronin_core PUBLIC
+    include
     include/third_party
     ronin-runtime
     ronin-runtime/actors/include
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${sqlite3_src_SOURCE_DIR} 
+    ${sqlite3_src_SOURCE_DIR}
     ${flatbuffers_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}
 )
@@ -158,10 +158,10 @@ if(RONIN_BUILD_ANDROID)
     add_library(ronin_kernel SHARED ${RONIN_JNI_SOURCES})
     target_include_directories(ronin_kernel PRIVATE include)
     
-    target_link_libraries(ronin_kernel 
-        PUBLIC 
-        ronin_core 
-        ${log-lib} 
+    target_link_libraries(ronin_kernel
+        PUBLIC
+        ronin_core
+        ${log-lib}
         ${android-lib}
     )
 
@@ -218,4 +218,9 @@ if(NOT RONIN_BUILD_ANDROID)
     add_executable(ronin_shm_pipeline_test tests/shm_pipeline_test.cpp)
     target_include_directories(ronin_shm_pipeline_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ronin-runtime)
     target_link_libraries(ronin_shm_pipeline_test ronin_core gtest_main)
+
+    add_executable(ronin_shm_stress_benchmark tests/shm_stress_benchmark.cpp src/dsp/synthetic_shm_generator.cpp)
+    target_link_libraries(ronin_shm_stress_benchmark ronin_core)
+    add_test(NAME ronin_shm_stress_benchmark COMMAND ronin_shm_stress_benchmark)
 endif()
+file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/.agents/worker_1")

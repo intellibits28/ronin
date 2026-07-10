@@ -1,0 +1,20 @@
+{
+    "alarm_latency_seconds": 40.96,
+    "alarm_latency_windows": 4,
+    "all_scenarios_passed": true,
+    "gating_success_rate_pct": 90.0,
+    "kalman_tracking_error_mae_hz": 0.022093582153320312,
+    "latency_metrics": {
+        "max_ms": 1.13375,
+        "mean_ms": 0.8529589729729727,
+        "min_ms": 0.169583,
+        "stddev_ms": 0.1907584036692977
+    },
+    "scenarios": {
+        "scenario_1_baseline_verification": "PASSED",
+        "scenario_2_transient_outlier_gating": "PASSED",
+        "scenario_3_candidate_shift": "PASSED",
+        "scenario_4_structural_failure": "PASSED",
+        "scenario_5_high_noise": "PASSED"
+    }
+}
