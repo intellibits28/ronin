@@ -329,14 +329,118 @@ float SamplerController::getDynamicNoiseFloor() const {
 
 void SamplerController::captureBaseline(float f0) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    // Legacy force-set (used by tests). Bypasses accumulator.
     m_baseline_f0 = f0;
     m_baseline_valid = true;
     m_baseline_samples = 125;
     auto now = std::chrono::system_clock::now();
     m_baseline_timestamp_s = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
-    if (m_baseline_timestamp_s == 0) m_baseline_timestamp_s = 1752058190; // Fallback epoch if system clock uninitialized
+    if (m_baseline_timestamp_s == 0) m_baseline_timestamp_s = 1752058190;
     m_baseline_confidence_pct = 96.8f;
-    LOGI(TAG, "SHM: Baseline f0 captured: %.4f Hz (samples: %u, confidence: %.1f%%)", f0, m_baseline_samples, m_baseline_confidence_pct);
+    m_baseline_accumulating = false;
+    m_baseline_candidates.clear();
+    LOGI(TAG, "SHM: Baseline f0 FORCE-SET: %.4f Hz (confidence: %.1f%%)", f0, m_baseline_confidence_pct);
+}
+
+bool SamplerController::accumulateBaselineCandidate(float f0) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_baseline_valid) return true;  // already locked
+
+    // Reject physically implausible frequencies (< 0.5 Hz or > 50 Hz for structural SHM)
+    if (f0 < 0.5f || f0 > 50.0f) {
+        LOGI(TAG, "SHM: Baseline candidate REJECTED (out of range): %.4f Hz", f0);
+        return false;
+    }
+
+    m_baseline_accumulating = true;
+    m_baseline_candidates.push_back(f0);
+    size_t n = m_baseline_candidates.size();
+    LOGI(TAG, "SHM: Baseline candidate %zu/%zu: %.4f Hz", n, MIN_BASELINE_WINDOWS, f0);
+
+    if (n < MIN_BASELINE_WINDOWS) return false;  // need more readings
+
+    // Compute median of accumulated candidates
+    std::vector<float> sorted = m_baseline_candidates;
+    std::sort(sorted.begin(), sorted.end());
+    float median = sorted[n / 2];
+
+    // Count how many readings are within BASELINE_CONVERGE_PCT of the median
+    size_t converged_count = 0;
+    float sum_converged = 0.0f;
+    for (float c : m_baseline_candidates) {
+        if (std::abs(c - median) / median < BASELINE_CONVERGE_PCT) {
+            converged_count++;
+            sum_converged += c;
+        }
+    }
+
+    // Compute std_dev of converged readings
+    float mean_converged = (converged_count > 0) ? (sum_converged / (float)converged_count) : median;
+    float sq_sum = 0.0f;
+    for (float c : m_baseline_candidates) {
+        if (std::abs(c - median) / median < BASELINE_CONVERGE_PCT) {
+            float diff = c - mean_converged;
+            sq_sum += diff * diff;
+        }
+    }
+    float std_dev = (converged_count > 1) ? std::sqrt(sq_sum / (float)(converged_count - 1)) : 0.0f;
+    float cv = (mean_converged > 0.0f) ? (std_dev / mean_converged) : 1.0f;  // coefficient of variation
+
+    LOGI(TAG, "SHM: Baseline accumulator: n=%zu converged=%zu median=%.4f mean=%.4f std=%.4f CV=%.3f",
+         n, converged_count, median, mean_converged, std_dev, cv);
+
+    // Lock baseline if enough converged readings AND coefficient of variation is low
+    bool should_lock = (converged_count >= MIN_BASELINE_WINDOWS && cv < 0.10f);
+
+    // Fallback: if we've collected MAX_BASELINE_WINDOWS, take the best we have
+    if (!should_lock && n >= MAX_BASELINE_WINDOWS) {
+        if (converged_count >= 3) {
+            should_lock = true;
+            LOGI(TAG, "SHM: Baseline FALLBACK after %zu windows (converged=%zu)", n, converged_count);
+        } else {
+            // Discard outliers and restart accumulation
+            LOGI(TAG, "SHM: Baseline accumulator RESET — too few converged readings after %zu windows", n);
+            m_baseline_candidates.clear();
+            return false;
+        }
+    }
+
+    if (should_lock) {
+        m_baseline_f0 = mean_converged;
+        m_baseline_valid = true;
+        m_baseline_samples = static_cast<uint32_t>(converged_count * 1024);  // actual samples used
+        auto now = std::chrono::system_clock::now();
+        m_baseline_timestamp_s = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
+        if (m_baseline_timestamp_s == 0) m_baseline_timestamp_s = 1752058190;
+        // Confidence based on CV: CV=0 -> 99%, CV=0.10 -> 80%
+        m_baseline_confidence_pct = std::max(60.0f, std::min(99.0f, 99.0f - cv * 190.0f));
+        m_baseline_accumulating = false;
+        m_baseline_candidates.clear();
+        LOGI(TAG, "SHM: Baseline f0 LOCKED: %.4f Hz (samples: %u, confidence: %.1f%%, CV: %.4f, windows: %zu)",
+             m_baseline_f0, m_baseline_samples, m_baseline_confidence_pct, cv, n);
+        return true;
+    }
+
+    return false;
+}
+
+bool SamplerController::isBaselineAccumulating() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_baseline_accumulating;
+}
+
+void SamplerController::resetBaseline() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_baseline_f0 = 0.0f;
+    m_baseline_valid = false;
+    m_baseline_samples = 0;
+    m_baseline_timestamp_s = 0;
+    m_baseline_confidence_pct = 0.0f;
+    m_baseline_candidates.clear();
+    m_baseline_accumulating = false;
+    m_trend_head = 0;
+    m_trend_size = 0;
+    m_post_impulse_settle_count = 0;
 }
 
 float SamplerController::getBaseline() const {
@@ -396,17 +500,6 @@ void SamplerController::getF0TrendStats(std::string& out_dir, float& out_rate, b
         out_rate = 0.0f;
         out_persistent = true;
     }
-}
-
-void SamplerController::resetBaseline() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_baseline_f0 = 0.0f;
-    m_baseline_valid = false;
-    m_baseline_samples = 0;
-    m_baseline_timestamp_s = 0;
-    m_trend_head = 0;
-    m_trend_size = 0;
-    m_post_impulse_settle_count = 0;
 }
 
 void SamplerController::incrementPostImpulseSettle() {
@@ -965,11 +1058,13 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         res.moving_std_dev = m_controller.calculateMovingStdDev();
         res.dynamic_threshold = m_controller.getDynamicThreshold();
 
-        // SHM: Initial baseline capture when resonance frequency is valid and filter is settled
+        // SHM: Multi-window baseline accumulation — feed f0 candidates after settling
         if (!m_controller.isBaselineValid() && resonance_freq > 0.0f && m_filter_samples_processed >= SETTLING_SAMPLES) {
-            m_controller.captureBaseline(resonance_freq);
-            m_bayesian_scorer.reset();
-            m_bayesian_scorer.activate();
+            bool locked = m_controller.accumulateBaselineCandidate(resonance_freq);
+            if (locked) {
+                m_bayesian_scorer.reset();
+                m_bayesian_scorer.activate();
+            }
         }
         res.baseline_f0_hz = m_controller.getBaseline();
 

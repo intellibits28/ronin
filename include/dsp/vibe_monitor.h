@@ -333,10 +333,12 @@ public:
     void pushNoiseFloor(float db);
     float getDynamicNoiseFloor() const;
 
-    // SHM: Historical baseline tracking
-    void captureBaseline(float f0);
+    // SHM: Historical baseline tracking with multi-window convergence
+    bool accumulateBaselineCandidate(float f0);  // returns true when baseline is locked
+    void captureBaseline(float f0);  // legacy: force-set baseline (for tests)
     float getBaseline() const;
     bool isBaselineValid() const;
+    bool isBaselineAccumulating() const;
     void resetBaseline();
     uint32_t getBaselineSamples() const;
     uint64_t getBaselineTimestamp() const;
@@ -369,12 +371,19 @@ private:
     size_t m_nf_head;
     size_t m_nf_size;
 
-    // SHM: Historical baseline
+    // SHM: Historical baseline with multi-window convergence accumulator
     float m_baseline_f0;
     bool m_baseline_valid;
     uint32_t m_baseline_samples = 0;
     uint64_t m_baseline_timestamp_s = 0;
-    float m_baseline_confidence_pct = 96.8f;
+    float m_baseline_confidence_pct = 0.0f;
+
+    // Baseline accumulator: collects f0 readings and locks when converged
+    static constexpr size_t MIN_BASELINE_WINDOWS = 5;   // require 5 converging windows
+    static constexpr size_t MAX_BASELINE_WINDOWS = 12;   // give up and take best after 12
+    static constexpr float BASELINE_CONVERGE_PCT = 0.15f; // within 15% of median = converged
+    std::vector<float> m_baseline_candidates;
+    bool m_baseline_accumulating = false;
 
     // SHM Decision Engine v3: Time-Series F0 Trend Ring Buffer
     static constexpr size_t TREND_CAPACITY = 16;
