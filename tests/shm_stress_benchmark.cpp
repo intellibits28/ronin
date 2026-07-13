@@ -28,8 +28,12 @@ SensorData generateSensorWindow(float fx, float fy, float fz, float amp, float s
     data.x.resize(1024);
     data.y.resize(1024);
     data.z.resize(1024);
+    static double phase_x = 0.0;
+    static double phase_y = 0.0;
     static double phase_z = 0.0;
     if (fx == 0.0f && fy == 0.0f && fz == 0.0f) {
+        phase_x = 0.0;
+        phase_y = 0.0;
         phase_z = 0.0;
         return data;
     }
@@ -42,13 +46,29 @@ SensorData generateSensorWindow(float fx, float fy, float fz, float amp, float s
         float noise_x = dist(gen);
         float noise_y = dist(gen);
         float noise_z = dist(gen);
-        data.x[i] = noise_x;
-        data.y[i] = noise_y;
         if (is_impulse) {
-            data.z[i] = 12.0f * std::exp(-decay_rate * t) * std::sin(2.0f * M_PI * fz * t) + noise_z;
+            data.x[i] = (fx > 0.0f ? 3.0f * std::exp(-decay_rate * t) * std::sin(2.0f * M_PI * fx * t) : 0.0f) + noise_x;
+            data.y[i] = (fy > 0.0f ? 2.4f * std::exp(-decay_rate * t) * std::sin(2.0f * M_PI * fy * t) : 0.0f) + noise_y;
+            data.z[i] = (fz > 0.0f ? 12.0f * std::exp(-decay_rate * t) * std::sin(2.0f * M_PI * fz * t) : 0.0f) + noise_z;
         } else {
-            phase_z += 2.0 * M_PI * fz * dt;
-            data.z[i] = amp * std::sin(phase_z) + noise_z;
+            if (fx > 0.0f) {
+                phase_x += 2.0 * M_PI * fx * dt;
+                data.x[i] = (amp * 0.25f) * std::sin(phase_x) + noise_x;
+            } else {
+                data.x[i] = noise_x;
+            }
+            if (fy > 0.0f) {
+                phase_y += 2.0 * M_PI * fy * dt;
+                data.y[i] = (amp * 0.20f) * std::sin(phase_y) + noise_y;
+            } else {
+                data.y[i] = noise_y;
+            }
+            if (fz > 0.0f) {
+                phase_z += 2.0 * M_PI * fz * dt;
+                data.z[i] = amp * std::sin(phase_z) + noise_z;
+            } else {
+                data.z[i] = noise_z;
+            }
         }
     }
     return data;

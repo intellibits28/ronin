@@ -222,5 +222,8 @@ if(NOT RONIN_BUILD_ANDROID)
     add_executable(ronin_shm_stress_benchmark tests/shm_stress_benchmark.cpp src/dsp/synthetic_shm_generator.cpp)
     target_link_libraries(ronin_shm_stress_benchmark ronin_core)
     add_test(NAME ronin_shm_stress_benchmark COMMAND ronin_shm_stress_benchmark)
+
+    add_executable(ronin_shm_candidate_dumper tests/shm_candidate_dumper.cpp src/dsp/synthetic_shm_generator.cpp)
+    target_link_libraries(ronin_shm_candidate_dumper ronin_core)
 endif()
 file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/.agents/worker_1")

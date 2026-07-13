@@ -214,12 +214,12 @@ void SamplerController::transitionToState(KernelSensorState new_state) {
             break;
         case KernelSensorState::STARTUP:
             // Multi-Resolution Support: Structural analysis (e.g. 1024 samples at 100Hz for 10.2s window)
-            m_active_profile = {"STRUCTURAL_RESONANCE", 100.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 1.0f, 3.0f};
+            m_active_profile = {"STRUCTURAL_RESONANCE", 100.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 0.5f, 3.0f};
             break;
         case KernelSensorState::STABLE:
-            if (m_baseline_valid) {
-                // Settle back to structural monitoring profile if a structural baseline is established
-                m_active_profile = {"STRUCTURAL_RESONANCE", 100.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 1.0f, 3.0f};
+            if (m_active_profile.profile_name == "STRUCTURAL_RESONANCE" || m_baseline_valid) {
+                // Settle back to structural monitoring profile if a structural baseline is being established or established
+                m_active_profile = {"STRUCTURAL_RESONANCE", 100.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 0.5f, 3.0f};
             } else {
                 // Multi-Resolution Support: High-frequency machine diagnostics (e.g. 1024 samples at 200Hz for Motor/Compressor)
                 m_active_profile = {"MACHINE_DIAGNOSTICS", 200.0f, 1024, AnalysisMode::FREQUENCY_DOMAIN, 0.5f, 3.0f};
@@ -441,6 +441,7 @@ void SamplerController::resetBaseline() {
     m_trend_head = 0;
     m_trend_size = 0;
     m_post_impulse_settle_count = 0;
+    m_persistence_tracker.reset();
 }
 
 float SamplerController::getBaseline() const {
@@ -466,6 +467,21 @@ uint64_t SamplerController::getBaselineTimestamp() const {
 float SamplerController::getBaselineConfidence() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_baseline_confidence_pct;
+}
+
+void SamplerController::setStructureType(StructureType type) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_structure_type = type;
+}
+
+StructureType SamplerController::getStructureType() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_structure_type;
+}
+
+ShmPeakPersistenceTracker& SamplerController::getPersistenceTracker() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_persistence_tracker;
 }
 
 void SamplerController::pushF0Trend(float f0) {
@@ -794,11 +810,11 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         float resonance_freq = 0.0f;
 
         if (profile.profile_name == "STRUCTURAL_RESONANCE" && win_size >= 1024) {
-            // SHM: Enhanced Welch with 1024 sub_win + 2x zero-padding (-> 2048pt FFT)
+            // SHM: Enhanced Welch with 512 sub_win + 4x zero-padding (-> 2048pt FFT)
             // Frequency resolution: 100Hz / 2048 = 0.0488 Hz/bin (sub-0.05Hz target)
-            uint32_t sub_win = 1024;
-            uint32_t padded_size = sub_win * 2;  // 2048 for zero-padding
-            uint32_t step = sub_win / 2;
+            uint32_t sub_win = 512;
+            uint32_t padded_size = 2048;  // 2048 for zero-padding
+            uint32_t step = 256;          // 50% overlap of 512 sub-window (3 segments for 1024 input)
 
             // Ensure zero-pad FFT setup is allocated
             ensureZeropadSetup(padded_size);
@@ -807,6 +823,12 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             uint32_t min_valid_bin = static_cast<uint32_t>(std::ceil(
                 profile.high_pass_cutoff_hz * (float)padded_size / profile.sample_rate_hz));
             if (min_valid_bin < 1) min_valid_bin = 1;
+
+            // Populate Welch telemetry
+            res.welch_segment_size = sub_win;
+            res.welch_overlap = step;
+            res.welch_segments_used = 0;
+            res.resolution_limit_hz = profile.sample_rate_hz / (float)sub_win;
 
             // Lambda: Process a single axis through detrend + HP + zero-pad Welch FFT
             auto processAxis = [&](const std::vector<float>& axis_raw, HighPassBiquad& hp_filt, ShmKalmanFilter& kalman_filt,
@@ -863,6 +885,7 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                     pffft_aligned_free(zp_output);
                     num_segments++;
                 }
+                res.welch_segments_used = num_segments;
 
                 // Find peak and noise floor
                 float ax_max_psd = -100.0f;
@@ -892,30 +915,81 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                 }
 
                 out_noise_db = (noise_count > 0) ? (10.0f * std::log10(noise_sum / (float)noise_count + 1e-12f)) : -75.0f;
+                float nf_lin = std::pow(10.0f, out_noise_db / 10.0f);
 
-                // Phase A: Extract Top-3 Candidate local maxima above noise floor
+                // Phase A & B: Extract Top-5 Candidate local maxima above noise floor with modal validation
                 out_candidates.clear();
                 if (num_segments > 0) {
                     for (uint32_t k = std::max(2u, min_valid_bin); k + 1 < padded_size / 2; ++k) {
                         if (avg_psd[k] >= avg_psd[k - 1] && avg_psd[k] >= avg_psd[k + 1]) {
                             float psd_db = 10.0f * std::log10(avg_psd[k] + 1e-12f);
                             if (psd_db > out_noise_db + 1.0f) {
-                                float freq = (float)k * profile.sample_rate_hz / (float)padded_size;
-                                out_candidates.push_back({freq, psd_db, k});
+                                ShmPeakCandidate cand;
+                                cand.bin_index = k;
+
+                                // Parabolic interpolation (Correction 3)
+                                float alpha = 10.0f * std::log10(avg_psd[k - 1] + 1e-12f);
+                                float beta = psd_db;
+                                float gamma = 10.0f * std::log10(avg_psd[k + 1] + 1e-12f);
+                                float delta = 0.5f * (alpha - gamma) / (alpha - 2.0f * beta + gamma + 1e-12f);
+                                if (!std::isfinite(delta) || std::abs(delta) > 1.0f) delta = 0.0f;
+                                cand.frequency_hz = ((float)k + delta) * profile.sample_rate_hz / (float)padded_size;
+                                cand.psd_db = beta - 0.25f * (alpha - gamma) * delta;
+
+                                // Hybrid Prominence (Correction 2): 70% Relative Ratio + 30% Linear Excess
+                                float p_valley = std::max({avg_psd[std::max(1u, k - 6)], avg_psd[std::min((uint32_t)padded_size / 2 - 1, k + 6)], 1e-12f});
+                                float rel_ratio_db = 10.0f * std::log10((avg_psd[k] / p_valley) + 1e-12f);
+                                float prom_linear = std::max(0.0f, avg_psd[k] - p_valley);
+                                float rel_score = std::min(100.0f, std::max(0.0f, rel_ratio_db * 5.0f));
+                                float excess_score = std::min(100.0f, std::max(0.0f, 10.0f * std::log10((prom_linear / (nf_lin + 1e-12f)) + 1.0f) * 6.0f));
+                                cand.prominence_db = 0.70f * rel_score + 0.30f * excess_score;
+
+                                // SNR & Q factor
+                                cand.snr_db = cand.psd_db - out_noise_db;
+                                float half_power = avg_psd[k] * 0.5f;
+                                uint32_t left_bin = k, right_bin = k;
+                                while (left_bin > min_valid_bin && avg_psd[left_bin] > half_power) left_bin--;
+                                while (right_bin + 1 < padded_size / 2 && avg_psd[right_bin] > half_power) right_bin++;
+                                float bw_hz = (float)(right_bin - left_bin + 1) * profile.sample_rate_hz / (float)padded_size;
+                                cand.q_factor = std::min(60.0f, (bw_hz > 1e-4f) ? (cand.frequency_hz / bw_hz) : 10.0f);
+
+                                // Physical Prior Score (Correction 4: 10% minimum floor)
+                                float mu = 10.0f, sigma = 3.5f;
+                                StructureType st = m_controller.getStructureType();
+                                if (st == StructureType::RC_MULTI_STORY_2_TO_5) { mu = 5.0f; sigma = 2.0f; }
+                                else if (st == StructureType::TALL_BUILDING_HIGH_RISE) { mu = 1.2f; sigma = 0.8f; }
+                                if (cand.frequency_hz < 0.5f || cand.frequency_hz > 25.0f) {
+                                    cand.prior_score = 0.0f;
+                                } else {
+                                    float diff = cand.frequency_hz - mu;
+                                    cand.prior_score = 10.0f + 90.0f * std::exp(-0.5f * (diff * diff) / (sigma * sigma));
+                                }
+
+                                // Instant Stage 1 Score
+                                float snr_s = std::min(100.0f, std::max(0.0f, cand.snr_db * 5.0f));
+                                float q_s = std::min(100.0f, cand.q_factor * 5.0f);
+                                cand.stage1_score = 0.35f * cand.prominence_db + 0.25f * snr_s + 0.20f * q_s + 0.15f * cand.prior_score;
+
+                                out_candidates.push_back(cand);
                             }
                         }
                     }
                     std::sort(out_candidates.begin(), out_candidates.end(),
                               [](const ShmPeakCandidate& a, const ShmPeakCandidate& b) {
-                                  return a.psd_db > b.psd_db;
+                                  return a.stage1_score > b.stage1_score;
                               });
-                    if (out_candidates.size() > 3) {
-                        out_candidates.resize(3);
+                    if (out_candidates.size() > 5) {
+                        out_candidates.resize(5);
                     }
                 }
                 if (out_candidates.empty()) {
-                    float raw_f = (float)ax_max_idx * profile.sample_rate_hz / (float)padded_size;
-                    out_candidates.push_back({raw_f, ax_max_psd, ax_max_idx});
+                    ShmPeakCandidate dummy;
+                    dummy.bin_index = ax_max_idx;
+                    dummy.frequency_hz = (float)ax_max_idx * profile.sample_rate_hz / (float)padded_size;
+                    dummy.psd_db = ax_max_psd;
+                    dummy.snr_db = ax_max_psd - out_noise_db;
+                    dummy.stage1_score = 10.0f;
+                    out_candidates.push_back(dummy);
                 }
 
                 float raw_freq = out_candidates[0].frequency_hz;
@@ -941,21 +1015,81 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                 freq_z = freq_x; psd_z = psd_x; nf_z = nf_x; cand_z = cand_x;
             }
 
-            // Primary resonance = highest PSD peak across axes
-            float dominant_raw_freq = cand_x[0].frequency_hz;
-            resonance_freq = dominant_raw_freq;
-            max_psd = psd_x;
-            res.top_candidates = cand_x;
-            if (psd_y > max_psd) { dominant_raw_freq = cand_y[0].frequency_hz; resonance_freq = dominant_raw_freq; max_psd = psd_y; res.top_candidates = cand_y; }
-            if (psd_z > max_psd) { dominant_raw_freq = cand_z[0].frequency_hz; resonance_freq = dominant_raw_freq; max_psd = psd_z; res.top_candidates = cand_z; }
+            // Modal Validation Engine v3: Merge candidate pools across X, Y, Z and compute Axis Coherence
+            std::vector<ShmPeakCandidate> merged_pool;
+            auto addOrMerge = [&](const std::vector<ShmPeakCandidate>& axis_pool, uint32_t mask) {
+                for (auto c : axis_pool) {
+                    c.axis_mask = mask;
+                    bool found = false;
+                    for (auto& mc : merged_pool) {
+                        if (std::abs(c.frequency_hz - mc.frequency_hz) <= std::max(0.05f, mc.frequency_hz * 0.015f)) {
+                            mc.axis_mask |= mask;
+                            if (c.stage1_score > mc.stage1_score) {
+                                mc.frequency_hz = c.frequency_hz;
+                                mc.psd_db = c.psd_db;
+                                mc.prominence_db = c.prominence_db;
+                                mc.snr_db = c.snr_db;
+                                mc.q_factor = c.q_factor;
+                                mc.prior_score = c.prior_score;
+                                mc.stage1_score = c.stage1_score;
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) merged_pool.push_back(c);
+                }
+            };
+            addOrMerge(cand_x, 1);
+            addOrMerge(cand_y, 2);
+            addOrMerge(cand_z, 4);
 
-            // Consolidated Kalman frequency with Outlier Gate Hysteresis across the dominant axis
-            auto outcome = m_kalman_f0.processWithHysteresis(dominant_raw_freq, 3.0f);
+            // Apply Axis Coherence Bonus (+5% stage1_score if present on multiple axes)
+            for (auto& mc : merged_pool) {
+                int axes_count = ((mc.axis_mask & 1) ? 1 : 0) + ((mc.axis_mask & 2) ? 1 : 0) + ((mc.axis_mask & 4) ? 1 : 0);
+                if (axes_count > 1) {
+                    mc.stage1_score = std::min(100.0f, mc.stage1_score + 5.0f);
+                }
+            }
+
+            // Update Persistence Tracker & compute Stage 2 Temporal Validation Score
+            m_controller.getPersistenceTracker().update(merged_pool, m_filter_samples_processed / win_size);
+            for (auto& mc : merged_pool) {
+                mc.persistence_streak = m_controller.getPersistenceTracker().getStreak(mc.frequency_hz);
+                float pers_score = std::min(100.0f, (float)mc.persistence_streak * 20.0f); // 5 consecutive = 100
+                int axes_count = ((mc.axis_mask & 1) ? 1 : 0) + ((mc.axis_mask & 2) ? 1 : 0) + ((mc.axis_mask & 4) ? 1 : 0);
+                float coh_score = (axes_count == 3) ? 100.0f : ((axes_count == 2) ? 66.7f : 33.3f);
+                mc.stage2_score = 0.45f * mc.stage1_score + 0.35f * pers_score + 0.20f * coh_score;
+            }
+
+            // Sort by Stage 2 Score and select the top validated modal frequency
+            std::sort(merged_pool.begin(), merged_pool.end(),
+                      [](const ShmPeakCandidate& a, const ShmPeakCandidate& b) {
+                          return a.stage2_score > b.stage2_score;
+                      });
+            if (merged_pool.size() > 5) merged_pool.resize(5);
+            res.top_candidates = merged_pool;
+
+            float dominant_raw_freq = merged_pool.empty() ? 0.0f : merged_pool[0].frequency_hz;
+            resonance_freq = dominant_raw_freq;
+            max_psd = merged_pool.empty() ? -100.0f : merged_pool[0].psd_db;
+            if (!merged_pool.empty()) {
+                res.snr_db = merged_pool[0].snr_db;
+                res.peak_prominence_db = merged_pool[0].prominence_db;
+                res.q_factor = merged_pool[0].q_factor;
+                res.modal_confidence_pct = merged_pool[0].stage2_score;
+                res.frequency_confidence_pct = std::min(100.0f, (float)merged_pool[0].persistence_streak * 20.0f);
+            }
+
+            // Consolidated Kalman frequency with NIS Gate & Outlier Hysteresis across the dominant mode
+            float kalman_gate_th = std::max(0.05f, dominant_raw_freq * 0.015f); // Adaptive frequency tolerance
+            auto outcome = m_kalman_f0.processWithHysteresis(dominant_raw_freq, kalman_gate_th);
             res.filtered_resonance_freq_hz = outcome.filtered_hz;
             res.kalman_uncertainty_hz = m_kalman_f0.getUncertainty();
             res.selection_method = outcome.method;
             res.selection_innovation_hz = outcome.innovation_hz;
-            res.selection_gate_threshold_hz = 3.0f;
+            res.selection_nis = outcome.nis;
+            res.selection_gate_threshold_hz = kalman_gate_th;
             res.selection_accepted = outcome.gate_accepted;
             res.selection_hysteresis_streak = outcome.streak;
             switch (outcome.outlier_state) {

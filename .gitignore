@@ -53,3 +53,6 @@ old_logs_and_context/*
 !old_logs_and_context/*_legacy.pdf
 Screenshot_*.jpg
 ronin_advice.txt
+shm_benchmark_report.json
+shm_stress_results.json
+shm_diagnostic_output/

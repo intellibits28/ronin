@@ -74,11 +74,85 @@ private:
     float z1, z2;
 };
 
-// Phase A: Top-3 Peak Candidate struct above noise floor
+// Phase A: Top-5 Peak Candidate struct above noise floor with modal validation metrics
 struct ShmPeakCandidate {
     float frequency_hz = 0.0f;
     float psd_db = -100.0f;
     uint32_t bin_index = 0;
+    // v3 Modal Validation fields
+    float prominence_db = 0.0f;
+    float snr_db = 0.0f;
+    float q_factor = 0.0f;
+    float prior_score = 0.0f;
+    uint32_t axis_mask = 0; // 1=X, 2=Y, 4=Z
+    float stage1_score = 0.0f;
+    uint32_t persistence_streak = 0;
+    float stage2_score = 0.0f;
+};
+
+enum class StructureType {
+    SINGLE_STORY_MASONRY = 0,
+    RC_MULTI_STORY_2_TO_5,
+    TALL_BUILDING_HIGH_RISE
+};
+
+// ShmPeakPersistenceTracker: Tracks temporal persistence of modal peaks across sequential windows
+class ShmPeakPersistenceTracker {
+public:
+    struct TrackedPeak {
+        float freq_hz;
+        uint32_t streak;
+        float last_psd_db;
+        float last_stage1_score;
+        uint64_t last_seen_s;
+    };
+
+    ShmPeakPersistenceTracker() = default;
+
+    void update(const std::vector<ShmPeakCandidate>& current_candidates, uint64_t current_time_s) {
+        // Prune old tracks (> 30 seconds not seen)
+        m_tracks.erase(std::remove_if(m_tracks.begin(), m_tracks.end(),
+            [current_time_s](const TrackedPeak& p) {
+                return (current_time_s - p.last_seen_s) > 30;
+            }), m_tracks.end());
+
+        // Match current candidates against existing tracks
+        for (const auto& cand : current_candidates) {
+            float tol = std::max(0.05f, cand.frequency_hz * 0.015f);
+            bool matched = false;
+            for (auto& track : m_tracks) {
+                if (std::abs(cand.frequency_hz - track.freq_hz) <= tol) {
+                    track.freq_hz = 0.7f * track.freq_hz + 0.3f * cand.frequency_hz; // Smooth frequency
+                    track.streak++;
+                    track.last_psd_db = cand.psd_db;
+                    track.last_stage1_score = cand.stage1_score;
+                    track.last_seen_s = current_time_s;
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                m_tracks.push_back({ cand.frequency_hz, 1, cand.psd_db, cand.stage1_score, current_time_s });
+            }
+        }
+    }
+
+    uint32_t getStreak(float freq_hz) const {
+        float tol = std::max(0.05f, freq_hz * 0.015f);
+        for (const auto& track : m_tracks) {
+            if (std::abs(freq_hz - track.freq_hz) <= tol) {
+                return track.streak;
+            }
+        }
+        return 0;
+    }
+
+    void reset() {
+        m_tracks.clear();
+    }
+
+private:
+    std::vector<TrackedPeak> m_tracks;
 };
 
 // Phase A: 1D Kalman Filter for zero-allocation structural modal frequency smoothing
@@ -104,6 +178,7 @@ public:
     struct KalmanProcessOutcome {
         float filtered_hz;
         float innovation_hz;
+        float nis;
         bool gate_accepted;
         std::string method;
         std::string reason;
@@ -124,11 +199,15 @@ public:
                 m_outlier_streak = 0;
                 m_candidate_target = z_k;
             }
-            return { z_k, 0.0f, true, "direct_init", "initial_measurement", OutlierState::NORMAL, 0 };
+            return { z_k, 0.0f, 0.0f, true, "direct_init", "initial_measurement", OutlierState::NORMAL, 0 };
         }
 
         float innov = z_k - m_x;
-        if (std::abs(innov) > gate_threshold) {
+        float p_pred = m_p + m_q;
+        float s = p_pred + m_r;
+        float nis = (innov * innov) / (s > 1e-9f ? s : 1e-9f);
+
+        if (std::abs(innov) > gate_threshold || nis > 9.21f) {
             if (std::abs(z_k - m_candidate_target) < 1.0f) {
                 m_outlier_streak++;
             } else {
@@ -142,15 +221,15 @@ public:
                 m_p = 0.1f;
                 uint32_t confirmed_streak = m_outlier_streak;
                 m_outlier_streak = 0;
-                return { m_x, innov, true, "hysteresis_accept", "persistent_shift_confirmed", OutlierState::HYSTERESIS_CONFIRMED_SHIFT, confirmed_streak };
+                return { m_x, innov, nis, true, "hysteresis_accept", "persistent_shift_confirmed", OutlierState::HYSTERESIS_CONFIRMED_SHIFT, confirmed_streak };
             } else if (m_outlier_streak >= 3) {
                 // Repeated spike (N>=3): promote to Candidate Modal Shift state while holding estimate stable until confirmed
                 m_p += m_q;
-                return { m_x, innov, false, "hysteresis_candidate", "repeated_spike_candidate_shift", OutlierState::HYSTERESIS_CANDIDATE, m_outlier_streak };
+                return { m_x, innov, nis, false, "hysteresis_candidate", "repeated_spike_candidate_shift", OutlierState::HYSTERESIS_CANDIDATE, m_outlier_streak };
             } else {
                 // Single/transient spike (N<3): reject as noise/outlier
                 m_p += m_q;
-                return { m_x, innov, false, "kalman_gate", "innovation_exceeded_threshold", OutlierState::NORMAL, m_outlier_streak };
+                return { m_x, innov, nis, false, "kalman_gate", "innovation_or_nis_exceeded_threshold", OutlierState::NORMAL, m_outlier_streak };
             }
         }
 
@@ -158,13 +237,11 @@ public:
         m_outlier_streak = 0;
         m_candidate_target = z_k;
         float x_pred = m_x;
-        float p_pred = m_p + m_q;
-        float s = p_pred + m_r;
         float k = (s > 1e-9f) ? (p_pred / s) : 0.0f;
         m_x = x_pred + k * innov;
         m_p = (1.0f - k) * p_pred;
 
-        return { m_x, innov, true, "kalman_update", "innovation_within_gate", OutlierState::NORMAL, 0 };
+        return { m_x, innov, nis, true, "kalman_update", "innovation_within_gate", OutlierState::NORMAL, 0 };
     }
 
     void reset() {
@@ -343,6 +420,9 @@ public:
     uint32_t getBaselineSamples() const;
     uint64_t getBaselineTimestamp() const;
     float getBaselineConfidence() const;
+    void setStructureType(StructureType type);
+    StructureType getStructureType() const;
+    ShmPeakPersistenceTracker& getPersistenceTracker();
     void pushF0Trend(float f0);
     void getF0TrendStats(std::string& out_dir, float& out_rate, bool& out_persistent) const;
     void incrementPostImpulseSettle();
@@ -358,6 +438,8 @@ private:
     KernelSensorState m_current_state;
     AdaptiveSamplingProfile m_active_profile;
     TuningProfile m_tuning_profile;
+    StructureType m_structure_type = StructureType::SINGLE_STORY_MASONRY;
+    ShmPeakPersistenceTracker m_persistence_tracker;
 
     // Fixed-capacity circular buffer optimized for low memory footprint on mobile
     static constexpr size_t RING_CAPACITY = 32;
@@ -465,6 +547,13 @@ struct VibeMonitorResult {
     std::string trend_direction = "stable";
     float trend_rate_hz_per_window = 0.0f;
     bool trend_persistent = true;
+    // v3 Telemetry Corrections
+    float selection_nis = 0.0f;
+    float resolution_limit_hz = 0.195f;
+    float frequency_confidence_pct = 0.0f;
+    uint32_t welch_segment_size = 512;
+    uint32_t welch_overlap = 256;
+    uint32_t welch_segments_used = 3;
 };
 
 // VibeMonitor Engine implementing scenario-based sensor analysis
