@@ -14,7 +14,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "ronin_cognitive.db"
-        private const val DATABASE_VERSION = 2 // Incremented for schema change
+        private const val DATABASE_VERSION = 3 // Incremented for SHM session table
 
         const val TABLE_MEMORIES = "memories"
         const val COLUMN_ID = "id"
@@ -25,6 +25,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         const val COLUMN_CREATION_TIME = "creation_time"
         const val COLUMN_LAST_ACCESSED = "last_accessed_time"
         const val COLUMN_STATE = "state_enum"
+
+        const val TABLE_SHM_SESSIONS = "shm_sessions"
+        const val COLUMN_SESSION_ID = "session_id"
+        const val COLUMN_SESSION_TIMESTAMP = "session_timestamp"
+        const val COLUMN_SESSION_JSON = "session_json"
     }
 
     override fun onCreate(db: SQLiteDatabase?) {
@@ -42,6 +47,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         """.trimIndent()
         db?.execSQL(createMemoriesTable)
         createPerceptionTable(db)
+        createShmSessionsTable(db)
     }
 
     private fun createPerceptionTable(db: SQLiteDatabase?) {
@@ -56,9 +62,21 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db?.execSQL(createPerceptionHistoryTable)
     }
 
+    private fun createShmSessionsTable(db: SQLiteDatabase?) {
+        val createShmTable = """
+            CREATE TABLE IF NOT EXISTS $TABLE_SHM_SESSIONS (
+                $COLUMN_SESSION_ID TEXT PRIMARY KEY,
+                $COLUMN_SESSION_TIMESTAMP INTEGER,
+                $COLUMN_SESSION_JSON TEXT
+            )
+        """.trimIndent()
+        db?.execSQL(createShmTable)
+    }
+
     override fun onUpgrade(db: SQLiteDatabase?, oldVersion: Int, newVersion: Int) {
         if (db == null) return
         createPerceptionTable(db)
+        createShmSessionsTable(db)
         if (oldVersion < 2) {
             addColumnIfMissing(db, TABLE_MEMORIES, COLUMN_SEGMENTED_MM, "TEXT")
             addColumnIfMissing(db, TABLE_MEMORIES, COLUMN_IMPORTANCE, "REAL DEFAULT 1.0")
@@ -90,4 +108,37 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
         db.insert(TABLE_MEMORIES, null, values)
     }
+
+    // Phase 11.2: SHM Session Storage Layer
+    fun storeShmSession(sessionId: String, timestamp: Long, jsonStr: String) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COLUMN_SESSION_ID, sessionId)
+            put(COLUMN_SESSION_TIMESTAMP, timestamp)
+            put(COLUMN_SESSION_JSON, jsonStr)
+        }
+        db.insertWithOnConflict(TABLE_SHM_SESSIONS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun getShmSessionJson(sessionId: String): String? {
+        val db = readableDatabase
+        db.query(TABLE_SHM_SESSIONS, arrayOf(COLUMN_SESSION_JSON), "$COLUMN_SESSION_ID = ?", arrayOf(sessionId), null, null, null).use { cursor ->
+            if (cursor.moveToFirst()) {
+                return cursor.getString(0)
+            }
+        }
+        return null
+    }
+
+    fun getAllShmSessionsJson(): List<String> {
+        val list = mutableListOf<String>()
+        val db = readableDatabase
+        db.query(TABLE_SHM_SESSIONS, arrayOf(COLUMN_SESSION_JSON), null, null, null, null, "$COLUMN_SESSION_TIMESTAMP DESC").use { cursor ->
+            while (cursor.moveToNext()) {
+                list.add(cursor.getString(0))
+            }
+        }
+        return list
+    }
 }
+

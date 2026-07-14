@@ -102,3 +102,60 @@ dependencies {
     debugImplementation 'androidx.compose.ui:ui-tooling'
     debugImplementation 'androidx.compose.ui:ui-test-manifest'
 }
+
+// --- Requirement 5: TERMUX & AARCH64 BUILD WORKAROUND (AIDL Issue) ---
+// On Termux/aarch64, the Android SDK x86-64 'aidl' binary cannot execute natively.
+// This workaround disables the native AidlCompile task and synthesizes the required
+// IInferenceCallback.java interface stub directly into the build output folder.
+if (System.getenv("TERMUX_VERSION") != null || project.hasProperty("disableAidl") || System.getProperty("os.arch") == "aarch64") {
+    tasks.withType(com.android.build.gradle.tasks.AidlCompile.class).configureEach { aidlTask ->
+        aidlTask.enabled = false
+    }
+
+    tasks.register("generateTermuxAidlStubs") {
+        doLast {
+            def outDirs = [
+                file("${project.buildDir}/generated/aidl_source_output_dir/debug/out/com/ronin/kernel"),
+                file("${project.buildDir}/generated/aidl_source_output_dir/release/out/com/ronin/kernel"),
+                file("${project.buildDir}/generated/aidl_source_output_dir/debugAndroidTest/out/com/ronin/kernel")
+            ]
+            outDirs.each { dir ->
+                dir.mkdirs()
+                def stubFile = new File(dir, "IInferenceCallback.java")
+                if (!stubFile.exists()) {
+                    stubFile.text = """package com.ronin.kernel;
+public interface IInferenceCallback extends android.os.IInterface {
+    public static abstract class Stub extends android.os.Binder implements com.ronin.kernel.IInferenceCallback {
+        public Stub() {
+            this.attachInterface(this, "com.ronin.kernel.IInferenceCallback");
+        }
+        public static com.ronin.kernel.IInferenceCallback asInterface(android.os.IBinder obj) {
+            if ((obj == null)) return null;
+            android.os.IInterface iin = obj.queryLocalInterface("com.ronin.kernel.IInferenceCallback");
+            if (((iin != null) && (iin instanceof com.ronin.kernel.IInferenceCallback))) {
+                return ((com.ronin.kernel.IInferenceCallback)iin);
+            }
+            return null;
+        }
+        @Override public android.os.IBinder asBinder() { return this; }
+        @Override public boolean onTransact(int code, android.os.Parcel data, android.os.Parcel reply, int flags) throws android.os.RemoteException {
+            return super.onTransact(code, data, reply, flags);
+        }
+    }
+    public void onToken(java.lang.String fragment, boolean isFinal) throws android.os.RemoteException;
+    public void onError(java.lang.String message) throws android.os.RemoteException;
+}
+"""
+                }
+            }
+        }
+    }
+
+    tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }.configureEach {
+        it.dependsOn("generateTermuxAidlStubs")
+    }
+    tasks.matching { it.name.startsWith("compile") && it.name.contains("Java") }.configureEach {
+        it.dependsOn("generateTermuxAidlStubs")
+    }
+}
+

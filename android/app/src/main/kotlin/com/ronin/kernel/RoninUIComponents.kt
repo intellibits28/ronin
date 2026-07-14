@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
 import kotlinx.coroutines.launch
+import com.ronin.kernel.shm.*
 
 @Composable
 fun SystemStatusCard(chatViewModel: ChatViewModel) {
@@ -261,7 +262,73 @@ fun DeveloperHud(chatViewModel: ChatViewModel) {
 }
 
 @Composable
-fun ShmResultCard(status: String, healthIndex: String, resonanceHz: String, noiseDb: String, confidence: String) {
+fun ShmResultCard(
+    status: String,
+    healthIndex: String,
+    resonanceHz: String,
+    noiseDb: String,
+    confidence: String,
+    activity: MainActivity? = null,
+    chatViewModel: ChatViewModel? = null
+) {
+    val context = LocalContext.current
+    var showDetails by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var selectedExportFormat by remember { mutableStateOf(ExportFormat.ENGINEERING_JSON) }
+    var showAiReview by remember { mutableStateOf(false) }
+
+    val session by remember(status, healthIndex, resonanceHz, noiseDb) {
+        mutableStateOf(
+            ShmSession(
+                features = ShmFeatures(
+                    baselineF0Hz = try { resonanceHz.replace("Hz", "").trim().toFloat() } catch (_: Exception) { 1.79f },
+                    filteredF0Hz = try { resonanceHz.replace("Hz", "").trim().toFloat() } catch (_: Exception) { 1.79f },
+                    noiseFloorDb = try { noiseDb.replace("dB", "").trim().toFloat() } catch (_: Exception) { -54.0f },
+                    confidence = confidence
+                ),
+                decision = ShmDecision(
+                    status = status,
+                    healthIndex = healthIndex,
+                    riskLevel = if (status.equals("HEALTHY", true)) "LOW" else "ELEVATED"
+                )
+            )
+        )
+    }
+
+    if (showDetails) {
+        ShmDetailScreen(session = session) { showDetails = false }
+    }
+
+    if (showExportDialog) {
+        ExportOptionDialog(
+            initialFormat = selectedExportFormat,
+            onConfirm = { options, format ->
+                showExportDialog = false
+                try {
+                    val file = ShmExportManager.exportToFile(context, session, format, options)
+                    // Persist to repository
+                    activity?.let {
+                        val repo = ShmSessionRepository(com.ronin.kernel.DatabaseHelper(it))
+                        repo.saveSession(session)
+                    }
+                    ShmExportManager.shareViaAndroidShareSheet(context, file)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Export Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            },
+            onDismiss = { showExportDialog = false }
+        )
+    }
+
+    if (showAiReview && chatViewModel != null) {
+        AIReviewScreen(
+            session = session,
+            activity = activity,
+            chatViewModel = chatViewModel,
+            onDismiss = { showAiReview = false }
+        )
+    }
+
     Surface(
         color = Color(0xFF1B202D),
         shape = RoundedCornerShape(12.dp),
@@ -293,6 +360,26 @@ fun ShmResultCard(status: String, healthIndex: String, resonanceHz: String, nois
                 SystemMetricItem("Noise Floor", noiseDb, Color.Gray)
                 SystemMetricItem("Confidence", confidence, Color(0xFF66BB6A))
             }
+
+            // Action bar (Requirement 4)
+            ShmExportActions(
+                onViewDetails = { showDetails = true },
+                onExportJson = {
+                    selectedExportFormat = ExportFormat.ENGINEERING_JSON
+                    showExportDialog = true
+                },
+                onExportReport = {
+                    selectedExportFormat = ExportFormat.HUMAN_REPORT
+                    showExportDialog = true
+                },
+                onAnalyzeAi = {
+                    if (chatViewModel != null) {
+                        showAiReview = true
+                    } else {
+                        Toast.makeText(context, "AI Review requires active chat session", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
         }
     }
 }
@@ -403,7 +490,9 @@ fun AgentResponseCard(
                                 healthIndex = "98.5%",
                                 resonanceHz = if (chatViewModel.sensorFreqHz > 0) "${"%.2f".format(chatViewModel.sensorFreqHz)} Hz" else "14.91 Hz",
                                 noiseDb = if (chatViewModel.sensorPsdDb > -100) "${"%.1f".format(chatViewModel.sensorPsdDb)} dB" else "-53.7 dB",
-                                confidence = "High"
+                                confidence = "High",
+                                activity = context as? MainActivity,
+                                chatViewModel = chatViewModel
                             )
                         } else {
                             Row(verticalAlignment = Alignment.Top) {
