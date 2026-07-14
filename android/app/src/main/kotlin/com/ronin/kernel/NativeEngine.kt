@@ -37,6 +37,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private val dbHelper = DatabaseHelper(context)
     private val drivers = mutableMapOf<String, ICapabilityDriver>()
     private val securityProvider = SecurityProvider()
+    val cloudProviderEndpoints = mutableMapOf<String, String>()
 
     init {
         // v7.0 Layer 4: Register Android Drivers
@@ -1112,7 +1113,21 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     suspend fun fetchAvailableModels(apiKey: String, provider: String = "Gemini"): FetchResult = withContext(Dispatchers.IO) {
         val isGemini = provider.equals("Gemini", ignoreCase = true) || provider.contains("Gemini", ignoreCase = true)
-        val baseUrl = if (isGemini) "https://generativelanguage.googleapis.com" else "https://openrouter.ai/api/v1"
+        val isOpenAI = provider.equals("OpenAI", ignoreCase = true)
+        val isOpenRouter = provider.equals("OpenRouter", ignoreCase = true)
+
+        val baseUrl = when {
+            isGemini -> "https://generativelanguage.googleapis.com"
+            isOpenRouter -> "https://openrouter.ai/api/v1"
+            isOpenAI -> "https://api.openai.com/v1"
+            else -> {
+                // Custom provider: try to use configured endpoint
+                val configuredEndpoint = cloudProviderEndpoints[provider]
+                if (!configuredEndpoint.isNullOrBlank()) configuredEndpoint.trimEnd('/')
+                else return@withContext FetchResult(emptyList(), "No endpoint configured for $provider")
+            }
+        }
+
         val encodedKey = java.net.URLEncoder.encode(apiKey, "UTF-8")
         val endpoint = if (isGemini) "$baseUrl/v1beta/models?key=$encodedKey" else "$baseUrl/models"
         
@@ -1149,4 +1164,17 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     data class FetchResult(val models: List<JSONObject>, val error: String? = null)
+
+    suspend fun fetchAvailableModelsAsync(provider: String, apiKey: String): List<String> {
+        val result = fetchAvailableModels(apiKey, provider)
+        if (result.error != null) return emptyList()
+        val isGemini = provider.equals("Gemini", ignoreCase = true) || provider.contains("Gemini", ignoreCase = true)
+        return result.models.mapNotNull { m ->
+            if (isGemini) {
+                m.optString("name", "").removePrefix("models/").takeIf { it.isNotBlank() }
+            } else {
+                m.optString("id", "").takeIf { it.isNotBlank() }
+            }
+        }
+    }
 }

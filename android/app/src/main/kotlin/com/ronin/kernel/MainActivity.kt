@@ -390,7 +390,7 @@ class MainActivity : FragmentActivity() {
     fun getApiKey(provider: String): String = sharedPreferences.getString(provider, "") ?: ""
     fun savePrimaryCloudProvider(name: String) { sharedPreferences.edit().putString("primary_cloud_provider", name).apply(); nativeEngine.setPrimaryCloudProviderSafe(name) }
     fun saveApiKey(provider: String, key: String) { sharedPreferences.edit().putString(provider, key).apply() }
-    fun addCloudProvider(n: String, t: String, e: String, m: String) { val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]; if (chatViewModel.cloudProviders.none { it.name == n }) { chatViewModel.cloudProviders.add(CloudProvider(n, t, e, m, "bearer")); saveCloudProvidersToDisk() } }
+    fun addCloudProvider(n: String, t: String, e: String, m: String) { val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]; if (chatViewModel.cloudProviders.none { it.name == n }) { chatViewModel.cloudProviders.add(CloudProvider(n, t, e, m, "bearer")); saveCloudProvidersToDisk() }; nativeEngine.cloudProviderEndpoints[n] = e }
     fun deleteCloudProvider(name: String) { val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]; chatViewModel.cloudProviders.removeAll { it.name == name }; saveCloudProvidersToDisk() }
     fun testCloudConnection(chatViewModel: ChatViewModel) {
         lifecycleScope.launch {

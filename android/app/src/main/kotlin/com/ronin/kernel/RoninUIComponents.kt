@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
+import kotlinx.coroutines.launch
 
 @Composable
 fun SystemStatusCard(chatViewModel: ChatViewModel) {
@@ -587,40 +588,160 @@ fun SettingsSection(
             }
         }
 
-        // Section 3: Cloud Provider
+        // Section 3: Cloud Providers
         item {
-            SettingsCardSection(title = "3. Cloud Provider") {
-                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column {
-                        Text("Active Provider", color = Color.Gray, fontSize = 11.sp)
-                        Text(chatViewModel.primaryCloudProvider, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Surface(color = Color(0xFF66BB6A).copy(alpha = 0.2f), shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0xFF66BB6A))) {
-                        Text(chatViewModel.apiConnectionStatus, color = Color(0xFF66BB6A), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+            SettingsCardSection(title = "3. Cloud Providers") {
+                // Provider profiles list
+                chatViewModel.cloudProviders.forEach { profile ->
+                    val isSelected = profile.name == chatViewModel.primaryCloudProvider
+                    Surface(
+                        color = if (isSelected) Color(0xFF64B5F6).copy(alpha = 0.1f) else Color.Transparent,
+                        shape = RoundedCornerShape(8.dp),
+                        border = if (isSelected) BorderStroke(1.dp, Color(0xFF64B5F6).copy(alpha = 0.5f)) else null,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        activity?.savePrimaryCloudProvider(profile.name)
+                                        chatViewModel.primaryCloudProvider = profile.name
+                                    },
+                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF64B5F6))
+                                )
+                                Column(
+                                    modifier = Modifier.weight(1f).clickable {
+                                        activity?.savePrimaryCloudProvider(profile.name)
+                                        chatViewModel.primaryCloudProvider = profile.name
+                                    }
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(profile.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(Modifier.width(6.dp))
+                                        val typeIcon = when (profile.providerType) {
+                                            "Gemini" -> "☁️"
+                                            "OpenRouter" -> "🌐"
+                                            "OpenAI" -> "🧠"
+                                            else -> "⚙️"
+                                        }
+                                        Text("$typeIcon ${profile.providerType}", color = Color.Gray, fontSize = 10.sp)
+                                    }
+                                    Text(profile.modelId, fontSize = 11.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                                }
+                                IconButton(
+                                    onClick = { chatViewModel.editingProvider = profile; chatViewModel.showAddCloudDialog = true },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Edit, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                                }
+                                IconButton(
+                                    onClick = { activity?.deleteCloudProvider(profile.name) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Delete, null, tint = Color(0xFFEF5350), modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            // API Key field for selected provider
+                            if (isSelected) {
+                                Spacer(Modifier.height(4.dp))
+                                var apiKey by remember(profile.name) { mutableStateOf(activity?.getApiKey(profile.name) ?: "") }
+                                TextField(
+                                    value = apiKey,
+                                    onValueChange = { apiKey = it; activity?.saveApiKey(profile.name, it) },
+                                    placeholder = { Text("Enter ${profile.name} API Key", fontSize = 11.sp, color = Color.Gray) },
+                                    modifier = Modifier.fillMaxWidth().padding(start = 36.dp),
+                                    colors = TextFieldDefaults.textFieldColors(
+                                        backgroundColor = Color(0xFF1A1C2C),
+                                        textColor = Color.White,
+                                        focusedIndicatorColor = Color(0xFF64B5F6),
+                                        unfocusedIndicatorColor = Color.DarkGray
+                                    ),
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                                    singleLine = true,
+                                    leadingIcon = { Icon(Icons.Default.Key, null, tint = Color.Gray, modifier = Modifier.size(16.dp)) }
+                                )
+                            }
+                        }
                     }
                 }
-                if (chatViewModel.apiLatencyMs > 0) {
-                    Text("Latency: ${chatViewModel.apiLatencyMs} ms", color = Color.Cyan, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+
+                if (chatViewModel.cloudProviders.isEmpty()) {
+                    Text("No cloud providers configured.", color = Color.DarkGray, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, modifier = Modifier.padding(vertical = 8.dp))
                 }
+
                 Spacer(Modifier.height(8.dp))
+
+                // Add Provider button
+                OutlinedButton(
+                    onClick = { chatViewModel.editingProvider = null; chatViewModel.showAddCloudDialog = true },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Cyan),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Add, null, tint = Color.Cyan, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add Cloud Provider", fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Connection status & actions
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Active: ${chatViewModel.primaryCloudProvider}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        if (chatViewModel.apiLatencyMs > 0) {
+                            Text("Latency: ${chatViewModel.apiLatencyMs} ms", color = Color.Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                    val statusColor = when (chatViewModel.apiConnectionStatus) {
+                        "Connected" -> Color(0xFF66BB6A)
+                        "Error" -> Color(0xFFEF5350)
+                        "Testing..." -> Color(0xFFFFCA28)
+                        else -> Color.Gray
+                    }
+                    Surface(
+                        color = statusColor.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, statusColor)
+                    ) {
+                        Text(
+                            chatViewModel.apiConnectionStatus,
+                            color = statusColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = onOpenModelPicker,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D))
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D)),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Icon(Icons.Default.List, null, tint = Color.Cyan, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Select Model", color = Color.White, fontSize = 12.sp)
+                        Icon(Icons.Default.List, null, tint = Color.Cyan, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Models", color = Color.White, fontSize = 12.sp)
                     }
                     Button(
                         onClick = onTestConnection,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D))
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D)),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Icon(Icons.Default.Sync, null, tint = Color(0xFF66BB6A), modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Test Connection", color = Color.White, fontSize = 12.sp)
+                        Icon(Icons.Default.Sync, null, tint = Color(0xFF66BB6A), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Ping", color = Color.White, fontSize = 12.sp)
                     }
                 }
             }
@@ -756,7 +877,23 @@ fun ModelPicker(
     onDismiss: () -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    var selectedModel by remember { mutableStateOf(chatViewModel.editingProvider?.modelId ?: "gemini-2.5-flash") }
+    val activeProvider = chatViewModel.cloudProviders.find { it.name == chatViewModel.primaryCloudProvider }
+    var selectedModel by remember { mutableStateOf(activeProvider?.modelId ?: "gemini-2.5-flash") }
+    val scope = rememberCoroutineScope()
+
+    // Trigger dynamic model fetch on open
+    LaunchedEffect(chatViewModel.primaryCloudProvider) {
+        if (!chatViewModel.isFetchingModels && chatViewModel.fetchedModels.isEmpty()) {
+            chatViewModel.isFetchingModels = true
+            try {
+                val apiKey = activity?.getApiKey(chatViewModel.primaryCloudProvider) ?: ""
+                val models = activity?.nativeEngine?.fetchAvailableModelsAsync(chatViewModel.primaryCloudProvider, apiKey) ?: emptyList()
+                chatViewModel.fetchedModels.clear()
+                chatViewModel.fetchedModels.addAll(models)
+            } catch (_: Exception) { }
+            chatViewModel.isFetchingModels = false
+        }
+    }
 
     Surface(
         color = Color(0xFF1C1F2E),
@@ -766,7 +903,12 @@ fun ModelPicker(
     ) {
         Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Select Model", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Column {
+                    Text("Select Model", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    if (activeProvider != null) {
+                        Text("Provider: ${activeProvider.name} (${activeProvider.providerType})", fontSize = 11.sp, color = Color.Gray)
+                    }
+                }
                 IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.Default.Close, null, tint = Color.Gray)
                 }
@@ -780,36 +922,104 @@ fun ModelPicker(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),
                 colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent)
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
+
+            // Refresh button
+            OutlinedButton(
+                onClick = {
+                    chatViewModel.isFetchingModels = true
+                    chatViewModel.fetchedModels.clear()
+                    val apiKey = activity?.getApiKey(chatViewModel.primaryCloudProvider) ?: ""
+                    // Launch async fetch
+                    scope.launch {
+                        try {
+                            val models = activity?.nativeEngine?.fetchAvailableModelsAsync(chatViewModel.primaryCloudProvider, apiKey) ?: emptyList()
+                            chatViewModel.fetchedModels.addAll(models)
+                        } catch (_: Exception) { }
+                        chatViewModel.isFetchingModels = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Cyan),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                if (chatViewModel.isFetchingModels) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.Cyan)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Fetching models...", fontSize = 12.sp)
+                } else {
+                    Icon(Icons.Default.Refresh, null, tint = Color.Cyan, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Refresh Model List (${chatViewModel.fetchedModels.size} found)", fontSize = 12.sp)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
 
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Gemini Category
-                val geminiModels = listOf("gemini-2.5-flash", "gemini-pro", "gemini-1.5-pro", "gemini-1.5-flash").plus(chatViewModel.fetchedModels).distinct()
-                    .filter { it.contains(searchQuery, ignoreCase = true) }
-                if (geminiModels.isNotEmpty()) {
+                // Dynamic fetched models (from active provider)
+                val dynamicModels = chatViewModel.fetchedModels.filter { it.contains(searchQuery, ignoreCase = true) }
+                if (dynamicModels.isNotEmpty()) {
+                    val providerLabel = (activeProvider?.providerType ?: "CLOUD").uppercase()
                     item {
-                        Text("GEMINI MODELS", color = Color(0xFF64B5F6), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 4.dp))
+                        Text("$providerLabel MODELS (Dynamic)", color = Color(0xFF64B5F6), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 4.dp))
                     }
-                    items(geminiModels) { model ->
+                    items(dynamicModels) { model ->
                         ModelRowItem(model = model, isSelected = selectedModel == model) { selectedModel = model }
                     }
                 }
 
-                // Gemma Category
-                val gemmaModels = listOf("gemma-2b-it-litertlm", "gemma-7b-it", "gemma-2-9b-it").filter { it.contains(searchQuery, ignoreCase = true) }
-                if (gemmaModels.isNotEmpty()) {
-                    item {
-                        Text("GEMMA MODELS", color = Color(0xFFFFD54F), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 4.dp))
-                    }
-                    items(gemmaModels) { model ->
-                        ModelRowItem(model = model, isSelected = selectedModel == model) { selectedModel = model }
+                // Fallback defaults when no dynamic models fetched
+                if (chatViewModel.fetchedModels.isEmpty() && !chatViewModel.isFetchingModels) {
+                    val providerType = activeProvider?.providerType ?: "Gemini"
+                    val defaults = when (providerType) {
+                        "Gemini" -> listOf("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash")
+                        "OpenRouter" -> listOf("google/gemini-2.5-flash", "google/gemini-2.5-pro", "anthropic/claude-sonnet-4", "openai/gpt-4o", "meta-llama/llama-4-maverick")
+                        "OpenAI" -> listOf("gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "o3-mini")
+                        else -> listOf("custom-model-1")
+                    }.filter { it.contains(searchQuery, ignoreCase = true) }
+
+                    if (defaults.isNotEmpty()) {
+                        item {
+                            Text("${providerType.uppercase()} DEFAULTS", color = Color(0xFFFFCA28), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 4.dp))
+                            Text("Use 'Refresh' to fetch live model list", color = Color.Gray, fontSize = 10.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                        }
+                        items(defaults) { model ->
+                            ModelRowItem(model = model, isSelected = selectedModel == model) { selectedModel = model }
+                        }
                     }
                 }
 
-                // Local Category
+                // Editable custom model input
+                item {
+                    Spacer(Modifier.height(8.dp))
+                    Text("CUSTOM MODEL ID", color = Color(0xFFCE93D8), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 4.dp))
+                    var customModelId by remember { mutableStateOf("") }
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TextField(
+                            value = customModelId,
+                            onValueChange = { customModelId = it },
+                            placeholder = { Text("e.g. my-custom-model", fontSize = 12.sp, color = Color.Gray) },
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp)),
+                            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, fontFamily = FontFamily.Monospace),
+                            singleLine = true
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { if (customModelId.isNotBlank()) { selectedModel = customModelId; customModelId = "" } },
+                            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF64B5F6)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        ) {
+                            Text("Use", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Local installed brains
                 val localModels = chatViewModel.discoveredModels.map { File(it).name }.filter { it.contains(searchQuery, ignoreCase = true) }
                 if (localModels.isNotEmpty()) {
                     item {
