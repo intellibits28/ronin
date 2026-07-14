@@ -402,7 +402,7 @@ fun AIReviewScreen(
                                                     options = options,
                                                     useLocalModel = useLocalModel,
                                                     nativeEngine = activity?.nativeEngine,
-                                                    inferenceService = activity?.inferenceService,
+                                                    inferenceService = activity?.nativeEngine?.inferenceService,
                                                     provider = chatViewModel.primaryCloudProvider,
                                                     modelId = "gemini-2.5-flash",
                                                     apiKey = apiKey

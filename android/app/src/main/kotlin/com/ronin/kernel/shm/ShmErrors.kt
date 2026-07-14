@@ -4,7 +4,7 @@ package com.ronin.kernel.shm
  * Requirement 9: Error Handling
  * Typed error classes providing meaningful messages instead of GENERIC_ERROR.
  */
-sealed class ShmError(val message: String, val cause: Throwable? = null) {
+sealed class ShmError(override val message: String, override val cause: Throwable? = null) : Exception(message, cause) {
     class ExportError(message: String, cause: Throwable? = null) : ShmError(message, cause)
     class AIReviewError(message: String, cause: Throwable? = null) : ShmError(message, cause)
     class StorageError(message: String, cause: Throwable? = null) : ShmError(message, cause)

@@ -1,6 +1,6 @@
 package com.ronin.kernel.shm
 
-import com.ronin.kernel.InferenceService
+import com.ronin.kernel.IInferenceService
 import com.ronin.kernel.NativeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,7 +18,7 @@ object ShmAiReviewPipeline {
         options: ExportOptions,
         useLocalModel: Boolean,
         nativeEngine: NativeEngine?,
-        inferenceService: InferenceService?,
+        inferenceService: IInferenceService?,
         provider: String = "Gemini",
         modelId: String = "gemini-2.5-flash",
         apiKey: String = ""
@@ -44,7 +44,7 @@ object ShmAiReviewPipeline {
             val rawResponseText = kotlinx.coroutines.withTimeout(timeoutMillis) {
                 if (useLocalModel) {
                     // Requirement 7: Local Gemma Model routing
-                    if (inferenceService == null) {
+                    if (inferenceService == null && nativeEngine?.inferenceService == null) {
                         throw ShmError.AIReviewError("Local AI Review failed: Local InferenceService is not bound or running.")
                     }
                     val payload = JSONObject().apply {
@@ -52,7 +52,8 @@ object ShmAiReviewPipeline {
                         put("max_tokens", 512)
                         put("temperature", 0.2)
                     }
-                    val resStr = inferenceService.processInferenceSync(payload.toString())
+                    val activeService = inferenceService ?: nativeEngine?.inferenceService
+                    val resStr = activeService?.runReasoning(payload.toString()) ?: ""
                     if (resStr.isBlank()) {
                         throw ShmError.AIReviewError("Local AI Review failed: Empty response from local Gemma engine.")
                     }

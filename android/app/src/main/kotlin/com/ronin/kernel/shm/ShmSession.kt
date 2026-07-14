@@ -212,13 +212,13 @@ data class ShmSession(
             dsp.remove("psdResult")
             dsp.put("extractedTopSpectralPeaks", peaks)
 
-            if (options.includeRawSensorData && psdResult.isNotEmpty()) {
+            if (options.includeRawSensorData && dspResult.psdResult.isNotEmpty()) {
                 // Heavily downsample to at most 16 representative bins across the frequency spectrum
-                val step = kotlin.math.max(1, psdResult.size / 16)
+                val step = kotlin.math.max(1, dspResult.psdResult.size / 16)
                 val downsampled = JSONArray()
-                for (i in 0 until psdResult.size step step) {
+                for (i in 0 until dspResult.psdResult.size step step) {
                     if (downsampled.length() < 16) {
-                        downsampled.put(psdResult[i].toDouble())
+                        downsampled.put(dspResult.psdResult[i].toDouble())
                     }
                 }
                 dsp.put("downsampledPsdVector_16bins", downsampled)

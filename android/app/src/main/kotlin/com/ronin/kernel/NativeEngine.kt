@@ -228,7 +228,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         }
     }
 
-    private var inferenceService: IInferenceService? = null
+    var inferenceService: IInferenceService? = null
     private var isServiceBound = false
     private var generationTemp = 0.7f
     private var generationTopK = 40
