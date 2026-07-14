@@ -1493,7 +1493,22 @@ class MainActivity : FragmentActivity() {
                     
                     val gps = try {
                         val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
-                        lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)@Composable
+                        lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+                    } catch (e: Exception) { false }
+
+                    val charging = batteryManager.isCharging
+                    
+                    nativeEngine.injectWorldState(battery, ram, gps, net, charging)
+                } catch (e: Exception) { 
+                    Log.w("RoninKernel", "WorldState Sync failed: ${e.message}")
+                }
+                delay(10000) // 10s cycle
+            }
+        }
+    }
+}
+
+@Composable
 fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
     val context = LocalContext.current; val activity = context.findActivity() as? MainActivity
     val scope = rememberCoroutineScope(); val scaffoldState = rememberScaffoldState()
