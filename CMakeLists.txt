@@ -225,5 +225,9 @@ if(NOT RONIN_BUILD_ANDROID)
 
     add_executable(ronin_shm_candidate_dumper tests/shm_candidate_dumper.cpp src/dsp/synthetic_shm_generator.cpp)
     target_link_libraries(ronin_shm_candidate_dumper ronin_core)
+
+    add_executable(ronin_cloud_provider_test tests/cloud_provider_regression_test.cpp)
+    target_link_libraries(ronin_cloud_provider_test ronin_core gtest_main)
+    add_test(NAME ronin_cloud_provider_test COMMAND ronin_cloud_provider_test)
 endif()
 file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/.agents/worker_1")

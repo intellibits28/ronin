@@ -5,10 +5,10 @@
     "gating_success_rate_pct": 90.0,
     "kalman_tracking_error_mae_hz": 0.00023356437683105468,
     "latency_metrics": {
-        "max_ms": 5.59099,
-        "mean_ms": 2.2839118378378376,
-        "min_ms": 0.248229,
-        "stddev_ms": 0.8445860949893297
+        "max_ms": 2.644687,
+        "mean_ms": 1.8089146486486485,
+        "min_ms": 0.199792,
+        "stddev_ms": 0.4971010351533159
     },
     "scenarios": {
         "scenario_1_baseline_verification": "PASSED",

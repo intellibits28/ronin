@@ -610,6 +610,37 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         onSystemTiersUpdateCallback?.invoke(temp, used, total)
     }
 
+    fun resolveGeminiModelId(rawModelId: String): String {
+        val clean = rawModelId.removePrefix("models/").trim()
+        return when (clean) {
+            "gemini-fast", "gemini-default", "gemini-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest", "" -> "gemini-2.5-flash"
+            else -> clean
+        }
+    }
+
+    fun buildGeminiEndpointUrl(endpoint: String, rawModelId: String, apiKey: String): String {
+        val model = resolveGeminiModelId(rawModelId)
+        val encodedKey = java.net.URLEncoder.encode(apiKey, "UTF-8")
+        var base = endpoint.trim().removeSuffix("/")
+        
+        val queryIdx = base.indexOf("?")
+        if (queryIdx != -1) base = base.substring(0, queryIdx)
+        val genIdx = base.indexOf(":generateContent")
+        if (genIdx != -1) base = base.substring(0, genIdx)
+        
+        val modelsIdx = base.indexOf("/models")
+        if (modelsIdx != -1 && (modelsIdx == base.length - 7 || base[modelsIdx + 7] == '/')) {
+            base = base.substring(0, modelsIdx)
+        }
+        
+        if (!base.endsWith("/v1beta") && !base.contains("/v1beta")) {
+            if (base.endsWith("/v1")) base = base.removeSuffix("/v1") + "/v1beta"
+            else if (base.contains("generativelanguage.googleapis.com")) base = "$base/v1beta"
+        }
+        
+        return "$base/models/$model:generateContent?key=$encodedKey"
+    }
+
     @Suppress("unused")
     fun performCloudInference(input: String, provider: String, apiKey: String): String {
         return runBlocking { performCloudInferenceAsync(input, provider, apiKey) }
@@ -634,7 +665,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     val p = providersJson.getJSONObject(i)
                     if (p.getString("name") == provider) {
                         endpoint = p.getString("endpoint")
-                        modelId = p.optString("modelId", "gemini-1.5-flash-latest")
+                        modelId = p.optString("modelId", "gemini-2.5-flash")
                         break
                     }
                 }
@@ -645,18 +676,24 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             return@withContext response.toString()
         }
 
+        val isGemini = endpoint.contains("generativelanguage") || provider.equals("Gemini", ignoreCase = true) || provider.contains("Gemini", ignoreCase = true)
         if (endpoint.isEmpty()) {
-            response.put("success", false)
-            response.put("error", JSONObject().put("code", "POLICY_DENIED").put("message", "Endpoint missing for $provider"))
-            return@withContext response.toString()
+            if (isGemini) {
+                endpoint = "https://generativelanguage.googleapis.com/v1beta"
+            } else {
+                response.put("success", false)
+                response.put("error", JSONObject().put("code", "POLICY_DENIED").put("message", "Endpoint missing for $provider"))
+                return@withContext response.toString()
+            }
+        }
+
+        if (isGemini) {
+            modelId = resolveGeminiModelId(modelId)
         }
 
         try {
-            val isGemini = endpoint.contains("generativelanguage")
             val finalUrl = if (isGemini) {
-                val base = endpoint.removeSuffix("/")
-                if (!base.contains(":generateContent")) "$base/models/$modelId:generateContent?key=$key"
-                else "$base?key=$key"
+                buildGeminiEndpointUrl(endpoint, modelId, key)
             } else endpoint
 
             val jsonBody = if (isGemini) {
@@ -672,19 +709,73 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 .build()
 
             httpClient.newCall(request).execute().use { responseHttp ->
+                val body = responseHttp.body?.string() ?: ""
                 if (responseHttp.isSuccessful) {
-                    val body = responseHttp.body?.string() ?: ""
                     val contentText = if (isGemini) {
-                        JSONObject(body).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                        val candidates = JSONObject(body).optJSONArray("candidates")
+                        if (candidates != null && candidates.length() > 0) {
+                            val content = candidates.getJSONObject(0).optJSONObject("content")
+                            if (content != null) {
+                                val parts = content.optJSONArray("parts")
+                                if (parts != null && parts.length() > 0) {
+                                    parts.getJSONObject(0).optString("text", "")
+                                } else ""
+                            } else ""
+                        } else ""
                     } else {
-                        JSONObject(body).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+                        val choices = JSONObject(body).optJSONArray("choices")
+                        if (choices != null && choices.length() > 0) {
+                            choices.getJSONObject(0).optJSONObject("message")?.optString("content", "") ?: ""
+                        } else ""
                     }
                     response.put("success", true)
                     response.put("payload", contentText)
                     response.toString()
                 } else {
+                    val maskedUrl = finalUrl.replace(Regex("key=[^&]+"), "key=AIzaSy***Masked***")
+                    var providerMessage = "HTTP ${responseHttp.code} - ${responseHttp.message}"
+                    var errorCode = "HTTP_${responseHttp.code}"
+                    try {
+                        if (body.isNotEmpty()) {
+                            val jsonErr = JSONObject(body)
+                            if (jsonErr.has("error")) {
+                                val errObj = jsonErr.optJSONObject("error")
+                                if (errObj != null) {
+                                    val msg = errObj.optString("message", "")
+                                    val code = errObj.optString("code", "${responseHttp.code}")
+                                    if (msg.isNotEmpty()) {
+                                        providerMessage = msg
+                                        errorCode = "HTTP_${responseHttp.code} ($code)"
+                                    }
+                                } else {
+                                    providerMessage = jsonErr.optString("error", body)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        if (body.isNotEmpty()) {
+                            providerMessage += ": $body"
+                        }
+                    }
+                    val fullErrorDetail = buildString {
+                        append("HTTP ").append(responseHttp.code).append("\n")
+                        append("URL:\n").append(maskedUrl).append("\n\n")
+                        if (body.isNotEmpty()) {
+                            append("Body:\n").append(body)
+                        } else {
+                            append("Message:\n").append(providerMessage)
+                        }
+                    }
+                    Log.e("RoninCloud", "Inference error for $provider ($modelId):\n$fullErrorDetail")
                     response.put("success", false)
-                    response.put("error", JSONObject().put("code", "GENERIC_ERROR").put("message", "HTTP ${responseHttp.code} - ${responseHttp.message}"))
+                    val errorObj = JSONObject()
+                        .put("code", errorCode)
+                        .put("message", providerMessage)
+                        .put("detail", fullErrorDetail)
+                        .put("http_status", responseHttp.code)
+                        .put("url", maskedUrl)
+                        .put("body", body)
+                    response.put("error", errorObj)
                     response.toString()
                 }
             }
@@ -693,6 +784,114 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             response.put("error", JSONObject().put("code", "GENERIC_ERROR").put("message", e.message ?: "Unknown cloud error"))
             response.toString()
         }
+    }
+
+    @Suppress("unused")
+    fun checkProviderHealth(provider: String = "Gemini", apiKeyInput: String = ""): String {
+        return runBlocking { checkProviderHealthAsync(provider, apiKeyInput) }
+    }
+
+    suspend fun checkProviderHealthAsync(provider: String = "Gemini", apiKeyInput: String = ""): String = withContext(Dispatchers.IO) {
+        val resultJson = JSONObject()
+        val key = if (apiKeyInput.isNotEmpty()) apiKeyInput else (getSecureApiKeyProvider?.invoke(provider)?.trim() ?: "")
+        if (key.isEmpty()) {
+            return@withContext resultJson
+                .put("success", false)
+                .put("provider", provider)
+                .put("api_reachable", false)
+                .put("model_exists", false)
+                .put("generate_content_ok", false)
+                .put("error", JSONObject().put("step", "auth").put("message", "API Key missing"))
+                .toString(2)
+        }
+
+        var endpoint = ""
+        var modelId = "gemini-2.5-flash"
+        try {
+            val providersFile = File(context.filesDir, "config/providers.json")
+            if (providersFile.exists()) {
+                val providersJson = JSONArray(providersFile.readText())
+                for (i in 0 until providersJson.length()) {
+                    val p = providersJson.getJSONObject(i)
+                    if (p.getString("name") == provider) {
+                        endpoint = p.getString("endpoint")
+                        modelId = p.optString("modelId", "gemini-2.5-flash")
+                        break
+                    }
+                }
+            }
+        } catch (e: Exception) {}
+
+        val isGemini = endpoint.contains("generativelanguage") || provider.equals("Gemini", ignoreCase = true) || provider.contains("Gemini", ignoreCase = true)
+        if (endpoint.isEmpty() && isGemini) endpoint = "https://generativelanguage.googleapis.com/v1beta"
+        if (isGemini) modelId = resolveGeminiModelId(modelId)
+
+        val fetchRes = fetchAvailableModels(key, provider)
+        val apiReachable = fetchRes.error == null
+        var modelExists = false
+        if (apiReachable) {
+            for (m in fetchRes.models) {
+                val name = m.optString("name", "")
+                val id = m.optString("id", "")
+                if (name.contains(modelId) || id.contains(modelId)) {
+                    modelExists = true
+                    break
+                }
+            }
+            if (!modelExists && isGemini) {
+                for (m in fetchRes.models) {
+                    val name = m.optString("name", "")
+                    if (name.removePrefix("models/") == modelId) {
+                        modelExists = true
+                        break
+                    }
+                }
+            }
+        }
+
+        if (!apiReachable || !modelExists) {
+            resultJson.put("success", false)
+            resultJson.put("provider", provider)
+            resultJson.put("api_reachable", apiReachable)
+            resultJson.put("model_exists", modelExists)
+            resultJson.put("generate_content_ok", false)
+            resultJson.put("model_id", modelId)
+            if (fetchRes.error != null) {
+                resultJson.put("error", JSONObject().put("step", "model_listing").put("message", fetchRes.error))
+            } else {
+                resultJson.put("error", JSONObject().put("step", "model_existence").put("message", "Model $modelId not found in available models"))
+            }
+            return@withContext resultJson.toString(2)
+        }
+
+        val inferenceRaw = performCloudInferenceAsync("Reply with exactly the word OK", provider, key)
+        var generateOk = false
+        var sampleRes = ""
+        var errorObj: JSONObject? = null
+        try {
+            val resObj = JSONObject(inferenceRaw)
+            if (resObj.optBoolean("success", false)) {
+                generateOk = true
+                sampleRes = resObj.optString("payload", "").trim()
+            } else {
+                errorObj = resObj.optJSONObject("error")
+            }
+        } catch (e: Exception) {
+            errorObj = JSONObject().put("message", "Inference response parse failure: ${e.message}")
+        }
+
+        resultJson.put("success", generateOk)
+        resultJson.put("provider", provider)
+        resultJson.put("api_reachable", apiReachable)
+        resultJson.put("model_exists", modelExists)
+        resultJson.put("generate_content_ok", generateOk)
+        resultJson.put("model_id", modelId)
+        if (generateOk) {
+            resultJson.put("response_sample", sampleRes)
+        } else if (errorObj != null) {
+            resultJson.put("error", errorObj)
+        }
+        resultJson.toString(2)
     }
 
     @Keep
@@ -912,9 +1111,10 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     suspend fun fetchAvailableModels(apiKey: String, provider: String = "Gemini"): FetchResult = withContext(Dispatchers.IO) {
-        val isGemini = provider.equals("Gemini", ignoreCase = true)
+        val isGemini = provider.equals("Gemini", ignoreCase = true) || provider.contains("Gemini", ignoreCase = true)
         val baseUrl = if (isGemini) "https://generativelanguage.googleapis.com" else "https://openrouter.ai/api/v1"
-        val endpoint = if (isGemini) "$baseUrl/v1beta/models?key=$apiKey" else "$baseUrl/models"
+        val encodedKey = java.net.URLEncoder.encode(apiKey, "UTF-8")
+        val endpoint = if (isGemini) "$baseUrl/v1beta/models?key=$encodedKey" else "$baseUrl/models"
         
         try {
             val request = Request.Builder()

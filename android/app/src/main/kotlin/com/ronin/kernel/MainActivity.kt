@@ -167,6 +167,9 @@ class ChatViewModel : ViewModel() {
     var isFetchingModels by mutableStateOf(false)
     var kernelStatus by mutableStateOf("Initializing...")
     var isGenerating by mutableStateOf(false)
+    var apiConnectionStatus by mutableStateOf("Standby")
+    var apiLatencyMs by mutableStateOf(0L)
+    var showModelPickerBottomSheet by mutableStateOf(false)
 }
 
 class MainActivity : FragmentActivity() {
@@ -347,7 +350,7 @@ class MainActivity : FragmentActivity() {
             } catch (e: Exception) {}
         } else {
             // v3.5: Ensure default providers are available
-            chatViewModel.cloudProviders.add(CloudProvider("Gemini", "Gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", "gemini-1.5-flash", "key"))
+            chatViewModel.cloudProviders.add(CloudProvider("Gemini", "Gemini", "https://generativelanguage.googleapis.com/v1beta", "gemini-2.5-flash", "key"))
             saveCloudProvidersToDisk()
         }
     }
@@ -389,6 +392,25 @@ class MainActivity : FragmentActivity() {
     fun saveApiKey(provider: String, key: String) { sharedPreferences.edit().putString(provider, key).apply() }
     fun addCloudProvider(n: String, t: String, e: String, m: String) { val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]; if (chatViewModel.cloudProviders.none { it.name == n }) { chatViewModel.cloudProviders.add(CloudProvider(n, t, e, m, "bearer")); saveCloudProvidersToDisk() } }
     fun deleteCloudProvider(name: String) { val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]; chatViewModel.cloudProviders.removeAll { it.name == name }; saveCloudProvidersToDisk() }
+    fun testCloudConnection(chatViewModel: ChatViewModel) {
+        lifecycleScope.launch {
+            chatViewModel.apiConnectionStatus = "Testing..."
+            val start = System.currentTimeMillis()
+            val apiKey = getApiKey(chatViewModel.primaryCloudProvider)
+            val result = withContext(Dispatchers.IO) {
+                nativeEngine.checkProviderHealthAsync(chatViewModel.primaryCloudProvider, apiKey)
+            }
+            val latency = System.currentTimeMillis() - start
+            chatViewModel.apiLatencyMs = latency
+            if (result.contains("Error") || result.contains("failed", true)) {
+                chatViewModel.apiConnectionStatus = "Error"
+                Toast.makeText(this@MainActivity, "Connection check failed: $result", Toast.LENGTH_LONG).show()
+            } else {
+                chatViewModel.apiConnectionStatus = "Connected"
+                Toast.makeText(this@MainActivity, "Connection OK (${latency}ms)", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     fun saveOfflineMode(offline: Boolean) { sharedPreferences.edit().putBoolean("offline_mode", offline).apply(); nativeEngine.setOfflineModeSafe(offline) }
     fun saveSystemPrompt(p: String) { sharedPreferences.edit().putString("system_prompt", p).apply() }
     fun saveMaxTokens(t: Int) {
@@ -1471,22 +1493,7 @@ class MainActivity : FragmentActivity() {
                     
                     val gps = try {
                         val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
-                        lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
-                    } catch (e: Exception) { false }
-
-                    val charging = batteryManager.isCharging
-                    
-                    nativeEngine.injectWorldState(battery, ram, gps, net, charging)
-                } catch (e: Exception) { 
-                    Log.w("RoninKernel", "WorldState Sync failed: ${e.message}")
-                }
-                delay(10000) // 10s cycle
-            }
-        }
-    }
-}
-
-@Composable
+                        lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)@Composable
 fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
     val context = LocalContext.current; val activity = context.findActivity() as? MainActivity
     val scope = rememberCoroutineScope(); val scaffoldState = rememberScaffoldState()
@@ -1524,215 +1531,172 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
     Scaffold(
         scaffoldState = scaffoldState,
         drawerContent = { ModalDrawerSheet(chatViewModel, brainPicker, onSaveOfflineMode) },
-        topBar = { TopAppBar(navigationIcon = { IconButton(onClick = { scope.launch { scaffoldState.drawerState.open() } }) { Icon(Icons.Default.Menu, null) } }, title = { Column { Text("Ronin Kernel", fontWeight = FontWeight.Bold); Text(chatViewModel.kernelStatus, fontSize = 10.sp, color = if (chatViewModel.isGemmaReady) Color.Green else Color.Yellow) } }, actions = { IconButton(onClick = { chatViewModel.showReasoning = !chatViewModel.showReasoning }) { Icon(if (chatViewModel.showReasoning) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) }; IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) { Icon(Icons.Default.Info, null) } }) }
+        topBar = {
+            TopAppBar(
+                navigationIcon = { IconButton(onClick = { scope.launch { scaffoldState.drawerState.open() } }) { Icon(Icons.Default.Menu, null) } },
+                title = {
+                    Column {
+                        Text("Ronin Kernel", fontWeight = FontWeight.Bold)
+                        Text(chatViewModel.kernelStatus, fontSize = 10.sp, color = if (chatViewModel.isGemmaReady) Color.Green else Color.Yellow)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { chatViewModel.showReasoning = !chatViewModel.showReasoning }) {
+                        Icon(if (chatViewModel.showReasoning) Icons.Default.Visibility else Icons.Default.VisibilityOff, null)
+                    }
+                    IconButton(onClick = { chatViewModel.showSysInfo = !chatViewModel.showSysInfo }) {
+                        Icon(Icons.Default.Info, null)
+                    }
+                }
+            )
+        }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
-            if (chatViewModel.wizardState != WizardState.ACTIVE) { BootstrapWizard(chatViewModel, brainPicker) }
-            else {
+            if (chatViewModel.wizardState != WizardState.ACTIVE) {
+                BootstrapWizard(chatViewModel, brainPicker)
+            } else {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    if (chatViewModel.showSysInfo) SystemInfoPanel(chatViewModel)
-                    AnimatedVisibility(visible = chatViewModel.showReasoning) { 
-                        Box(modifier = Modifier.height(180.dp).fillMaxWidth().background(Color(0xFF12141C)).padding(8.dp).border(1.dp, Color.Cyan.copy(alpha = 0.2f), RoundedCornerShape(8.dp))) { 
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-                                    Text("Reasoning Console", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                    IconButton(onClick = { 
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                        val clip = android.content.ClipData.newPlainText("Ronin Console", chatViewModel.reasoningLogsText)
-                                        clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "Console logs copied to clipboard", Toast.LENGTH_SHORT).show()
-                                    }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Cyan, modifier = Modifier.size(14.dp))
-                                    }
-                                }
-                                val scrollState = rememberScrollState()
-                                LaunchedEffect(chatViewModel.reasoningLogsText) { scrollState.animateScrollTo(scrollState.maxValue) }
-                                androidx.compose.foundation.text.selection.SelectionContainer {
-                                    Text(chatViewModel.reasoningLogsText, color = Color.Cyan, fontSize = 9.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.verticalScroll(scrollState).weight(1f))
-                                }
-                            }
-                        } 
-                    }
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) { 
-                        LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), reverseLayout = true) { 
-                            items(chatViewModel.messages.asReversed()) { msg -> 
-                                ChatBubble(msg, onContinue = {
-                                    if (!chatViewModel.isGenerating && !msg.isContinuing) {
-                                        msg.isContinuing = true
-                                        chatViewModel.isGenerating = true
-                                        scope.launch {
-                                            val continuePrompt = "ဆက်ရေးပေးပါ။"
-                                            when (val result = engine.processInputResult(continuePrompt, chatViewModel.systemPrompt)) {
-                                                is BridgeResult.Success -> {
-                                                    val processRes = result.value
-                                                    msg.content += processRes.result
-                                                    msg.isTruncated = false
-                                                }
-                                                is BridgeResult.Error -> {
-                                                    Toast.makeText(context, "Continue failed: ${result.message} (${result.code})", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                            msg.isContinuing = false
-                                            chatViewModel.isGenerating = false
-                                        }
-                                    }
-                                }, onFeedback = { helpful ->
-                                    engine.applyHumanFeedback(msg.sessionId, helpful)
-                                }) 
-                            }
- 
-                        } 
-                        if (chatViewModel.showCommandSuggestions) {
-                            val suggestions = listOf("/status", "/skills", "/model", "/reset").filter { it.startsWith(currentInput.lowercase()) }
-                            if (suggestions.isNotEmpty()) { Surface(color = Color(0xFF25283D), modifier = Modifier.align(Alignment.BottomStart).padding(16.dp).fillMaxWidth(0.7f).clip(RoundedCornerShape(12.dp)), elevation = 8.dp) { LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) { items(suggestions) { s -> TextButton(onClick = { currentInput = "$s "; chatViewModel.showCommandSuggestions = false }, modifier = Modifier.fillMaxWidth()) { Text(s, color = Color.White) } } } } }
-                        }
-                        
-                        // Phase 5: Developer HUD Overlay
-                        if (chatViewModel.showDevHUD) {
-                            Box(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
-                                Surface(
-                                    color = Color(0xCC000000L), 
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF64B5F6))
-                                ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
-                                        Text("COG HUD (1Hz)", color = Color.Yellow, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text("STATE: ${chatViewModel.hudState}", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                        Text("INTENT: ${chatViewModel.hudIntent}", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                        Text("CONF: ${"%.2f".format(chatViewModel.hudConfidence)}", color = if(chatViewModel.hudConfidence > 0.5f) Color.Green else Color.Red, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                        if (chatViewModel.hudPlan.isNotEmpty()) {
-                                            Text("PLAN: ${chatViewModel.hudPlan}", color = Color.Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                        }
-                                        
-                                        // Phase 5: Sensor Analytics Visualization
-                                        if (chatViewModel.sensorFreqHz > 0) {
-                                            Divider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 4.dp))
-                                            Text("DSP SENSOR DATA", color = Color(0xFFFFA726), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                            val anomalyColor = if(chatViewModel.sensorAnomaly) Color.Red else Color.Green
-                                            Text("PEAK: ${"%.1f".format(chatViewModel.sensorFreqHz)}Hz", color = anomalyColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                            Text("PSD: ${"%.1f".format(chatViewModel.sensorPsdDb)}dB", color = anomalyColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                        }
+                    SystemStatusCard(chatViewModel)
+                    ReasoningConsole(chatViewModel)
+                    DeveloperHud(chatViewModel)
 
-                                        // v1.1: Guitar Tuner Card
-                                        val tuner = chatViewModel.tunerResult
-                                        if (tuner.status != "IDLE") {
-                                            Divider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 4.dp))
-                                            Text("🎸 GUITAR TUNER", color = Color(0xFFCE93D8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                            val (tunerColor, tunerIcon) = when (tuner.status) {
-                                                "IN_TUNE" -> Color(0xFF66BB6A) to "✅"
-                                                "SHARP"   -> Color(0xFFEF5350) to "🔺"
-                                                "FLAT"    -> Color(0xFF42A5F5) to "🔻"
-                                                else      -> Color.Gray to "⏸"
-                                            }
-                                            Text("$tunerIcon ${tuner.nearestString} target", color = tunerColor, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                                            Text("DETECTED: ${"%.2f".format(tuner.detectedHz)}Hz (${tuner.detectedNote})", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                                            Text("TARGET:   ${"%.2f".format(tuner.nearestStringHz)}Hz (${tuner.nearestString})", color = Color.Gray, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                                            val deviationLabel = when {
-                                                tuner.deviationCents > 0 -> "+${"%.1f".format(tuner.deviationCents)}¢ SHARP"
-                                                tuner.deviationCents < 0 -> "${"%.1f".format(tuner.deviationCents)}¢ FLAT"
-                                                else -> "0.0¢ IN TUNE"
-                                            }
-                                            Text(deviationLabel, color = tunerColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                            // Visual needle bar: range -50c to +50c
-                                            val needleProgress = ((tuner.deviationCents.coerceIn(-50.0, 50.0) + 50.0) / 100.0).toFloat()
-                                            LinearProgressIndicator(
-                                                progress = needleProgress,
-                                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                                                color = tunerColor,
-                                                backgroundColor = Color(0xFF37474F)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Surface(elevation = 8.dp, color = Color(0xFF1A1C2C)) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            TextField(value = currentInput, onValueChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") }, modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), trailingIcon = { IconButton(onClick = { 
-                                if (chatViewModel.isGenerating) {
-                                    chatViewModel.isGenerating = false
-                                    engine.stopInference()
-                                } else if (currentInput.isNotBlank()) { 
-                                    val raw = currentInput; chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", raw)); currentInput = ""; chatViewModel.isGenerating = true
-                                    chatViewModel.reasoningLogsText = "> Processing: $raw"
-                                    scope.launch { 
-                                        val isCommand = raw.trim().startsWith("/")
-                                        val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "")
-                                        chatViewModel.messages.add(roninMsg)
-                                        
-                                        try {
-                                            if (!isCommand && (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady)) { 
-                                                val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
-                                                val resJsonStr = engine.performCloudInferenceAsync(raw, chatViewModel.primaryCloudProvider, apiKey)
-                                                try {
-                                                    val resJson = JSONObject(resJsonStr)
-                                                    if (resJson.optBoolean("success", false)) {
-                                                        roninMsg.content = resJson.optString("payload", "")
-                                                    } else {
-                                                        val error = resJson.optJSONObject("error")
-                                                        val errorMsg = error?.optString("message") ?: "Cloud Inference Failed"
-                                                        val errorCode = error?.optString("code") ?: "UNKNOWN"
-                                                        roninMsg.content = "Error: $errorMsg ($errorCode)"
-                                                    }
-                                                } catch (e: Exception) {
-                                                    if (resJsonStr.startsWith("Error:")) {
-                                                        roninMsg.content = resJsonStr
-                                                    } else {
-                                                        roninMsg.content = "Error: $resJsonStr"
-                                                    }
-                                                }
-                                            } else { 
-                                                when (val result = engine.processInputResult(raw, chatViewModel.systemPrompt)) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp),
+                            reverseLayout = true
+                        ) {
+                            items(chatViewModel.messages.asReversed()) { msg ->
+                                AgentResponseCard(
+                                    msg = msg,
+                                    chatViewModel = chatViewModel,
+                                    onContinue = {
+                                        if (!chatViewModel.isGenerating && !msg.isContinuing) {
+                                            msg.isContinuing = true
+                                            chatViewModel.isGenerating = true
+                                            scope.launch {
+                                                val continuePrompt = "ဆက်ရေးပေးပါ။"
+                                                when (val result = engine.processInputResult(continuePrompt, chatViewModel.systemPrompt)) {
                                                     is BridgeResult.Success -> {
                                                         val processRes = result.value
-                                                        var displayResult = processRes.result
-                                                        if (displayResult.contains("User denied HITL confirmation prompt")) {
-                                                            val fallbackPrompt = "The user has declined the automatic execution of the action for their query: \"$raw\". Please provide a helpful, conversational textual explanation in Myanmar instead."
-                                                            displayResult = engine.runNeuralReasoning(fallbackPrompt)
-                                                        }
-                                                        if (isCommand || processRes.result.startsWith("Executing plan:")) {
-                                                            roninMsg.content = displayResult
-                                                        } else if (roninMsg.content.isEmpty()) {
-                                                            roninMsg.content = displayResult
-                                                        }
-                                                        roninMsg.sessionId = processRes.sessionId
+                                                        msg.content += processRes.result
+                                                        msg.isTruncated = false
                                                     }
                                                     is BridgeResult.Error -> {
-                                                        roninMsg.content = "Error: ${result.message} (${result.code})"
+                                                        Toast.makeText(context, "Continue failed: ${result.message} (${result.code})", Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
+                                                msg.isContinuing = false
+                                                chatViewModel.isGenerating = false
                                             }
-                                        } finally {
-                                            chatViewModel.isGenerating = false
                                         }
-                                    } 
-                                } 
-                            }) { Icon(if (chatViewModel.isGenerating) Icons.Default.Stop else Icons.Default.Send, null, tint = if (chatViewModel.isGenerating) Color.Red else Color(0xFF64B5F6)) } })
+                                    },
+                                    onFeedback = { helpful ->
+                                        engine.applyHumanFeedback(msg.sessionId, helpful)
+                                    }
+                                )
+                            }
                         }
                     }
+
+                    InputBar(
+                        currentInput = currentInput,
+                        onInputChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") },
+                        isGenerating = chatViewModel.isGenerating,
+                        onSendOrStop = {
+                            if (chatViewModel.isGenerating) {
+                                chatViewModel.isGenerating = false
+                                engine.stopInference()
+                            } else if (currentInput.isNotBlank()) {
+                                val raw = currentInput
+                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", raw))
+                                currentInput = ""
+                                chatViewModel.isGenerating = true
+                                chatViewModel.reasoningLogsText = "> Processing: $raw\n" + chatViewModel.reasoningLogsText
+                                scope.launch {
+                                    val isCommand = raw.trim().startsWith("/")
+                                    val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "")
+                                    chatViewModel.messages.add(roninMsg)
+
+                                    try {
+                                        if (!isCommand && (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady)) {
+                                            val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
+                                            val resJsonStr = engine.performCloudInferenceAsync(raw, chatViewModel.primaryCloudProvider, apiKey)
+                                            try {
+                                                val resJson = JSONObject(resJsonStr)
+                                                if (resJson.optBoolean("success", false)) {
+                                                    roninMsg.content = resJson.optString("payload", "")
+                                                } else {
+                                                    val error = resJson.optJSONObject("error")
+                                                    val errorMsg = error?.optString("message") ?: "Cloud Inference Failed"
+                                                    val errorCode = error?.optString("code") ?: "UNKNOWN"
+                                                    roninMsg.content = "Error: $errorMsg ($errorCode)"
+                                                }
+                                            } catch (e: Exception) {
+                                                if (resJsonStr.startsWith("Error:")) {
+                                                    roninMsg.content = resJsonStr
+                                                } else {
+                                                    roninMsg.content = "Error: $resJsonStr"
+                                                }
+                                            }
+                                        } else {
+                                            when (val result = engine.processInputResult(raw, chatViewModel.systemPrompt)) {
+                                                is BridgeResult.Success -> {
+                                                    val processRes = result.value
+                                                    var displayResult = processRes.result
+                                                    if (displayResult.contains("User denied HITL confirmation prompt")) {
+                                                        val fallbackPrompt = "The user has declined the automatic execution of the action for their query: \"$raw\". Please provide a helpful, conversational textual explanation in Myanmar instead."
+                                                        displayResult = engine.runNeuralReasoning(fallbackPrompt)
+                                                    }
+                                                    if (isCommand || processRes.result.startsWith("Executing plan:")) {
+                                                        roninMsg.content = displayResult
+                                                    } else if (roninMsg.content.isEmpty()) {
+                                                        roninMsg.content = displayResult
+                                                    }
+                                                    roninMsg.sessionId = processRes.sessionId
+                                                }
+                                                is BridgeResult.Error -> {
+                                                    roninMsg.content = "Error: ${result.message} (${result.code})"
+                                                }
+                                            }
+                                        }
+                                    } finally {
+                                        chatViewModel.isGenerating = false
+                                    }
+                                }
+                            }
+                        },
+                        onSuggestionClick = { s -> currentInput = s; chatViewModel.showCommandSuggestions = false },
+                        showCommandSuggestions = chatViewModel.showCommandSuggestions
+                    )
                 }
             }
         }
     }
+
     if (chatViewModel.showAddCloudDialog) {
         CloudProviderDialog(chatViewModel, activity)
     }
-    
-    // v7.0: HITL Dialog
+
+    if (chatViewModel.showModelPickerBottomSheet) {
+        ModelPicker(
+            chatViewModel = chatViewModel,
+            activity = activity,
+            onDismiss = { chatViewModel.showModelPickerBottomSheet = false }
+        )
+    }
+
     if (chatViewModel.showHITLDialog) {
         AlertDialog(
-            onDismissRequest = { 
+            onDismissRequest = {
                 chatViewModel.showHITLDialog = false
                 chatViewModel.onHITLResult?.invoke(false)
             },
             backgroundColor = Color(0xFF1E2130),
-            title = { 
+            title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Warning, null, tint = Color.Yellow)
                     Spacer(Modifier.width(8.dp))
-                    Text("Safety Confirmation", color = Color.White) 
+                    Text("Safety Confirmation", color = Color.White)
                 }
             },
             text = { Text(chatViewModel.hitlMessage, color = Color.White) },
@@ -1747,7 +1711,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 ) { Text("Approve", color = Color.Black, fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { 
+                TextButton(onClick = {
                     Log.i("RoninKernel_MainActivity", "HITL: User Rejected action.")
                     chatViewModel.showHITLDialog = false
                     chatViewModel.onHITLResult?.invoke(false)
@@ -1760,89 +1724,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
 @Composable
 fun ModalDrawerSheet(chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
     val context = LocalContext.current; val activity = context.findActivity() as? MainActivity
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1C2C)).verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text("Ronin Configuration", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White); Spacer(Modifier.height(24.dp))
-        
-        Text("Operation Mode", fontSize = 12.sp, color = Color.Gray)
-        Row(verticalAlignment = Alignment.CenterVertically) { Text("Cloud Only Mode", modifier = Modifier.weight(1f), color = Color.White, fontSize = 14.sp); Switch(checked = chatViewModel.cloudOnlyMode, onCheckedChange = { chatViewModel.cloudOnlyMode = it; activity?.saveCloudOnlyMode(it) }) }
-        Row(verticalAlignment = Alignment.CenterVertically) { Text("Reasoning Logs", modifier = Modifier.weight(1f), color = Color.White, fontSize = 14.sp); Switch(checked = chatViewModel.showReasoning, onCheckedChange = { chatViewModel.showReasoning = it }) }
-        Row(verticalAlignment = Alignment.CenterVertically) { Text("Developer HUD (1Hz)", modifier = Modifier.weight(1f), color = Color.White, fontSize = 14.sp); Switch(checked = chatViewModel.showDevHUD, onCheckedChange = { chatViewModel.showDevHUD = it }) }
-        
-        Divider(Modifier.padding(vertical = 16.dp))
-        Text("Sampling Parameters (T,P,K)", fontSize = 12.sp, color = Color.Gray)
-        Text("Temperature: ${"%.2f".format(chatViewModel.samplingTemperature)}", color = Color.White, fontSize = 13.sp)
-        Slider(value = chatViewModel.samplingTemperature, onValueChange = { chatViewModel.samplingTemperature = it }, onValueChangeFinished = { activity?.saveSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP) }, valueRange = 0.1f..1.5f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
-        
-        Text("Top-K: ${chatViewModel.topK}", color = Color.White, fontSize = 13.sp)
-        Slider(value = chatViewModel.topK.toFloat(), onValueChange = { chatViewModel.topK = it.toInt() }, onValueChangeFinished = { activity?.saveSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP) }, valueRange = 1f..100f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
-        
-        Text("Top-P: ${"%.2f".format(chatViewModel.topP)}", color = Color.White, fontSize = 13.sp)
-        Slider(value = chatViewModel.topP, onValueChange = { chatViewModel.topP = it }, onValueChangeFinished = { activity?.saveSamplingParams(chatViewModel.samplingTemperature, chatViewModel.topK, chatViewModel.topP) }, valueRange = 0.1f..1.0f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
-        
-        Text("Max Tokens: ${chatViewModel.maxTokens}", color = Color.White, fontSize = 13.sp)
-        Slider(value = chatViewModel.maxTokens.toFloat(), onValueChange = { chatViewModel.maxTokens = it.toInt() }, onValueChangeFinished = { activity?.saveMaxTokens(chatViewModel.maxTokens) }, valueRange = 1536f..4000f, colors = SliderDefaults.colors(thumbColor = Color(0xFF64B5F6), activeTrackColor = Color(0xFF64B5F6)))
-
-        Divider(Modifier.padding(vertical = 16.dp))
-        Text("System Prompt", fontSize = 12.sp, color = Color.Gray)
-        TextField(value = chatViewModel.systemPrompt, onValueChange = { chatViewModel.systemPrompt = it; activity?.saveSystemPrompt(it) }, modifier = Modifier.fillMaxWidth().height(100.dp), colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp))
-        
-        Divider(Modifier.padding(vertical = 16.dp))
-        Text("Local Models", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-        chatViewModel.discoveredModels.forEach { path -> val isActive = path == chatViewModel.localModelPath; Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = isActive, onClick = { activity?.hydrateModel(path) }, colors = RadioButtonDefaults.colors(selectedColor = Color.Green)); Text(File(path).name, modifier = Modifier.weight(1f).clickable { activity?.hydrateModel(path) }, color = if (isActive) Color.Green else Color.White, fontSize = 12.sp); IconButton(onClick = { activity?.deleteLocalModel(path) }) { Icon(Icons.Default.Delete, null, tint = Color.Gray, modifier = Modifier.size(16.dp)) } } }
-        OutlinedButton(onClick = { brainPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Import Brain") }
-        
-        Divider(Modifier.padding(vertical = 16.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Cloud Profiles", modifier = Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-            IconButton(onClick = { chatViewModel.editingProvider = null; chatViewModel.showAddCloudDialog = true }) { Icon(Icons.Default.Add, null, tint = Color.Cyan) }
-        }
-        chatViewModel.cloudProviders.forEach { profile -> 
-            val isSelected = profile.name == chatViewModel.primaryCloudProvider
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) { 
-                    RadioButton(selected = isSelected, onClick = { activity?.savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }); 
-                    Column(modifier = Modifier.weight(1f).clickable { activity?.savePrimaryCloudProvider(profile.name); chatViewModel.primaryCloudProvider = profile.name }) { 
-                        Text(profile.name, color = Color.White, fontSize = 12.sp); 
-                        Text(profile.modelId, fontSize = 9.sp, color = Color.Gray) 
-                    } 
-                    IconButton(onClick = { chatViewModel.editingProvider = profile; chatViewModel.showAddCloudDialog = true }) { Icon(Icons.Default.Edit, null, tint = Color.Gray, modifier = Modifier.size(16.dp)) }
-                    IconButton(onClick = { activity?.deleteCloudProvider(profile.name) }) { Icon(Icons.Default.Delete, null, tint = Color.Red, modifier = Modifier.size(16.dp)) }
-                }
-                if (isSelected) {
-                    var apiKey by remember(profile.name) { mutableStateOf(activity?.getApiKey(profile.name) ?: "") }
-                    TextField(
-                        value = apiKey,
-                        onValueChange = { apiKey = it; activity?.saveApiKey(profile.name, it) },
-                        placeholder = { Text("Enter API Key", fontSize = 10.sp, color = Color.Gray) },
-                        modifier = Modifier.fillMaxWidth().padding(start = 32.dp, end = 8.dp, bottom = 8.dp),
-                        colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF25283D), textColor = Color.White),
-                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
-                        singleLine = true
-                    )
-                }
-            }
-        }
-        
-        Spacer(Modifier.height(16.dp))
-        Button(
-            onClick = { activity?.nativeEngine?.runNightlyReflection() },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF6200EE))
-        ) {
-            Icon(Icons.Default.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Run Behavioral Reflection", color = Color.White, fontSize = 12.sp)
-        }
-        
-        Spacer(Modifier.weight(1f)); TextButton(onClick = { activity?.clearModelCache() }) { Text("Clear All Cache", color = Color.Red, fontSize = 12.sp) }
-    }
+    SettingsSection(
+        chatViewModel = chatViewModel,
+        activity = activity,
+        brainPicker = brainPicker,
+        onOpenModelPicker = { chatViewModel.showModelPickerBottomSheet = true },
+        onTestConnection = { activity?.testCloudConnection(chatViewModel) }
+    )
 }
 
 @Composable
 fun CloudProviderDialog(chatViewModel: ChatViewModel, activity: MainActivity?) {
     var name by remember { mutableStateOf(chatViewModel.editingProvider?.name ?: "") }
     var endpoint by remember { mutableStateOf(chatViewModel.editingProvider?.endpoint ?: "") }
-    var modelId by remember { mutableStateOf(chatViewModel.editingProvider?.modelId ?: "gemini-1.5-flash-latest") }
+    var modelId by remember { mutableStateOf(chatViewModel.editingProvider?.modelId ?: "gemini-2.5-flash") }
     var providerType by remember { mutableStateOf(chatViewModel.editingProvider?.providerType ?: "Gemini") }
     
     // Auto-advance if editing

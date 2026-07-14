@@ -188,7 +188,12 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
                             auto err = json_res["error"];
                             std::string msg = err.value("message", "Cloud Inference Failed");
                             std::string code = err.value("code", "UNKNOWN");
-                            result = "Error: " + msg + " (" + code + ")";
+                            std::string detail = err.value("detail", "");
+                            if (!detail.empty()) {
+                                result = "Error: " + msg + " (" + code + ")\n" + detail;
+                            } else {
+                                result = "Error: " + msg + " (" + code + ")";
+                            }
                         } else {
                             result = raw_res;
                         }
@@ -210,6 +215,39 @@ std::string HardwareBridge::fetchCloudResponse(const std::string& input, const s
     return "Host Build: Cloud response mocked.";
 #endif
 }
+
+std::string HardwareBridge::checkProviderHealth(const std::string& provider, const std::string& apiKey) {
+#ifdef __ANDROID__
+    if (!s_vm || !s_instance || !s_clazz) return "Error: HardwareBridge not initialized.";
+
+    Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninCloudHealthThread");
+    JNIEnv* env = scopedEnv.env();
+
+    std::string result = "Error: Method checkProviderHealth failed.";
+    if (env) {
+        jmethodID mid = env->GetMethodID(s_clazz, "checkProviderHealth", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+        if (mid) {
+            jstring jprovider = env->NewStringUTF(provider.c_str());
+            jstring jkey = env->NewStringUTF(apiKey.c_str());
+            jstring jstr = (jstring)env->CallObjectMethod(s_instance, mid, jprovider, jkey);
+            if (jstr) {
+                const char* cstr = env->GetStringUTFChars(jstr, nullptr);
+                if (cstr) {
+                    result = std::string(cstr);
+                    env->ReleaseStringUTFChars(jstr, cstr);
+                }
+                env->DeleteLocalRef(jstr);
+            }
+            env->DeleteLocalRef(jprovider);
+            env->DeleteLocalRef(jkey);
+        }
+    }
+    return result;
+#else
+    return "Host Build: Provider health check mocked successfully.";
+#endif
+}
+
 
 std::string HardwareBridge::runNeuralReasoning(const std::string& input) {
 #ifdef __ANDROID__

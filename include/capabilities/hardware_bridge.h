@@ -58,6 +58,11 @@ public:
     static std::string fetchCloudResponse(const std::string& input, const std::string& provider, const std::string& apiKey = "");
 
     /**
+     * Diagnostic: Check Cloud Provider Health without requiring full agent execution
+     */
+    static std::string checkProviderHealth(const std::string& provider = "Gemini", const std::string& apiKey = "");
+
+    /**
      * Phase 6.0: Hybrid Neural Bridge
      * Calls back into Kotlin for local LiteRT-LM reasoning.
      */
