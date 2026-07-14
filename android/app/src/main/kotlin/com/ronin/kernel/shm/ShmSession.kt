@@ -49,6 +49,15 @@ data class ShmSession(
                 put("windowFunction", dspResult.windowFunction)
                 put("fftResult", JSONArray(dspResult.fftResult))
                 put("psdResult", JSONArray(dspResult.psdResult))
+                put("top_candidates", JSONArray().apply {
+                    dspResult.topCandidates.forEach { c ->
+                        put(JSONObject().apply {
+                            put("frequency_hz", c.frequencyHz.toDouble())
+                            put("psd_db", c.psdValue.toDouble())
+                            put("is_anomaly", c.isAnomaly)
+                        })
+                    }
+                })
             })
             put("features", JSONObject().apply {
                 put("baselineF0Hz", features.baselineF0Hz.toDouble())
@@ -93,6 +102,17 @@ data class ShmSession(
             trace.optJSONArray("processingStages")?.let { arr ->
                 for (i in 0 until arr.length()) stagesList.add(arr.optString(i))
             }
+            val candList = mutableListOf<SpectralPeak>()
+            dsp.optJSONArray("top_candidates")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val c = arr.optJSONObject(i) ?: continue
+                    candList.add(SpectralPeak(
+                        frequencyHz = c.optDouble("frequency_hz", 0.0).toFloat(),
+                        psdValue = c.optDouble("psd_db", 0.0).toFloat(),
+                        isAnomaly = c.optBoolean("is_anomaly", false)
+                    ))
+                }
+            }
 
             return ShmSession(
                 sessionId = root.optString("sessionId", "ronin_shm_${System.currentTimeMillis()}"),
@@ -119,7 +139,8 @@ data class ShmSession(
                     filtering = dsp.optBoolean("filtering", true),
                     windowFunction = dsp.optString("windowFunction", "Hann / Welch PSD (win=1024, sub=512, step=256, nfft=2048)"),
                     fftResult = fftList,
-                    psdResult = psdList
+                    psdResult = psdList,
+                    topCandidates = candList
                 ),
                 features = ShmFeatures(
                     baselineF0Hz = feat.optDouble("baselineF0Hz", 1.79).toFloat(),
@@ -351,7 +372,8 @@ data class DspResult(
     val filtering: Boolean = true,
     val windowFunction: String = "Hann / Welch PSD (win=1024, sub=512, step=256, nfft=2048)",
     val fftResult: List<Float> = emptyList(),
-    val psdResult: List<Float> = emptyList()
+    val psdResult: List<Float> = emptyList(),
+    val topCandidates: List<SpectralPeak> = emptyList()
 )
 
 data class ShmFeatures(

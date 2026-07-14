@@ -92,6 +92,11 @@ class SensorDriver(private val context: Context, private val nativeEngine: Nativ
         return when (action) {
             "get_analysis", "get_sensor_analysis" -> {
                 val analysisJson = nativeEngine.getSensorAnalysis(sensorType)
+                (context as? MainActivity)?.runOnUiThread {
+                    try {
+                        androidx.lifecycle.ViewModelProvider(context)[ChatViewModel::class.java].updateShmMetricsFromJson(analysisJson)
+                    } catch (_: Exception) {}
+                }
                 try {
                     JSONObject(analysisJson)
                 } catch (e: Exception) {

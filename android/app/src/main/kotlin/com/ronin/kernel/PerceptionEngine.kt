@@ -31,6 +31,11 @@ class PerceptionEngine(private val context: Context, private val nativeEngine: N
         try {
             // 1. Fetch sensor analysis from Native DSP
             val analysisJson = nativeEngine.getSensorAnalysis("accelerometer")
+            (context as? MainActivity)?.runOnUiThread {
+                try {
+                    androidx.lifecycle.ViewModelProvider(context)[ChatViewModel::class.java].updateShmMetricsFromJson(analysisJson)
+                } catch (_: Exception) {}
+            }
             val json = JSONObject(analysisJson)
             
             // Extract features

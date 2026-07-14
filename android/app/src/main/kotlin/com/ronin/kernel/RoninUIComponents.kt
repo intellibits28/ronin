@@ -277,14 +277,17 @@ fun ShmResultCard(
     var selectedExportFormat by remember { mutableStateOf(ExportFormat.ENGINEERING_JSON) }
     var showAiReview by remember { mutableStateOf(false) }
 
-    val session by remember(status, healthIndex, resonanceHz, noiseDb) {
+    val session by remember(status, healthIndex, resonanceHz, noiseDb, chatViewModel?.sensorCandidates?.toList()) {
         mutableStateOf(
             ShmSession(
                 features = ShmFeatures(
-                    baselineF0Hz = try { resonanceHz.replace("Hz", "").trim().toFloat() } catch (_: Exception) { 1.79f },
-                    filteredF0Hz = try { resonanceHz.replace("Hz", "").trim().toFloat() } catch (_: Exception) { 1.79f },
-                    noiseFloorDb = try { noiseDb.replace("dB", "").trim().toFloat() } catch (_: Exception) { -54.0f },
+                    baselineF0Hz = try { resonanceHz.replace("Hz", "").trim().toFloat() } catch (_: Exception) { 0.0f },
+                    filteredF0Hz = try { resonanceHz.replace("Hz", "").trim().toFloat() } catch (_: Exception) { 0.0f },
+                    noiseFloorDb = try { noiseDb.replace("dB", "").trim().toFloat() } catch (_: Exception) { 0.0f },
                     confidence = confidence
+                ),
+                dspResult = DspResult(
+                    topCandidates = chatViewModel?.sensorCandidates?.toList() ?: emptyList()
                 ),
                 decision = ShmDecision(
                     status = status,
@@ -487,10 +490,10 @@ fun AgentResponseCard(
                             val status = if (msg.content.contains("HEALTHY", true)) "HEALTHY" else if (msg.content.contains("WARNING", true)) "WARNING" else "NORMAL"
                             ShmResultCard(
                                 status = status,
-                                healthIndex = "98.5%",
-                                resonanceHz = if (chatViewModel.sensorFreqHz > 0) "${"%.2f".format(chatViewModel.sensorFreqHz)} Hz" else "14.91 Hz",
-                                noiseDb = if (chatViewModel.sensorPsdDb > -100) "${"%.1f".format(chatViewModel.sensorPsdDb)} dB" else "-53.7 dB",
-                                confidence = "High",
+                                healthIndex = chatViewModel.sensorHealthIndex,
+                                resonanceHz = if (chatViewModel.sensorFreqHz > 0) "${"%.2f".format(chatViewModel.sensorFreqHz)} Hz" else "0.00 Hz",
+                                noiseDb = if (chatViewModel.sensorNoiseFloorDb != 0f) "${"%.1f".format(chatViewModel.sensorNoiseFloorDb)} dB" else "${"%.1f".format(chatViewModel.sensorPsdDb)} dB",
+                                confidence = chatViewModel.sensorConfidence,
                                 activity = context as? MainActivity,
                                 chatViewModel = chatViewModel
                             )

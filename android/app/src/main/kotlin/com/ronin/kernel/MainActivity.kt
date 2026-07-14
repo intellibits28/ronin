@@ -146,6 +146,47 @@ class ChatViewModel : ViewModel() {
     var sensorFreqHz by mutableStateOf(0.0f)
     var sensorPsdDb by mutableStateOf(-100.0f)
     var sensorAnomaly by mutableStateOf(false)
+    var sensorNoiseFloorDb by mutableStateOf(-54.0f)
+    var sensorHealthIndex by mutableStateOf("100.0%")
+    var sensorConfidence by mutableStateOf("High (CV < 0.2%)")
+    val sensorCandidates = mutableStateListOf<com.ronin.kernel.shm.SpectralPeak>()
+
+    fun updateShmMetricsFromJson(jsonStr: String) {
+        try {
+            val j = org.json.JSONObject(jsonStr)
+            if (j.has("resonance_freq_hz") || j.has("filtered_resonance_freq_hz") || j.has("top_candidates")) {
+                val freq = j.optDouble("filtered_resonance_freq_hz", j.optDouble("resonance_freq_hz", 0.0))
+                if (freq > 0) sensorFreqHz = freq.toFloat()
+                if (j.has("psd_peak_db")) sensorPsdDb = j.optDouble("psd_peak_db", 0.0).toFloat()
+                if (j.has("noise_floor_db")) sensorNoiseFloorDb = j.optDouble("noise_floor_db", 0.0).toFloat()
+                if (j.has("health_index_pct")) sensorHealthIndex = "${"%.1f".format(j.optDouble("health_index_pct", 100.0))}%"
+                if (j.has("anomaly_detected")) sensorAnomaly = j.optBoolean("anomaly_detected", false)
+                if (j.has("risk_level")) {
+                    val risk = j.optString("risk_level", "LOW")
+                    sensorConfidence = if (risk.equals("LOW", true)) "High (CV < 0.2%)" else "Moderate ($risk)"
+                }
+                
+                if (j.has("top_candidates")) {
+                    val cands = j.optJSONArray("top_candidates")
+                    if (cands != null && cands.length() > 0) {
+                        val list = mutableListOf<com.ronin.kernel.shm.SpectralPeak>()
+                        for (i in 0 until cands.length()) {
+                            val obj = cands.optJSONObject(i) ?: continue
+                            val cFreq = obj.optDouble("frequency_hz", 0.0).toFloat()
+                            val cPsd = obj.optDouble("psd_db", 0.0).toFloat()
+                            if (cFreq > 0) {
+                                list.add(com.ronin.kernel.shm.SpectralPeak(cFreq, cPsd, isAnomaly = cFreq > 30.0f || cPsd > 0.8f))
+                            }
+                        }
+                        if (list.isNotEmpty()) {
+                            sensorCandidates.clear()
+                            sensorCandidates.addAll(list)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
 
     // v1.1 Guitar Tuner State
     data class TunerResult(
@@ -799,6 +840,12 @@ class MainActivity : FragmentActivity() {
                 vm.reasoningLogsText += "\n> $msg"
                 
                 val trimmedMsg = msg.trimStart()
+                if (trimmedMsg.contains("resonance_freq_hz") || trimmedMsg.contains("top_candidates") || trimmedMsg.contains("health_index_pct")) {
+                    val jsonStart = trimmedMsg.indexOf("{")
+                    if (jsonStart >= 0) {
+                        vm.updateShmMetricsFromJson(trimmedMsg.substring(jsonStart))
+                    }
+                }
                 if (trimmedMsg.startsWith("[TUNER_RESULT] ")) {
                     try {
                         val jsonStr = trimmedMsg.replace("[TUNER_RESULT] ", "")
@@ -1213,6 +1260,7 @@ class MainActivity : FragmentActivity() {
                 actionName.contains("ANALYSIS") || actionName.contains("STATUS") || actionName.contains("CONCEPT") || toolName == "SENSOR" -> {
                     try {
                         val analysis = nativeEngine.getSensorAnalysis("RESONANCE")
+                        vm.updateShmMetricsFromJson(analysis)
                         val output = if (analysis.startsWith("{")) {
                             val j = JSONObject(analysis)
                             try {

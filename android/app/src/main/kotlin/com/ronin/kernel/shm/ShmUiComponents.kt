@@ -482,9 +482,15 @@ fun AIReviewResultCard(result: AIReviewResult) {
             }
         }
 
-        ReviewSectionCard("🔍 Key Structural Observations", result.observations, Color(0xFF80DEEA))
-        ReviewSectionCard("⚠️ Anomalies & Warnings", result.warnings, Color(0xFFFFCA28))
-        ReviewSectionCard("📌 Recommended Follow-Up Action", result.recommendations, Color(0xFF66BB6A))
+        if (result.observations.isNotEmpty()) {
+            ReviewSectionCard("🔍 Key Structural Observations", result.observations, Color(0xFF80DEEA))
+        }
+        if (result.warnings.isNotEmpty()) {
+            ReviewSectionCard("⚠️ Anomalies & Warnings", result.warnings, Color(0xFFFFCA28))
+        }
+        if (result.recommendations.isNotEmpty()) {
+            ReviewSectionCard("📌 Recommended Follow-Up Action", result.recommendations, Color(0xFF66BB6A))
+        }
 
         Text("Confidence: ${result.confidence}", color = Color.Gray, fontSize = 11.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
     }
@@ -513,6 +519,9 @@ data class SpectralPeak(
 )
 
 fun ShmSession.extractSpectralPeaks(): List<SpectralPeak> {
+    if (dspResult.topCandidates.isNotEmpty()) {
+        return dspResult.topCandidates.sortedBy { it.frequencyHz }
+    }
     val psd = dspResult.psdResult
     if (psd.isNotEmpty() && sensorMetadata.duration > 0 && deviceProfile.samplingRate > 0) {
         val freqStep = (deviceProfile.samplingRate / 2.0f) / psd.size
@@ -527,16 +536,12 @@ fun ShmSession.extractSpectralPeaks(): List<SpectralPeak> {
             return peaks.sortedByDescending { it.psdValue }.take(8).sortedBy { it.frequencyHz }
         }
     }
-    // Fallback representative peaks from session modal features when raw psd vector is omitted
+    // Consume live baseline f0 feature when raw vector is omitted without dummy mock peaks
     val baseF0 = features.baselineF0Hz
-    val filtF0 = features.filteredF0Hz
-    return listOf(
-        SpectralPeak(baseF0, 0.88f, isAnomaly = false),
-        SpectralPeak(filtF0 * 2.1f, 0.35f, isAnomaly = false),
-        SpectralPeak(filtF0 * 4.4f, 0.18f, isAnomaly = false),
-        SpectralPeak(18.5f, 0.12f, isAnomaly = false),
-        SpectralPeak(34.2f, 0.25f, isAnomaly = true)
-    ).sortedBy { it.frequencyHz }
+    if (baseF0 > 0.01f) {
+        return listOf(SpectralPeak(baseF0, 0.5f, isAnomaly = false))
+    }
+    return emptyList()
 }
 
 /**
