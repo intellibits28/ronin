@@ -1556,6 +1556,14 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
         jOut["layer_3_decision_outputs"] = layer3;
     }
 
+    nlohmann::json jStages = nlohmann::json::array();
+    jStages.push_back("Layer 1 (Raw DSP): 3-Axis sampling at " + std::to_string((int)res.sample_rate_hz) + "Hz stabilized, Welch PSD (win=1024, sub=512, step=256, nfft=2048)");
+    jStages.push_back("Noise Characterization: Noise floor at " + std::to_string((int)res.noise_floor_db) + "dB, DC detrending applied");
+    jStages.push_back("Layer 2 (Feature Extraction): Modal selection via " + res.selection_method + ", filtered f0=" + std::to_string(res.filtered_resonance_freq_hz) + "Hz (" + res.selection_reason + ")");
+    jStages.push_back("Layer 3 (Decision Engine): Risk level " + res.risk_level_str + ", Health Index=" + std::to_string((int)res.health_index_pct) + "%, SNR=" + std::to_string((int)res.snr_db) + "dB");
+    jOut["processing_stages"] = jStages;
+    jOut["processingStages"] = jStages;
+
     return jOut.dump();
 }
 

@@ -99,7 +99,8 @@ data class ShmSession(
                 for (i in 0 until arr.length()) psdList.add(arr.optDouble(i).toFloat())
             }
             val stagesList = mutableListOf<String>()
-            trace.optJSONArray("processingStages")?.let { arr ->
+            val sArr = trace.optJSONArray("processingStages") ?: trace.optJSONArray("processing_stages") ?: root.optJSONArray("processingStages") ?: root.optJSONArray("processing_stages")
+            sArr?.let { arr ->
                 for (i in 0 until arr.length()) stagesList.add(arr.optString(i))
             }
             val candList = mutableListOf<SpectralPeak>()
@@ -155,14 +156,7 @@ data class ShmSession(
                     riskLevel = dec.optString("riskLevel", "LOW")
                 ),
                 reasoningTrace = ShmReasoningTrace(
-                    processingStages = if (stagesList.isNotEmpty()) stagesList else listOf(
-                        "Sensor Reality: 3-axis sampling stabilized at 100Hz",
-                        "shm_candidate_dumper: Verified noise floor (-54dB) and DC offset detrending",
-                        "Noise Characterization: Modal validation engine confirmed single dominant peak without scatter",
-                        "Parameter Freeze: win_size=1024, sub_win=512, step=256, nfft=2048",
-                        "Modal Validation Engine Refactor: Peak X=44Hz rejected, Z=1.79Hz confirmed modal frequency",
-                        "Regression Dataset: CV repeatability < 0.2% achieved across restarts"
-                    )
+                    processingStages = stagesList
                 )
             )
         }
@@ -391,14 +385,7 @@ data class ShmDecision(
 )
 
 data class ShmReasoningTrace(
-    val processingStages: List<String> = listOf(
-        "Sensor Reality: 3-axis sampling stabilized at 100Hz",
-        "shm_candidate_dumper: Verified noise floor (-54dB) and DC offset detrending",
-        "Noise Characterization: Modal validation engine confirmed single dominant peak without scatter",
-        "Parameter Freeze: win_size=1024, sub_win=512, step=256, nfft=2048",
-        "Modal Validation Engine Refactor: Peak X=44Hz rejected, Z=1.79Hz confirmed modal frequency",
-        "Regression Dataset: CV repeatability < 0.2% achieved across restarts"
-    )
+    val processingStages: List<String> = emptyList()
 )
 
 /**

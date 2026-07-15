@@ -280,8 +280,13 @@ fun ShmDetailScreen(session: ShmSession, onDismiss: () -> Unit) {
                     } }
 
                     item {
+                        val stages = if (session.reasoningTrace.processingStages.isNotEmpty()) session.reasoningTrace.processingStages else listOf(
+                            "Processing layer 1 (3-axis sampling stabilized at 100Hz)...",
+                            "Extracting modal candidates via Welch PSD windowing...",
+                            "Validating dominant peak and CV repeatability..."
+                        )
                         Text("REASONING TRACE & PIPELINE STAGES", color = Color(0xFFCE93D8), fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
-                        session.reasoningTrace.processingStages.forEachIndexed { idx, stage ->
+                        stages.forEachIndexed { idx, stage ->
                             Surface(color = Color(0xFF25283D), shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                                 Text("${idx + 1}. $stage", color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(8.dp), fontFamily = FontFamily.Monospace)
                             }
@@ -359,8 +364,37 @@ fun AIReviewScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("AI Engineering Review", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
-                    IconButton(onClick = handleDismiss) {
-                        Icon(Icons.Default.Close, null, tint = Color.Gray)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (uiState is AIReviewUiState.Success) {
+                            val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+                            val ctx = androidx.compose.ui.platform.LocalContext.current
+                            val res = (uiState as AIReviewUiState.Success).result
+                            IconButton(onClick = {
+                                val sb = StringBuilder()
+                                sb.appendLine("=== AI Engineering Review ===")
+                                sb.appendLine("Executive Summary: ${res.summary}")
+                                if (res.observations.isNotEmpty()) {
+                                    sb.appendLine("\nKey Structural Observations:")
+                                    res.observations.forEach { sb.appendLine("- $it") }
+                                }
+                                if (res.warnings.isNotEmpty()) {
+                                    sb.appendLine("\nAnomalies & Warnings:")
+                                    res.warnings.forEach { sb.appendLine("- $it") }
+                                }
+                                if (res.recommendations.isNotEmpty()) {
+                                    sb.appendLine("\nRecommended Follow-Up Action:")
+                                    res.recommendations.forEach { sb.appendLine("- $it") }
+                                }
+                                sb.appendLine("\nConfidence: ${res.confidence}")
+                                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(sb.toString()))
+                                Toast.makeText(ctx, "AI Review copied to clipboard", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy AI Review", tint = Color(0xFFAB47BC))
+                            }
+                        }
+                        IconButton(onClick = handleDismiss) {
+                            Icon(Icons.Default.Close, null, tint = Color.Gray)
+                        }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -473,10 +507,39 @@ fun AIReviewScreen(
 
 @Composable
 fun AIReviewResultCard(result: AIReviewResult) {
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(color = Color(0xFF2E1C38), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Color(0xFFAB47BC))) {
             Column(modifier = Modifier.padding(14.dp)) {
-                Text("📋 Executive Summary", color = Color(0xFFE1BEE7), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("📋 Executive Summary", color = Color(0xFFE1BEE7), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    IconButton(
+                        onClick = {
+                            val sb = StringBuilder()
+                            sb.appendLine("=== AI Engineering Review ===")
+                            sb.appendLine("Executive Summary: ${result.summary}")
+                            if (result.observations.isNotEmpty()) {
+                                sb.appendLine("\nKey Structural Observations:")
+                                result.observations.forEach { sb.appendLine("- $it") }
+                            }
+                            if (result.warnings.isNotEmpty()) {
+                                sb.appendLine("\nAnomalies & Warnings:")
+                                result.warnings.forEach { sb.appendLine("- $it") }
+                            }
+                            if (result.recommendations.isNotEmpty()) {
+                                sb.appendLine("\nRecommended Follow-Up Action:")
+                                result.recommendations.forEach { sb.appendLine("- $it") }
+                            }
+                            sb.appendLine("\nConfidence: ${result.confidence}")
+                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(sb.toString()))
+                            Toast.makeText(context, "AI Review copied to clipboard", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy AI Review", tint = Color(0xFFE1BEE7), modifier = Modifier.size(16.dp))
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(result.summary, color = Color.White, fontSize = 13.sp, lineHeight = 19.sp)
             }
