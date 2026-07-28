@@ -1,0 +1,16 @@
+# Ronin Kernel
+> A mobile AI runtime for Android with a C++20 native kernel, Kotlin/JNI integration, on-device inference, and Structural Health Monitoring (SHM).
+
+## Core Files
+- [README.md]: Project overview and getting started guide.
+- [CHANGELOG.md]: History of updates and new features.
+- [docs/MANUAL_INDEX.md]: Index to the comprehensive Ronin Kernel Technical Manual.
+- [src/dsp/vibe_monitor.cpp]: Native C++ Industrial Modal Validation Engine v3.
+- [android/app/src/main/kotlin/com/ronin/kernel/shm/ShmSession.kt]: SHM Data Model and telemetry state.
+- [android/app/src/main/kotlin/com/ronin/kernel/shm/ShmAiReviewPipeline.kt]: Cloud & Local AI routing logic.
+
+## Key Concepts
+- **Cognitive Loop**: The C++ engine continuously observes state, retrieves FTS5 SQLite memory, plans a DAG of actions, and executes via JNI.
+- **SHM Subsystem**: Structural Health Monitoring via 100Hz MEMS accelerometers, applying sub-window Welch PSD and Outlier Gate Hysteresis to extract stable resonant frequencies (F₀).
+- **Hybrid AI Review**: Extracts DSP telemetry and routes it to cloud LLMs (Gemini/OpenRouter) or local edge models (Gemma) for engineering reviews, heavily masking raw sensor data for privacy.
+- **JNI Android Shell**: The Kotlin Compose app acts as a hardware bridge, permission broker, and UI console for the native C++ kernel.
