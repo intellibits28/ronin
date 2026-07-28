@@ -1,8 +1,10 @@
 # Ronin Kernel
 
-Ronin is a mobile AI runtime for Android with a C++20 native kernel, Kotlin/JNI integration, on-device LiteRT-LM inference, local SQLite memory, and hardware/tool capabilities. The project is aimed at sovereign mobile agent behavior: observe device state, classify intent, retrieve memory, plan actions, execute capabilities, record outcomes, and adapt future routing through feedback.
+Ronin is a mobile AI runtime for Android with a C++20 native kernel, Kotlin/JNI integration, on-device LiteRT-LM inference, local SQLite memory, and advanced hardware/tool capabilities. The project is aimed at sovereign mobile agent behavior: observe device state, classify intent, retrieve memory, plan actions, execute capabilities, record outcomes, and adapt future routing through feedback.
 
-The repository contains both the Android application and the native runtime it loads. The current implementation is best read as a native cognitive kernel plus an Android shell that provides UI, permissions, hardware access, cloud provider configuration, and an isolated inference worker process.
+A core feature of the Ronin Kernel is the **Structural Health Monitoring (SHM) Subsystem**. It includes a real-time native DSP engine with Modal Validation (v3.0) and an AI Review Pipeline that evaluates structural integrity using both local (Gemma) and cloud (Gemini/OpenRouter) AI models.
+
+The repository contains both the Android application and the native runtime it loads. The current implementation is best read as a native cognitive kernel plus an Android shell that provides UI, permissions, hardware access, dynamic cloud provider configuration, and an isolated inference worker process.
 
 This project is currently developed from Termux/Codex CLI on Android. Full host and APK validation is expected to run in GitHub Actions.
 
@@ -33,7 +35,8 @@ Native source is organized around the kernel subsystems:
 | `src/long_term_memory.cpp`, `src/memory_manager.cpp` | SQLite-backed notes, facts, vault entries, episodes, predictions, files, failures, chat history, memory pressure, and maintenance. |
 | `src/capabilities/` | Native skill implementations and Android hardware bridge nodes. |
 | `src/models/` | Native inference abstraction and model hydration support used by the planner/bridge. |
-| `src/dsp/resonance_analyzer.cpp` | Batched sensor DSP analysis using PFFFT. |
+| `src/dsp/vibe_monitor.cpp`, `src/dsp/resonance_analyzer.cpp` | Real-time sensor DSP analysis, Modal Validation Engine v3, detrending, filtering, and telemetry export. |
+| `android/app/src/main/kotlin/com/ronin/kernel/shm/` | SHM Session data models, Android Compose UI bindings, engineering exports, and the AI Review Pipeline. |
 | `src/*healing*`, `src/*budget*`, `src/*checkpoint*`, `src/failure_telemetry_bus.cpp` | Governance, checkpointing, retry, telemetry, and recovery infrastructure. |
 | `include/` | Public/native headers mirroring the source modules. |
 
@@ -61,7 +64,8 @@ The codebase currently includes:
 - SQLite FTS5 lexical search with Myanmar segmentation support.
 - Agent planning and multi-step session scheduling with human-in-the-loop gates for sensitive actions.
 - Device world-state injection for battery, RAM, GPS, network, charging, and time-of-day context.
-- Sensor sample ingestion and native DSP summary generation.
+- **Production-Grade Structural Health Monitoring (SHM)**: Ingests 100Hz MEMS accelerometer batches, applies high-pass filtering/detrending, and extracts modal frequencies (F₀) via a robust Modal Validation Engine to achieve <2% F₀ CV repeatability.
+- **SHM AI Review Pipeline**: Structures extracted telemetry into engineering JSON, formats it for human consumption, and routes it to cloud (Gemini, OpenRouter) or local (Gemma 4 E2B) LLMs to generate actionable structural reviews, warnings, and confidence scoring.
 - Runtime health features such as cancellation, safe mode hooks, memory pressure handling, checkpoint storage, telemetry, speculative graph execution, and self-healing controllers.
 
 Some legacy design documents described older architecture details. Those files are archived under `old_logs_and_context/`. Treat `docs/ARCHITECTURE_CURRENT.md`, `docs/TECHNICAL_SPECS.md`, and the source code as authoritative for current behavior.
@@ -157,6 +161,7 @@ Current source-of-truth docs:
 
 Design and roadmap context:
 
+- `docs/SHM_PIPELINE_V3_ARCHITECTURE.md`: Architecture of the Modal Validation Engine, Android UI bindings, and the AI Review Layer.
 - `docs/BLUEPRINT_V1_3.md`: cognitive loop, memory tiers, belief state, reflection, and graph reasoning model.
 - `docs/SENSOR_DSP_V1.md`: event-driven sensor DSP and tool-calling contract.
 - `docs/EVOLUTION_V1_6.md`: behavioral evolution, semantic failure, reflection, and macro-skill roadmap.
