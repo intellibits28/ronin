@@ -7,12 +7,34 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * Requirement 6 & 7: Cloud & Local AI Review Pipeline
- * Routes analysis requests to cloud Gemini/OpenRouter or local Gemma 4 E2B models.
- * Enforces privacy controls (no raw sensor data sent without user approval).
+ * Manages the AI-powered structural engineering review pipeline for the SHM subsystem.
+ *
+ * This singleton object routes structural health telemetry (vibration energy, resonant
+ * frequencies, noise floor) to either local AI models (Gemma 4 E2B via Edge inference)
+ * or cloud models (Gemini / OpenRouter via NativeEngine).
+ *
+ * It enforces payload constraints, extracts only critical tokens to prevent context
+ * window overflows, and strictly adheres to privacy controls by filtering raw sensor
+ * data before transmitting over external networks.
+ *
+ * @since 3.0
  */
 object ShmAiReviewPipeline {
 
+    /**
+     * Executes the AI structural review request asynchronously.
+     *
+     * @param session The complete ShmSession containing all DSP features and telemetry.
+     * @param options Configuration specifying which segments to exclude for privacy.
+     * @param useLocalModel True to use on-device local model, false to use cloud API.
+     * @param nativeEngine The C++ bridge for executing cloud requests.
+     * @param inferenceService The local Edge inference worker for running on-device models.
+     * @param provider The name of the Cloud Provider (e.g., "Gemini", "OpenRouter").
+     * @param modelId The specific model identifier to target (e.g., "gemini-2.5-flash").
+     * @param apiKey The API key required for cloud providers.
+     * @return AIReviewResult The structured result containing summary, observations, warnings, and confidence.
+     * @throws ShmError.AIReviewError If the model fails to return a valid explanation or times out.
+     */
     suspend fun analyzeSession(
         session: ShmSession,
         options: ExportOptions,

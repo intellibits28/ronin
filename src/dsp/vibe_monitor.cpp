@@ -604,6 +604,24 @@ bool VibeMonitorEngine::detectImpact(float current_rms, float dynamic_threshold,
     return false;
 }
 
+/**
+ * @brief Executes the complete native Structural Health Monitoring DSP pipeline.
+ *
+ * This function processes batched 100Hz MEMS accelerometer data. It applies:
+ * - Signal high-pass filtering (0.5Hz cutoff) and detrending.
+ * - RMS Vibration Energy calculations.
+ * - Impact transient detection against dynamic thresholds.
+ * - Sub-windowed Welch Power Spectral Density (PSD) estimation.
+ * - Modal Validation v3 (cross-axis coherence, geometric mean scoring).
+ * - State machine evaluations (Outlier Gate Hysteresis).
+ * 
+ * It continuously emits JNI reasoning traces for debugging.
+ *
+ * @param x The raw X-axis accelerometer samples (m/s^2).
+ * @param y The raw Y-axis accelerometer samples (m/s^2).
+ * @param z The raw Z-axis accelerometer samples (m/s^2).
+ * @return VibeMonitorResult The structured output containing derived F0, energy, and diagnostic traces.
+ */
 VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x, 
                                                    const std::vector<float>& y, 
                                                    const std::vector<float>& z) {

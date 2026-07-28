@@ -7,8 +7,25 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Requirement 1: SHM Session Data Model
- * Complete structured session object preserving exact DSP and Decision Engine outputs.
+ * Represents a complete Structural Health Monitoring (SHM) Session.
+ *
+ * This data class is the single source of truth for the entire SHM pipeline, tracking
+ * state from the C++ Modal Validation Engine up to the Android UI and Cloud AI Review layers.
+ * It contains nested profiles for hardware telemetry, DSP results, diagnostic tracking,
+ * and AI reasoning traces.
+ *
+ * @property sessionId Unique identifier for this evaluation session.
+ * @property schemaVersion Engineering export schema format version.
+ * @property timestamp Epoch timestamp when the session was initialized.
+ * @property deviceProfile Context about the physical edge device performing the monitoring.
+ * @property locationProfile Geographic constraints for the evaluation (if permitted).
+ * @property sensorMetadata Hardware metadata including sampling rate and accelerometer noise floor.
+ * @property dspResult Extracted signal metrics (vibration energy, dominant axes).
+ * @property features The Modal Validation Engine's specific F0 results and frequency candidates.
+ * @property decision Final classification state produced by the Native Decision Engine.
+ * @property reasoningTrace Telemetry and layered verification steps emitted during native processing.
+ *
+ * @since 3.0
  */
 data class ShmSession(
     val sessionId: String = "ronin_shm_" + System.currentTimeMillis(),
