@@ -97,9 +97,9 @@ GeneratedSignal SyntheticShmGenerator::generateNextWindow() {
         float noise_y = generateGaussianNoise(0.0f, m_noise_sigma);
         float noise_z = generateGaussianNoise(0.0f, m_noise_sigma);
         if (m_has_impact) {
-            signal.x[i] = m_impact_strength * std::exp(-m_impact_decay * t) * std::sin(2.0f * M_PI * m_current_f0_x * t) + noise_x;
-            signal.y[i] = m_impact_strength * std::exp(-m_impact_decay * t) * std::sin(2.0f * M_PI * m_current_f0_y * t) + noise_y;
-            signal.z[i] = m_impact_strength * std::exp(-m_impact_decay * t) * std::sin(2.0f * M_PI * m_current_f0_z * t) + noise_z;
+            signal.x[i] = static_cast<float>(static_cast<double>(m_impact_strength) * std::exp(static_cast<double>(-m_impact_decay * t)) * std::sin(static_cast<double>(2.0f * M_PI * m_current_f0_x * t))) + noise_x;
+            signal.y[i] = static_cast<float>(static_cast<double>(m_impact_strength) * std::exp(static_cast<double>(-m_impact_decay * t)) * std::sin(static_cast<double>(2.0f * M_PI * m_current_f0_y * t))) + noise_y;
+            signal.z[i] = static_cast<float>(static_cast<double>(m_impact_strength) * std::exp(static_cast<double>(-m_impact_decay * t)) * std::sin(static_cast<double>(2.0f * M_PI * m_current_f0_z * t))) + noise_z;
         } else {
             signal.x[i] = amp * std::sin(2.0f * M_PI * m_current_f0_x * t) + noise_x;
             signal.y[i] = amp * std::sin(2.0f * M_PI * m_current_f0_y * t) + noise_y;
