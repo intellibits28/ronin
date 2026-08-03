@@ -1122,8 +1122,8 @@ static void rffti1_ps(int n, float *wa, int *ifac)
       for (ii = 3; ii <= ido; ii += 2) {
         i += 2;
         fi += 1;
-        wa[i - 2] = cos(fi*argld);
-        wa[i - 1] = sin(fi*argld);
+        wa[i - 2] = cos((double)fi * argld);
+        wa[i - 1] = sin((double)fi * argld);
       }
       is += ido;
     }
