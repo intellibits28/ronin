@@ -137,7 +137,7 @@ data class ShmSession(
                 schemaVersion = root.optString("schemaVersion", "1.0"),
                 timestamp = root.optLong("timestamp", System.currentTimeMillis()),
                 deviceProfile = DeviceProfile(
-                    model = dev.optString("model", android.os.Build.MODEL),
+                    model = dev.optString("model", try { android.os.Build.MODEL ?: "Android Device" } catch (_: Throwable) { "Android Device" }),
                     sensorType = dev.optString("sensorType", "STMicroelectronics / Bosch 3-Axis Accelerometer"),
                     samplingRate = dev.optDouble("samplingRate", 100.0).toFloat(),
                     firmwareInfo = dev.optString("firmwareInfo", "Ronin Kernel Native DSP")
@@ -360,7 +360,7 @@ data class ShmSession(
 }
 
 data class DeviceProfile(
-    val model: String = android.os.Build.MODEL,
+    val model: String = try { android.os.Build.MODEL ?: "Android Device" } catch (_: Throwable) { "Android Device" },
     val sensorType: String = "STMicroelectronics / Bosch 3-Axis Accelerometer",
     val samplingRate: Float = 100.0f,
     val firmwareInfo: String = "Ronin Kernel v10.2.17 Native DSP"

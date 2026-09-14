@@ -706,7 +706,7 @@ class MainActivity : FragmentActivity() {
     private fun authenticateAndExecute(title: String, subtitle: String, onAuthSuccess: () -> String): String {
         val biometricManager = BiometricManager.from(this)
         if (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL) != BiometricManager.BIOMETRIC_SUCCESS) {
-            return onAuthSuccess() // Fallback if no biometric set up
+            return "Error: Device credential or biometric authentication required to access Vault."
         }
 
         val latch = java.util.concurrent.CountDownLatch(1)
@@ -966,7 +966,7 @@ class MainActivity : FragmentActivity() {
                 "Error: Policy Denied - ${eval.reason}"
             } else {
                 val policy = CapabilityPolicyEngine.getPolicy(toolName)
-                val hitlApproved = if (policy != null && policy.requiresHITL && toolName.uppercase() != "VAULT") {
+                val hitlApproved = if (policy != null && policy.requiresHITL) {
                     requestHITLConfirmationInKotlin(
                         intentName = toolName,
                         message = "Agent requests permission to execute sensitive action: $toolName (${params["message"] ?: params["sms_body"] ?: params["title"] ?: ""})"

@@ -39,6 +39,30 @@ bool tableHasColumn(sqlite3* db, const char* table, const char* column) {
     sqlite3_finalize(stmt);
     return found;
 }
+
+std::string sanitizeFts5Query(const std::string& query) {
+    std::string clean;
+    clean.reserve(query.size() + 2);
+    for (char c : query) {
+        if (c == '"' || c == '\'' || c == '*' || c == '^' || c == '(' || c == ')' || c == ':' || c == '{' || c == '}') {
+            clean += ' ';
+        } else {
+            clean += c;
+        }
+    }
+    size_t start = clean.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    size_t end = clean.find_last_not_of(" \t\r\n");
+    std::string trimmed = clean.substr(start, end - start + 1);
+    std::stringstream ss(trimmed);
+    std::string token;
+    std::string result;
+    while (ss >> token) {
+        if (!result.empty()) result += " ";
+        result += "\"" + token + "\"";
+    }
+    return result;
+}
 }
 
 LongTermMemory::LongTermMemory(const std::string& db_path) 
@@ -327,12 +351,14 @@ std::string LongTermMemory::lookupFact(const std::string& entity, const std::str
 
 std::vector<std::string> LongTermMemory::searchNotes(const std::string& query) {
     if (!m_db) return {};
+    std::string safe_query = sanitizeFts5Query(query);
+    if (safe_query.empty()) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
     const char* sql = "SELECT title, content FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT 5;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 1, safe_query.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             std::string title = columnText(stmt, 0);
             std::string content = columnText(stmt, 1);
@@ -348,12 +374,14 @@ std::vector<std::string> LongTermMemory::searchNotes(const std::string& query) {
 
 std::vector<std::string> LongTermMemory::searchEpisodes(const std::string& query) {
     if (!m_db) return {};
+    std::string safe_query = sanitizeFts5Query(query);
+    if (safe_query.empty()) return {};
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> results;
     const char* sql = "SELECT summary FROM episodes_fts WHERE episodes_fts MATCH ? ORDER BY rank LIMIT 5;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 1, safe_query.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             const unsigned char* summary = sqlite3_column_text(stmt, 0);
             if (summary) results.push_back(reinterpret_cast<const char*>(summary));

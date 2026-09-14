@@ -54,6 +54,7 @@ void KernelRuntimeContext::release(JNIEnv* env) {
     }
 
     AgentScheduler::getInstance().setExecutor(nullptr);
+    Execution::FailureTelemetryBus::getInstance().setMemory(nullptr);
     llm_context.engine = nullptr;
     kernel.reset();
     intent_engine.reset();

@@ -40,6 +40,7 @@ private:
     std::string m_checkpoint_path;
     int m_memfd = -1;
     size_t m_buffer_size = 0;
+    size_t m_staged_payload_size = 0;
     std::mutex m_mutex;
     
     // Internal helper to sync memfd to disk

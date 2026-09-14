@@ -88,6 +88,7 @@ bool CheckpointEngine::updateCheckpointData(const uint8_t* data, size_t size) {
         LOGE(TAG, "Failed to update staged checkpoint in memfd.");
         return false;
     }
+    m_staged_payload_size = size;
     return true;
 }
 
@@ -106,12 +107,18 @@ bool CheckpointEngine::persistToStorage() {
     ssize_t n_read;
     lseek(m_memfd, 0, SEEK_SET);
     bool write_success = true;
-    while ((n_read = read(m_memfd, buffer, sizeof(buffer))) > 0) {
+    size_t to_write = m_staged_payload_size > 0 ? m_staged_payload_size : m_buffer_size;
+    size_t written_total = 0;
+    while (written_total < to_write) {
+        size_t chunk = std::min(sizeof(buffer), to_write - written_total);
+        n_read = read(m_memfd, buffer, chunk);
+        if (n_read <= 0) break;
         if (write(out_fd, buffer, n_read) != n_read) {
             LOGE(TAG, "Failed to write to internal storage.");
             write_success = false;
             break;
         }
+        written_total += n_read;
     }
 
     if (!write_success) {

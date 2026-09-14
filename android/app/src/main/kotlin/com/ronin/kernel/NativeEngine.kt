@@ -944,10 +944,14 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Keep
     @Suppress("unused")
     fun requestHITLConfirmation(intentName: String, message: String): Boolean {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            Log.e(TAG, "Cannot invoke synchronous HITL confirmation from Main thread.")
+            return false
+        }
         var approved = false
         val latch = CountDownLatch(1)
         
-        runBlocking(Dispatchers.Main) {
+        scope.launch(Dispatchers.Main) {
             requestHITLConfirmationCallback?.invoke(intentName, message) { result ->
                 approved = result
                 latch.countDown()

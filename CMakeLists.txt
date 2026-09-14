@@ -184,40 +184,51 @@ if(NOT RONIN_BUILD_ANDROID)
     
     add_executable(ronin_atomic_test tests/atomic_integrity_test.cpp)
     target_link_libraries(ronin_atomic_test ronin_core gtest_main)
+    add_test(NAME ronin_atomic_test COMMAND ronin_atomic_test)
 
     add_executable(ronin_integration_test tests/phase_1_3_integration_test.cpp)
     target_link_libraries(ronin_integration_test ronin_core gtest_main)
+    add_test(NAME ronin_integration_test COMMAND ronin_integration_test)
 
     add_executable(ronin_governance_test tests/governance_test.cpp)
     target_link_libraries(ronin_governance_test ronin_core gtest_main)
+    add_test(NAME ronin_governance_test COMMAND ronin_governance_test)
 
     add_executable(ronin_self_healing_test tests/self_healing_test.cpp)
     target_link_libraries(ronin_self_healing_test ronin_core gtest_main)
+    add_test(NAME ronin_self_healing_test COMMAND ronin_self_healing_test)
 
     add_executable(ronin_evolution_test tests/evolution_test.cpp)
     target_link_libraries(ronin_evolution_test ronin_core gtest_main)
+    add_test(NAME ronin_evolution_test COMMAND ronin_evolution_test)
 
     add_executable(ronin_ltm_schema_migration_test tests/ltm_schema_migration_test.cpp)
     target_link_libraries(ronin_ltm_schema_migration_test ronin_core gtest_main)
+    add_test(NAME ronin_ltm_schema_migration_test COMMAND ronin_ltm_schema_migration_test)
 
     add_executable(ronin_segmenter_test tests/segmenter_stress_test.cpp)
     target_link_libraries(ronin_segmenter_test ronin_core)
+    add_test(NAME ronin_segmenter_test COMMAND ronin_segmenter_test)
 
     add_executable(ronin_microkernel_test tests/runtime_microkernel_test.cpp)
     target_include_directories(ronin_microkernel_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ronin-runtime)
     target_link_libraries(ronin_microkernel_test ronin_core gtest_main)
+    add_test(NAME ronin_microkernel_test COMMAND ronin_microkernel_test)
 
     add_executable(ronin_benchmark_test tests/ronin_benchmark_test.cpp)
     target_include_directories(ronin_benchmark_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ronin-runtime)
     target_link_libraries(ronin_benchmark_test ronin_core gtest_main)
+    add_test(NAME ronin_benchmark_test COMMAND ronin_benchmark_test)
 
     add_executable(ronin_resonance_fix_test tests/ronin_resonance_fix_test.cpp)
     target_include_directories(ronin_resonance_fix_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ronin-runtime)
     target_link_libraries(ronin_resonance_fix_test ronin_core gtest_main)
+    add_test(NAME ronin_resonance_fix_test COMMAND ronin_resonance_fix_test)
 
     add_executable(ronin_shm_pipeline_test tests/shm_pipeline_test.cpp)
     target_include_directories(ronin_shm_pipeline_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ronin-runtime)
     target_link_libraries(ronin_shm_pipeline_test ronin_core gtest_main)
+    add_test(NAME ronin_shm_pipeline_test COMMAND ronin_shm_pipeline_test)
 
     add_executable(ronin_shm_stress_benchmark tests/shm_stress_benchmark.cpp src/dsp/synthetic_shm_generator.cpp)
     target_link_libraries(ronin_shm_stress_benchmark ronin_core)
@@ -230,4 +241,3 @@ if(NOT RONIN_BUILD_ANDROID)
     target_link_libraries(ronin_cloud_provider_test ronin_core gtest_main)
     add_test(NAME ronin_cloud_provider_test COMMAND ronin_cloud_provider_test)
 endif()
-file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/.agents/worker_1")

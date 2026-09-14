@@ -42,6 +42,10 @@ class InferenceService : Service() {
     private var lastSummary: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val inferenceMutex = Mutex()
+    @Volatile
+    private var cachedGetTextMethod: java.lang.reflect.Method? = null
+    @Volatile
+    private var getTextLookupDone: Boolean = false
 
     // --- Native JNI Interface (Essential Only) ---
     private external fun initializeKernelNative(filesDir: String, libDir: String, isWorker: Boolean)
@@ -287,11 +291,7 @@ class InferenceService : Service() {
         try {
             Log.d(TAG, "Inference active (Fresh=$wasFresh). Prompt length: ${userPrompt.length}")
             activeConv.sendMessageAsync(Message.user(userPrompt)).collect { partial ->
-                val token = try { 
-                    val method = partial.javaClass.getMethod("getText")
-                    method.invoke(partial) as String 
-                } catch(e: Exception) { partial.toString() }
-                emit(token)
+                emit(extractTokenText(partial))
             }
         } catch (e: Exception) {
             Log.e(TAG, "LiteRT Fault: ${e.message}")
@@ -306,6 +306,34 @@ class InferenceService : Service() {
         }
         }
     }.flowOn(Dispatchers.IO)
+
+    private fun extractTokenText(partial: Any): String {
+        if (!getTextLookupDone) {
+            synchronized(this) {
+                if (!getTextLookupDone) {
+                    try {
+                        val m = partial.javaClass.getMethod("getText")
+                        m.isAccessible = true
+                        cachedGetTextMethod = m
+                    } catch (_: Throwable) {
+                        cachedGetTextMethod = null
+                    } finally {
+                        getTextLookupDone = true
+                    }
+                }
+            }
+        }
+        val method = cachedGetTextMethod
+        return if (method != null) {
+            try {
+                method.invoke(partial) as String
+            } catch (_: Throwable) {
+                partial.toString()
+            }
+        } else {
+            partial.toString()
+        }
+    }
 
     override fun onDestroy() { super.onDestroy(); releaseResources(); try { shutdownKernelNative() } catch (e: Exception) {} }
 }

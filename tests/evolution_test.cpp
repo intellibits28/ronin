@@ -295,8 +295,14 @@ TEST_F(EvolutionTest, AdaptiveSensorAnalysisPipeline) {
     EXPECT_EQ(engine.getController().getActiveProfile().profile_name, "STRUCTURAL_RESONANCE");
     EXPECT_EQ(engine.getController().getActiveProfile().sample_rate_hz, 100.0f);
     EXPECT_EQ(engine.getController().getActiveProfile().window_size, 1024);
-    EXPECT_EQ(engine.getController().getActiveProfile().high_pass_cutoff_hz, 1.0f);
+    EXPECT_EQ(engine.getController().getActiveProfile().high_pass_cutoff_hz, 0.5f);
 
+    // Transition to STABLE from STARTUP preserves STRUCTURAL_RESONANCE for SHM convergence
+    engine.getController().transitionToState(Ronin::Kernel::DSP::KernelSensorState::STABLE);
+    EXPECT_EQ(engine.getController().getActiveProfile().profile_name, "STRUCTURAL_RESONANCE");
+
+    // Transition to STABLE from IDLE switches to high-frequency MACHINE_DIAGNOSTICS
+    engine.getController().transitionToState(Ronin::Kernel::DSP::KernelSensorState::IDLE);
     engine.getController().transitionToState(Ronin::Kernel::DSP::KernelSensorState::STABLE);
     EXPECT_EQ(engine.getController().getActiveProfile().profile_name, "MACHINE_DIAGNOSTICS");
     EXPECT_EQ(engine.getController().getActiveProfile().sample_rate_hz, 200.0f);
