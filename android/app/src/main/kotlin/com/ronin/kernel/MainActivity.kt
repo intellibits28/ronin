@@ -227,6 +227,14 @@ class MainActivity : FragmentActivity() {
         uri?.let { importModelFromUri(it) }
     }
 
+    val memoryBackupLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/x-sqlite3")) { uri ->
+        uri?.let { exportCognitiveMemoryToUri(it) }
+    }
+
+    val memoryRestoreLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { importCognitiveMemoryFromUri(it) }
+    }
+
     private fun importModelFromUri(uri: Uri) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch {
@@ -249,6 +257,105 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    fun exportCognitiveMemoryToUri(uri: Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val dbFile = File(filesDir, "ronin_cognitive.db")
+                if (!dbFile.exists()) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Cognitive database does not exist yet.", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                contentResolver.openOutputStream(uri)?.use { output ->
+                    dbFile.inputStream().use { input ->
+                        input.copyTo(output)
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Cognitive Memory Exported Successfully!", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Export Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    fun backupCognitiveMemoryToDownloads(): String? {
+        return try {
+            val dbFile = File(filesDir, "ronin_cognitive.db")
+            if (!dbFile.exists() || dbFile.length() == 0L) return null
+            val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            if (!downloadDir.exists()) downloadDir.mkdirs()
+            val backupFile = File(downloadDir, "ronin_cognitive_backup.db")
+            dbFile.copyTo(backupFile, overwrite = true)
+            backupFile.absolutePath
+        } catch (e: Exception) {
+            Log.e("RoninKernel", "Backup to downloads failed: ${e.message}")
+            null
+        }
+    }
+
+    fun importCognitiveMemoryFromUri(uri: Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val isSQLite = contentResolver.openInputStream(uri)?.use { stream ->
+                    val header = ByteArray(16)
+                    val read = stream.read(header)
+                    read == 16 && String(header, Charsets.US_ASCII).startsWith("SQLite format 3")
+                } ?: false
+
+                if (!isSQLite) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Invalid file: Not a SQLite cognitive database.", Toast.LENGTH_LONG).show()
+                    }
+                    return@launch
+                }
+
+                val dbFile = File(filesDir, "ronin_cognitive.db")
+                if (dbFile.exists()) {
+                    val preRestoreBackup = File(filesDir, "ronin_cognitive_pre_restore.bak")
+                    dbFile.copyTo(preRestoreBackup, overwrite = true)
+                }
+
+                contentResolver.openInputStream(uri)?.use { input ->
+                    java.io.FileOutputStream(dbFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                File(filesDir, "ronin_cognitive.db-wal").delete()
+                File(filesDir, "ronin_cognitive.db-shm").delete()
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Cognitive Memory Restored! Please restart app to reload cache.", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Restore Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun checkAutoRestoreMemory() {
+        val dbFile = File(filesDir, "ronin_cognitive.db")
+        if (!dbFile.exists() || dbFile.length() == 0L) {
+            val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            val backupFile = File(downloadDir, "ronin_cognitive_backup.db")
+            if (backupFile.exists() && backupFile.length() > 0) {
+                try {
+                    backupFile.copyTo(dbFile, overwrite = true)
+                    Log.i("RoninKernel", "Auto-restored cognitive memory from ${backupFile.absolutePath}")
+                } catch (e: Exception) {
+                    Log.w("RoninKernel", "Auto-restore failed: ${e.message}")
+                }
+            }
+        }
+    }
+
     fun scanLocalModels() {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
         val modelFiles = File(filesDir, "models").apply { if (!exists()) mkdirs() }.listFiles { file -> !file.isDirectory && file.length() > 1024 && (file.name.endsWith(".litertlm") || file.name.endsWith(".bin")) } ?: emptyArray()
@@ -266,6 +373,7 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        checkAutoRestoreMemory()
         nativeEngine = NativeEngine(this)
         sensorDriver = SensorDriver(this, nativeEngine)
         perceptionEngine = PerceptionEngine(this, nativeEngine)

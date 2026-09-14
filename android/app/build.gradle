@@ -25,8 +25,28 @@ android {
         }
     }
 
-    buildTypes {
+    signingConfigs {
+        debug {
+            storeFile file("debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
         release {
+            def keystoreFile = project.hasProperty("RELEASE_STORE_FILE") ? file(project.property("RELEASE_STORE_FILE")) : file("debug.keystore")
+            storeFile keystoreFile
+            storePassword project.hasProperty("RELEASE_STORE_PASSWORD") ? project.property("RELEASE_STORE_PASSWORD").toString() : "android"
+            keyAlias project.hasProperty("RELEASE_KEY_ALIAS") ? project.property("RELEASE_KEY_ALIAS").toString() : "androiddebugkey"
+            keyPassword project.hasProperty("RELEASE_KEY_PASSWORD") ? project.property("RELEASE_KEY_PASSWORD").toString() : "android"
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

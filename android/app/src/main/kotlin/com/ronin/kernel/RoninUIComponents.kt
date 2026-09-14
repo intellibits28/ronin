@@ -907,6 +907,56 @@ fun SettingsSection(
             }
         }
 
+        // Section 6: Long-Term Memory (LTM) Backup & Recovery
+        item {
+            SettingsCardSection(title = "6. Cognitive Memory & Disaster Recovery") {
+                val dbFile = File(activity?.filesDir, "ronin_cognitive.db")
+                val dbSizeKb = if (dbFile.exists()) dbFile.length() / 1024 else 0
+                Text("Cognitive Database: ${if (dbFile.exists()) "$dbSizeKb KB" else "Not initialized"}", color = Color.Gray, fontSize = 12.sp)
+                Spacer(Modifier.height(8.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            val backupPath = activity?.backupCognitiveMemoryToDownloads()
+                            if (backupPath != null) {
+                                Toast.makeText(activity, "Memory backed up to: $backupPath", Toast.LENGTH_LONG).show()
+                            } else {
+                                activity?.memoryBackupLauncher?.launch("ronin_cognitive_backup.db")
+                            }
+                        },
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF1E88E5)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Backup, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Backup DB", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            activity?.memoryRestoreLauncher?.launch(arrayOf("*/*"))
+                        },
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF43A047)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Restore, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Restore DB", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Backups survive app uninstalls and updates in your Downloads folder.",
+                    color = Color.DarkGray,
+                    fontSize = 11.sp,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                )
+            }
+        }
+
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
