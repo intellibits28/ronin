@@ -437,6 +437,7 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
     if (cmd == "/help" || cmd == "/capabilities") {
         output = "=== Ronin Kernel v5.0+ Capabilities & Commands ===\n"
                  "• SHM Diagnostics: Multi-axis 100Hz vibration analysis, Welch FFT (<0.05Hz resolution), structural resonance detection.\n"
+                 "• Musical Tuner: Real-time audio pitch & Guitar string tuning (E2, A2, D3, G3, B3, E4) with visual cent needle.\n"
                  "• Device Tools: Flashlight on/off, Location (GPS), Wi-Fi, Bluetooth, File Search, SMS, Contacts.\n"
                  "• Memory & Vault: SQLite FTS5 lexical recall, AES encrypted vault, Disaster Recovery backup/restore.\n"
                  "• Hybrid Inference: On-device LiteRT-LM (Gemma 4) + Multi-Cloud (Gemini, OpenAI, OpenRouter).\n"

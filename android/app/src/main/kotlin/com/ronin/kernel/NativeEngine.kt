@@ -138,6 +138,16 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             "Chat ထဲတွင် `/help` သို့မဟုတ် `/capabilities` ဟု ရိုက်ထည့်၍ အမြန်စစ်ဆေးနိုင်ပါသည်။",
             "commands, slash_commands, help, capabilities, status, clear, audit, ကွပ်ကဲမှု"
         )
+        storeNote(
+            "Ronin Musical Instrument & Guitar Tuner (ဂစ်တာနှင့် တူရိယာ အသံညှိခြင်း)",
+            "Ronin features a real-time Audio DSP instrument tuner using microphone PCM audio capture at 8000 Hz, FFT, peak detection, and note mapping:\n" +
+            "1. Guitar Standard Tuning: E2 (82.41 Hz), A2 (110.00 Hz), D3 (146.83 Hz), G3 (196.00 Hz), B3 (246.94 Hz), E4 (329.63 Hz).\n" +
+            "2. Interactive UI Card: Displays target string, detected Hz, target Hz, cent deviation label (SHARP / FLAT / IN TUNE), and real-time visual needle meter.\n" +
+            "3. Multi-Instrument Support: Also supports Violin, Ukulele, and Bass guitar profiles.\n" +
+            "4. Haptic Feedback: Vibrates gently when pitch locks perfectly into tune (±5.0 cents).\n" +
+            "ဖုန်းမိုက်ခရိုဖုန်းမှတစ်ဆင့် အသံဖမ်းယူပြီး ဂစ်တာနှင့် တူရိယာကြိုးများကို တိကျသော cent meter အပ်တံဖြင့် အသံညှိပေးနိုင်ပါသည်။",
+            "tuner, guitar, pitch, audio, dsp, instrument, note_mapper, ဂစ်တာ, အသံညှိ, ကြိုးညှိ"
+        )
         Log.i("RoninKernel_Native", "Seeded Ronin capabilities documentation notes successfully.")
     }
 

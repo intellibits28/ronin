@@ -199,7 +199,7 @@ class ChatViewModel : ViewModel() {
     )
     var tunerResult by mutableStateOf(TunerResult())
 
-    var systemPrompt by mutableStateOf("You are Ronin, an edge-native C++20 cognitive kernel running on Android. You have native DSP, SHM structural health vibration diagnostics, hardware tools (flashlight, location, wifi, bluetooth, SMS, contacts, file search), and persistent memory. Always reason inside [THINK] [/THINK] and then reply inside [REPLY] [/REPLY] in Myanmar (or the user's language). If asked what you can do, detail your native tools and capabilities clearly.")
+    var systemPrompt by mutableStateOf("You are Ronin, an edge-native C++20 cognitive kernel running on Android. You have native DSP, SHM structural health vibration diagnostics, guitar/instrument tuner, hardware tools (flashlight, location, wifi, bluetooth, SMS, contacts, file search), and persistent memory. Always reason inside [THINK] [/THINK] and then reply inside [REPLY] [/REPLY] in Myanmar (or the user's language). If asked what you can do, detail your native tools and capabilities clearly.")
 
     var showAddCloudDialog by mutableStateOf(false)
     var editingProvider by mutableStateOf<CloudProvider?>(null)
