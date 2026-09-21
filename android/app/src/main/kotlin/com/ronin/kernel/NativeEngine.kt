@@ -78,34 +78,65 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     fun seedCapabilitiesIfEmpty() {
         if (!isLibLoaded) return
-        val existing = searchNotes("capabilities")
+        val existing = searchNotes("capabilities_v5")
         if (existing.isNotEmpty()) return
 
         storeNote(
-            "Ronin System Capabilities & Architecture",
-            "I am Ronin (v2.0), a native C++20 cognitive kernel running on Android. I feature a dynamic JNI bridge, dynamic capability discovery, native DSP processing, activity perception fusion, and self-learning macro-skills compilation.",
-            "capabilities, overview, architecture, help"
+            "Ronin System Architecture & Overview (စနစ် ခြုံငုံသုံးသပ်ချက်)",
+            "I am Ronin (v5.0+), a production-grade native C++20 cognitive kernel running on Android. I feature zero-copy Shared Memory (SHM) sensor streaming, LiteRT-LM & multi-cloud hybrid reasoning, persistent Long-Term Memory (LTM), and hardware capability orchestration.\n" +
+            "Ronin သည် Android ပေါ်တွင် တိုက်ရိုက် run သော C++20 high-performance cognitive kernel ဖြစ်ပြီး edge AI နှင့် hardware tools များကို တိုက်ရိုက် ထိန်းချုပ်မောင်းနှင်နိုင်ပါသည်။",
+            "capabilities, overview, architecture, help, capabilities_v5, စွမ်းရည်, ခြုံငုံသုံးသပ်ချက်"
         )
         storeNote(
-            "How to use Ronin DSP Tools",
-            "I support five high-performance native DSP tools: " +
-            "1. 'fft': Computes Fast Fourier Transform on float arrays to output frequencies and magnitudes (minimum size 32). " +
-            "2. 'lowpass': Applies a 2nd-order Butterworth lowpass filter. " +
-            "3. 'detect_peaks': Finds indices of peak values above a given threshold. " +
-            "4. 'zero_crossing': Calculates zero crossing rates. " +
-            "5. 'rms': Computes root-mean-square value of a signal. " +
-            "Inputs/Outputs are formatted as JSON arrays.",
-            "dsp, fft, lowpass, peaks, zero_crossing, rms"
+            "Ronin SHM Structural Health Monitoring & Native DSP (တုန်ခါမှု တိုင်းတာခြင်းနှင့် DSP)",
+            "Ronin features continuous 50Hz IMU vibration analysis via POSIX Shared Memory (SHM). Built-in native DSP tools:\n" +
+            "1. 'fft': Fast Fourier Transform spectrum analysis (dominant frequencies, power spectral density).\n" +
+            "2. 'lowpass': 2nd-order Butterworth lowpass filter to suppress high-frequency noise.\n" +
+            "3. 'detect_peaks': Structural resonance and natural frequency identification.\n" +
+            "4. 'zero_crossing': Frequency estimation and threshold transitions.\n" +
+            "5. 'rms': Root-mean-square acceleration energy and vibration severity classification (Normal, Ambient, Anomaly, Extreme).\n" +
+            "အဆောက်အအုံနှင့် တံတားများ၏ တုန်ခါမှု (Structural Health) ကို continuous zero-copy IMU pipeline ဖြင့် တိုင်းတာစစ်ဆေးပေးနိုင်ပါသည်။",
+            "dsp, fft, shm, vibration, accelerometer, sensors, structural_health, တုန်ခါမှု, dsp_tools"
         )
         storeNote(
-            "Ronin Perception Engine & Sensor Fusion",
-            "My Kotlin Perception Engine runs a background thread at 10Hz to analyze Accelerometer/IMU data from the device. I automatically classify states: 'phone_on_table', 'phone_in_pocket', 'walking', 'running', and 'building_vibration'. These states are logged to the 'perception_history' database table and synchronized with the native C++ 'BeliefState'.",
-            "sensors, accelerometer, perception, states"
+            "Ronin Device & Hardware Control Capabilities (စက်ပစ္စည်း ထိန်းချုပ်ရေး စွမ်းရည်များ)",
+            "Ronin can directly orchestrate hardware and system capabilities via native nodes:\n" +
+            "1. Flashlight: Toggle LED torch on/off.\n" +
+            "2. Location: Read precise GPS & network latitude, longitude, and accuracy.\n" +
+            "3. WiFi & Bluetooth: Toggle state, query status, and scan nearby devices.\n" +
+            "4. File Search: Fast recursive regex file lookup across internal storage.\n" +
+            "5. SMS & Contacts: Search contacts by name/number, and send SMS messages with Human-in-the-Loop (HITL) biometric/confirmation approval.\n" +
+            "မီးသီး (Torch)၊ GPS တည်နေရာ၊ WiFi/Bluetooth၊ ဖုန်းတွင်း ဖိုင်ရှာဖွေခြင်း၊ Contacts နှင့် SMS ပို့ခြင်းတို့ကို AI မှ တိုက်ရိုက် ဆောင်ရွက်ပေးနိုင်ပါသည်။",
+            "hardware, flashlight, location, wifi, bluetooth, file_search, sms, contacts, စက်ပစ္စည်း, ဟာ့ဒ်ဝဲ"
         )
         storeNote(
-            "Ronin Self-Learning and Macro Skills",
-            "I have a C++ SkillCompiler that analyzes successful session executions. When the same sequence of tools (e.g., capture audio -> FFT) is run successfully 100 times (or test threshold), I compile them into a virtual compound tool named 'macro_skill_<sequence>' and save it to the registry.",
-            "learning, macro_skills, compilation, self_learning"
+            "Ronin Long-Term Memory & Secure Vault (ရေရှည်မှတ်ဉာဏ်နှင့် လုံခြုံသော မှတ်စုများ)",
+            "Ronin maintains persistent cognitive memory powered by SQLite WAL with vector indexing:\n" +
+            "1. Facts (`storeFact` / `lookupFact`): Persistent entity-attribute knowledge graph (e.g. user preferences, device specs).\n" +
+            "2. Episodes (`storeEpisode` / `searchEpisodes`): Chronological session memory with contextual tags.\n" +
+            "3. Vault (`storeVault` / `lookupVault`): Secure encrypted key-value notes for sensitive data.\n" +
+            "4. Notes (`storeNote` / `searchNotes`): Rich searchable knowledge base.\n" +
+            "အချက်အလက်များနှင့် session မှတ်တမ်းများကို persistent storage တွင် သိမ်းဆည်းထားသဖြင့် app ပိတ်လိုက်သော်လည်း မှတ်ဉာဏ်များ မပျောက်ပျက်ပါ။",
+            "memory, ltm, vault, facts, episodes, notes, မှတ်ဉာဏ်, ဗဟုသုတ"
+        )
+        storeNote(
+            "Ronin Disaster Recovery & Backup (အရန်သိမ်းဆည်းခြင်းနှင့် ပြန်လည်ရယူခြင်း)",
+            "Ronin provides an automated Disaster Recovery pipeline:\n" +
+            "1. Export Backup: Packs SQLite databases, vault records, facts, and settings into an encrypted `.tar.gz` archive.\n" +
+            "2. Restore Backup: Verifies SHA-256 integrity and atomically restores memory vaults without data corruption.\n" +
+            "APK update လုပ်စဉ် long-term memory မပျောက်ပျက်စေရန် Settings > Disaster Recovery Backup မှ backup ပြုလုပ်ပြီး update ပြီးနောက် Restore ပြုလုပ်နိုင်ပါသည်။",
+            "backup, restore, disaster_recovery, safety, update, အရန်သိမ်းဆည်းမှု, ပြန်လည်ရယူမှု"
+        )
+        storeNote(
+            "Ronin Slash Commands & System Control (အမြန်သုံး Command များ)",
+            "Ronin provides built-in quick commands in the chat interface:\n" +
+            "- `/help` or `/capabilities`: Show complete overview of capabilities and tools.\n" +
+            "- `/status`: Display kernel uptime, model status, and memory (LMK) pressure.\n" +
+            "- `/clear`: Clear current chat display.\n" +
+            "- `/export`: Export conversation logs.\n" +
+            "- `/audit`: View security and capability audit trail.\n" +
+            "Chat ထဲတွင် `/help` သို့မဟုတ် `/capabilities` ဟု ရိုက်ထည့်၍ အမြန်စစ်ဆေးနိုင်ပါသည်။",
+            "commands, slash_commands, help, capabilities, status, clear, audit, ကွပ်ကဲမှု"
         )
         Log.i("RoninKernel_Native", "Seeded Ronin capabilities documentation notes successfully.")
     }

@@ -2,7 +2,18 @@
 
 Welcome to the definitive technical reference for the Ronin Kernel. This manual is designed for developers, Edge AI researchers, and system architects looking to understand the inner workings of this sovereign mobile AI runtime.
 
-## Table of Contents
+## User Guides & Practical References
+
+* **[Ronin User Guide & Manual (အသုံးပြုသူ လမ်းညွှန်)](USER_GUIDE.md)**
+  * Comprehensive end-user instructions covering On-Device model setup, Cloud Providers, SHM vibration monitoring, device tools, and cognitive memory backup/restore.
+* **[Current Architecture Specification](ARCHITECTURE_CURRENT.md)**
+  * Process model, `KernelRuntimeContext`, LiteRT-LM SDK, AIDL IPC, and security governance.
+* **[SHM Pipeline v3 Architecture](SHM_PIPELINE_V3_ARCHITECTURE.md)**
+  * Zero-padded Welch PSD, Modal Validation Engine v3, and Kalman NIS filter.
+* **[Documentation Archive (Historical Proposals & Phase Plans)](archive/README.md)**
+  * Historical v1.0 - v2.0 design roadmaps and drafts preserved for reference.
+
+## Technical Deep-Dive Manual
 
 1. [Executive Summary](01_EXECUTIVE_SUMMARY.md)
    * High-level overview of capabilities and target environments.
@@ -24,4 +35,4 @@ Welcome to the definitive technical reference for the Ronin Kernel. This manual 
    * Glossary, Developer Setup, and Troubleshooting.
 
 ---
-*Note: This manual supplements specific architectural designs like `SHM_PIPELINE_V3_ARCHITECTURE.md` by providing a holistic overview of the entire repository.*
+*Note: For user-facing app setup, commands, and disaster recovery steps, see [USER_GUIDE.md](USER_GUIDE.md).*

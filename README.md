@@ -68,7 +68,7 @@ The codebase currently includes:
 - **SHM AI Review Pipeline**: Structures extracted telemetry into engineering JSON, formats it for human consumption, and routes it to cloud (Gemini, OpenRouter) or local (Gemma 4 E2B) LLMs to generate actionable structural reviews, warnings, and confidence scoring.
 - Runtime health features such as cancellation, safe mode hooks, memory pressure handling, checkpoint storage, telemetry, speculative graph execution, and self-healing controllers.
 
-Some legacy design documents described older architecture details. Those files are archived under `old_logs_and_context/`. Treat `docs/ARCHITECTURE_CURRENT.md`, `docs/TECHNICAL_SPECS.md`, and the source code as authoritative for current behavior.
+Legacy design documents and intermediate roadmaps are archived under `docs/archive/` and `old_logs_and_context/`. Consult `docs/USER_GUIDE.md` for user setup and feature usage, `docs/ARCHITECTURE_CURRENT.md` for runtime design, `docs/TECHNICAL_SPECS.md` for engineering specifications, and `docs/MANUAL_INDEX.md` for the complete documentation index.
 
 ## Build Requirements
 
@@ -133,13 +133,13 @@ cd android
 gradle test
 ```
 
-## Runtime Setup
+## Runtime Setup & User Guide
 
-For offline inference, install the APK and import a `.litertlm` model through the app. The beta guide documents the intended flow and model choices:
+For step-by-step installation, on-device `.litertlm` setup, cloud API keys, SHM vibration monitoring, hardware tool usage, disaster recovery backup/restore, and troubleshooting, consult the bilingual manual:
 
-- `docs/BETA_TESTING.md`
+- [`docs/USER_GUIDE.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/USER_GUIDE.md): Complete End-User & Developer Operations Manual (Myanmar & English).
 
-Cloud inference requires provider configuration and API keys managed through the Android app. Do not commit API keys, model files, logs, or device-specific secrets.
+Cloud inference requires provider configuration (Gemini, OpenAI, OpenRouter) managed securely through the Android app settings. Do not commit API keys, model files, logs, or device-specific secrets.
 
 Useful logcat filters:
 
@@ -147,42 +147,33 @@ Useful logcat filters:
 adb logcat -s RoninKernel_Native:V RoninKernel_Worker:V RoninKernel_JNI:V
 ```
 
-Useful in-app slash commands include `/status`, `/reset`, `/model`, `/skills`, and `/reflect` where supported by the native command handler.
+Useful in-app slash commands include `/help`, `/capabilities`, `/status`, `/reset`, `/clear`, `/export`, and `/audit`.
 
-## Design Documents
+## Technical Documentation
 
-Current source-of-truth docs:
+Master index and navigation:
+- [`docs/MANUAL_INDEX.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/MANUAL_INDEX.md): Complete repository documentation index and cross-references.
 
-- `docs/ARCHITECTURE_CURRENT.md`: active process model, request flow, inference flow, ownership, and CI model.
-- `docs/MANIFEST.md`: current project goals, stack, repository mapping, and engineering priorities.
-- `docs/TECHNICAL_SPECS.md`: current native, Android, inference, persistence, capability, and CI specs.
-- `docs/MEMORY_MODEL_V2.md`: current SQLite memory schema and migration targets.
-- `docs/IMPLEMENTATION_IMPROVEMENT_PLAN.md`: staged plan for JNI split, runtime context, migrations, typed bridge results, policy, and observability.
+Current source-of-truth documents:
+- [`docs/USER_GUIDE.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/USER_GUIDE.md): Operations manual, setup, hardware control, disaster recovery, and troubleshooting.
+- [`docs/ARCHITECTURE_CURRENT.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/ARCHITECTURE_CURRENT.md): Production architecture (v5.0+), `KernelRuntimeContext`, IPC daemon, SHM pipeline, governance, and recovery.
+- [`docs/TECHNICAL_SPECS.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/TECHNICAL_SPECS.md): Current native, Android, inference, persistence, capability, and CI specs.
+- [`docs/MANIFEST.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/MANIFEST.md): Repository goals, technical stack, module mapping, and architectural rules.
+- [`docs/SHM_PIPELINE_V3_ARCHITECTURE.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/SHM_PIPELINE_V3_ARCHITECTURE.md): Modal Validation Engine, continuous zero-copy IMU pipeline, and AI Review Layer.
 
-Design and roadmap context:
-
-- `docs/SHM_PIPELINE_V3_ARCHITECTURE.md`: Architecture of the Modal Validation Engine, Android UI bindings, and the AI Review Layer.
-- `docs/BLUEPRINT_V1_3.md`: cognitive loop, memory tiers, belief state, reflection, and graph reasoning model.
-- `docs/SENSOR_DSP_V1.md`: event-driven sensor DSP and tool-calling contract.
-- `docs/EVOLUTION_V1_6.md`: behavioral evolution, semantic failure, reflection, and macro-skill roadmap.
-- `docs/BETA_TESTING.md`: APK/model setup and beta usage notes.
-
-Legacy context that should not be treated as current implementation:
-
-- `old_logs_and_context/MANIFEST_legacy.md`
-- `old_logs_and_context/TECHNICAL_SPECS_v3_legacy.md`
-- `old_logs_and_context/MEMORY_MODEL_V2_legacy.md`
-- `old_logs_and_context/HARDENED_ARCH_V3_legacy.pdf`
+Historical drafts and legacy plans:
+- [`docs/archive/`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/archive): Archived blueprints (`BLUEPRINT_V1_3.md`, `MEMORY_MODEL_V2.md`, `SENSOR_DSP_V1.md`, `EVOLUTION_V1_6.md`, `COGNITIVE_RUNTIME_V1_0_PRODUCTION.md`, `COGNITIVE_RUNTIME_V3-V7_PLAN.md`, `BETA_TESTING.md`, etc.). See [`docs/archive/README.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/archive/README.md) for historical notes.
+- `old_logs_and_context/`: Legacy pre-v2 notes and transcripts.
 
 ## Development Notes
 
 - Keep native module structure mirrored between `src/` and `include/`.
 - Register new native sources in `CMakeLists.txt`.
 - Keep JNI-facing code in `src/ronin_jni.cpp`, `src/jni_utils.cpp`, `src/jni_gateway.cpp`, and the matching Kotlin facade.
-- Keep packaged capability manifests synchronized when behavior changes: `assets/capabilities.json` if present and `android/app/src/main/assets/capabilities.json`.
+- Keep packaged capability manifests synchronized when behavior changes: `assets/capabilities.json` and `android/app/src/main/assets/capabilities.json`.
 - Add host tests under `tests/` and register them in `CMakeLists.txt`.
 - Add Android/JVM tests under `android/app/src/test/kotlin/`.
 
 ## License
 
-No license file is currently present in this repository. Add a `LICENSE` file before distributing or accepting external contributions.
+This project is licensed under the [MIT License](file:///data/data/com.termux/files/home/play-ground/ronin/LICENSE).

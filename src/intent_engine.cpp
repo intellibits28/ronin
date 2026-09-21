@@ -434,6 +434,17 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
         return true;
     }
 
+    if (cmd == "/help" || cmd == "/capabilities") {
+        output = "=== Ronin Kernel v5.0+ Capabilities & Commands ===\n"
+                 "• SHM Diagnostics: Multi-axis 100Hz vibration analysis, Welch FFT (<0.05Hz resolution), structural resonance detection.\n"
+                 "• Device Tools: Flashlight on/off, Location (GPS), Wi-Fi, Bluetooth, File Search, SMS, Contacts.\n"
+                 "• Memory & Vault: SQLite FTS5 lexical recall, AES encrypted vault, Disaster Recovery backup/restore.\n"
+                 "• Hybrid Inference: On-device LiteRT-LM (Gemma 4) + Multi-Cloud (Gemini, OpenAI, OpenRouter).\n"
+                 "• Commands: /help, /capabilities, /status, /skills, /model, /reset, /reflect";
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[HELP] " + output);
+        return true;
+    }
+
     output = "Unknown command: " + input;
     return true;
 }

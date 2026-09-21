@@ -1,86 +1,78 @@
 # Current Architecture
 
-This is the source-of-truth architecture document for the current implementation.
+This is the source-of-truth architecture document for the active Ronin implementation.
 
 ## Process Model
 
 Ronin uses two Android processes:
 
-- Main app process: UI, `NativeEngine`, JNI runtime initialization, cloud provider requests, Android capability coordination.
-- `:inference_core`: foreground `InferenceService` process that owns LiteRT-LM engine and conversation state.
+- **Main app process (`com.ronin.kernel`)**: Hosts the Compose UI, `NativeEngine`, JNI runtime initialization, Cloud Providers (Gemini, OpenAI, OpenRouter, Custom), and Android capability drivers.
+- **Inference worker process (`:inference_core`)**: Foreground `InferenceService` hosting LiteRT-LM (Gemma 4 Production SDK) engine, KV cache, and conversation state.
 
-Inference streaming crosses the process boundary through AIDL:
+Inference streaming crosses the process boundary through high-performance AIDL IPC:
 
-- `IInferenceService`
-- `IInferenceCallback`
+- `IInferenceService.aidl`: Loads models and triggers asynchronous token streaming.
+- `IInferenceCallback.aidl`: Streams partial token fragments back to the UI in real-time.
 
-This replaces older single-process direct inference assumptions.
+A custom Gradle compilation task (`generateTermuxAidlStubs`) synthesizes these AIDL interfaces natively, allowing full compilation on AArch64 / Termux as well as desktop CI.
 
 ## Request Flow
 
-1. User sends input in `MainActivity`.
-2. `NativeEngine.processInputAsync()` creates `sessionId`, `execId`, and `corrId`.
-3. `processInputNative()` enters `JniExecutionGateway`.
-4. Native command handling runs first for slash commands.
-5. `IntentEngine.process()` classifies the request.
-6. If the request is a planner task, native code asks the inference spine to create a plan.
-7. Sensitive plans request human confirmation where required.
-8. `AgentScheduler` schedules approved multi-step sessions.
-9. `GraphExecutor` dispatches capabilities and records outcomes.
-10. `LongTermMemory` persists messages, facts, episodes, predictions, failures, and search indexes.
+1. User sends input via `MainActivity` Compose UI.
+2. `NativeEngine.processInputAsync()` assigns a unique `sessionId`, `execId`, and `corrId`.
+3. `processInputNative()` enters `JniExecutionGateway` which enforces governance and policy checks.
+4. Slash command handling intercepts built-in commands (`/help`, `/capabilities`, `/status`, `/skills`, `/model`, `/reset`, `/reflect`).
+5. `IntentEngine.process()` classifies the user request into an action or conversational reply.
+6. If the request requires multi-step planning, `TaskPlanner` generates an execution plan.
+7. Sensitive actions (e.g. Vault access, SMS dispatch) trigger **Human-In-The-Loop (HITL)** biometric/confirmation dialogs.
+8. `AgentScheduler` executes approved multi-step capability sequences.
+9. `GraphExecutor` traverses capability nodes and executes functional or Android drivers.
+10. `LongTermMemory` persists cognitive notes, facts, episodes, audit logs, and updates SQLite FTS5 search indexes.
 
-## Inference Flow
+## Inference Architecture (Hybrid Local + Cloud)
 
-1. `NativeEngine.initialize()` binds `InferenceService`.
-2. `NativeEngine.loadModel(path)` calls `IInferenceService.loadModel(path)`.
-3. `InferenceService` creates a LiteRT-LM `Engine` and `Conversation`.
-4. Native planner/chat calls Kotlin `runNeuralReasoning(input)`.
-5. `NativeEngine` calls `IInferenceService.streamReasoning`.
-6. AIDL callback emits tokens to `NativeEngine.pushTokenToUI`.
-7. UI observes `inferenceFlow`.
+Ronin employs an intelligent hybrid inference architecture:
 
-## State And Ownership
+1. **On-Device Core (`InferenceService`)**: Powered by LiteRT-LM with Gemma 4 `.litertlm` models. Uses quantized KV cache, memory pressure guards (0.8GB RAM threshold), and reflection caching for rapid token streaming.
+2. **Cloud Escalation**: When on-device inference is unavailable or Cloud-Only mode is enabled, `HardwareBridge` dispatches requests to user-configured cloud endpoints (Gemini, OpenAI, OpenRouter, Custom) with real-time latency measurement.
 
-Current native runtime state is process-global:
+## State And Ownership (`KernelRuntimeContext`)
 
-- `g_kernel`
-- `g_intent_engine`
-- `g_ltm`
-- `g_graph_storage`
-- `g_cap_graph`
-- `g_graph_executor`
-- `g_memory_manager`
-- `g_resonance_analyzer`
-- `g_llm_context`
+Native runtime state is encapsulated within an RAII-managed `KernelRuntimeContext`:
 
-This works for the current app but is the main refactor target. The desired direction is a `KernelRuntimeContext` object with explicit init/shutdown/reinit semantics.
+- `instance`: Global JNI reference to the calling engine.
+- `ltm`: `std::shared_ptr<LongTermMemory>` managing SQLite FTS5 and episodic storage.
+- `graph_storage` & `cap_graph`: `GraphStorage` and `CapabilityGraph` instances.
+- `graph_executor`: `GraphExecutor` orchestrating node traversal.
+- `memory_manager`: `MemoryManager` handling working context limits.
+- `resonance_analyzer`: `ResonanceAnalyzer` native vibration DSP engine.
+- `intent_engine`: `IntentEngine` coordinating intent classification, planning, and macro-skills.
 
-## Capability Flow & Sensor Runtime v2.0
+When the Android service shuts down or re-initializes, `KernelRuntimeContext::release()` safely cleans up all pointers, unregisters telemetry buses, and prevents dangling pointer / Use-After-Free (UAF) crashes.
 
-Native capabilities and sensor integrations are managed dynamically:
+## Structural Health Monitoring (SHM) Pipeline v3
 
-- **`ToolRegistry`**: A central dynamic string-based tool registry storing metadata (inputs/outputs, permissions, description) and implementations for both class-based `BaseSkill`s and functional tools (e.g. C++ DSP wrappers like FFT, butterworth filters, peak detection, zero crossing, and RMS).
-- **`CapabilityDiscoveryEngine`**: Resolves requirements semantically using Jaccard index similarity on tool descriptions, and automatically constructs a Directed Acyclic Graph (DAG) using a greedy topological sorting scheduler matching inputs and outputs.
-- **`PerceptionEngine`**: A 10Hz rule-based background thread in Kotlin that fuses accelerometer/DSP signals to classify user context (e.g., `walking`, `running`, `phone_on_table`, `phone_in_pocket`, `building_vibration`), saving updates to the SQLite `perception_history` table and syncing them with the C++ `BeliefState` working memory.
-- **`SkillCompiler`**: A self-learning compiler that scans successful SQLite episodes and promotes recurrent sequences (e.g. `audio_capture` -> `fft`) into virtual compound Macro-Skills registered dynamically in the `ToolRegistry`.
-- **`CapabilityDispatcher` & `HardwareBridge`**: Orchestrate traditional JNI/Android hardware hooks.
-- **Kotlin `ICapabilityDriver`**: Bridges Kotlin/Java capability calls.
+Ronin integrates an industrial-grade vibration analysis and structural resonance detection pipeline:
 
-## Persistence Flow
+- **Sensors**: 100Hz 3-axis accelerometer streaming via `VibeMonitorEngine`.
+- **DSP Core**: Zero-padded 2048-pt Welch Fast Fourier Transform (FFT) utilizing `pffft` with 512-sample sub-windows (<0.05Hz modal resolution).
+- **Modal Validation Engine v3**: Evaluates peak prominence, Signal-to-Noise Ratio (SNR), Q-factor, and structural priors across X/Y/Z axes.
+- **Kalman Filter with NIS Gating**: Tracks resonant frequencies with adaptive tolerance hysteresis, rejecting transient shock noise.
+- **Export & Privacy**: Serializes diagnostic sessions to engineering JSON, human-readable text reports, or privacy-masked summaries with token limits for AI review.
 
-Primary databases:
+## Security & Governance Model
 
-- `ronin_cognitive.db` for long-term memory and runtime records.
-- `ronin_graph.db` for graph persistence.
+- **Human-in-the-Loop (HITL)**: High-risk operations (Vault access, device modifications) strictly require user consent.
+- **Encrypted Vault**: Sensitive facts and credentials stored in AES-256-GCM / EncryptedSharedPreferences with biometric authentication. Unconditional auth bypasses are prohibited.
+- **Android Backup Disabled**: `android:allowBackup="false"` prevents extraction of private database files across unencrypted ADB backups.
+- **FTS5 Query Sanitization**: User input is sanitized and bound with `SQLITE_TRANSIENT` to prevent SQL syntax injection errors.
 
-SQLite FTS5 is enabled in native CMake and used for lexical lookup.
+## Persistence & Disaster Recovery
 
-## CI And Development Model
-
-This repository is edited from Termux/Codex CLI on Android. Local work should avoid assuming desktop build tools are installed. GitHub Actions is the expected build/test authority for:
-
-- Host C++ tests.
-- Android APK build.
-- Release artifact generation.
-
-When changing implementation, prefer small commits that CI can validate independently.
+- **Databases**:
+  - `ronin_cognitive.db`: SQLite database storing memories, facts, perception states, and FTS5 indexes.
+  - `ronin_graph.db`: Capability graph topology.
+  - `checkpoint.bin`: Shadow buffer checkpointing for crash-consistent state recovery.
+- **In-App Disaster Recovery**: Settings includes one-tap SQLite database backup to `/sdcard/Download/ronin_cognitive_backup.db` and Storage Access Framework (SAF) export/import.
+- **Fresh Install Auto-Recovery**: On startup, an empty database automatically checks for and restores previous backups in Downloads.
+- **Deterministic APK Signing**: The repository includes a permanent `debug.keystore`, ensuring all GitHub Actions artifact APKs share the exact same SHA-256 signature, allowing seamless in-place updates without losing local data.

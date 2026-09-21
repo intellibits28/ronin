@@ -48,25 +48,59 @@ std::string ChatSkill::execute(const std::string& param, ToolContext* context) {
                 lower_query.find("capabilities") != std::string::npos ||
                 lower_query.find("ability") != std::string::npos ||
                 lower_query.find("abilities") != std::string::npos ||
+                lower_query.find("feature") != std::string::npos ||
+                lower_query.find("features") != std::string::npos ||
+                lower_query.find("tool") != std::string::npos ||
+                lower_query.find("tools") != std::string::npos ||
+                lower_query.find("skill") != std::string::npos ||
+                lower_query.find("skills") != std::string::npos ||
+                lower_query.find("what can you do") != std::string::npos ||
+                lower_query.find("who are you") != std::string::npos ||
+                lower_query.find("how to use") != std::string::npos ||
                 lower_query.find("about") != std::string::npos ||
                 lower_query.find("ronin") != std::string::npos ||
-                lower_query.find("who are you") != std::string::npos ||
-                lower_query.find("စွမ်းရည်") != std::string::npos ||
-                lower_query.find("အကြောင်း") != std::string::npos ||
                 lower_query.find("help") != std::string::npos ||
+                lower_query.find("စွမ်းရည်") != std::string::npos ||
+                lower_query.find("လုပ်နိုင်") != std::string::npos ||
+                lower_query.find("ဘာလုပ်") != std::string::npos ||
+                lower_query.find("ဘာတွေလုပ်") != std::string::npos ||
+                lower_query.find("လုပ်ဆောင်နိုင်") != std::string::npos ||
+                lower_query.find("ဘယ်လိုသုံး") != std::string::npos ||
+                lower_query.find("အကြောင်း") != std::string::npos ||
+                lower_query.find("မင်းက ဘာလဲ") != std::string::npos ||
+                lower_query.find("မင်းဘယ်သူ") != std::string::npos ||
+                lower_query.find("ကူညီ") != std::string::npos ||
                 lower_query.find("dsp") != std::string::npos ||
-                lower_query.find("sensor") != std::string::npos) {
+                lower_query.find("sensor") != std::string::npos ||
+                lower_query.find("shm") != std::string::npos) {
                 
-                sysPrompt += "\n[ABOUT RONIN & SELF ABILITIES]:\n"
-                             "- Architecture: Native C++20 Cognitive Microkernel with Android Kotlin execution bridge.\n"
-                             "- Memory/Fact Vault: Long-term fact storage, AES encrypted vault, and Myanmar FTS5 semantic indexing.\n"
-                             "- Vibration Sensor: Real-time FFT, Structural Resonance detection, and Impulse Capture mode.\n"
-                             "- Audio DSP: String pitch detection and guitar tuner support.\n"
-                             "- Assistant Tools: Calendar management, alarm scheduling, SMS/Email dispatch, and location tracking.\n"
-                             "- Behavioral Reflection: Evolutionary self-learning, automated lesson extraction, and Macro-Skill synthesis.\n";
+                sysPrompt += "\n[ABOUT RONIN & SELF CAPABILITIES (စနစ်စွမ်းဆောင်ရည်များ)]:\n"
+                             "You are Ronin (v5.0+), a sovereign on-device Cognitive AI Agent Kernel written in C++20 for Android.\n"
+                             "When the user asks about your identity, capabilities, or what you can do (in Myanmar or English), explain these capabilities clearly, accurately, and proudly:\n"
+                             "1. Structural Health Monitoring (SHM) & Vibration Diagnostics (အဆောက်အအုံတုန်ခါမှု တိုင်းတာစစ်ဆေးခြင်း):\n"
+                             "   - 100Hz 3-axis accelerometer streaming via Welch Fast Fourier Transform (FFT) with sub-0.05Hz modal resolution.\n"
+                             "   - Analyzes building/bridge/machinery resonance frequencies, Q-factor, SNR, and multi-axis coherence.\n"
+                             "   - Generates engineering JSON reports and human diagnostic summaries with AI review.\n"
+                             "2. Device & Hardware Controls (ဖုန်းစနစ်နှင့် Hardware ထိန်းချုပ်မှုများ):\n"
+                             "   - Flashlight: Turn device flashlight on or off ('ဓာတ်မီး ဖွင့်/ပိတ်').\n"
+                             "   - Connectivity: Toggle Wi-Fi and Bluetooth on/off.\n"
+                             "   - Location: Read GPS coordinates and location context ('တည်နေရာ ပြပေး').\n"
+                             "   - File Search: Search local storage for documents, PDFs, images, music, videos, and code scripts.\n"
+                             "   - Communication: Send SMS messages and lookup Contacts (with human confirmation).\n"
+                             "3. Long-Term Memory (LTM) & Secure Vault (ရေရှည်မှတ်ဉာဏ်နှင့် လုံခြုံရေး Vault):\n"
+                             "   - Stores conversation history, personal notes, and learned facts in SQLite with FTS5 lexical search.\n"
+                             "   - Secure Vault: Encrypted fact storage with biometric/credential protection.\n"
+                             "   - Disaster Recovery: One-tap cognitive database backup to Downloads folder and restore capabilities.\n"
+                             "4. Intelligent Hybrid AI Reasoning (စွမ်းရည်မြင့် ဉာဏ်ရည်တု တွေးခေါ်မှု):\n"
+                             "   - On-Device: LiteRT-LM (Gemma 4) executing offline directly on Android NPU/CPU.\n"
+                             "   - Multi-Cloud: Support for Google Gemini, OpenAI, OpenRouter, and Custom API endpoints.\n"
+                             "   - Transparent Chain-of-Thought reasoning using [THINK] ... [/THINK] tags.\n"
+                             "5. In-App Commands: /help, /capabilities, /status, /skills, /model, /reset, /reflect.\n";
 
                 auto general_notes = m_ltm->searchNotes("capabilities");
                 matched.insert(matched.end(), general_notes.begin(), general_notes.end());
+                auto overview_notes = m_ltm->searchNotes("overview");
+                matched.insert(matched.end(), overview_notes.begin(), overview_notes.end());
             }
 
             if (!matched.empty()) {
