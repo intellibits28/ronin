@@ -508,10 +508,48 @@ IntentEngine::IntentEngine(Memory::LongTermMemory* ltm) : m_ltm(ltm) {
 }
 
 CognitiveIntent IntentEngine::process(const std::string& input, const std::string& history) {
-    std::string input_lower = input;
-    std::transform(input_lower.begin(), input_lower.end(), input_lower.begin(), ::tolower);
+    auto norm_result = NLP::MyanmarLinguisticNormalizer::normalize(input);
+    std::string input_lower = norm_result.cleaned_text.empty() ? input : norm_result.cleaned_text;
+
+    // Tier 1: Semantic Vector / Centroid Router (<1ms execution)
+    RouteMatch route_match = m_semantic_router.route(input);
+    if (route_match.is_confident) {
+        LOGI(TAG, "v13.0 SemanticRouter matched '%s' (conf: %.2f)",
+             route_match.route_name.c_str(), route_match.confidence);
+        
+        if (route_match.route_name == "FLASHLIGHT") {
+            return {4, route_match.confidence, true, IntentCategory::TOOL_QUERY};
+        }
+        if (route_match.route_name == "CHAT_QUERY") {
+            return {1, route_match.confidence, true, IntentCategory::CHAT_QUERY};
+        }
+        if (route_match.route_name == "DEVICE_SETTINGS") {
+            if (input_lower.find("wifi") != std::string::npos || input_lower.find("ဝိုင်ဖိုင်") != std::string::npos) {
+                return {6, route_match.confidence, true, IntentCategory::TOOL_QUERY};
+            } else {
+                return {7, route_match.confidence, true, IntentCategory::TOOL_QUERY};
+            }
+        }
+        if (route_match.route_name == "LOCATION") {
+            auto loc_slots = IntentSlotExtractors::extractLocationSlots(input);
+            if (!loc_slots.is_saving) {
+                return {5, route_match.confidence, true, IntentCategory::TOOL_QUERY};
+            }
+            Ronin::Kernel::Capability::HardwareBridge::updateDevHUD("PLANNING", "PENDING", 0.0f, "");
+            return {1, route_match.confidence, true, IntentCategory::AGENT_PLAN};
+        }
+        if (route_match.route_name == "PITCH_ANALYSIS" ||
+            route_match.route_name == "SHM_VIBRATION" ||
+            route_match.route_name == "FILE_SEARCH" ||
+            route_match.route_name == "SEND_SMS" ||
+            route_match.route_name == "SET_ALARM" ||
+            route_match.route_name == "VAULT_MEMORY") {
+            Ronin::Kernel::Capability::HardwareBridge::updateDevHUD("PLANNING", "PENDING", 0.0f, "");
+            return {1, route_match.confidence, true, IntentCategory::AGENT_PLAN};
+        }
+    }
     
-    // v12.0: Use Trie-based segmenter for precise Myanmar keyword extraction
+    // Tier 2: Heuristic Token Segmenter Fallback
     std::vector<std::string> tokens;
     if (m_ltm) {
         tokens = m_ltm->segmentText(input_lower);
@@ -660,29 +698,24 @@ static std::string normalizeBurmeseDigits(const std::string& s) {
 }
 
 bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan) {
-    std::string norm = input;
-    std::transform(norm.begin(), norm.end(), norm.begin(), ::tolower);
-    
-    // 1. Normalize Burmese digits
+    auto norm_res = NLP::MyanmarLinguisticNormalizer::normalize(input);
+    std::string norm = norm_res.raw_normalized_text;
+    std::string clean = norm_res.cleaned_text;
+
+    // 0. Fast path: Guitar Tuner / Pitch Analysis
+    if (clean.find("guitar") != std::string::npos || clean.find("tuner") != std::string::npos ||
+        clean.find("pitch") != std::string::npos || clean.find("ဂစ်တာ") != std::string::npos ||
+        clean.find("ကြိုးညှိ") != std::string::npos || clean.find("အသံညှိ") != std::string::npos) {
+        out_plan.intent_name = "PITCH_ANALYSIS";
+        out_plan.plan_steps = {"audio_capture", "fft", "detect_peaks", "note_mapper"};
+        out_plan.parameters["original_query"] = input;
+        auto now = std::chrono::system_clock::now().time_since_epoch().count();
+        out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
+        return true;
+    }
+
+    // 1. Normalize Burmese digits and time
     norm = normalizeBurmeseDigits(norm);
-    
-    // Normalize time phrases: "နာရီခွဲ" -> ":30", "နာရီ" -> ":00"
-    {
-        std::string kw = "နာရီခွဲ";
-        size_t p = 0;
-        while ((p = norm.find(kw, p)) != std::string::npos) {
-            norm.replace(p, kw.length(), ":30");
-            p += 3;
-        }
-    }
-    {
-        std::string kw = "နာရီ";
-        size_t p = 0;
-        while ((p = norm.find(kw, p)) != std::string::npos) {
-            norm.replace(p, kw.length(), ":00");
-            p += 3;
-        }
-    }
 
     // 1.5 Compound Sensor Reporting Check
     bool has_sensor_kw = (norm.find("vibration") != std::string::npos || norm.find("တုန်ခါမှု") != std::string::npos ||

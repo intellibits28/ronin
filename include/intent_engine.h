@@ -16,6 +16,9 @@
 #include "myanmar_segmenter.h"
 #include "capability_types.h"
 #include "belief_state.h"
+#include "myanmar_linguistic_normalizer.h"
+#include "intent_slot_extractors.h"
+#include "semantic_router.h"
 #include <nlohmann/json.hpp>
 
 namespace Ronin::Kernel::Intent {
@@ -90,6 +93,14 @@ public:
      */
     void setMemoryManager(Memory::MemoryManager* mm) {
         m_memory_manager = mm;
+    }
+
+    SemanticRouter* getSemanticRouter() {
+        return &m_semantic_router;
+    }
+
+    const SemanticRouter* getSemanticRouter() const {
+        return &m_semantic_router;
     }
 
     /**
@@ -266,6 +277,7 @@ private:
         int inputTokenLimit = 2048;
     };
     std::unordered_map<std::string, ModelMetadata> m_model_metadata;
+    SemanticRouter m_semantic_router;
 };
 
 } // namespace Ronin::Kernel::Intent

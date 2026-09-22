@@ -114,6 +114,9 @@ set(RONIN_CORE_SOURCES
     src/capabilities/discovery_engine.cpp
     src/capabilities/skill_compiler.cpp
     src/myanmar_segmenter.cpp
+    src/myanmar_linguistic_normalizer.cpp
+    src/intent_slot_extractors.cpp
+    src/semantic_router.cpp
     src/dsp/resonance_analyzer.cpp
     src/dsp/dsp_tools.cpp
     src/dsp/vibe_monitor.cpp
@@ -240,4 +243,8 @@ if(NOT RONIN_BUILD_ANDROID)
     add_executable(ronin_cloud_provider_test tests/cloud_provider_regression_test.cpp)
     target_link_libraries(ronin_cloud_provider_test ronin_core gtest_main)
     add_test(NAME ronin_cloud_provider_test COMMAND ronin_cloud_provider_test)
+
+    add_executable(ronin_intent_benchmark_test tests/intent_benchmark_test.cpp)
+    target_link_libraries(ronin_intent_benchmark_test ronin_core gtest_main)
+    add_test(NAME ronin_intent_benchmark_test COMMAND ronin_intent_benchmark_test)
 endif()
