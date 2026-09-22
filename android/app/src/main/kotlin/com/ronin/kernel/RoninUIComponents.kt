@@ -422,7 +422,7 @@ fun AgentResponseCard(
 ) {
     val isUser = msg.sender == "User"
     val context = LocalContext.current
-    var isThoughtExpanded by remember { mutableStateOf(false) }
+    var isThoughtExpanded by remember(msg.id) { mutableStateOf(true) }
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -469,7 +469,7 @@ fun AgentResponseCard(
                                 CircularProgressIndicator(modifier = Modifier.size(10.dp), strokeWidth = 1.dp, color = Color.Gray)
                             }
                         }
-                        AnimatedVisibility(visible = isThoughtExpanded) {
+                        AnimatedVisibility(visible = isThoughtExpanded || msg.isThinking) {
                             Text(msg.thoughtContent, color = Color.Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = if (msg.content.isNotEmpty()) 8.dp else 0.dp, start = 8.dp))
                         }
                     }
@@ -483,10 +483,13 @@ fun AgentResponseCard(
                     }
 
                     if (msg.content.isNotEmpty()) {
-                        // Check if content is SHM engineering response (Requirement 4)
-                        val isShmStructured = !isUser && (msg.content.contains("Structural Health", true) || msg.content.contains("Health Index", true))
+                        // Check if content is an actual SHM engineering analysis report
+                        val isShmStructured = !isUser && (
+                            msg.content.contains("Ronin SHM Vibration Analysis Report", ignoreCase = true) ||
+                            msg.content.contains("SHM Structural Session Data", ignoreCase = true) ||
+                            (msg.content.contains("Resonance Frequency", ignoreCase = true) && msg.content.contains("Structural Health Index", ignoreCase = true))
+                        )
                         if (isShmStructured) {
-                            // Extract metrics if structured or render directly
                             val status = if (msg.content.contains("HEALTHY", true)) "HEALTHY" else if (msg.content.contains("WARNING", true)) "WARNING" else "NORMAL"
                             ShmResultCard(
                                 status = status,
@@ -497,26 +500,27 @@ fun AgentResponseCard(
                                 activity = context as? MainActivity,
                                 chatViewModel = chatViewModel
                             )
-                        } else {
-                            Row(verticalAlignment = Alignment.Top) {
-                                Text(
-                                    text = msg.content,
-                                    color = Color.White,
-                                    fontSize = 15.sp,
-                                    lineHeight = 22.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(
-                                    onClick = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                        val clip = android.content.ClipData.newPlainText("Ronin Message", msg.content)
-                                        clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.size(24.dp).padding(start = 4.dp, top = 2.dp)
-                                ) {
-                                    Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Gray, modifier = Modifier.size(14.dp))
-                                }
+                            Spacer(Modifier.height(8.dp))
+                        }
+
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(
+                                text = msg.content,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                lineHeight = 22.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Ronin Message", msg.content)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(24.dp).padding(start = 4.dp, top = 2.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Gray, modifier = Modifier.size(14.dp))
                             }
                         }
                     }

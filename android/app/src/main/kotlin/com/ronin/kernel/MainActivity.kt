@@ -427,13 +427,13 @@ class MainActivity : FragmentActivity() {
 
                                     if (lastMsg.isThinking) {
                                         if (processedFrag.contains("[/THINK]") || processedFrag.contains("[REPLY]")) {
-                                            val splitTag = if (processedFrag.contains("[REPLY]")) "[REPLY]" else "[/THINK]"
-                                            val thoughtPart = processedFrag.substringBefore(splitTag)
-                                            val replyPart = processedFrag.substringAfter(splitTag)
+                                            val splitTag = if (processedFrag.contains("[/THINK]")) "[/THINK]" else "[REPLY]"
+                                            val thoughtPart = processedFrag.substringBefore(splitTag).replace("[THINK]", "").replace("[/THINK]", "")
+                                            val replyPart = processedFrag.substringAfter(splitTag).replace("[REPLY]", "").replace("[/REPLY]", "")
                                             lastMsg.thoughtContent += thoughtPart
                                             if (chatViewModel.isThinkingEnabled) chatViewModel.reasoningLogsText += thoughtPart
                                             lastMsg.isThinking = false
-                                            lastMsg.content += replyPart.replace("[/REPLY]", "")
+                                            lastMsg.content += replyPart
                                         } else {
                                             lastMsg.thoughtContent += processedFrag
                                             if (chatViewModel.isThinkingEnabled) chatViewModel.reasoningLogsText += processedFrag
@@ -1736,7 +1736,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp),
                             reverseLayout = true
                         ) {
-                            items(chatViewModel.messages.asReversed()) { msg ->
+                            items(chatViewModel.messages.asReversed(), key = { it.id }) { msg ->
                                 AgentResponseCard(
                                     msg = msg,
                                     chatViewModel = chatViewModel,
@@ -1785,7 +1785,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                 chatViewModel.reasoningLogsText = "> Processing: $raw\n" + chatViewModel.reasoningLogsText
                                 scope.launch {
                                     val isCommand = raw.trim().startsWith("/")
-                                    val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "")
+                                    val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "", initialIsThinking = true)
                                     chatViewModel.messages.add(roninMsg)
 
                                     try {
@@ -1795,7 +1795,21 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             try {
                                                 val resJson = JSONObject(resJsonStr)
                                                 if (resJson.optBoolean("success", false)) {
-                                                    roninMsg.content = resJson.optString("payload", "")
+                                                    val rawPayload = resJson.optString("payload", "")
+                                                    if (rawPayload.contains("[THINK]")) {
+                                                        val thoughtPart = rawPayload.substringAfter("[THINK]").substringBefore("[/THINK]").substringBefore("[REPLY]").trim()
+                                                        val replyPart = if (rawPayload.contains("[REPLY]")) {
+                                                            rawPayload.substringAfter("[REPLY]").substringBefore("[/REPLY]").trim()
+                                                        } else if (rawPayload.contains("[/THINK]")) {
+                                                            rawPayload.substringAfter("[/THINK]").trim()
+                                                        } else {
+                                                            rawPayload.replace("[THINK]", "").trim()
+                                                        }
+                                                        roninMsg.thoughtContent = thoughtPart
+                                                        roninMsg.content = replyPart
+                                                    } else {
+                                                        roninMsg.content = rawPayload
+                                                    }
                                                 } else {
                                                     val error = resJson.optJSONObject("error")
                                                     val errorMsg = error?.optString("message") ?: "Cloud Inference Failed"
@@ -1818,10 +1832,23 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                         val fallbackPrompt = "The user has declined the automatic execution of the action for their query: \"$raw\". Please provide a helpful, conversational textual explanation in Myanmar instead."
                                                         displayResult = engine.runNeuralReasoning(fallbackPrompt)
                                                     }
-                                                    if (isCommand || processRes.result.startsWith("Executing plan:")) {
-                                                        roninMsg.content = displayResult
-                                                    } else if (roninMsg.content.isEmpty()) {
-                                                        roninMsg.content = displayResult
+                                                    if (displayResult.contains("[THINK]")) {
+                                                        val thoughtPart = displayResult.substringAfter("[THINK]").substringBefore("[/THINK]").substringBefore("[REPLY]").trim()
+                                                        val replyPart = if (displayResult.contains("[REPLY]")) {
+                                                            displayResult.substringAfter("[REPLY]").substringBefore("[/REPLY]").trim()
+                                                        } else if (displayResult.contains("[/THINK]")) {
+                                                            displayResult.substringAfter("[/THINK]").trim()
+                                                        } else {
+                                                            displayResult.replace("[THINK]", "").trim()
+                                                        }
+                                                        roninMsg.thoughtContent = thoughtPart
+                                                        roninMsg.content = replyPart
+                                                    } else {
+                                                        if (isCommand || processRes.result.startsWith("Executing plan:")) {
+                                                            roninMsg.content = displayResult
+                                                        } else if (roninMsg.content.isEmpty()) {
+                                                            roninMsg.content = displayResult
+                                                        }
                                                     }
                                                     roninMsg.sessionId = processRes.sessionId
                                                 }
@@ -1831,6 +1858,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             }
                                         }
                                     } finally {
+                                        roninMsg.isThinking = false
                                         chatViewModel.isGenerating = false
                                     }
                                 }

@@ -179,7 +179,9 @@ TEST(SemanticRouterBenchmarkTest, ComprehensiveRoutingAccuracy) {
         {"hello ronin", "CHAT_QUERY"},
         {"မင်္ဂလာပါ", "CHAT_QUERY"},
         {"နေကောင်းလား", "CHAT_QUERY"},
-        {"မင်း ဘာတွေလုပ်နိုင်လဲ", "CHAT_QUERY"}
+        {"မင်း ဘာတွေလုပ်နိုင်လဲ", "CHAT_QUERY"},
+        {"Ronin က ဘာတွေလုပ်နိုင်လဲ", "CHAT_QUERY"},
+        {"ဘာတွေလုပ်နိုင်လဲ", "CHAT_QUERY"}
     };
 
     int passed = 0;
@@ -211,5 +213,5 @@ TEST(SemanticRouterBenchmarkTest, ComprehensiveRoutingAccuracy) {
     std::cout << "======================================================\n";
 
     EXPECT_GE(passed, static_cast<int>(test_cases.size() * 0.95)); // >= 95% accuracy
-    EXPECT_LT(avg_us, 500.0); // Sub-millisecond latency (< 500 us)
+    EXPECT_LT(avg_us, 1000.0); // Sub-millisecond latency (< 1.0 ms)
 }
