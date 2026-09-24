@@ -1785,6 +1785,36 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                 chatViewModel.reasoningLogsText = "> Processing: $raw\n" + chatViewModel.reasoningLogsText
                                 scope.launch {
                                     val isCommand = raw.trim().startsWith("/")
+                                    if (isCommand) {
+                                        val cmdClean = raw.trim().lowercase()
+                                        if (cmdClean == "/clear") {
+                                            chatViewModel.messages.clear()
+                                            chatViewModel.reasoningLogsText = ""
+                                            chatViewModel.showCommandSuggestions = false
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
+                                        if (cmdClean == "/history") {
+                                            val historyItems = engine.getChatHistoryAsync(30, 0)
+                                            val triggerMsg = chatViewModel.messages.lastOrNull { it.sender == "User" && it.content.trim().equals("/history", ignoreCase = true) }
+                                            if (triggerMsg != null) {
+                                                chatViewModel.messages.remove(triggerMsg)
+                                            }
+                                            if (historyItems.isNotEmpty()) {
+                                                val chronological = historyItems.reversed()
+                                                var baseTime = System.currentTimeMillis() - (chronological.size * 1000L)
+                                                for (item in chronological) {
+                                                    val role = if (item.first.equals("user", ignoreCase = true)) "User" else "Ronin"
+                                                    chatViewModel.messages.add(ChatMessage(baseTime++, role, item.second))
+                                                }
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "✅ Loaded ${chronological.size} messages from conversation history."))
+                                            } else {
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Conversation history is currently empty."))
+                                            }
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
+                                    }
                                     val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "", initialIsThinking = true)
                                     chatViewModel.messages.add(roninMsg)
 

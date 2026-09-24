@@ -55,4 +55,5 @@ Screenshot_*.jpg
 ronin_advice.txt
 shm_benchmark_report.json
 shm_stress_results.json
+shm_results.json
 shm_diagnostic_output/

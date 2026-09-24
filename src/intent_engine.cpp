@@ -434,6 +434,52 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
         return true;
     }
 
+    if (cmd == "/history") {
+        if (!m_ltm) {
+            output = "No Long-Term Memory attached.";
+        } else {
+            auto history = m_ltm->getHistory(15, 0);
+            if (history.empty()) {
+                output = "Conversation history is currently empty.";
+            } else {
+                std::stringstream ss;
+                ss << "=== Recent Conversation History (Last " << history.size() << " messages) ===\n";
+                std::vector<std::pair<std::string, std::string>> chronological(history.rbegin(), history.rend());
+                for (const auto& [role, msg] : chronological) {
+                    ss << "• [" << role << "]: " << msg << "\n";
+                }
+                output = ss.str();
+            }
+        }
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[HISTORY] " + output);
+        return true;
+    }
+
+    if (cmd == "/clear") {
+        output = "Chat screen cleared.";
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[CLEAR] " + output);
+        return true;
+    }
+
+    if (cmd == "/shm") {
+        output = "=== Structural Health Monitoring (SHM) ===\n"
+                 "• Mode: 100Hz Multi-Axis Vibration Processing\n"
+                 "• FFT Resolution: Welch PSD <0.05 Hz\n"
+                 "• Bayesian Health Index: Active (Prior P(H)=98.5%)\n"
+                 "• Status: Ready / Listening for structural vibration";
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[SHM] " + output);
+        return true;
+    }
+
+    if (cmd == "/tuner") {
+        output = "=== Musical Instrument Tuner ===\n"
+                 "• Target: Standard Guitar Tuning (E2: 82.4Hz, A2: 110.0Hz, D3: 146.8Hz, G3: 196.0Hz, B3: 246.9Hz, E4: 329.6Hz)\n"
+                 "• Engine: Audio Pitch Detection & Cent Deviation Needle\n"
+                 "• Status: Ready (Speak or play a note, e.g. 'guitar tuner' or 'ကြိုးညှိပေးပါ')";
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage("[TUNER] " + output);
+        return true;
+    }
+
     if (cmd == "/help" || cmd == "/capabilities") {
         output = "=== Ronin Kernel v5.0+ Capabilities & Commands ===\n"
                  "• SHM Diagnostics: Multi-axis 100Hz vibration analysis, Welch FFT (<0.05Hz resolution), structural resonance detection.\n"
@@ -441,7 +487,7 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
                  "• Device Tools: Flashlight on/off, Location (GPS), Wi-Fi, Bluetooth, File Search, SMS, Contacts.\n"
                  "• Memory & Vault: SQLite FTS5 lexical recall, AES encrypted vault, Disaster Recovery backup/restore.\n"
                  "• Hybrid Inference: On-device LiteRT-LM (Gemma 4) + Multi-Cloud (Gemini, OpenAI, OpenRouter).\n"
-                 "• Commands: /help, /capabilities, /status, /skills, /model, /reset, /reflect";
+                 "• Commands: /help, /capabilities, /status, /skills, /model, /history, /reset, /clear, /reflect, /shm, /tuner";
         Ronin::Kernel::Capability::HardwareBridge::pushMessage("[HELP] " + output);
         return true;
     }

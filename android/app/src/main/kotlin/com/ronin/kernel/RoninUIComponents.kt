@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
@@ -556,6 +557,25 @@ fun AgentResponseCard(
     }
 }
 
+data class RoninSlashCommand(
+    val command: String,
+    val description: String
+)
+
+val ALL_RONIN_COMMANDS = listOf(
+    RoninSlashCommand("/help", "Show all capabilities & commands"),
+    RoninSlashCommand("/status", "Device health, RAM, thermal & runtime status"),
+    RoninSlashCommand("/skills", "List active capability nodes"),
+    RoninSlashCommand("/model", "Active brain & model path"),
+    RoninSlashCommand("/history", "Load recent chat history from memory"),
+    RoninSlashCommand("/reset", "Reset session context & KV cache"),
+    RoninSlashCommand("/clear", "Clear chat screen messages"),
+    RoninSlashCommand("/reflect", "Trigger memory reflection & self-correction"),
+    RoninSlashCommand("/shm", "Structural Health Monitoring status"),
+    RoninSlashCommand("/tuner", "Musical instrument & guitar tuner"),
+    RoninSlashCommand("/capabilities", "Detailed system capabilities manifest")
+)
+
 @Composable
 fun InputBar(
     currentInput: String,
@@ -567,21 +587,41 @@ fun InputBar(
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         if (showCommandSuggestions) {
-            val suggestions = listOf("/status", "/skills", "/model", "/reset", "/history").filter { it.startsWith(currentInput.lowercase()) }
+            val query = currentInput.trim().lowercase()
+            val suggestions = ALL_RONIN_COMMANDS.filter { it.command.startsWith(query) }
             if (suggestions.isNotEmpty()) {
                 Surface(
                     color = Color(0xFF25283D),
                     shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
                     elevation = 8.dp,
-                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(0.85f)
+                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(0.92f)
                 ) {
-                    LazyColumn(modifier = Modifier.heightIn(max = 180.dp)) {
-                        items(suggestions) { s ->
+                    LazyColumn(modifier = Modifier.heightIn(max = 220.dp)) {
+                        items(suggestions) { cmdItem ->
                             TextButton(
-                                onClick = { onSuggestionClick("$s ") },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                onClick = { onSuggestionClick("${cmdItem.command} ") },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
                             ) {
-                                Text(s, color = Color.White, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        cmdItem.command,
+                                        color = Color(0xFF64B5F6),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        cmdItem.description,
+                                        color = Color.LightGray,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }
