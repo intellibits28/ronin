@@ -91,6 +91,7 @@ set(RONIN_CORE_SOURCES
     src/long_term_memory.cpp
     src/belief_state.cpp
     src/reasoning/active_inference.cpp
+    src/reasoning/policy_router.cpp
     src/reflection_engine.cpp
     src/capability_graph.cpp
     src/capability_policy_engine.cpp
@@ -252,4 +253,8 @@ if(NOT RONIN_BUILD_ANDROID)
     add_executable(ronin_active_inference_test tests/active_inference_test.cpp)
     target_link_libraries(ronin_active_inference_test ronin_core gtest_main)
     add_test(NAME ronin_active_inference_test COMMAND ronin_active_inference_test)
+
+    add_executable(ronin_intent_active_inference_test tests/intent_active_inference_test.cpp)
+    target_link_libraries(ronin_intent_active_inference_test ronin_core gtest_main)
+    add_test(NAME ronin_intent_active_inference_test COMMAND ronin_intent_active_inference_test)
 endif()

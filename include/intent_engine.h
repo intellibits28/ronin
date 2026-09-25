@@ -19,6 +19,7 @@
 #include "myanmar_linguistic_normalizer.h"
 #include "intent_slot_extractors.h"
 #include "semantic_router.h"
+#include "reasoning/policy_router.hpp"
 #include <nlohmann/json.hpp>
 
 namespace Ronin::Kernel::Intent {
@@ -107,6 +108,22 @@ public:
      * Processes raw input to determine the high-level intent score.
      */
     CognitiveIntent process(const std::string& input, const std::string& context_subject = "");
+
+    /**
+     * Phase 2: Active Inference Expected Free Energy (EFE) Policy Evaluation
+     */
+    Ronin::Kernel::Reasoning::PolicyDecision evaluatePolicy(
+        const std::string& input,
+        const Ronin::Kernel::Reasoning::StateVector* current_state = nullptr
+    );
+
+    Ronin::Kernel::Reasoning::ExpectedFreeEnergyRouter* getPolicyRouter() {
+        return &m_policy_router;
+    }
+
+    const Ronin::Kernel::Reasoning::ExpectedFreeEnergyRouter* getPolicyRouter() const {
+        return &m_policy_router;
+    }
 
     /**
      * Tier 0: Command Interface
@@ -278,6 +295,7 @@ private:
     };
     std::unordered_map<std::string, ModelMetadata> m_model_metadata;
     SemanticRouter m_semantic_router;
+    Ronin::Kernel::Reasoning::ExpectedFreeEnergyRouter m_policy_router;
 };
 
 } // namespace Ronin::Kernel::Intent

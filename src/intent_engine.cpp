@@ -999,4 +999,48 @@ bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan
     return false;
 }
 
+Reasoning::PolicyDecision IntentEngine::evaluatePolicy(
+    const std::string& input,
+    const Reasoning::StateVector* current_state
+) {
+    RouteMatch route_match = m_semantic_router.route(input);
+    std::string route_name = route_match.route_name;
+    float route_conf = route_match.confidence;
+
+    auto slot_ctx = Reasoning::ExpectedFreeEnergyRouter::analyzeQuery(input, route_name, route_conf);
+
+    Reasoning::StateVector s;
+    if (current_state) {
+        s = *current_state;
+    } else {
+        s.shm_freq_hz = m_policy_router.getBaseline().mean_shm_hz;
+        s.resource_index = 1.0f;
+        s.intent_certainty = std::max(0.0f, 1.0f - slot_ctx.computeEntropy());
+        s.env_disturbance = 0.0f;
+    }
+
+    Reasoning::StateVector prior_preferences;
+    prior_preferences.shm_freq_hz = m_policy_router.getBaseline().mean_shm_hz;
+    prior_preferences.resource_index = 1.0f;
+    prior_preferences.intent_certainty = 1.0f;
+    prior_preferences.env_disturbance = 0.0f;
+
+    const auto& base = m_policy_router.getBaseline();
+    std::array<float, Reasoning::MODALITY_COUNT> precisions = {
+        Reasoning::ActiveInferenceCore::clampPrecision(base.sigma_shm_hz * base.sigma_shm_hz),
+        Reasoning::ActiveInferenceCore::clampPrecision(base.sigma_resource * base.sigma_resource),
+        Reasoning::ActiveInferenceCore::clampPrecision(base.sigma_intent * base.sigma_intent),
+        Reasoning::ActiveInferenceCore::clampPrecision(base.sigma_noise * base.sigma_noise)
+    };
+
+    std::array<float, Reasoning::MODALITY_COUNT> realtime_variances = {
+        base.sigma_shm_hz * base.sigma_shm_hz,
+        base.sigma_resource * base.sigma_resource,
+        std::max(base.sigma_intent * base.sigma_intent, slot_ctx.computeEntropy() * slot_ctx.computeEntropy()),
+        base.sigma_noise * base.sigma_noise
+    };
+
+    return m_policy_router.evaluate(s, prior_preferences, precisions, realtime_variances, slot_ctx);
+}
+
 } // namespace Ronin::Kernel::Intent
