@@ -136,6 +136,7 @@ class ChatViewModel : ViewModel() {
 
     var offlineMode by mutableStateOf(false)
     var cloudOnlyMode by mutableStateOf(false)
+    var privacyShieldEnabled by mutableStateOf(true)
     var localModelPath by mutableStateOf("")
     var primaryCloudProvider by mutableStateOf("Gemini")
     val cloudProviders = mutableStateListOf<CloudProvider>()
@@ -396,6 +397,7 @@ class MainActivity : FragmentActivity() {
         chatViewModel.topP = sharedPreferences.getFloat("top_p", 0.9f)
         chatViewModel.isThinkingEnabled = sharedPreferences.getBoolean("is_thinking_enabled", true)
         chatViewModel.cloudOnlyMode = sharedPreferences.getBoolean("cloud_only_mode", false)
+        chatViewModel.privacyShieldEnabled = sharedPreferences.getBoolean("privacy_shield_enabled", true)
 
         lifecycleScope.launch(Dispatchers.Main) {
             chatViewModel.kernelStatus = "Booting Engine..."
@@ -580,6 +582,11 @@ class MainActivity : FragmentActivity() {
     }
     fun saveThinkingToggle(enabled: Boolean) { sharedPreferences.edit().putBoolean("is_thinking_enabled", enabled).apply() }
     fun saveCloudOnlyMode(enabled: Boolean) { sharedPreferences.edit().putBoolean("cloud_only_mode", enabled).apply() }
+    fun savePrivacyShieldEnabled(enabled: Boolean) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        chatViewModel.privacyShieldEnabled = enabled
+        sharedPreferences.edit().putBoolean("privacy_shield_enabled", enabled).apply()
+    }
 
     fun fetchModels(provider: String) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
@@ -1763,7 +1770,16 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             val prompt = DocumentIntelligence.buildSummaryPrompt(resolved.name, readRes.content, langMyanmar = true)
             if (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady) {
                 val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
-                val resJsonStr = engine.performCloudInferenceAsync(prompt, chatViewModel.primaryCloudProvider, apiKey)
+                val promptToSend = if (chatViewModel.privacyShieldEnabled) {
+                    val redaction = PrivacyShield.redact(prompt)
+                    if (redaction.hasRedactions) {
+                        chatViewModel.reasoningLogsText = "> 🛡️ Privacy Shield: Redacted ${redaction.redactionCount} PII item(s) before cloud summarization\n" + chatViewModel.reasoningLogsText
+                    }
+                    redaction.sanitizedText
+                } else {
+                    prompt
+                }
+                val resJsonStr = engine.performCloudInferenceAsync(promptToSend, chatViewModel.primaryCloudProvider, apiKey)
                 try {
                     val resJson = JSONObject(resJsonStr)
                     if (resJson.optBoolean("success", false)) {
@@ -1828,8 +1844,18 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             if (text.isBlank()) {
                 roninMsg.content = "🔍 OCR completed in ${ocrResult.processingTimeMs} ms, but no readable text was detected in **${resolved.name}**."
             } else {
-                val preview = if (text.length > 3000) text.take(3000) + "\n... [truncated]" else text
-                roninMsg.content = "🔍 **OCR Recognition Results** (${resolved.name}):\n• Language: `${ocrResult.language}`\n• Confidence: `${ocrResult.confidence}%`\n• Time Taken: `${ocrResult.processingTimeMs} ms`\n\n```text\n$preview\n```"
+                val (processedText, privacyBadge) = if (chatViewModel.privacyShieldEnabled) {
+                    val red = PrivacyShield.redact(text)
+                    if (red.hasRedactions) {
+                        Pair(red.sanitizedText, "\n• 🛡️ Privacy Shield: Redacted ${red.redactionCount} PII item(s) ([${red.redactedTypes.joinToString()}])")
+                    } else {
+                        Pair(text, "")
+                    }
+                } else {
+                    Pair(text, "")
+                }
+                val preview = if (processedText.length > 3000) processedText.take(3000) + "\n... [truncated]" else processedText
+                roninMsg.content = "🔍 **OCR Recognition Results** (${resolved.name}):\n• Language: `${ocrResult.language}`\n• Confidence: `${ocrResult.confidence}%`\n• Time Taken: `${ocrResult.processingTimeMs} ms`$privacyBadge\n\n```text\n$preview\n```"
             }
             roninMsg.fileResults.clear()
             roninMsg.fileResults.add(resolved.absolutePath)
@@ -2148,6 +2174,156 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             triggerOcrWorkflow(targetFile, lang)
                                             return@launch
                                         }
+
+                                        if (cmdClean.startsWith("/privacy")) {
+                                            val sub = raw.trim().substringAfter(" ", "").trim()
+                                            when {
+                                                sub.equals("on", ignoreCase = true) -> {
+                                                    activity?.savePrivacyShieldEnabled(true) ?: run { chatViewModel.privacyShieldEnabled = true }
+                                                    chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🛡️ Privacy Shield is now **ENABLED**.\nAll outgoing cloud prompts, OCR text, and telemetry will automatically redact NRC numbers, phone numbers, bank accounts, emails, and credentials."))
+                                                }
+                                                sub.equals("off", ignoreCase = true) -> {
+                                                    activity?.savePrivacyShieldEnabled(false) ?: run { chatViewModel.privacyShieldEnabled = false }
+                                                    chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "⚠️ Privacy Shield is now **DISABLED**.\nSensitive PII will not be redacted before cloud transmission."))
+                                                }
+                                                sub.startsWith("test", ignoreCase = true) -> {
+                                                    val testPayload = sub.substringAfter(" ", "").trim()
+                                                    val textToTest = if (testPayload.isNotEmpty()) testPayload else "Sample NRC: 12/KAMAYA(N)123456, Phone: 0912345678, Email: user@example.com, Key: sk-1234567890abcdef12345678"
+                                                    val res = PrivacyShield.redact(textToTest)
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(
+                                                            System.currentTimeMillis(),
+                                                            "Ronin",
+                                                            "🛡️ **Privacy Shield Redaction Test**:\n\n• **Input**: `$textToTest`\n• **Output**: `${res.sanitizedText}`\n• **Redactions**: ${res.redactionCount} items ([${res.redactedTypes.joinToString()}])"
+                                                        )
+                                                    )
+                                                }
+                                                else -> {
+                                                    val status = if (chatViewModel.privacyShieldEnabled) "🟢 ENABLED" else "🔴 DISABLED"
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(
+                                                            System.currentTimeMillis(),
+                                                            "Ronin",
+                                                            "🛡️ **Ronin Privacy Shield & Data Redaction**\n\n• Status: **$status**\n• Protected Categories: NRC numbers (မြန်မာ/Eng), Phone numbers (09/+959), Financial (Card/Bank/KPay), Emails, API keys, Passwords.\n\nCommands:\n• `/privacy on` — Enable automatic redaction\n• `/privacy off` — Disable redaction\n• `/privacy test [text]` — Test PII redaction on sample text"
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
+
+                                        if (cmdClean.startsWith("/vault")) {
+                                            val rest = raw.trim().substringAfter(" ", "").trim()
+                                            val parts = rest.split(Regex("\\s+"), limit = 2)
+                                            val action = parts.firstOrNull()?.lowercase() ?: "list"
+                                            val target = parts.getOrNull(1)?.trim() ?: ""
+
+                                            when (action) {
+                                                "list" -> {
+                                                    val items = PrivacyVault.listVault(context)
+                                                    if (items.isEmpty()) {
+                                                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🔒 **Privacy Vault is empty.**\nUse `/vault encrypt <filepath>` to move sensitive files into the encrypted sandbox."))
+                                                    } else {
+                                                        val listStr = items.joinToString("\n") {
+                                                            "• **${it.originalFileName}** (${StorageHygiene.formatBytes(it.originalSize)}) — Vault ID: `${it.vaultFileName}`"
+                                                        }
+                                                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🔒 **Encrypted Privacy Vault** (${items.size} files):\n$listStr\n\nUse `/vault decrypt <vault_id>` to export or `/vault delete <vault_id>` to shred."))
+                                                    }
+                                                }
+                                                "encrypt" -> {
+                                                    if (target.isEmpty()) {
+                                                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /vault encrypt <filepath or filename>"))
+                                                    } else {
+                                                        val file = DocumentIntelligence.resolveFile(target) { engine.searchFiles(it) }
+                                                        if (file == null) {
+                                                            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Could not find file matching: '$target'"))
+                                                        } else {
+                                                            val encResult = PrivacyVault.encryptFile(context, file, deleteSource = false)
+                                                            if (encResult.success && encResult.file != null) {
+                                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🔒 **File Successfully Encrypted into Vault**!\n\n• Original: `${file.name}` (${StorageHygiene.formatBytes(file.length())})\n• Vault Item: `${encResult.file.name}`\n• Encryption: `AES-256-GCM`"))
+                                                            } else {
+                                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Vault Encryption Failed: ${encResult.error}"))
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                "decrypt" -> {
+                                                    if (target.isEmpty()) {
+                                                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /vault decrypt <vault_id or filename>"))
+                                                    } else {
+                                                        val targetDir = File(context.cacheDir, "vault_exports")
+                                                        val decResult = PrivacyVault.decryptFile(context, target, targetDir)
+                                                        if (decResult.success && decResult.file != null) {
+                                                            val outMsg = ChatMessage(
+                                                                System.currentTimeMillis(),
+                                                                "Ronin",
+                                                                "🔓 **File Decrypted from Vault**:\n${decResult.file.absolutePath}\n\n• Size: ${StorageHygiene.formatBytes(decResult.file.length())}",
+                                                                initialFileResults = listOf(decResult.file.absolutePath)
+                                                            )
+                                                            chatViewModel.messages.add(outMsg)
+                                                        } else {
+                                                            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Vault Decryption Failed: ${decResult.error}"))
+                                                        }
+                                                    }
+                                                }
+                                                "delete" -> {
+                                                    if (target.isEmpty()) {
+                                                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /vault delete <vault_id>"))
+                                                    } else {
+                                                        val deleted = PrivacyVault.deleteVaultFile(context, target)
+                                                        if (deleted) {
+                                                            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🗑️ Securely shredded and deleted `$target` from Privacy Vault."))
+                                                        } else {
+                                                            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Failed to delete `$target`: File not found in vault."))
+                                                        }
+                                                    }
+                                                }
+                                                else -> {
+                                                    chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🔒 **Ronin Privacy Vault Commands**:\n• `/vault list` — View encrypted files\n• `/vault encrypt <path>` — Encrypt file with AES-256-GCM\n• `/vault decrypt <vault_id>` — Decrypt file\n• `/vault delete <vault_id>` — Shred file from vault"))
+                                                }
+                                            }
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
+
+                                        if (cmdClean.startsWith("/hygiene") || cmdClean.startsWith("/clean")) {
+                                            val scanDirs = listOfNotNull(
+                                                File(context.cacheDir, "attachments"),
+                                                File(context.cacheDir, "vault_exports"),
+                                                context.cacheDir,
+                                                context.getExternalFilesDir(null)
+                                            )
+                                            val report = StorageHygiene.scanDirectories(scanDirs)
+                                            val sb = StringBuilder()
+                                            sb.append("🧹 **Storage Hygiene & Duplication Report**:\n")
+                                            sb.append("• Files Scanned: **${report.totalFilesScanned}** (${StorageHygiene.formatBytes(report.totalBytesScanned)})\n")
+                                            sb.append("• Duplicate Groups: **${report.duplicateGroups.size}**\n")
+                                            sb.append("• Potential Storage Savings: **${StorageHygiene.formatBytes(report.totalWastedBytes)}**\n\n")
+
+                                            if (report.duplicateGroups.isNotEmpty()) {
+                                                sb.append("**Duplicate Files Detected**:\n")
+                                                report.duplicateGroups.take(5).forEach { group ->
+                                                    sb.append("• `${group.files.first().name}` (${StorageHygiene.formatBytes(group.fileSizeBytes)}): ${group.files.size} copies\n")
+                                                    group.files.forEach { f -> sb.append("   - `${f.absolutePath}`\n") }
+                                                }
+                                                if (report.duplicateGroups.size > 5) {
+                                                    sb.append("... and ${report.duplicateGroups.size - 5} more duplicate groups.\n")
+                                                }
+                                            } else {
+                                                sb.append("✅ No duplicate files detected in app storage.\n")
+                                            }
+
+                                            if (report.largeFiles.isNotEmpty()) {
+                                                sb.append("\n**Large Files (>50 MB)**:\n")
+                                                report.largeFiles.forEach { f ->
+                                                    sb.append("• `${f.name}`: ${StorageHygiene.formatBytes(f.length())}\n")
+                                                }
+                                            }
+                                            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", sb.toString()))
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
                                     }
                                     val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "", initialIsThinking = true)
                                     chatViewModel.messages.add(roninMsg)
@@ -2155,7 +2331,16 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                     try {
                                         if (!isCommand && (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady)) {
                                             val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
-                                            val resJsonStr = engine.performCloudInferenceAsync(raw, chatViewModel.primaryCloudProvider, apiKey)
+                                            val payloadToSend = if (chatViewModel.privacyShieldEnabled) {
+                                                val redaction = PrivacyShield.redact(raw)
+                                                if (redaction.hasRedactions) {
+                                                    chatViewModel.reasoningLogsText = "> 🛡️ Privacy Shield: Redacted ${redaction.redactionCount} PII item(s) ([${redaction.redactedTypes.joinToString()}])\n" + chatViewModel.reasoningLogsText
+                                                }
+                                                redaction.sanitizedText
+                                            } else {
+                                                raw
+                                            }
+                                            val resJsonStr = engine.performCloudInferenceAsync(payloadToSend, chatViewModel.primaryCloudProvider, apiKey)
                                             try {
                                                 val resJson = JSONObject(resJsonStr)
                                                 if (resJson.optBoolean("success", false)) {

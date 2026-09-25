@@ -797,6 +797,9 @@ val ALL_RONIN_COMMANDS = listOf(
     RoninSlashCommand("/docsearch", "Search inside document: /docsearch <path> <term>"),
     RoninSlashCommand("/read", "Preview document contents: /read <path> [lines]"),
     RoninSlashCommand("/ocr", "Extract text from image/PDF: /ocr <path> [mya|eng]"),
+    RoninSlashCommand("/privacy", "Privacy Shield & PII Redaction: /privacy [on|off|test]"),
+    RoninSlashCommand("/vault", "Encrypted Vault (AES-256): /vault [list|encrypt|decrypt|delete]"),
+    RoninSlashCommand("/hygiene", "Storage hygiene & duplicate file cleaner: /hygiene"),
     RoninSlashCommand("/status", "Device health, RAM, thermal & runtime status"),
     RoninSlashCommand("/skills", "List active capability nodes"),
     RoninSlashCommand("/model", "Active brain & model path"),
@@ -1032,6 +1035,10 @@ fun SettingsSection(
         // Section 1: Runtime
         item {
             SettingsCardSection(title = "1. Runtime") {
+                SettingsSwitchRow("Privacy Shield (PII Redaction)", chatViewModel.privacyShieldEnabled) {
+                    chatViewModel.privacyShieldEnabled = it
+                    activity?.savePrivacyShieldEnabled(it)
+                }
                 SettingsSwitchRow("Cloud Only Mode", chatViewModel.cloudOnlyMode) {
                     chatViewModel.cloudOnlyMode = it
                     activity?.saveCloudOnlyMode(it)
