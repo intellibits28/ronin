@@ -735,6 +735,10 @@ data class RoninSlashCommand(
 
 val ALL_RONIN_COMMANDS = listOf(
     RoninSlashCommand("/help", "Show all capabilities & commands"),
+    RoninSlashCommand("/files", "Search files across storage: /files <name>"),
+    RoninSlashCommand("/summarize", "Summarize file or document: /summarize <path/name>"),
+    RoninSlashCommand("/docsearch", "Search inside document: /docsearch <path> <term>"),
+    RoninSlashCommand("/read", "Preview document contents: /read <path> [lines]"),
     RoninSlashCommand("/status", "Device health, RAM, thermal & runtime status"),
     RoninSlashCommand("/skills", "List active capability nodes"),
     RoninSlashCommand("/model", "Active brain & model path"),

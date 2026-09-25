@@ -1734,6 +1734,58 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     ReasoningConsole(chatViewModel)
                     DeveloperHud(chatViewModel)
 
+                    val triggerSummarizeWorkflow: (String) -> Unit = { target ->
+                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "/summarize $target"))
+                        chatViewModel.isGenerating = true
+                        scope.launch {
+                            val resolved = DocumentIntelligence.resolveFile(target) { engine.searchFiles(it) }
+                            if (resolved == null) {
+                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis() + 1, "Ronin", "❌ Could not find file matching: '$target'"))
+                                chatViewModel.isGenerating = false
+                                return@launch
+                            }
+
+                            val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "📖 Reading **${resolved.name}** and generating summary...", initialIsThinking = true)
+                            chatViewModel.messages.add(roninMsg)
+
+                            val readRes = DocumentIntelligence.readDocument(resolved)
+                            if (!readRes.success) {
+                                roninMsg.content = "❌ Failed to read document: ${readRes.error}"
+                                roninMsg.isThinking = false
+                                chatViewModel.isGenerating = false
+                                return@launch
+                            }
+
+                            val prompt = DocumentIntelligence.buildSummaryPrompt(resolved.name, readRes.content, langMyanmar = true)
+                            if (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady) {
+                                val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
+                                val resJsonStr = engine.performCloudInferenceAsync(prompt, chatViewModel.primaryCloudProvider, apiKey)
+                                try {
+                                    val resJson = JSONObject(resJsonStr)
+                                    if (resJson.optBoolean("success", false)) {
+                                        val rawPayload = resJson.optString("payload", "")
+                                        roninMsg.content = "📄 **${resolved.name}** Summary:\n\n$rawPayload"
+                                    } else {
+                                        roninMsg.content = "❌ Summarization failed: ${resJson.optString("error", "Unknown error")}"
+                                    }
+                                } catch (e: Exception) {
+                                    roninMsg.content = "❌ Error parsing summary response: ${e.message}"
+                                }
+                            } else {
+                                when (val result = engine.processInputResult(prompt, chatViewModel.systemPrompt)) {
+                                    is BridgeResult.Success -> {
+                                        roninMsg.content = "📄 **${resolved.name}** Summary:\n\n${result.value.result}"
+                                    }
+                                    is BridgeResult.Error -> {
+                                        roninMsg.content = "❌ Local summarization failed: ${result.message} (${result.code})"
+                                    }
+                                }
+                            }
+                            roninMsg.isThinking = false
+                            chatViewModel.isGenerating = false
+                        }
+                    }
+
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp),
@@ -1743,6 +1795,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                 AgentResponseCard(
                                     msg = msg,
                                     chatViewModel = chatViewModel,
+                                    onSummarizeFile = { filePath -> triggerSummarizeWorkflow(filePath) },
                                     onContinue = {
                                         if (!chatViewModel.isGenerating && !msg.isContinuing) {
                                             msg.isContinuing = true
@@ -1839,6 +1892,79 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 chatViewModel.messages.add(
                                                     ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /files <filename or extension>")
                                                 )
+                                            }
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
+
+                                        if (cmdClean.startsWith("/summarize")) {
+                                            val target = raw.trim().substringAfter(" ", "").trim()
+                                            if (target.isEmpty()) {
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /summarize <filename or path>"))
+                                                chatViewModel.isGenerating = false
+                                                return@launch
+                                            }
+                                            triggerSummarizeWorkflow(target)
+                                            return@launch
+                                        }
+
+                                        if (cmdClean.startsWith("/docsearch")) {
+                                            val rest = raw.trim().substringAfter(" ", "").trim()
+                                            val parts = rest.split(Regex("\\s+"), limit = 2)
+                                            if (parts.size < 2) {
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /docsearch <filename or path> <search_term>"))
+                                                chatViewModel.isGenerating = false
+                                                return@launch
+                                            }
+                                            val targetFile = parts[0]
+                                            val queryTerm = parts[1]
+                                            val resolved = DocumentIntelligence.resolveFile(targetFile) { engine.searchFiles(it) }
+                                            if (resolved == null) {
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Could not find file matching: '$targetFile'"))
+                                                chatViewModel.isGenerating = false
+                                                return@launch
+                                            }
+                                            val searchRes = DocumentIntelligence.searchInDocument(resolved, queryTerm)
+                                            if (searchRes.error != null) {
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Search error in ${resolved.name}: ${searchRes.error}"))
+                                            } else if (searchRes.matches.isEmpty()) {
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 No matches for '$queryTerm' found inside **${resolved.name}**."))
+                                            } else {
+                                                val snippetText = searchRes.matches.joinToString("\n\n") { match ->
+                                                    "**Line ${match.lineNumber}:**\n```\n${match.snippet}\n```"
+                                                }
+                                                val outMsg = "🔍 Found **${searchRes.totalMatches}** match(es) for `\"$queryTerm\"` in **${resolved.name}**:\n\n$snippetText"
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", outMsg))
+                                            }
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
+
+                                        if (cmdClean.startsWith("/read")) {
+                                            val rest = raw.trim().substringAfter(" ", "").trim()
+                                            val parts = rest.split(Regex("\\s+"))
+                                            val targetFile = parts.firstOrNull() ?: ""
+                                            val maxLines = parts.getOrNull(1)?.toIntOrNull() ?: 50
+                                            if (targetFile.isEmpty()) {
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /read <filename or path> [max_lines]"))
+                                                chatViewModel.isGenerating = false
+                                                return@launch
+                                            }
+                                            val resolved = DocumentIntelligence.resolveFile(targetFile) { engine.searchFiles(it) }
+                                            if (resolved == null) {
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Could not find file matching: '$targetFile'"))
+                                                chatViewModel.isGenerating = false
+                                                return@launch
+                                            }
+                                            val readRes = DocumentIntelligence.readDocument(resolved)
+                                            if (!readRes.success) {
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Could not read ${resolved.name}: ${readRes.error}"))
+                                            } else {
+                                                val lines = readRes.content.lines().take(maxLines)
+                                                val preview = lines.joinToString("\n")
+                                                val suffix = if (readRes.lineCount > maxLines) "\n... [Showing $maxLines of ${readRes.lineCount} lines. Use '/read ${resolved.name} ${readRes.lineCount}' for full content]" else ""
+                                                val previewMsg = "📖 **${resolved.name}** (${readRes.lineCount} lines, ${readRes.charCount} chars):\n\n```\n$preview$suffix\n```"
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", previewMsg))
                                             }
                                             chatViewModel.isGenerating = false
                                             return@launch
