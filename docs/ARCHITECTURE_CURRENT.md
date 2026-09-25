@@ -60,6 +60,48 @@ Ronin integrates an industrial-grade vibration analysis and structural resonance
 - **Kalman Filter with NIS Gating**: Tracks resonant frequencies with adaptive tolerance hysteresis, rejecting transient shock noise.
 - **Export & Privacy**: Serializes diagnostic sessions to engineering JSON, human-readable text reports, or privacy-masked summaries with token limits for AI review.
 
+## Ronin Active Inference Kernel (RAIK)
+
+Rooted in Karl Friston's Free Energy Principle (FEP), Ronin implements a hierarchical, dual-speed Active Inference architecture for autonomous homeostasis and adaptive sensory regulation:
+
+- **Level 1: Fast Sensory Microkernel (10–100 Hz, C++20)**:
+  - Instantaneous, dimensionless Mahalanobis prediction error: $\tilde{\varepsilon}_i = (o_i - g(s_i)) / \sigma_{i,\text{baseline}}$.
+  - Decoupled block-diagonal precision regularization: $\Pi_i = \operatorname{clamp}(1/(\sigma_i^2 + 10^{-6}), 10^{-3}, 10^{3})$.
+  - Scalar Variational Free Energy: $F = \frac{1}{2}\sum_{i=1}^4 (\Pi_i \tilde{\varepsilon}_i^2 - \ln \Pi_i)$.
+  - Zero dynamic heap allocations in hot-loop; measured mean latency is **$0.81\ \mu\text{s}$** (< 1 µs).
+  - **Adaptive Sensory Gaze Controller**: Dynamically switches accelerometer sampling between `QUIESCENT` (10Hz, ~1.2 mA at $F < 0.8$), `VIGILANT` (50Hz, ~4.5 mA at $0.8 \le F < 2.5$), and `ACTIVE_INVESTIGATION` (200Hz, ~14.0 mA at $F \ge 2.5$).
+- **Level 2: Tactical Intent & Policy Engine (Event-Driven, C++20)**:
+  - Single-step lookahead ($T=1$) Expected Free Energy (EFE) evaluator across $K=6$ discrete candidate policies (`IDLE`, `SAMPLE_HIRES`, `CLARIFY_USER`, `INSPECT_DOC`, `EXEC_TOOL`, `SELF_HEAL`).
+  - Balances pragmatic utility $(\mathbb{E}[o \mid \pi] - C)^2$ against epistemic information gain $\ln(\sigma_{\text{prior}}^2 / \sigma_{\text{posterior}}^2)$. Measured evaluation latency is **$3.08\ \mu\text{s}$**.
+  - **Epistemic Slot Entropy ($H_{\text{slot}}$)**: Computes intent entropy $H_{\text{slot}} = 0.4(1 - \text{conf}) + 0.6(N_{\text{missing}} / N_{\text{total}})$. When $H_{\text{slot}} > 0.45$, `CLARIFY_USER` is selected to proactively request missing parameters before execution.
+- **Developer HUD Telemetry**: Real-time JNI export of Free Energy $F$, Gaze State, and selected Policy to Compose HUD gauges.
+
+## Document Intelligence & Personal File Assistant
+
+Ronin features an integrated on-device personal document intelligence subsystem bridging Android OS pickers, native search, and local LLMs:
+
+- **Attachment Gateway (📎)**:
+  - **Photo Picker (`PickVisualMedia`)**: Privacy-first system photo picker that reads images without requiring `READ_MEDIA_IMAGES` permissions.
+  - **Document Picker (`OpenDocument`)**: SAF integration enabling universal browsing across device storage, SD cards, and cloud drives.
+- **Interactive `FileResultCard`**:
+  - Dispatches `FileProvider` intents for viewing and `ACTION_SEND` ShareSheet intents for email/app sharing.
+  - Features one-tap clipboard path copy and on-device Gemma 4 sliding-window document summarization.
+  - Native Google ML Kit OCR engine extracting bilingual Myanmar Unicode and English text.
+- **Command Dispatch**:
+  - `/files <query>`: Rapid FTS5 lexical file index search.
+  - `/summarize <path>`: Direct chunked summarization.
+  - `/docsearch <path> <query>`: In-document chunk retrieval.
+
+## Privacy Shield & Data Redaction
+
+- **Local PII Redaction Engine**: Real-time on-device regex and token filter safeguarding sensitive Myanmar personal data:
+  - Myanmar National Registration Card numbers (NRC) $\to$ `[NRC_REDACTED]`.
+  - Phone numbers $\to$ `[PHONE_REDACTED]`.
+  - Email addresses $\to$ `[EMAIL_REDACTED]`.
+  - Bank and payment card numbers $\to$ `[ACCOUNT_REDACTED]`.
+- **Pre-Flight Sanitization**: Automatically intercepts extracted OCR text and outgoing cloud prompts when Privacy Shield is toggled active.
+- **Encrypted Privacy Vault**: File sandbox using AES-GCM-256 for secure document storage.
+
 ## Security & Governance Model
 
 - **Human-in-the-Loop (HITL)**: High-risk operations (Vault access, device modifications) strictly require user consent.

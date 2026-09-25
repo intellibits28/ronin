@@ -5,9 +5,9 @@ Welcome to the definitive technical reference for the Ronin Kernel. This manual 
 ## User Guides & Practical References
 
 * **[Ronin User Guide & Manual (အသုံးပြုသူ လမ်းညွှန်)](USER_GUIDE.md)**
-  * Comprehensive end-user instructions covering On-Device model setup, Cloud Providers, SHM vibration monitoring, device tools, and cognitive memory backup/restore.
+  * Comprehensive end-user instructions covering On-Device model setup, Cloud Providers, SHM vibration monitoring, Document Intelligence & OCR, Privacy Shield, device tools, and cognitive memory backup/restore.
 * **[Current Architecture Specification](ARCHITECTURE_CURRENT.md)**
-  * Process model, `KernelRuntimeContext`, LiteRT-LM SDK, AIDL IPC, and security governance.
+  * Process model, `KernelRuntimeContext`, Active Inference Kernel (RAIK), Document Intelligence, Privacy Shield, LiteRT-LM SDK, AIDL IPC, and security governance.
 * **[SHM Pipeline v3 Architecture](SHM_PIPELINE_V3_ARCHITECTURE.md)**
   * Zero-padded Welch PSD, Modal Validation Engine v3, and Kalman NIS filter.
 * **[Documentation Archive (Historical Proposals & Phase Plans)](archive/README.md)**

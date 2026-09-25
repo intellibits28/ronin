@@ -22,23 +22,29 @@ The native core is compiled from `RONIN_CORE_SOURCES` in `CMakeLists.txt`.
 Major subsystems:
 
 - `RoninKernel`: top-level observe/orient/decide/act loop and world-state state hooks.
+- `ActiveInferenceCore`: hot-loop Level 1 Variational Free Energy ($F$) calculation (<1 µs latency) with dimensionless Mahalanobis prediction error and clamped precision regularization.
+- `ExpectedFreeEnergyRouter`: Level 2 event-driven Expected Free Energy ($G(\pi)$) policy router (~3 µs latency) over $K=6$ candidate policies with Epistemic Slot Entropy ($H_{\text{slot}}$).
 - `IntentEngine`: command handling, intent classification, planner wiring, skill registry, and skill execution.
 - `LongTermMemory`: SQLite schema creation, memory APIs, FTS5 search, chat history, failure records, and file indexing.
 - `GraphExecutor`: capability graph execution, Thompson-sampling outcome updates, episode and prediction recording.
 - `AgentScheduler`: priority queue for multi-step agent sessions.
 - `HardwareBridge`: C++ to Kotlin callback surface for Android-only capabilities and inference.
-- `ResonanceAnalyzer`: native DSP summary generation for batched sensor samples.
+- `ResonanceAnalyzer` & `VibeMonitorEngine`: native DSP summary generation, Welch PSD, Kalman NIS filtering, and 3-state Active Gaze sensory gating (10Hz / 50Hz / 200Hz).
 - Execution governance: `JniExecutionGateway`, checkpoints, failure telemetry, adaptive budgets, speculative execution, and runtime healing.
 
 ## Android Layer
 
 Key Android classes:
 
-- `MainActivity.kt`: Compose UI and high-level interaction surface.
+- `MainActivity.kt`: Compose UI, Developer HUD with live FEP telemetry, attachment pickers, and high-level interaction surface.
 - `NativeEngine.kt`: JNI facade, service binding, cloud inference, capability callbacks, memory APIs, and native lifecycle.
 - `InferenceService.kt`: foreground service running in `:inference_core`; owns LiteRT-LM engine/conversation lifecycle.
+- `OcrEngine.kt`: On-device text recognition utilizing Google ML Kit with bilingual Myanmar Unicode and Latin support.
+- `DocumentIntelligence.kt`: Plain text, markdown, and PDF document reader with sliding-window chunker and in-document search.
+- `PrivacyShield.kt`: Real-time on-device regex and token PII redactor (Myanmar NRC, phone, email, bank accounts).
+- `PrivacyVault.kt`: AES-GCM-256 encrypted sandbox storage for private documents.
 - `SecurityProvider.kt`: Android-side secret encryption/decryption provider.
-- `LocationDriver.kt`, `SmsDriver.kt`, `SensorDriver.kt`, `FileSearchNode.kt`: Android capability implementations and adapters.
+- `LocationDriver.kt`, `SmsDriver.kt`, `SensorDriver.kt`, `FileSearchNodeHooks.kt`: Android capability implementations, dynamic sampling rate controllers, and FileProvider/ShareSheet adapters.
 
 The app manifest declares `InferenceService` with:
 

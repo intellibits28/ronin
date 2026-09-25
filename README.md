@@ -34,9 +34,11 @@ Native source is organized around the kernel subsystems:
 | `src/graph_executor.cpp`, `src/capability_graph.cpp`, `src/graph_storage.cpp` | Capability graph planning, Thompson-sampling route selection, graph persistence, and episode/prediction recording. |
 | `src/long_term_memory.cpp`, `src/memory_manager.cpp` | SQLite-backed notes, facts, vault entries, episodes, predictions, files, failures, chat history, memory pressure, and maintenance. |
 | `src/capabilities/` | Native skill implementations and Android hardware bridge nodes. |
+| `src/reasoning/`, `include/reasoning/` | Active Inference Kernel (RAIK), Free Energy minimization, and Expected Free Energy (EFE) tactical policy router. |
 | `src/models/` | Native inference abstraction and model hydration support used by the planner/bridge. |
 | `src/dsp/vibe_monitor.cpp`, `src/dsp/resonance_analyzer.cpp` | Real-time sensor DSP analysis, Modal Validation Engine v3, detrending, filtering, and telemetry export. |
 | `android/app/src/main/kotlin/com/ronin/kernel/shm/` | SHM Session data models, Android Compose UI bindings, engineering exports, and the AI Review Pipeline. |
+| `android/app/src/main/kotlin/com/ronin/kernel/*` | Document Intelligence, ML Kit OCR Engine, Privacy Shield redaction, Privacy Vault, and Jetpack Compose Developer HUD. |
 | `src/*healing*`, `src/*budget*`, `src/*checkpoint*`, `src/failure_telemetry_bus.cpp` | Governance, checkpointing, retry, telemetry, and recovery infrastructure. |
 | `include/` | Public/native headers mirroring the source modules. |
 
@@ -44,7 +46,7 @@ Android source is under `android/app/src/main/`:
 
 | Path | Purpose |
 | --- | --- |
-| `kotlin/com/ronin/kernel/MainActivity.kt` | Compose UI and app-level interaction surface. |
+| `kotlin/com/ronin/kernel/MainActivity.kt` | Compose UI, live FEP telemetry gauges, attachment dialogs, and app-level interaction surface. |
 | `kotlin/com/ronin/kernel/NativeEngine.kt` | Main Android facade for JNI, AIDL service binding, cloud requests, memory/search APIs, and capability callbacks. |
 | `kotlin/com/ronin/kernel/InferenceService.kt` | Isolated LiteRT-LM worker service with streaming AIDL callbacks, model hydration, RAM guard, KV-cache reset, and conversation summarization. |
 | `aidl/com/ronin/kernel/` | `IInferenceService` and `IInferenceCallback` contracts for cross-process inference calls. |
@@ -66,6 +68,9 @@ The codebase currently includes:
 - Device world-state injection for battery, RAM, GPS, network, charging, and time-of-day context.
 - **Production-Grade Structural Health Monitoring (SHM)**: Ingests 100Hz MEMS accelerometer batches, applies high-pass filtering/detrending, and extracts modal frequencies (F₀) via a robust Modal Validation Engine to achieve <2% F₀ CV repeatability.
 - **SHM AI Review Pipeline**: Structures extracted telemetry into engineering JSON, formats it for human consumption, and routes it to cloud (Gemini, OpenRouter) or local (Gemma 4 E2B) LLMs to generate actionable structural reviews, warnings, and confidence scoring.
+- **Ronin Active Inference Kernel (RAIK)**: Karl Friston's Free Energy Principle running in a sub-microsecond C++20 hot-loop ($0.81\ \mu\text{s}$) with clamped precision regularization, 3-state adaptive sensory gaze gating (10Hz / 50Hz / 200Hz), and Level 2 Expected Free Energy router with epistemic intent entropy ($H_{\text{slot}}$).
+- **Personal Document AI Assistant & OCR**: System photo picker (`PickVisualMedia`) and SAF (`OpenDocument`) via 📎 clip attachment button, interactive `FileResultCard` with FileProvider opening, app/email sharing, on-device Gemma 4 sliding-window summarizer, and Google ML Kit bilingual text recognition.
+- **Privacy Shield & Data Redaction**: Real-time regex and token-based on-device redaction for Myanmar NRC, phone numbers, email addresses, and bank cards, with AES-GCM-256 encrypted sandbox vault.
 - Runtime health features such as cancellation, safe mode hooks, memory pressure handling, checkpoint storage, telemetry, speculative graph execution, and self-healing controllers.
 
 Legacy design documents and intermediate roadmaps are archived under `docs/archive/` and `old_logs_and_context/`. Consult `docs/USER_GUIDE.md` for user setup and feature usage, `docs/ARCHITECTURE_CURRENT.md` for runtime design, `docs/TECHNICAL_SPECS.md` for engineering specifications, and `docs/MANUAL_INDEX.md` for the complete documentation index.
