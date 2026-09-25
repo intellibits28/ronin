@@ -263,6 +263,146 @@ fun DeveloperHud(chatViewModel: ChatViewModel) {
 }
 
 @Composable
+fun FileResultCard(
+    filePath: String,
+    onSummarize: ((String) -> Unit)? = null
+) {
+    val context = LocalContext.current
+    val file = remember(filePath) { File(filePath) }
+    val fileName = file.name
+    val fileSizeStr = remember(filePath) { FileSearchNodeHooks.getFileSizeFormatted(file) }
+    val fileIcon = remember(filePath) { FileSearchNodeHooks.getFileIcon(filePath) }
+
+    Surface(
+        color = Color(0xFF161926),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, Color(0xFF333852)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(fileIcon, fontSize = 20.sp)
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = fileName,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "${file.parent ?: ""} • $fileSizeStr",
+                        color = Color.LightGray.copy(alpha = 0.7f),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Action Buttons Row: Open, Share/Email, Copy, Summary
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 1. Open Button
+                Surface(
+                    color = Color(0xFF64B5F6).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, Color(0xFF64B5F6).copy(alpha = 0.4f)),
+                    modifier = Modifier.clickable {
+                        FileSearchNodeHooks.performFileAction(context, filePath, "view")
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.FileOpen, contentDescription = "Open", tint = Color(0xFF64B5F6), modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Open", color = Color(0xFF64B5F6), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                // 2. Share / Email Button
+                Surface(
+                    color = Color(0xFF81C784).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, Color(0xFF81C784).copy(alpha = 0.4f)),
+                    modifier = Modifier.clickable {
+                        FileSearchNodeHooks.shareFile(context, filePath)
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = "Share", tint = Color(0xFF81C784), modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Share", color = Color(0xFF81C784), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                // 3. Copy Path Button
+                Surface(
+                    color = Color(0xFFFFB74D).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = 0.4f)),
+                    modifier = Modifier.clickable {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("File Path", filePath)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Path copied", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFFFFB74D), modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Copy", color = Color(0xFFFFB74D), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                // 4. Summarize Button
+                if (onSummarize != null) {
+                    Surface(
+                        color = Color(0xFFCE93D8).copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFFCE93D8).copy(alpha = 0.4f)),
+                        modifier = Modifier.clickable {
+                            onSummarize(filePath)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = "Summary", tint = Color(0xFFCE93D8), modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Summary", color = Color(0xFFCE93D8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ShmResultCard(
     status: String,
     healthIndex: String,
@@ -419,7 +559,8 @@ fun AgentResponseCard(
     msg: ChatMessage,
     chatViewModel: ChatViewModel,
     onContinue: () -> Unit,
-    onFeedback: (Boolean) -> Unit
+    onFeedback: (Boolean) -> Unit,
+    onSummarizeFile: ((String) -> Unit)? = null
 ) {
     val isUser = msg.sender == "User"
     val context = LocalContext.current
@@ -504,24 +645,54 @@ fun AgentResponseCard(
                             Spacer(Modifier.height(8.dp))
                         }
 
-                        Row(verticalAlignment = Alignment.Top) {
+                        // Check for File Search Results
+                        val foundFiles = remember(msg.content, msg.fileResults.toList()) {
+                            if (msg.fileResults.isNotEmpty()) {
+                                msg.fileResults.toList()
+                            } else if (!isUser && (msg.content.contains("📁 Found") || msg.content.contains("[FILES FOUND]"))) {
+                                msg.content.lines()
+                                    .map { it.trim().removePrefix("- ").trim() }
+                                    .filter { it.startsWith("/") && File(it).exists() }
+                            } else {
+                                emptyList()
+                            }
+                        }
+
+                        if (foundFiles.isNotEmpty() && !isUser) {
+                            val headerText = msg.content.substringBefore("\n/").substringBefore("\n- /").trim()
                             Text(
-                                text = msg.content,
+                                text = if (headerText.isNotEmpty()) headerText else "📁 Found ${foundFiles.size} file(s):",
                                 color = Color.White,
-                                fontSize = 15.sp,
-                                lineHeight = 22.sp,
-                                modifier = Modifier.weight(1f)
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(bottom = 6.dp)
                             )
-                            IconButton(
-                                onClick = {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    val clip = android.content.ClipData.newPlainText("Ronin Message", msg.content)
-                                    clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(24.dp).padding(start = 4.dp, top = 2.dp)
-                            ) {
-                                Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                            foundFiles.forEach { filePath ->
+                                FileResultCard(
+                                    filePath = filePath,
+                                    onSummarize = onSummarizeFile
+                                )
+                            }
+                        } else {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(
+                                    text = msg.content,
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    lineHeight = 22.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("Ronin Message", msg.content)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(24.dp).padding(start = 4.dp, top = 2.dp)
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                }
                             }
                         }
                     }

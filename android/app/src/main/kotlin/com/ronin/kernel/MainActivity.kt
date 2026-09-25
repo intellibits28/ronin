@@ -77,7 +77,8 @@ class ChatMessage(
     initialContent: String,
     initialIsThinking: Boolean = false,
     initialThoughtContent: String = "",
-    var sessionId: String = "" // v10.2.17
+    var sessionId: String = "", // v10.2.17
+    initialFileResults: List<String> = emptyList()
 ) {
     var content by mutableStateOf(initialContent)
     var isThinking by mutableStateOf(initialIsThinking)
@@ -85,14 +86,16 @@ class ChatMessage(
     var isTruncated by mutableStateOf(false)
     var isContinuing by mutableStateOf(false)
     var feedbackGiven by mutableStateOf(false) // v10.2.17
+    val fileResults = mutableStateListOf<String>().apply { addAll(initialFileResults) }
 
     fun copy(
         content: String = this.content,
         isThinking: Boolean = this.isThinking,
         thoughtContent: String = this.thoughtContent,
         isTruncated: Boolean = this.isTruncated,
-        isContinuing: Boolean = this.isContinuing
-    ) = ChatMessage(id, sender, content, isThinking, thoughtContent).apply {
+        isContinuing: Boolean = this.isContinuing,
+        fileResults: List<String> = this.fileResults.toList()
+    ) = ChatMessage(id, sender, content, isThinking, thoughtContent, sessionId, fileResults).apply {
         this.isTruncated = isTruncated
         this.isContinuing = isContinuing
     }
@@ -1504,7 +1507,7 @@ class MainActivity : FragmentActivity() {
                             val fileList = results.joinToString("\n")
                             // Push to chat AND push to kernel message channel
                             runOnUiThread {
-                                vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "📁 Found ${results.size} file(s) matching '$query':\n$fileList"))
+                                vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "📁 Found ${results.size} file(s) matching '$query':\n$fileList", initialFileResults = results.toList()))
                             }
                             nativeEngine.pushKernelMessage("[FILES FOUND]\n$fileList")
                             "Found ${results.size} files matching: $query\n$fileList"
@@ -1810,6 +1813,32 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "✅ Loaded ${chronological.size} messages from conversation history."))
                                             } else {
                                                 chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Conversation history is currently empty."))
+                                            }
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
+                                        if (cmdClean.startsWith("/files") || cmdClean.startsWith("/search")) {
+                                            val query = raw.trim().substringAfter(" ", "").trim()
+                                            if (query.isNotEmpty()) {
+                                                val results = engine.searchFiles(query)
+                                                if (results.isNotEmpty()) {
+                                                    val fileList = results.joinToString("\n")
+                                                    val fileMsg = ChatMessage(
+                                                        System.currentTimeMillis(),
+                                                        "Ronin",
+                                                        "📁 Found ${results.size} file(s) matching '$query':\n$fileList",
+                                                        initialFileResults = results.toList()
+                                                    )
+                                                    chatViewModel.messages.add(fileMsg)
+                                                } else {
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(System.currentTimeMillis(), "Ronin", "📁 No files found matching '$query'.")
+                                                    )
+                                                }
+                                            } else {
+                                                chatViewModel.messages.add(
+                                                    ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /files <filename or extension>")
+                                                )
                                             }
                                             chatViewModel.isGenerating = false
                                             return@launch
