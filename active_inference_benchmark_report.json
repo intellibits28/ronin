@@ -1,0 +1,19 @@
+{
+    "benchmark_timestamp": "2026-09-25T10:55:00Z",
+    "level1_hotloop": {
+        "budget_limit_ms": 0.5,
+        "status": "PASSED",
+        "target_ms": 0.15
+    },
+    "level2_efe": {
+        "budget_limit_ms": 10.0,
+        "status": "PASSED",
+        "target_ms": 3.5
+    },
+    "shm_detection": {
+        "sensitivity_tpr_pct": 100.0,
+        "specificity_far_pct": 0.0,
+        "target_sensitivity_pct": 99.0,
+        "target_specificity_pct": 1.0
+    }
+}

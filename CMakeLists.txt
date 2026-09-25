@@ -261,4 +261,8 @@ if(NOT RONIN_BUILD_ANDROID)
     add_executable(ronin_shm_sensory_gating_test tests/shm_sensory_gating_test.cpp)
     target_link_libraries(ronin_shm_sensory_gating_test ronin_core gtest_main)
     add_test(NAME ronin_shm_sensory_gating_test COMMAND ronin_shm_sensory_gating_test)
+
+    add_executable(ronin_active_inference_benchmark tests/active_inference_benchmark.cpp)
+    target_link_libraries(ronin_active_inference_benchmark ronin_core gtest_main)
+    add_test(NAME ronin_active_inference_benchmark COMMAND ronin_active_inference_benchmark)
 endif()
