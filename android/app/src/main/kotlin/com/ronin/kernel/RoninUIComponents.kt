@@ -265,13 +265,18 @@ fun DeveloperHud(chatViewModel: ChatViewModel) {
 @Composable
 fun FileResultCard(
     filePath: String,
-    onSummarize: ((String) -> Unit)? = null
+    onSummarize: ((String) -> Unit)? = null,
+    onOcr: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val file = remember(filePath) { File(filePath) }
     val fileName = file.name
     val fileSizeStr = remember(filePath) { FileSearchNodeHooks.getFileSizeFormatted(file) }
     val fileIcon = remember(filePath) { FileSearchNodeHooks.getFileIcon(filePath) }
+    val isOcrCandidate = remember(filePath) {
+        val lower = filePath.lowercase()
+        lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp") || lower.endsWith(".pdf")
+    }
 
     Surface(
         color = Color(0xFF161926),
@@ -311,7 +316,7 @@ fun FileResultCard(
 
             Spacer(Modifier.height(8.dp))
 
-            // Action Buttons Row: Open, Share/Email, Copy, Summary
+            // Action Buttons Row: Open, Share/Email, Copy, Summary, OCR
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -394,6 +399,27 @@ fun FileResultCard(
                             Icon(Icons.Default.AutoAwesome, contentDescription = "Summary", tint = Color(0xFFCE93D8), modifier = Modifier.size(13.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Summary", color = Color(0xFFCE93D8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+
+                // 5. OCR Button (for Images and PDFs)
+                if (isOcrCandidate && onOcr != null) {
+                    Surface(
+                        color = Color(0xFF4DD0E1).copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF4DD0E1).copy(alpha = 0.4f)),
+                        modifier = Modifier.clickable {
+                            onOcr(filePath)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.DocumentScanner, contentDescription = "OCR", tint = Color(0xFF4DD0E1), modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("OCR", color = Color(0xFF4DD0E1), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -560,7 +586,8 @@ fun AgentResponseCard(
     chatViewModel: ChatViewModel,
     onContinue: () -> Unit,
     onFeedback: (Boolean) -> Unit,
-    onSummarizeFile: ((String) -> Unit)? = null
+    onSummarizeFile: ((String) -> Unit)? = null,
+    onOcrFile: ((String) -> Unit)? = null
 ) {
     val isUser = msg.sender == "User"
     val context = LocalContext.current
@@ -670,7 +697,8 @@ fun AgentResponseCard(
                             foundFiles.forEach { filePath ->
                                 FileResultCard(
                                     filePath = filePath,
-                                    onSummarize = onSummarizeFile
+                                    onSummarize = onSummarizeFile,
+                                    onOcr = onOcrFile
                                 )
                             }
                         } else {
@@ -739,6 +767,7 @@ val ALL_RONIN_COMMANDS = listOf(
     RoninSlashCommand("/summarize", "Summarize file or document: /summarize <path/name>"),
     RoninSlashCommand("/docsearch", "Search inside document: /docsearch <path> <term>"),
     RoninSlashCommand("/read", "Preview document contents: /read <path> [lines]"),
+    RoninSlashCommand("/ocr", "Extract text from image/PDF: /ocr <path> [mya|eng]"),
     RoninSlashCommand("/status", "Device health, RAM, thermal & runtime status"),
     RoninSlashCommand("/skills", "List active capability nodes"),
     RoninSlashCommand("/model", "Active brain & model path"),

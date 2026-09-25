@@ -1786,6 +1786,44 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         }
                     }
 
+                    val triggerOcrWorkflow: (String, String) -> Unit = { target, langInput ->
+                        val lang = if (langInput.isNotBlank()) langInput else "mya+eng"
+                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "/ocr $target $lang"))
+                        chatViewModel.isGenerating = true
+                        scope.launch {
+                            val resolved = DocumentIntelligence.resolveFile(target) { engine.searchFiles(it) }
+                            if (resolved == null) {
+                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis() + 1, "Ronin", "❌ Could not find file matching: '$target'"))
+                                chatViewModel.isGenerating = false
+                                return@launch
+                            }
+
+                            val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🔍 Initializing On-Device OCR for **${resolved.name}** ($lang)...", initialIsThinking = true)
+                            chatViewModel.messages.add(roninMsg)
+
+                            val ocrResult = OcrEngine.recognizeFile(context, resolved, lang) { status ->
+                                roninMsg.content = "🔍 $status"
+                            }
+
+                            if (!ocrResult.success) {
+                                roninMsg.content = "❌ OCR Failed: ${ocrResult.error}"
+                                roninMsg.isThinking = false
+                                chatViewModel.isGenerating = false
+                                return@launch
+                            }
+
+                            val text = ocrResult.text
+                            if (text.isBlank()) {
+                                roninMsg.content = "🔍 OCR completed in ${ocrResult.processingTimeMs} ms, but no readable text was detected in **${resolved.name}**."
+                            } else {
+                                val preview = if (text.length > 3000) text.take(3000) + "\n... [truncated]" else text
+                                roninMsg.content = "🔍 **OCR Recognition Results** (${resolved.name}):\n• Language: `${ocrResult.language}`\n• Confidence: `${ocrResult.confidence}%`\n• Time Taken: `${ocrResult.processingTimeMs} ms`\n\n```text\n$preview\n```"
+                            }
+                            roninMsg.isThinking = false
+                            chatViewModel.isGenerating = false
+                        }
+                    }
+
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp),
@@ -1796,6 +1834,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                     msg = msg,
                                     chatViewModel = chatViewModel,
                                     onSummarizeFile = { filePath -> triggerSummarizeWorkflow(filePath) },
+                                    onOcrFile = { filePath -> triggerOcrWorkflow(filePath, "mya+eng") },
                                     onContinue = {
                                         if (!chatViewModel.isGenerating && !msg.isContinuing) {
                                             msg.isContinuing = true
@@ -1967,6 +2006,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", previewMsg))
                                             }
                                             chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
+
+                                        if (cmdClean.startsWith("/ocr")) {
+                                            val rest = raw.trim().substringAfter(" ", "").trim()
+                                            val parts = rest.split(Regex("\\s+"))
+                                            val targetFile = parts.firstOrNull() ?: ""
+                                            val lang = parts.getOrNull(1) ?: "mya+eng"
+                                            if (targetFile.isEmpty()) {
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /ocr <image_path or name> [mya|eng|mya+eng]"))
+                                                chatViewModel.isGenerating = false
+                                                return@launch
+                                            }
+                                            triggerOcrWorkflow(targetFile, lang)
                                             return@launch
                                         }
                                     }
