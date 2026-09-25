@@ -764,6 +764,17 @@ bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan
     norm = normalizeBurmeseDigits(norm);
 
     // 1.5 Compound Sensor Reporting Check
+    bool is_summary_kw = (norm.find("summary") != std::string::npos || norm.find("summarize") != std::string::npos ||
+                          norm.find("အကျဉ်းချုပ်") != std::string::npos);
+    
+    // 1.6 Direct Document Summarization Bypass
+    if (is_summary_kw) {
+        out_plan.intent_name = "fallback_chat";
+        out_plan.plan_steps = {};
+        out_plan.parameters["original_query"] = input;
+        return true;
+    }
+
     bool has_sensor_kw = (norm.find("vibration") != std::string::npos || norm.find("တုန်ခါမှု") != std::string::npos ||
                           norm.find("resonance") != std::string::npos || norm.find("sensor") != std::string::npos);
     bool has_dispatch_kw = (norm.find("mail") != std::string::npos || norm.find("email") != std::string::npos ||

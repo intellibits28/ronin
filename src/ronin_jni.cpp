@@ -233,15 +233,17 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
         std::transform(i_lower.begin(), i_lower.end(), i_lower.begin(), ::tolower);
         bool needs_sms_hitl = (i_lower.find("sms") != std::string::npos || i_lower.find("message") != std::string::npos || i_lower.find("ပို့") != std::string::npos);
         bool needs_cal_hitl = (i_lower.find("calendar") != std::string::npos || i_lower.find("event") != std::string::npos || i_lower.find("meeting") != std::string::npos);
-        if (i_lower.find("map") != std::string::npos && !plan.plan_steps.empty()) {
-            bool has_send_sms = false;
-            for (const auto& step : plan.plan_steps) {
-                std::string s_step = step;
-                std::transform(s_step.begin(), s_step.end(), s_step.begin(), ::tolower);
-                if (s_step.find("send_sms") != std::string::npos) { has_send_sms = true; break; }
-            }
-            if (!has_send_sms) needs_sms_hitl = false;
+        
+        bool has_actual_sms = (i_lower.find("send_sms") != std::string::npos);
+        bool has_actual_cal = (i_lower.find("add_event") != std::string::npos || i_lower.find("calendar") != std::string::npos);
+        for (const auto& step : plan.plan_steps) {
+            std::string s_step = step;
+            std::transform(s_step.begin(), s_step.end(), s_step.begin(), ::tolower);
+            if (s_step.find("send_sms") != std::string::npos || s_step == "sms") has_actual_sms = true;
+            if (s_step.find("add_event") != std::string::npos || s_step.find("calendar") != std::string::npos) has_actual_cal = true;
         }
+        if (!has_actual_sms) needs_sms_hitl = false;
+        if (!has_actual_cal) needs_cal_hitl = false;
 
         if (needs_sms_hitl || needs_cal_hitl) {
             jclass cls = env->GetObjectClass(thiz);

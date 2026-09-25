@@ -636,6 +636,42 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return@runBlocking response.toString()
     }
 
+    /**
+     * Executes local on-device neural reasoning (Gemma / LiteRT-LM) asynchronously
+     * without passing through the native Intent Engine / Capability Planner.
+     * Ideal for document summarization, extraction, and direct Q&A.
+     */
+    suspend fun performLocalInferenceAsync(input: String): ProcessResult = withContext(Dispatchers.IO) {
+        val rawJson = runNeuralReasoning(input)
+        try {
+            val j = JSONObject(rawJson)
+            if (j.optBoolean("success", false)) {
+                ProcessResult(
+                    result = j.optString("payload", ""),
+                    sessionId = "LOCAL-INF",
+                    success = true
+                )
+            } else {
+                val err = j.optJSONObject("error")
+                ProcessResult(
+                    result = "Error: Local inference failed.",
+                    sessionId = "LOCAL-INF",
+                    success = false,
+                    errorCode = err?.optString("code", "INFERENCE_ERROR"),
+                    errorMessage = err?.optString("message", "Inference execution error")
+                )
+            }
+        } catch (e: Exception) {
+            ProcessResult(
+                result = "Error: Failed to parse inference response.",
+                sessionId = "LOCAL-INF",
+                success = false,
+                errorCode = "PARSE_ERROR",
+                errorMessage = e.message
+            )
+        }
+    }
+
     fun getLMKPressureSafe(): Int {
         if (isLibLoaded) try { return getLMKPressureNative() } catch (e: Exception) {}
         return 0

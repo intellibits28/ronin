@@ -1754,8 +1754,10 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
     var currentInput by remember { mutableStateOf("") }
     var showAttachmentPicker by remember { mutableStateOf(false) }
 
-    val triggerSummarizeWorkflow: (String) -> Unit = { target ->
-        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "/summarize $target"))
+    fun triggerSummarizeWorkflow(target: String, logUserMessage: Boolean = true) {
+        if (logUserMessage) {
+            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "/summarize $target"))
+        }
         chatViewModel.isGenerating = true
         scope.launch {
             val resolved = DocumentIntelligence.resolveFile(target) { engine.searchFiles(it) }
@@ -1783,17 +1785,18 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             }
 
             val prompt = DocumentIntelligence.buildSummaryPrompt(resolved.name, readRes.content, langMyanmar = true)
+            val promptToSend = if (chatViewModel.privacyShieldEnabled) {
+                val redaction = PrivacyShield.redact(prompt)
+                if (redaction.hasRedactions) {
+                    chatViewModel.reasoningLogsText = "> 🛡️ Privacy Shield: Redacted ${redaction.redactionCount} PII item(s) before summarization\n" + chatViewModel.reasoningLogsText
+                }
+                redaction.sanitizedText
+            } else {
+                prompt
+            }
+
             if (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady) {
                 val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
-                val promptToSend = if (chatViewModel.privacyShieldEnabled) {
-                    val redaction = PrivacyShield.redact(prompt)
-                    if (redaction.hasRedactions) {
-                        chatViewModel.reasoningLogsText = "> 🛡️ Privacy Shield: Redacted ${redaction.redactionCount} PII item(s) before cloud summarization\n" + chatViewModel.reasoningLogsText
-                    }
-                    redaction.sanitizedText
-                } else {
-                    prompt
-                }
                 val resJsonStr = engine.performCloudInferenceAsync(promptToSend, chatViewModel.primaryCloudProvider, apiKey)
                 try {
                     val resJson = JSONObject(resJsonStr)
@@ -1807,12 +1810,28 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     roninMsg.content = "❌ Error parsing summary response: ${e.message}"
                 }
             } else {
-                when (val result = engine.processInputResult(prompt, chatViewModel.systemPrompt)) {
-                    is BridgeResult.Success -> {
-                        roninMsg.content = "📄 **${resolved.name}** Summary:\n\n${result.value.result}"
-                    }
-                    is BridgeResult.Error -> {
-                        roninMsg.content = "❌ Local summarization failed: ${result.message} (${result.code})"
+                val localRes = engine.performLocalInferenceAsync(promptToSend)
+                if (localRes.success && localRes.result.isNotBlank()) {
+                    roninMsg.content = "📄 **${resolved.name}** Summary:\n\n${localRes.result}"
+                } else {
+                    // Graceful fallback to cloud if local inference fails/times out
+                    val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
+                    if (apiKey.isNotEmpty()) {
+                        chatViewModel.reasoningLogsText = "> ⚠️ Local model summarization failed (${localRes.errorMessage ?: "Unknown"}). Falling back to Cloud (${chatViewModel.primaryCloudProvider})...\n" + chatViewModel.reasoningLogsText
+                        val cloudJsonStr = engine.performCloudInferenceAsync(promptToSend, chatViewModel.primaryCloudProvider, apiKey)
+                        try {
+                            val cj = JSONObject(cloudJsonStr)
+                            if (cj.optBoolean("success", false)) {
+                                val rawPayload = cj.optString("payload", "")
+                                roninMsg.content = "📄 **${resolved.name}** Summary (Cloud Fallback):\n\n$rawPayload"
+                            } else {
+                                roninMsg.content = "❌ Local summarization failed: ${localRes.errorMessage}\n❌ Cloud fallback also failed: ${cj.optString("error", "Unknown error")}"
+                            }
+                        } catch (e: Exception) {
+                            roninMsg.content = "❌ Local summarization failed: ${localRes.errorMessage}\n❌ Cloud fallback error: ${e.message}"
+                        }
+                    } else {
+                        roninMsg.content = "❌ Local summarization failed: ${localRes.errorMessage ?: "Inference error"} (${localRes.errorCode ?: "UNKNOWN"})\n💡 Tip: You can configure a Cloud Provider in Settings as fallback."
                     }
                 }
             }
@@ -1823,9 +1842,11 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
         }
     }
 
-    val triggerOcrWorkflow: (String, String) -> Unit = { target, langInput ->
+    fun triggerOcrWorkflow(target: String, langInput: String = "mya+eng", logUserMessage: Boolean = true) {
         val lang = if (langInput.isNotBlank()) langInput else "mya+eng"
-        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "/ocr $target $lang"))
+        if (logUserMessage) {
+            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "/ocr $target $lang"))
+        }
         chatViewModel.isGenerating = true
         scope.launch {
             val resolved = DocumentIntelligence.resolveFile(target) { engine.searchFiles(it) }
@@ -2000,8 +2021,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                 AgentResponseCard(
                                     msg = msg,
                                     chatViewModel = chatViewModel,
-                                    onSummarizeFile = { filePath -> triggerSummarizeWorkflow(filePath) },
-                                    onOcrFile = { filePath -> triggerOcrWorkflow(filePath, "mya+eng") },
+                                    onSummarizeFile = { filePath -> triggerSummarizeWorkflow(filePath, true) },
+                                    onOcrFile = { filePath -> triggerOcrWorkflow(filePath, "mya+eng", true) },
                                     onContinue = {
                                         if (!chatViewModel.isGenerating && !msg.isContinuing) {
                                             msg.isContinuing = true
@@ -2110,7 +2131,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 chatViewModel.isGenerating = false
                                                 return@launch
                                             }
-                                            triggerSummarizeWorkflow(target)
+                                            triggerSummarizeWorkflow(target, false)
                                             return@launch
                                         }
 
@@ -2186,7 +2207,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 chatViewModel.isGenerating = false
                                                 return@launch
                                             }
-                                            triggerOcrWorkflow(targetFile, lang)
+                                            triggerOcrWorkflow(targetFile, lang, false)
                                             return@launch
                                         }
 
@@ -2340,6 +2361,37 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             return@launch
                                         }
                                     }
+
+                                    if (!isCommand) {
+                                        val rawLower = raw.lowercase()
+                                        val isSummaryIntent = rawLower.contains("summary") || rawLower.contains("summarize") || raw.contains("အကျဉ်းချုပ်")
+                                        if (isSummaryIntent) {
+                                            val fileRegex = Regex("""([a-zA-Z0-9_\-./\\]+\.(?:md|txt|pdf|json|csv|log|cpp|h|kt|java|py|html))""", RegexOption.IGNORE_CASE)
+                                            val fileMatch = fileRegex.find(raw)?.value
+                                            val targetFile = if (fileMatch != null) {
+                                                fileMatch
+                                            } else {
+                                                val lastFileMsg = chatViewModel.messages.lastOrNull { it.fileResults.isNotEmpty() }
+                                                lastFileMsg?.fileResults?.firstOrNull()
+                                            }
+
+                                            if (targetFile != null) {
+                                                triggerSummarizeWorkflow(targetFile, false)
+                                                return@launch
+                                            } else if (rawLower.split(Regex("\\s+")).size <= 5 && (raw.contains("ဖိုင်") || rawLower.contains("file"))) {
+                                                chatViewModel.messages.add(
+                                                    ChatMessage(
+                                                        System.currentTimeMillis() + 1,
+                                                        "Ronin",
+                                                        "📄 အကျဉ်းချုပ် (Summarize) ပြုလုပ်လိုသည့် ဖိုင်အမည် သို့မဟုတ် လမ်းကြောင်းကို ဖော်ပြပေးပါ (ဥပမာ- `/summarize README.md`) သို့မဟုတ် 📎 Attachment ခလုတ်မှတစ်ဆင့် ဖိုင်ကို ရွေးချယ်ပေးပါ။"
+                                                    )
+                                                )
+                                                chatViewModel.isGenerating = false
+                                                return@launch
+                                            }
+                                        }
+                                    }
+
                                     val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "", initialIsThinking = true)
                                     chatViewModel.messages.add(roninMsg)
 
