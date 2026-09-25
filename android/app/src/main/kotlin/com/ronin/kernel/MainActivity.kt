@@ -23,6 +23,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import java.io.FileOutputStream
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
@@ -1667,11 +1670,224 @@ class MainActivity : FragmentActivity() {
     }
 }
 
+fun getFileNameFromUri(context: Context, uri: Uri): String {
+    var name = "attachment_${System.currentTimeMillis()}"
+    if (uri.scheme == "content") {
+        try {
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (index != -1) {
+                        val displayName = it.getString(index)
+                        if (!displayName.isNullOrBlank()) {
+                            name = displayName
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("RoninKernel", "Failed to resolve display name from uri: ${e.message}")
+        }
+    } else if (uri.path != null) {
+        val cut = uri.path!!.lastIndexOf('/')
+        if (cut != -1) {
+            name = uri.path!!.substring(cut + 1)
+        }
+    }
+    return name.replace("/", "_").replace("\\", "_")
+}
+
+fun copyUriToLocalCache(context: Context, uri: Uri, customSubdir: String = "attachments"): File? {
+    return try {
+        val fileName = getFileNameFromUri(context, uri)
+        val dir = File(context.cacheDir, customSubdir)
+        if (!dir.exists()) dir.mkdirs()
+
+        val destFile = if (File(dir, fileName).exists()) {
+            val base = fileName.substringBeforeLast('.')
+            val ext = fileName.substringAfterLast('.', "")
+            val suffix = if (ext.isNotEmpty()) ".$ext" else ""
+            File(dir, "${base}_${System.currentTimeMillis()}$suffix")
+        } else {
+            File(dir, fileName)
+        }
+
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(destFile).use { output ->
+                input.copyTo(output)
+            }
+        }
+        if (destFile.exists() && destFile.length() > 0) destFile else null
+    } catch (e: Exception) {
+        Log.e("RoninKernel", "Failed to cache URI to local storage: ${e.message}", e)
+        null
+    }
+}
+
 @Composable
 fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>, onSaveOfflineMode: (Boolean) -> Unit) {
     val context = LocalContext.current; val activity = context.findActivity() as? MainActivity
     val scope = rememberCoroutineScope(); val scaffoldState = rememberScaffoldState()
     var currentInput by remember { mutableStateOf("") }
+    var showAttachmentPicker by remember { mutableStateOf(false) }
+
+    val triggerSummarizeWorkflow: (String) -> Unit = { target ->
+        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "/summarize $target"))
+        chatViewModel.isGenerating = true
+        scope.launch {
+            val resolved = DocumentIntelligence.resolveFile(target) { engine.searchFiles(it) }
+            if (resolved == null) {
+                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis() + 1, "Ronin", "❌ Could not find file matching: '$target'"))
+                chatViewModel.isGenerating = false
+                return@launch
+            }
+
+            val roninMsg = ChatMessage(
+                System.currentTimeMillis() + 1,
+                "Ronin",
+                "📖 Reading **${resolved.name}** and generating summary...",
+                initialIsThinking = true,
+                initialFileResults = listOf(resolved.absolutePath)
+            )
+            chatViewModel.messages.add(roninMsg)
+
+            val readRes = DocumentIntelligence.readDocument(resolved)
+            if (!readRes.success) {
+                roninMsg.content = "❌ Failed to read document: ${readRes.error}"
+                roninMsg.isThinking = false
+                chatViewModel.isGenerating = false
+                return@launch
+            }
+
+            val prompt = DocumentIntelligence.buildSummaryPrompt(resolved.name, readRes.content, langMyanmar = true)
+            if (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady) {
+                val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
+                val resJsonStr = engine.performCloudInferenceAsync(prompt, chatViewModel.primaryCloudProvider, apiKey)
+                try {
+                    val resJson = JSONObject(resJsonStr)
+                    if (resJson.optBoolean("success", false)) {
+                        val rawPayload = resJson.optString("payload", "")
+                        roninMsg.content = "📄 **${resolved.name}** Summary:\n\n$rawPayload"
+                    } else {
+                        roninMsg.content = "❌ Summarization failed: ${resJson.optString("error", "Unknown error")}"
+                    }
+                } catch (e: Exception) {
+                    roninMsg.content = "❌ Error parsing summary response: ${e.message}"
+                }
+            } else {
+                when (val result = engine.processInputResult(prompt, chatViewModel.systemPrompt)) {
+                    is BridgeResult.Success -> {
+                        roninMsg.content = "📄 **${resolved.name}** Summary:\n\n${result.value.result}"
+                    }
+                    is BridgeResult.Error -> {
+                        roninMsg.content = "❌ Local summarization failed: ${result.message} (${result.code})"
+                    }
+                }
+            }
+            roninMsg.fileResults.clear()
+            roninMsg.fileResults.add(resolved.absolutePath)
+            roninMsg.isThinking = false
+            chatViewModel.isGenerating = false
+        }
+    }
+
+    val triggerOcrWorkflow: (String, String) -> Unit = { target, langInput ->
+        val lang = if (langInput.isNotBlank()) langInput else "mya+eng"
+        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "/ocr $target $lang"))
+        chatViewModel.isGenerating = true
+        scope.launch {
+            val resolved = DocumentIntelligence.resolveFile(target) { engine.searchFiles(it) }
+            if (resolved == null) {
+                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis() + 1, "Ronin", "❌ Could not find file matching: '$target'"))
+                chatViewModel.isGenerating = false
+                return@launch
+            }
+
+            val roninMsg = ChatMessage(
+                System.currentTimeMillis() + 1,
+                "Ronin",
+                "🔍 Initializing On-Device OCR for **${resolved.name}** ($lang)...",
+                initialIsThinking = true,
+                initialFileResults = listOf(resolved.absolutePath)
+            )
+            chatViewModel.messages.add(roninMsg)
+
+            val ocrResult = OcrEngine.recognizeFile(context, resolved, lang) { status ->
+                roninMsg.content = "🔍 $status"
+            }
+
+            if (!ocrResult.success) {
+                roninMsg.content = "❌ OCR Failed: ${ocrResult.error}"
+                roninMsg.isThinking = false
+                chatViewModel.isGenerating = false
+                return@launch
+            }
+
+            val text = ocrResult.text
+            if (text.isBlank()) {
+                roninMsg.content = "🔍 OCR completed in ${ocrResult.processingTimeMs} ms, but no readable text was detected in **${resolved.name}**."
+            } else {
+                val preview = if (text.length > 3000) text.take(3000) + "\n... [truncated]" else text
+                roninMsg.content = "🔍 **OCR Recognition Results** (${resolved.name}):\n• Language: `${ocrResult.language}`\n• Confidence: `${ocrResult.confidence}%`\n• Time Taken: `${ocrResult.processingTimeMs} ms`\n\n```text\n$preview\n```"
+            }
+            roninMsg.fileResults.clear()
+            roninMsg.fileResults.add(resolved.absolutePath)
+            roninMsg.isThinking = false
+            chatViewModel.isGenerating = false
+        }
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                val cachedFile = copyUriToLocalCache(context, uri, "attachments")
+                if (cachedFile != null) {
+                    triggerOcrWorkflow(cachedFile.absolutePath, "mya+eng")
+                } else {
+                    Toast.makeText(context, "Failed to load image from gallery", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                val cachedFile = copyUriToLocalCache(context, uri, "attachments")
+                if (cachedFile != null) {
+                    val sizeStr = FileSearchNodeHooks.getFileSizeFormatted(cachedFile)
+                    val ext = cachedFile.extension.lowercase()
+                    val isImage = ext in listOf("png", "jpg", "jpeg", "webp")
+                    val isPdf = ext == "pdf"
+
+                    chatViewModel.messages.add(
+                        ChatMessage(System.currentTimeMillis(), "User", "📎 Attached: ${cachedFile.name}")
+                    )
+
+                    val actionHint = if (isImage || isPdf) {
+                        "Tap **OCR** to extract Myanmar/English text, **Summary** to summarize with Gemma 4, or **Open** / **Share**."
+                    } else {
+                        "Tap **Summary** to generate an AI summary with Gemma 4, **Read** to view text content, or ask any question about this document."
+                    }
+
+                    val roninMsg = ChatMessage(
+                        id = System.currentTimeMillis() + 1,
+                        sender = "Ronin",
+                        initialContent = "📁 Selected file:\n${cachedFile.absolutePath}\n\n• File size: $sizeStr\n\n$actionHint",
+                        initialFileResults = listOf(cachedFile.absolutePath)
+                    )
+                    chatViewModel.messages.add(roninMsg)
+                } else {
+                    Toast.makeText(context, "Failed to load selected document", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager; val mi = ActivityManager.MemoryInfo()
@@ -1733,96 +1949,6 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                     SystemStatusCard(chatViewModel)
                     ReasoningConsole(chatViewModel)
                     DeveloperHud(chatViewModel)
-
-                    val triggerSummarizeWorkflow: (String) -> Unit = { target ->
-                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "/summarize $target"))
-                        chatViewModel.isGenerating = true
-                        scope.launch {
-                            val resolved = DocumentIntelligence.resolveFile(target) { engine.searchFiles(it) }
-                            if (resolved == null) {
-                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis() + 1, "Ronin", "❌ Could not find file matching: '$target'"))
-                                chatViewModel.isGenerating = false
-                                return@launch
-                            }
-
-                            val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "📖 Reading **${resolved.name}** and generating summary...", initialIsThinking = true)
-                            chatViewModel.messages.add(roninMsg)
-
-                            val readRes = DocumentIntelligence.readDocument(resolved)
-                            if (!readRes.success) {
-                                roninMsg.content = "❌ Failed to read document: ${readRes.error}"
-                                roninMsg.isThinking = false
-                                chatViewModel.isGenerating = false
-                                return@launch
-                            }
-
-                            val prompt = DocumentIntelligence.buildSummaryPrompt(resolved.name, readRes.content, langMyanmar = true)
-                            if (chatViewModel.cloudOnlyMode || !chatViewModel.isGemmaReady) {
-                                val apiKey = engine.getSecureApiKeyProvider?.invoke(chatViewModel.primaryCloudProvider) ?: ""
-                                val resJsonStr = engine.performCloudInferenceAsync(prompt, chatViewModel.primaryCloudProvider, apiKey)
-                                try {
-                                    val resJson = JSONObject(resJsonStr)
-                                    if (resJson.optBoolean("success", false)) {
-                                        val rawPayload = resJson.optString("payload", "")
-                                        roninMsg.content = "📄 **${resolved.name}** Summary:\n\n$rawPayload"
-                                    } else {
-                                        roninMsg.content = "❌ Summarization failed: ${resJson.optString("error", "Unknown error")}"
-                                    }
-                                } catch (e: Exception) {
-                                    roninMsg.content = "❌ Error parsing summary response: ${e.message}"
-                                }
-                            } else {
-                                when (val result = engine.processInputResult(prompt, chatViewModel.systemPrompt)) {
-                                    is BridgeResult.Success -> {
-                                        roninMsg.content = "📄 **${resolved.name}** Summary:\n\n${result.value.result}"
-                                    }
-                                    is BridgeResult.Error -> {
-                                        roninMsg.content = "❌ Local summarization failed: ${result.message} (${result.code})"
-                                    }
-                                }
-                            }
-                            roninMsg.isThinking = false
-                            chatViewModel.isGenerating = false
-                        }
-                    }
-
-                    val triggerOcrWorkflow: (String, String) -> Unit = { target, langInput ->
-                        val lang = if (langInput.isNotBlank()) langInput else "mya+eng"
-                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "/ocr $target $lang"))
-                        chatViewModel.isGenerating = true
-                        scope.launch {
-                            val resolved = DocumentIntelligence.resolveFile(target) { engine.searchFiles(it) }
-                            if (resolved == null) {
-                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis() + 1, "Ronin", "❌ Could not find file matching: '$target'"))
-                                chatViewModel.isGenerating = false
-                                return@launch
-                            }
-
-                            val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🔍 Initializing On-Device OCR for **${resolved.name}** ($lang)...", initialIsThinking = true)
-                            chatViewModel.messages.add(roninMsg)
-
-                            val ocrResult = OcrEngine.recognizeFile(context, resolved, lang) { status ->
-                                roninMsg.content = "🔍 $status"
-                            }
-
-                            if (!ocrResult.success) {
-                                roninMsg.content = "❌ OCR Failed: ${ocrResult.error}"
-                                roninMsg.isThinking = false
-                                chatViewModel.isGenerating = false
-                                return@launch
-                            }
-
-                            val text = ocrResult.text
-                            if (text.isBlank()) {
-                                roninMsg.content = "🔍 OCR completed in ${ocrResult.processingTimeMs} ms, but no readable text was detected in **${resolved.name}**."
-                            } else {
-                                val preview = if (text.length > 3000) text.take(3000) + "\n... [truncated]" else text
-                                roninMsg.content = "🔍 **OCR Recognition Results** (${resolved.name}):\n• Language: `${ocrResult.language}`\n• Confidence: `${ocrResult.confidence}%`\n• Time Taken: `${ocrResult.processingTimeMs} ms`\n\n```text\n$preview\n```"
-                            }
-                            roninMsg.isThinking = false
-                            chatViewModel.isGenerating = false
-                        }
-                    }
 
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         LazyColumn(
@@ -2103,11 +2229,33 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                             }
                         },
                         onSuggestionClick = { s -> currentInput = s; chatViewModel.showCommandSuggestions = false },
-                        showCommandSuggestions = chatViewModel.showCommandSuggestions
+                        showCommandSuggestions = chatViewModel.showCommandSuggestions,
+                        onAttachClick = { showAttachmentPicker = true }
                     )
                 }
             }
         }
+    }
+
+    if (showAttachmentPicker) {
+        AttachmentPickerDialog(
+            onDismiss = { showAttachmentPicker = false },
+            onPickPhotoOcr = {
+                photoPickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
+            onPickDocument = {
+                documentPickerLauncher.launch(
+                    arrayOf(
+                        "application/pdf",
+                        "text/*",
+                        "image/*",
+                        "*/*"
+                    )
+                )
+            }
+        )
     }
 
     if (chatViewModel.showAddCloudDialog) {

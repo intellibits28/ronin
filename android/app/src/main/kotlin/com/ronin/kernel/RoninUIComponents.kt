@@ -816,7 +816,8 @@ fun InputBar(
     isGenerating: Boolean,
     onSendOrStop: () -> Unit,
     onSuggestionClick: (String) -> Unit,
-    showCommandSuggestions: Boolean
+    showCommandSuggestions: Boolean,
+    onAttachClick: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         if (showCommandSuggestions) {
@@ -866,9 +867,27 @@ fun InputBar(
             color = Color(0xFF1A1C2C)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (onAttachClick != null) {
+                    Surface(
+                        color = Color(0xFF25283D),
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        IconButton(onClick = onAttachClick, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                imageVector = Icons.Default.AttachFile,
+                                contentDescription = "Attach file or photo",
+                                tint = Color(0xFF64B5F6),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
+
                 TextField(
                     value = currentInput,
                     onValueChange = onInputChange,
@@ -900,6 +919,97 @@ fun InputBar(
             }
         }
     }
+}
+
+@Composable
+fun AttachmentPickerDialog(
+    onDismiss: () -> Unit,
+    onPickPhotoOcr: () -> Unit,
+    onPickDocument: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        backgroundColor = Color(0xFF1E2130),
+        shape = RoundedCornerShape(16.dp),
+        title = {
+            Text(
+                "Attach & Process",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp
+            )
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Text(
+                    "Choose an option to load files or photos directly into Ronin:",
+                    color = Color.LightGray,
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(16.dp))
+
+                // Option 1: Gallery / Photo OCR
+                Surface(
+                    color = Color(0xFF25283D),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFF4DD0E1).copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        onDismiss()
+                        onPickPhotoOcr()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🖼️", fontSize = 24.sp)
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Text("Gallery / Photos (OCR)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Spacer(Modifier.height(2.dp))
+                            Text("Pick image to extract text (Myanmar & English)", color = Color.LightGray, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // Option 2: Browse Documents
+                Surface(
+                    color = Color(0xFF25283D),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFFCE93D8).copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        onDismiss()
+                        onPickDocument()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("📁", fontSize = 24.sp)
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Text("Browse Documents", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Spacer(Modifier.height(2.dp))
+                            Text("Pick PDF, text, or code to read & summarize", color = Color.LightGray, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        },
+        buttons = {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(end = 16.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        }
+    )
 }
 
 @Composable
