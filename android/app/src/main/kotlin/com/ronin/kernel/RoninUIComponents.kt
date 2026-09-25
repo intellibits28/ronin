@@ -672,20 +672,37 @@ fun AgentResponseCard(
                             Spacer(Modifier.height(8.dp))
                         }
 
-                        // Check for File Search Results
+                        // Check for File Search Results & File Path Mentions
                         val foundFiles = remember(msg.content, msg.fileResults.toList()) {
                             if (msg.fileResults.isNotEmpty()) {
                                 msg.fileResults.toList()
-                            } else if (!isUser && (msg.content.contains("📁 Found") || msg.content.contains("[FILES FOUND]"))) {
-                                msg.content.lines()
+                            } else if (!isUser) {
+                                // 1. Direct line matching
+                                val lineMatches = msg.content.lines()
                                     .map { it.trim().removePrefix("- ").trim() }
-                                    .filter { it.startsWith("/") && File(it).exists() }
+                                    .filter { it.startsWith("/") && File(it).exists() && File(it).isFile }
+                                
+                                if (lineMatches.isNotEmpty()) {
+                                    lineMatches.distinct()
+                                } else {
+                                    // 2. Regex matching for storage paths anywhere in text
+                                    val pathRegex = Regex("""/(?:storage|sdcard|data)/[^\s\n"'\)\],`]+""")
+                                    pathRegex.findAll(msg.content)
+                                        .map { it.value.trim() }
+                                        .filter { File(it).exists() && File(it).isFile }
+                                        .distinct()
+                                        .toList()
+                                }
                             } else {
                                 emptyList()
                             }
                         }
 
-                        if (foundFiles.isNotEmpty() && !isUser) {
+                        val isPureFileList = remember(msg.content) {
+                            msg.content.startsWith("📁 Found") || msg.content.startsWith("[FILES FOUND]") || msg.content.startsWith("Found ")
+                        }
+
+                        if (isPureFileList && foundFiles.isNotEmpty() && !isUser) {
                             val headerText = msg.content.substringBefore("\n/").substringBefore("\n- /").trim()
                             Text(
                                 text = if (headerText.isNotEmpty()) headerText else "📁 Found ${foundFiles.size} file(s):",
@@ -720,6 +737,18 @@ fun AgentResponseCard(
                                     modifier = Modifier.size(24.dp).padding(start = 4.dp, top = 2.dp)
                                 ) {
                                     Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                }
+                            }
+
+                            // If text also mentions existing files, display cards below the text
+                            if (foundFiles.isNotEmpty() && !isUser) {
+                                Spacer(Modifier.height(8.dp))
+                                foundFiles.forEach { filePath ->
+                                    FileResultCard(
+                                        filePath = filePath,
+                                        onSummarize = onSummarizeFile,
+                                        onOcr = onOcrFile
+                                    )
                                 }
                             }
                         }
