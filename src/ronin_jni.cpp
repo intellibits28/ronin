@@ -395,9 +395,12 @@ JNIEXPORT jboolean JNICALL native_pushSensorSamples(JNIEnv *env, jobject thiz, j
 }
 
 JNIEXPORT jstring JNICALL native_getSensorAnalysis(JNIEnv *env, jobject thiz, jstring jtype) {
-    if (!runtimeContext().resonance_analyzer) return env->NewStringUTF("{ \"error\": \"DSP_NOT_READY\" }");
     std::string type = ConvertJStringToString(env, jtype);
-    return env->NewStringUTF(runtimeContext().resonance_analyzer->getAnalysisJson(type).c_str());
+    nlohmann::json cmd;
+    cmd["sensor_type"] = type;
+    cmd["mode"] = "FREQUENCY_DOMAIN";
+    std::string res = Ronin::Kernel::DSP::VibeMonitorEngine::getInstance().executeCommandJson(cmd.dump());
+    return env->NewStringUTF(res.c_str());
 }
 
 } // extern "C"

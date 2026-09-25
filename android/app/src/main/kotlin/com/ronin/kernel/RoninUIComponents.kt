@@ -214,6 +214,46 @@ fun DeveloperHud(chatViewModel: ChatViewModel) {
                 Text("PLAN: ${chatViewModel.hudPlan}", color = Color(0xFF80DEEA), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
             }
 
+            // Phase 4: Active Inference (FEP) Sensory Gaze & Policy Telemetry
+            Spacer(Modifier.height(8.dp))
+            Divider(color = Color.DarkGray)
+            Spacer(Modifier.height(6.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("🧠 ACTIVE INFERENCE (FEP)", color = Color(0xFFB39DDB), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                val gazeColor = when (chatViewModel.activeGazeState) {
+                    "QUIESCENT" -> Color(0xFF66BB6A)
+                    "VIGILANT" -> Color(0xFFFFA726)
+                    else -> Color(0xFFEF5350)
+                }
+                Text("GAZE: ${chatViewModel.activeGazeState} (${chatViewModel.activeGazeRateHz}Hz)", color = gazeColor, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                val fe = chatViewModel.activeFreeEnergy
+                val feColor = when {
+                    fe < 0.8f -> Color(0xFF66BB6A)
+                    fe < 2.5f -> Color(0xFFFFA726)
+                    else -> Color(0xFFEF5350)
+                }
+                Text("FREE ENERGY (F): ${"%.2f".format(fe)}", color = feColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                if (chatViewModel.activePolicyName.isNotEmpty() && chatViewModel.activePolicyName != "IDLE") {
+                    Text("POLICY: ${chatViewModel.activePolicyName}", color = Color(0xFF80DEEA), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
+            val feProgress = (chatViewModel.activeFreeEnergy / 3.0f).coerceIn(0.05f, 1.0f)
+            val feBarColor = when {
+                chatViewModel.activeFreeEnergy < 0.8f -> Color(0xFF66BB6A)
+                chatViewModel.activeFreeEnergy < 2.5f -> Color(0xFFFFA726)
+                else -> Color(0xFFEF5350)
+            }
+            Spacer(Modifier.height(4.dp))
+            LinearProgressIndicator(
+                progress = feProgress,
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                color = feBarColor,
+                backgroundColor = Color(0xFF263238)
+            )
+
             if (chatViewModel.sensorFreqHz > 0) {
                 Spacer(Modifier.height(8.dp))
                 Divider(color = Color.DarkGray)

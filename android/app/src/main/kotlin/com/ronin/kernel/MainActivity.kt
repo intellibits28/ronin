@@ -148,6 +148,14 @@ class ChatViewModel : ViewModel() {
     var hudConfidence by mutableStateOf(0.0f)
     var hudPlan by mutableStateOf("")
     var hudState by mutableStateOf("IDLE")
+
+    // Phase 4: Active Inference Kernel (RAIK) Telemetry
+    var activeFreeEnergy by mutableStateOf(0.0f)
+    var activeGazeState by mutableStateOf("QUIESCENT")
+    var activeGazeRateHz by mutableStateOf(10)
+    var activeEpistemicValue by mutableStateOf(0.0f)
+    var activePragmaticCost by mutableStateOf(0.0f)
+    var activePolicyName by mutableStateOf("IDLE")
     
     // v1.0 Sensor DSP HUD
     var sensorFreqHz by mutableStateOf(0.0f)
@@ -161,6 +169,13 @@ class ChatViewModel : ViewModel() {
     fun updateShmMetricsFromJson(jsonStr: String) {
         try {
             val j = org.json.JSONObject(jsonStr)
+            if (j.has("free_energy")) activeFreeEnergy = j.optDouble("free_energy", 0.0).toFloat()
+            if (j.has("gaze_state")) activeGazeState = j.optString("gaze_state", "QUIESCENT")
+            if (j.has("active_gaze_rate_hz")) activeGazeRateHz = j.optInt("active_gaze_rate_hz", 10)
+            if (j.has("epistemic_value")) activeEpistemicValue = j.optDouble("epistemic_value", 0.0).toFloat()
+            if (j.has("pragmatic_cost")) activePragmaticCost = j.optDouble("pragmatic_cost", 0.0).toFloat()
+            if (j.has("optimal_policy")) activePolicyName = j.optString("optimal_policy", "IDLE")
+
             if (j.has("resonance_freq_hz") || j.has("filtered_resonance_freq_hz") || j.has("top_candidates")) {
                 val freq = j.optDouble("filtered_resonance_freq_hz", j.optDouble("resonance_freq_hz", 0.0))
                 if (freq > 0) sensorFreqHz = freq.toFloat()
