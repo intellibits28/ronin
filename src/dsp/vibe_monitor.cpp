@@ -1378,6 +1378,82 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         }
     }
 
+    // ------------------------------------------------------------------------
+    // Active Inference Level 1 Sensory Gating
+    // ------------------------------------------------------------------------
+    Reasoning::StateVector ai_state;
+    ai_state.shm_freq_hz = (res.baseline_f0_hz > 0.0f) ? res.baseline_f0_hz : 10.0f;
+    ai_state.resource_index = 1.0f;
+    ai_state.intent_certainty = 1.0f;
+    ai_state.env_disturbance = 0.0f;
+
+    Reasoning::ObservationVector ai_obs;
+    ai_obs.shm_freq_hz = (res.resonance_freq_hz > 0.0f) ? res.resonance_freq_hz : res.filtered_resonance_freq_hz;
+    ai_obs.resource_metric = 1.0f;
+    ai_obs.intent_metric = 1.0f;
+    ai_obs.noise_metric = res.impact_detected ? (res.impact_strength_pct / 100.0f) : 0.0f;
+
+    float base_sigma = m_active_inference_core.getBaseline().sigma_shm_hz;
+    float base_var = base_sigma * base_sigma;
+    float f0_real_var = (res.kalman_uncertainty_hz > 0.0f) 
+        ? (res.kalman_uncertainty_hz * res.kalman_uncertainty_hz) 
+        : base_var;
+    float f0_norm_var = (base_var > 1e-6f) ? (f0_real_var / base_var) : 1.0f;
+
+    std::array<float, Reasoning::MODALITY_COUNT> realtime_vars = {
+        std::max(0.01f, f0_norm_var),
+        1.0f,
+        1.0f,
+        1.0f
+    };
+
+    auto fe_state = m_active_inference_core.computeFreeEnergy(ai_state, ai_obs, realtime_vars);
+    res.free_energy = fe_state.variational_free_energy;
+
+    // Hysteresis Gaze State Machine
+    if (res.free_energy >= Reasoning::ActiveInferenceCore::THRESHOLD_VIGILANT) {
+        m_current_gaze_state = Reasoning::SensoryGazeState::ACTIVE_INVESTIGATION;
+        m_quiescent_hysteresis_cycles = 0;
+    } else if (res.free_energy >= Reasoning::ActiveInferenceCore::THRESHOLD_QUIESCENT) {
+        if (m_current_gaze_state == Reasoning::SensoryGazeState::ACTIVE_INVESTIGATION) {
+            if (res.free_energy < 2.0f) {
+                m_current_gaze_state = Reasoning::SensoryGazeState::VIGILANT;
+            }
+        } else {
+            m_current_gaze_state = Reasoning::SensoryGazeState::VIGILANT;
+        }
+        m_quiescent_hysteresis_cycles = 0;
+    } else {
+        if (m_current_gaze_state != Reasoning::SensoryGazeState::QUIESCENT) {
+            if (res.free_energy < 0.5f) {
+                m_quiescent_hysteresis_cycles++;
+                if (m_quiescent_hysteresis_cycles >= 10) {
+                    m_current_gaze_state = Reasoning::SensoryGazeState::QUIESCENT;
+                    m_quiescent_hysteresis_cycles = 0;
+                }
+            }
+        } else {
+            m_current_gaze_state = Reasoning::SensoryGazeState::QUIESCENT;
+            m_quiescent_hysteresis_cycles = 0;
+        }
+    }
+
+    res.gaze_state = m_current_gaze_state;
+    switch (m_current_gaze_state) {
+        case Reasoning::SensoryGazeState::QUIESCENT:
+            res.gaze_state_str = "QUIESCENT";
+            res.active_gaze_rate_hz = 10;
+            break;
+        case Reasoning::SensoryGazeState::VIGILANT:
+            res.gaze_state_str = "VIGILANT";
+            res.active_gaze_rate_hz = 50;
+            break;
+        case Reasoning::SensoryGazeState::ACTIVE_INVESTIGATION:
+            res.gaze_state_str = "ACTIVE_INVESTIGATION";
+            res.active_gaze_rate_hz = 200;
+            break;
+    }
+
     return res;
 }
 
@@ -1451,6 +1527,10 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
     jOut["impact_detected"] = res.impact_detected;
     jOut["impact_strength_pct"] = res.impact_strength_pct;
     jOut["summary"] = res.summary;
+    // Active Inference Level 1 Gating Telemetry
+    jOut["free_energy"] = res.free_energy;
+    jOut["gaze_state"] = res.gaze_state_str;
+    jOut["active_gaze_rate_hz"] = res.active_gaze_rate_hz;
     // SHM: Per-axis analysis
     jOut["resonance_freq_hz_x"] = res.resonance_freq_hz_x;
     jOut["resonance_freq_hz_y"] = res.resonance_freq_hz_y;

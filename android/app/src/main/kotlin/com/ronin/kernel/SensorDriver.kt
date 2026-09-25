@@ -97,13 +97,35 @@ class SensorDriver(private val context: Context, private val nativeEngine: Nativ
                         androidx.lifecycle.ViewModelProvider(context)[ChatViewModel::class.java].updateShmMetricsFromJson(analysisJson)
                     } catch (_: Exception) {}
                 }
-                try {
-                    JSONObject(analysisJson)
+                val resultObj = try {
+                    val parsed = JSONObject(analysisJson)
+                    val activeRate = parsed.optInt("active_gaze_rate_hz", 0)
+                    if (activeRate in 5..500) {
+                        updateSamplingRate(activeRate)
+                    }
+                    parsed
                 } catch (e: Exception) {
                     JSONObject().put("error", "PARSE_ERROR").put("message", e.message)
                 }
+                resultObj
             }
             else -> JSONObject().put("error", "UNKNOWN_ACTION").put("message", "Action $action not supported")
+        }
+    }
+
+    /**
+     * Active Inference Sensory Gating: Adaptively retunes hardware sampling rate (10Hz / 50Hz / 200Hz)
+     */
+    fun updateSamplingRate(targetRateHz: Int) {
+        if (targetRateHz <= 0 || isThrottled) return
+        val newIntervalUs = (1_000_000 / targetRateHz).coerceIn(5_000, 100_000)
+        if (newIntervalUs != currentInterval) {
+            Log.i(TAG, "Active Gaze transition: adjusting rate to ${targetRateHz}Hz (interval: ${newIntervalUs}us)")
+            currentInterval = newIntervalUs
+            if (isCollecting) {
+                stopCollecting()
+                startCollecting()
+            }
         }
     }
 }

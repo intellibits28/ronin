@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 #include "third_party/pffft/pffft.h"
+#include "reasoning/active_inference.hpp"
 
 namespace Ronin::Kernel::DSP {
 
@@ -554,6 +555,11 @@ struct VibeMonitorResult {
     uint32_t welch_segment_size = 512;
     uint32_t welch_overlap = 256;
     uint32_t welch_segments_used = 3;
+    // Active Inference Level 1 Sensory Gating
+    float free_energy = 0.0f;
+    Ronin::Kernel::Reasoning::SensoryGazeState gaze_state = Ronin::Kernel::Reasoning::SensoryGazeState::QUIESCENT;
+    std::string gaze_state_str = "QUIESCENT";
+    uint32_t active_gaze_rate_hz = 10;
 };
 
 // VibeMonitor Engine implementing scenario-based sensor analysis
@@ -575,6 +581,10 @@ public:
     bool detectImpact(float current_rms, float dynamic_threshold, float& out_strength_pct);
 
     std::string executeCommandJson(const std::string& command_json);
+
+    Ronin::Kernel::Reasoning::ActiveInferenceCore& getActiveInferenceCore() { return m_active_inference_core; }
+    const Ronin::Kernel::Reasoning::ActiveInferenceCore& getActiveInferenceCore() const { return m_active_inference_core; }
+    Ronin::Kernel::Reasoning::SensoryGazeState getCurrentGazeState() const { return m_current_gaze_state; }
 
     // Test-only accessors (compile-guarded in production builds via RONIN_TESTING)
     uint32_t getFilterSamplesProcessed() const { return m_filter_samples_processed; }
@@ -640,6 +650,11 @@ private:
 
     void ensurePffftSetup(uint32_t size);
     std::mutex m_engine_mutex;
+
+    // Active Inference Level 1 Sensory Gating
+    Ronin::Kernel::Reasoning::ActiveInferenceCore m_active_inference_core;
+    Ronin::Kernel::Reasoning::SensoryGazeState m_current_gaze_state = Ronin::Kernel::Reasoning::SensoryGazeState::QUIESCENT;
+    uint32_t m_quiescent_hysteresis_cycles = 0;
 };
 
 } // namespace Ronin::Kernel::DSP
