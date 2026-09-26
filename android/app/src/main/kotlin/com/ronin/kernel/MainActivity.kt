@@ -982,6 +982,57 @@ class MainActivity : FragmentActivity() {
                         vm.updateShmMetricsFromJson(trimmedMsg.substring(jsonStart))
                     }
                 }
+
+                // 1. Consume DSP telemetry JSON for SHM metrics without dumping raw JSON in chat
+                if (trimmedMsg.startsWith("[SENSOR ANALYSIS]")) {
+                    return@runOnUiThread
+                }
+
+                // 2. Format final SHM agent assessment into a structured report that activates ShmResultCard
+                val isShmAgentResult = trimmedMsg.contains("CRITICAL STRUCTURAL SHIFT DETECTED") ||
+                        trimmedMsg.contains("Vibration/SHM Warning Detected") ||
+                        trimmedMsg.contains("Structural Health Normal")
+
+                if (isShmAgentResult) {
+                    val cleanMsg = trimmedMsg.replace("[AGENT] ", "").trim()
+                    val status = when {
+                        cleanMsg.contains("CRITICAL", true) -> "CRITICAL"
+                        cleanMsg.contains("Warning", true) || cleanMsg.contains("DEGRADED", true) -> "WARNING"
+                        cleanMsg.contains("Normal", true) || cleanMsg.contains("HEALTHY", true) -> "HEALTHY"
+                        else -> "NORMAL"
+                    }
+                    val reportText = buildString {
+                        append("🏢 **Ronin SHM Vibration Analysis Report**:\n\n")
+                        append("• Resonance Frequency (f₀): ${String.format(java.util.Locale.US, "%.2f", vm.sensorFreqHz)} Hz\n")
+                        append("• PSD Peak Power: ${String.format(java.util.Locale.US, "%.1f", vm.sensorPsdDb)} dB\n")
+                        append("• Structural Health Index: ${vm.sensorHealthIndex}\n")
+                        append("• Noise Floor: ${String.format(java.util.Locale.US, "%.1f", vm.sensorNoiseFloorDb)} dB\n")
+                        append("• Risk Assessment: $status\n\n")
+                        append(cleanMsg)
+                    }
+
+                    val pendingMsg = vm.messages.lastOrNull {
+                        it.sender == "Ronin" && (it.content.contains("ANALYZE_VIBRATION") || it.content.contains("Measuring structural vibration"))
+                    }
+                    if (pendingMsg != null) {
+                        pendingMsg.content = reportText
+                        pendingMsg.isThinking = false
+                    } else {
+                        vm.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", reportText))
+                    }
+                    vm.isGenerating = false
+                    return@runOnUiThread
+                }
+
+                // 3. Keep background reflection cycles in reasoning console without polluting chat bubbles
+                if (trimmedMsg.startsWith("[REFLECTION]")) {
+                    val lastUserMsg = vm.messages.lastOrNull { it.sender == "User" }
+                    val isExplicitReflect = lastUserMsg?.content?.trim()?.startsWith("/reflect", ignoreCase = true) == true
+                    if (!isExplicitReflect) {
+                        return@runOnUiThread
+                    }
+                }
+
                 if (trimmedMsg.startsWith("[TUNER_RESULT] ")) {
                     try {
                         val jsonStr = trimmedMsg.replace("[TUNER_RESULT] ", "")
@@ -2360,6 +2411,53 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             chatViewModel.isGenerating = false
                                             return@launch
                                         }
+
+                                        if (cmdClean.startsWith("/shm")) {
+                                            val sub = raw.trim().substringAfter(" ", "").trim().lowercase()
+                                            if (sub == "run" || sub == "measure" || sub == "start") {
+                                                chatViewModel.messages.add(
+                                                    ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🏢 Measuring structural vibration and analyzing resonance (100Hz sampling)...", initialIsThinking = true)
+                                                )
+                                                chatViewModel.isGenerating = true
+                                                scope.launch {
+                                                    engine.processInputResult("ANALYZE_VIBRATION", chatViewModel.systemPrompt)
+                                                }
+                                                return@launch
+                                            }
+
+                                            val status = when {
+                                                chatViewModel.sensorAnomaly || chatViewModel.sensorHealthIndex.replace("%", "").toDoubleOrNull()?.let { it < 50.0 } == true -> "CRITICAL"
+                                                chatViewModel.sensorHealthIndex.replace("%", "").toDoubleOrNull()?.let { it < 85.0 } == true -> "WARNING"
+                                                chatViewModel.sensorFreqHz > 0 -> "HEALTHY"
+                                                else -> "NORMAL"
+                                            }
+                                            val reportText = if (chatViewModel.sensorFreqHz > 0) {
+                                                """
+                                                🏢 **Ronin SHM Vibration Analysis Report** (Latest Telemetry):
+                                                
+                                                • Resonance Frequency (f₀): ${String.format(java.util.Locale.US, "%.2f", chatViewModel.sensorFreqHz)} Hz
+                                                • PSD Peak Power: ${String.format(java.util.Locale.US, "%.1f", chatViewModel.sensorPsdDb)} dB
+                                                • Structural Health Index: ${chatViewModel.sensorHealthIndex}
+                                                • Noise Floor: ${String.format(java.util.Locale.US, "%.1f", chatViewModel.sensorNoiseFloorDb)} dB
+                                                • Risk Assessment: $status
+                                                
+                                                Use `/shm run` or say "Check structural vibration" to trigger a new live 100Hz sensor measurement.
+                                                """.trimIndent()
+                                            } else {
+                                                """
+                                                🏢 **Structural Health Monitoring (SHM)**:
+                                                
+                                                • Engine: Welch PSD (<0.05 Hz) + Active Inference Sensory Gating
+                                                • Sampling Rate: 100Hz 3-Axis Accelerometer
+                                                • Status: Ready / Listening
+                                                
+                                                Say "Check structural vibration" or type `/shm run` to start live structural monitoring.
+                                                """.trimIndent()
+                                            }
+                                            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis() + 1, "Ronin", reportText))
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
                                     }
 
                                     if (!isCommand) {
@@ -2461,7 +2559,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                         roninMsg.content = replyPart
                                                     } else {
                                                         if (isCommand || processRes.result.startsWith("Executing plan:")) {
-                                                            roninMsg.content = displayResult
+                                                            if (processRes.result.contains("ANALYZE_VIBRATION")) {
+                                                                roninMsg.content = "🏢 Measuring structural vibration and analyzing resonance (100Hz sampling)..."
+                                                                roninMsg.isThinking = true
+                                                                chatViewModel.isGenerating = true
+                                                            } else {
+                                                                roninMsg.content = displayResult
+                                                            }
                                                         } else if (roninMsg.content.isEmpty()) {
                                                             roninMsg.content = displayResult
                                                         }
@@ -2474,8 +2578,10 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             }
                                         }
                                     } finally {
-                                        roninMsg.isThinking = false
-                                        chatViewModel.isGenerating = false
+                                        if (!roninMsg.content.contains("ANALYZE_VIBRATION") && !roninMsg.content.contains("Measuring structural vibration")) {
+                                            roninMsg.isThinking = false
+                                            chatViewModel.isGenerating = false
+                                        }
                                     }
                                 }
                             }

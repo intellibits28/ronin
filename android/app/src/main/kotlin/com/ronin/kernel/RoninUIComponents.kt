@@ -499,7 +499,7 @@ fun ShmResultCard(
                 decision = ShmDecision(
                     status = status,
                     healthIndex = healthIndex,
-                    riskLevel = if (status.equals("HEALTHY", true)) "LOW" else "ELEVATED"
+                    riskLevel = if (status.equals("HEALTHY", true)) "LOW" else if (status.equals("CRITICAL", true)) "CRITICAL" else "ELEVATED"
                 )
             )
         )
@@ -555,6 +555,7 @@ fun ShmResultCard(
                 val badgeColor = when {
                     status.equals("HEALTHY", true) -> Color(0xFF66BB6A)
                     status.equals("WARNING", true) -> Color(0xFFFFCA28)
+                    status.equals("NORMAL", true) -> Color(0xFF64B5F6)
                     else -> Color(0xFFEF5350)
                 }
                 Surface(color = badgeColor.copy(alpha = 0.2f), shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, badgeColor)) {
@@ -696,10 +697,19 @@ fun AgentResponseCard(
                         val isShmStructured = !isUser && (
                             msg.content.contains("Ronin SHM Vibration Analysis Report", ignoreCase = true) ||
                             msg.content.contains("SHM Structural Session Data", ignoreCase = true) ||
-                            (msg.content.contains("Resonance Frequency", ignoreCase = true) && msg.content.contains("Structural Health Index", ignoreCase = true))
+                            msg.content.contains("Structural Health Monitoring", ignoreCase = true) ||
+                            msg.content.contains("CRITICAL STRUCTURAL SHIFT DETECTED", ignoreCase = true) ||
+                            msg.content.contains("Vibration/SHM Warning Detected", ignoreCase = true) ||
+                            msg.content.contains("Structural Health Normal", ignoreCase = true) ||
+                            (msg.content.contains("Resonance", ignoreCase = true) && msg.content.contains("Health", ignoreCase = true))
                         )
                         if (isShmStructured) {
-                            val status = if (msg.content.contains("HEALTHY", true)) "HEALTHY" else if (msg.content.contains("WARNING", true)) "WARNING" else "NORMAL"
+                            val status = when {
+                                msg.content.contains("CRITICAL", ignoreCase = true) -> "CRITICAL"
+                                msg.content.contains("WARNING", ignoreCase = true) || msg.content.contains("DEGRADED", ignoreCase = true) -> "WARNING"
+                                msg.content.contains("HEALTHY", ignoreCase = true) || msg.content.contains("Normal", ignoreCase = true) -> "HEALTHY"
+                                else -> "NORMAL"
+                            }
                             ShmResultCard(
                                 status = status,
                                 healthIndex = chatViewModel.sensorHealthIndex,
