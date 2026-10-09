@@ -97,10 +97,10 @@ void GraphExecutor::reportOutcome(uint32_t source_id, uint32_t target_id, bool s
 
         if (edge.target_node_id == target_id) {
             if (success) {
-                edge.success_count += static_cast<uint32_t>(1.0f * eta);
+                edge.success_count += 1;
                 edge.base_weight += (0.1f * eta);
             } else {
-                edge.failure_count += static_cast<uint32_t>(1.0f * eta);
+                edge.failure_count += 1;
                 edge.base_weight -= (0.05f * eta);
             }
         }
@@ -202,6 +202,11 @@ std::future<bool> GraphExecutor::optimizeAndDispatch(CapabilityType type, const 
         std::string sid = ctx ? ctx->session_id : "unknown";
         if (completed->exchange(true)) {
             LOGW(TAG, "L10: Duplicate response ignored for session %s.", sid.c_str());
+            return;
+        }
+        if (ctx && ctx->cancel_token && ctx->cancel_token->isCancelled()) {
+            LOGW(TAG, "L10: Tool result arrived but context was cancelled. Dropping.");
+            promise->set_value(false);
             return;
         }
 

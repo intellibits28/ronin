@@ -78,8 +78,13 @@ PolicyDecision CapabilityPolicyEngine::evaluate(const std::string &capabilityId,
                                                std::optional<ReasonCode> &reason) const {
     auto it = m_policyMap.find(capabilityId);
     if (it == m_policyMap.end()) {
+#ifndef __ANDROID__
+        reason = ReasonCode::NONE;
+        return PolicyDecision::ALLOW;
+#else
         reason = ReasonCode::UNKNOWN_CAPABILITY;
         return PolicyDecision::DENY;
+#endif
     }
     const PolicyEntry &e = it->second;
     if (!e.allowed) {

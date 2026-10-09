@@ -179,6 +179,17 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
         return env->NewStringUTF(err_res.dump().c_str());
     }
     auto exec_ctx = uec_result.value();
+    
+    struct CtxGuard {
+        std::string exec_id;
+        bool dispatched = false;
+        ~CtxGuard() {
+            if (!dispatched && !exec_id.empty()) {
+                JniExecutionGateway::getInstance().unregisterExecution(exec_id);
+            }
+        }
+    } guard{exec_ctx->execution_id, false};
+
 
     if (!runtimeContext().intent_engine) {
         nlohmann::json err_res;
@@ -268,7 +279,11 @@ JNIEXPORT jstring JNICALL native_processInput(JNIEnv *env, jobject thiz, jstring
                 }
             }
         }
-        if (is_safe) { AgentScheduler::getInstance().schedule(session, 5); result = "Executing plan: " + plan.intent_name; }
+        if (is_safe) { 
+            AgentScheduler::getInstance().schedule(session, 5); 
+            guard.dispatched = true; 
+            result = "Executing plan: " + plan.intent_name; 
+        }
     } else { result = runtimeContext().intent_engine->executeSkill(intent.id, rawInput); }
     nlohmann::json fr;
     fr["session_id"] = sid;
@@ -318,8 +333,8 @@ JNIEXPORT void JNICALL native_shutdownKernel(JNIEnv *env, jobject thiz) {
 }
 JNIEXPORT jint JNICALL native_getLMKPressure(JNIEnv *env, jobject thiz) { return runtimeContext().memory_manager ? runtimeContext().memory_manager->getPressureScore() : 0; }
 JNIEXPORT jboolean JNICALL native_updateModelRegistry(JNIEnv *env, jobject thiz, jstring p) { if (runtimeContext().intent_engine) { runtimeContext().intent_engine->loadCapabilities(ConvertJStringToString(env, p)); return JNI_TRUE; } return JNI_FALSE; }
-JNIEXPORT jboolean JNICALL native_updateCloudProviders(JNIEnv *env, jobject thiz, jstring j) { return JNI_TRUE; }
-JNIEXPORT jboolean JNICALL native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring p) { return JNI_TRUE; }
+JNIEXPORT jboolean JNICALL native_updateCloudProviders(JNIEnv *env, jobject thiz, jstring j) { return JNI_FALSE; }
+JNIEXPORT jboolean JNICALL native_scanSpecificPath(JNIEnv *env, jobject thiz, jstring p) { return JNI_FALSE; }
 
 JNIEXPORT jboolean JNICALL native_isValidModel(JNIEnv *env, jobject thiz, jstring p) {
     std::string path = ConvertJStringToString(env, p);
@@ -370,7 +385,7 @@ JNIEXPORT void JNICALL native_setSafeMode(JNIEnv *env, jobject thiz, jboolean en
     }
 }
 JNIEXPORT void JNICALL native_setPriority(JNIEnv *env, jobject thiz, jint priority) {}
-JNIEXPORT jstring JNICALL native_checkFileAccess(JNIEnv *env, jobject thiz, jstring path) { return env->NewStringUTF(""); }
+JNIEXPORT jstring JNICALL native_checkFileAccess(JNIEnv *env, jobject thiz, jstring path) { return env->NewStringUTF("NOT_IMPLEMENTED"); }
 JNIEXPORT void JNICALL native_setOfflineMode(JNIEnv *env, jobject thiz, jboolean offline) {}
 JNIEXPORT void JNICALL native_setPrimaryCloudProvider(JNIEnv *env, jobject thiz, jstring provider) {}
 

@@ -244,6 +244,7 @@ bool LongTermMemory::storeFact(const std::string& entity, const std::string& att
 
 bool LongTermMemory::storeVault(const std::string& title, const std::string& encrypted_blob) {
     if (!m_db) { LOGE(TAG, "storeVault failed: DB is null."); return false; }
+    if (m_read_only.load()) { LOGW(TAG, "storeVault blocked: Read-only mode active"); return false; }
     std::lock_guard<std::mutex> lock(m_mutex);
     const char* sql = "INSERT INTO vault (title, encrypted_blob, created_at) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;

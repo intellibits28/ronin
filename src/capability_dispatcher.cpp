@@ -3,6 +3,9 @@
 #include "ronin_log.h"
 #include "capabilities/tool_registry.h"
 #include <nlohmann/json.hpp>
+#ifdef __ANDROID__
+#include "jni/ronin_jni_context.h"
+#endif
 
 #define TAG "RoninDispatcher"
 
@@ -23,6 +26,28 @@ void CapabilityDispatcher::dispatch(const CapabilityRequest& req, ResponseCallba
     }
 
     // Check if the requested tool exists in the local C++ ToolRegistry first
+#ifdef __ANDROID__
+    if (Ronin::Kernel::JNI::runtimeContext().initialized() && Ronin::Kernel::JNI::runtimeContext().getPolicyEngine()) {
+        std::string capStr = CapabilityTypeToString(req.capability);
+        std::optional<ReasonCode> reason;
+        PolicyDecision decision = Ronin::Kernel::JNI::runtimeContext().getPolicyEngine()->evaluate(
+            capStr,
+            Ronin::Kernel::JNI::runtimeContext().world_state.battery_percent * 100,
+            Ronin::Kernel::JNI::runtimeContext().world_state.network_available,
+            true, 1, reason
+        );
+        if (decision == PolicyDecision::DENY) {
+            LOGE(TAG, "Execution denied by CapabilityPolicyEngine for %s", capStr.c_str());
+            CapabilityResponse response;
+            response.request_id = req.request_id;
+            response.success = false;
+            response.payload_json = "{\"error\": \"POLICY_DENIED\"}";
+            onResponse(response);
+            return;
+        }
+    }
+#endif
+
     std::string action = "";
     try {
         auto j = nlohmann::json::parse(req.payload_json);

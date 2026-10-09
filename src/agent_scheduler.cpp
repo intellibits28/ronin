@@ -240,6 +240,7 @@ void AgentScheduler::workerLoop() {
                                 
                                     if (current_session->getToken() && current_session->getToken()->isCancelled()) {
                                         LOGE(TAG, "L8 Scheduler: Session was cancelled during wait.");
+                                        if (exec_ctx && exec_ctx->cancel_token) exec_ctx->cancel_token->cancel();
                                         all_steps_success = false;
                                         finished = true;
                                         break;
@@ -251,6 +252,7 @@ void AgentScheduler::workerLoop() {
                                         LOGE(TAG, "L8 Scheduler: Step '%s' timed out (Watchdog).", step.c_str());
                                         Execution::FailureTelemetryBus::getInstance().logFailure(exec_id, step, FailureType::TIMEOUT, "ABORT_TIMEOUT");
                                         Capability::HardwareBridge::pushMessage("[AGENT] Step timed out: " + step);
+                                        if (exec_ctx && exec_ctx->cancel_token) exec_ctx->cancel_token->cancel();
                                         current_session->abortSession(AgentSession::Error::TIMEOUT);
                                         all_steps_success = false;
                                         finished = true;
