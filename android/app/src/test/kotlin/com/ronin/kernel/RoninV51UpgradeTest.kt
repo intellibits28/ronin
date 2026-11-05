@@ -269,5 +269,54 @@ class RoninV51UpgradeTest {
         assertTrue(invalidRes.isFailure)
         tempTooSmall.delete()
     }
+
+    @Test
+    fun `test PDF ToUnicode CMap and UTF16BE hex stream extractor decodes Myanmar Unicode and flags OCR fallback on empty PDFs`() {
+        // 1. Synthetic PDF with ToUnicode CMap (<0001> -> မြန်မာ (1019 103C 1014 103A 1019 102C)) and UTF-16BE <FEFF...>
+        val syntheticPdfContent = """
+            %PDF-1.4
+            1 0 obj
+            << /Length 120 >>
+            stream
+            /CIDInit /ProcSet findresource begin
+            1 beginbfchar
+            <0001> <1019103C1014103A1019102C>
+            <0002> <0020004100490020>
+            endbfchar
+            end
+            endstream
+            endobj
+            2 0 obj
+            << /Length 140 >>
+            stream
+            BT
+            [<0001> -10 <0002>] TJ
+            <FEFF0043006F006E007400650078007400200045006E00670069006E0065006500720069006E0067> Tj
+            ( Prompting Strategy) Tj
+            ET
+            endstream
+            endobj
+            %%EOF
+        """.trimIndent()
+
+        val tempPdf = java.io.File.createTempFile("myanmar_unicode_test", ".pdf")
+        tempPdf.writeText(syntheticPdfContent, Charsets.ISO_8859_1)
+
+        val readRes = DocumentIntelligence.readDocument(tempPdf)
+        assertTrue(readRes.success)
+        assertFalse("Should not require OCR fallback when Unicode text is extracted", readRes.needsOcrFallback)
+        assertTrue("Should decode Myanmar CMap glyphs", readRes.content.contains("မြန်မာ"))
+        assertTrue("Should decode UTF-16BE hex string", readRes.content.contains("Context Engineering"))
+        assertTrue("Should decode literal string", readRes.content.contains("Prompting Strategy"))
+        tempPdf.delete()
+
+        // 2. Scanned/image-only PDF with no text streams should set needsOcrFallback = true
+        val scannedPdf = java.io.File.createTempFile("scanned_only", ".pdf")
+        scannedPdf.writeText("%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF", Charsets.ISO_8859_1)
+        val scannedRes = DocumentIntelligence.readDocument(scannedPdf)
+        assertTrue(scannedRes.isPdf)
+        assertTrue("Image-only PDF must set needsOcrFallback = true", scannedRes.needsOcrFallback)
+        scannedPdf.delete()
+    }
 }
 

@@ -1960,12 +1960,36 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             )
             chatViewModel.messages.add(roninMsg)
 
-            val readRes = DocumentIntelligence.readDocument(resolved)
-            if (!readRes.success) {
+            var readRes = DocumentIntelligence.readDocument(resolved)
+            if (!readRes.success && !readRes.needsOcrFallback) {
                 roninMsg.content = "❌ Failed to read document: ${readRes.error}"
                 roninMsg.isThinking = false
                 chatViewModel.isGenerating = false
                 return@launch
+            }
+
+            // Automatic PDF OCR Fallback when PDF contains custom/CID-encoded fonts or scanned images
+            if (readRes.isPdf && readRes.needsOcrFallback) {
+                roninMsg.content = "🔍 PDF uses custom/scanned glyphs — running On-Device OCR (mya+eng) before summarizing..."
+                val ocrRes = OcrEngine.recognizeFile(context, resolved, "mya+eng") { status ->
+                    scope.launch(Dispatchers.Main) {
+                        roninMsg.content = "🔍 $status"
+                    }
+                }
+                if (ocrRes.success && ocrRes.text.isNotBlank()) {
+                    readRes = readRes.copy(
+                        success = true,
+                        content = ocrRes.text,
+                        lineCount = ocrRes.text.lines().size,
+                        charCount = ocrRes.text.length,
+                        needsOcrFallback = false
+                    )
+                } else {
+                    roninMsg.content = "❌ Could not extract text from PDF **${resolved.name}** via direct stream parser or OCR (${ocrRes.error ?: "empty OCR output"}).\n💡 Try updating OCR models via `/ocr update best` or Settings -> OCR Engine."
+                    roninMsg.isThinking = false
+                    chatViewModel.isGenerating = false
+                    return@launch
+                }
             }
 
             // Phase 2.3: For documents > 8,000 chars, select high-centrality chunks via EmbeddingGemma 2
@@ -2521,9 +2545,14 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
 
                                         if (cmdClean.startsWith("/read")) {
                                             val rest = raw.trim().substringAfter(" ", "").trim()
-                                            val parts = rest.split(Regex("\\s+"))
-                                            val targetFile = parts.firstOrNull() ?: ""
-                                            val maxLines = parts.getOrNull(1)?.toIntOrNull() ?: 50
+                                            val parts = rest.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                                            val trailingNum = if (parts.size >= 2) parts.last().toIntOrNull() else null
+                                            val maxLines = trailingNum ?: 50
+                                            val targetFile = if (trailingNum != null) {
+                                                rest.substringBeforeLast(parts.last()).trim()
+                                            } else {
+                                                rest
+                                            }
                                             if (targetFile.isEmpty()) {
                                                 chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /read <filename or path> [max_lines]"))
                                                 chatViewModel.isGenerating = false
@@ -2535,7 +2564,19 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 chatViewModel.isGenerating = false
                                                 return@launch
                                             }
-                                            val readRes = DocumentIntelligence.readDocument(resolved)
+                                            var readRes = DocumentIntelligence.readDocument(resolved)
+                                            if (readRes.isPdf && readRes.needsOcrFallback) {
+                                                val ocrRes = OcrEngine.recognizeFile(context, resolved, "mya+eng")
+                                                if (ocrRes.success && ocrRes.text.isNotBlank()) {
+                                                    readRes = readRes.copy(
+                                                        success = true,
+                                                        content = ocrRes.text,
+                                                        lineCount = ocrRes.text.lines().size,
+                                                        charCount = ocrRes.text.length,
+                                                        needsOcrFallback = false
+                                                    )
+                                                }
+                                            }
                                             if (!readRes.success) {
                                                 chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Could not read ${resolved.name}: ${readRes.error}"))
                                             } else {
@@ -2609,7 +2650,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                     return@launch
                                                 }
                                                 "import" -> {
-                                                    val customPath = parts.getOrNull(1) ?: ""
+                                                    val customPath = rest.substringAfter(" ", "").trim()
                                                     if (customPath.isEmpty()) {
                                                         chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: `/ocr import <path_to_file.traineddata>`"))
                                                         chatViewModel.isGenerating = false
@@ -2647,8 +2688,15 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                     return@launch
                                                 }
                                                 else -> {
-                                                    val lang = parts.getOrNull(1) ?: "mya+eng"
-                                                    triggerOcrWorkflow(subOrFile, lang, false)
+                                                    val lastToken = parts.lastOrNull()?.lowercase() ?: ""
+                                                    val hasExplicitLang = parts.size >= 2 && (lastToken == "mya" || lastToken == "eng" || lastToken == "mya+eng" || lastToken == "eng+mya")
+                                                    val lang = if (hasExplicitLang) lastToken else "mya+eng"
+                                                    val fileQuery = if (hasExplicitLang) {
+                                                        rest.substringBeforeLast(parts.last()).trim()
+                                                    } else {
+                                                        rest
+                                                    }
+                                                    triggerOcrWorkflow(fileQuery, lang, false)
                                                     return@launch
                                                 }
                                             }

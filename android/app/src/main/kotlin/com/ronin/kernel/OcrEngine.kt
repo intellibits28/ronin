@@ -306,7 +306,7 @@ object OcrEngine {
 
         val lowerName = file.name.lowercase()
         return@withContext if (lowerName.endsWith(".pdf")) {
-            recognizePdfPages(context, file, language, startTime)
+            recognizePdfPages(context, file, language, startTime, maxPages = 8, onStatus = onStatus)
         } else {
             recognizeImageFile(context, file, language, startTime)
         }
@@ -364,7 +364,8 @@ object OcrEngine {
         pdfFile: File,
         language: String,
         startTime: Long,
-        maxPages: Int = 3
+        maxPages: Int = 8,
+        onStatus: ((String) -> Unit)? = null
     ): OcrResult {
         var pfd: ParcelFileDescriptor? = null
         var renderer: PdfRenderer? = null
@@ -383,13 +384,18 @@ object OcrEngine {
             if (!tessBaseAPI.init(datapath, language)) {
                 return OcrResult(success = false, error = "Failed to initialize Tesseract engine for PDF")
             }
+            tessBaseAPI.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO
 
             for (i in 0 until pageCount) {
+                onStatus?.invoke("OCR rendering PDF page ${i + 1}/$pageCount ($language)...")
                 val page = renderer.openPage(i)
-                val width = (page.width * 1.5).toInt().coerceAtMost(2048)
-                val height = (page.height * 1.5).toInt().coerceAtMost(2048)
+                val width = (page.width * 2.0).toInt().coerceIn(800, 2400)
+                val height = (page.height * 2.0).toInt().coerceIn(800, 2400)
                 val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                // Critical: fill bitmap with solid white before PdfRenderer.Page.render()
+                // so dark Myanmar/English glyphs have high contrast instead of black-on-transparent
+                bitmap.eraseColor(android.graphics.Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
                 page.close()
 
                 tessBaseAPI.setImage(bitmap)

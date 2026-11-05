@@ -36,6 +36,7 @@ object DocumentIntelligence {
         val isTruncated: Boolean = false,
         val isPdf: Boolean = false,
         val pdfPageCount: Int = 0,
+        val needsOcrFallback: Boolean = false,
         val error: String? = null
     )
 
@@ -165,10 +166,11 @@ object DocumentIntelligence {
         return try {
             val extractedText = extractTextFromPdfBytes(file, maxBytes)
             val isTruncated = extractedText.length >= maxBytes
-            val finalContent = if (extractedText.isNotBlank()) {
+            val hasReadableText = extractedText.count { !it.isWhitespace() } >= 20
+            val finalContent = if (hasReadableText) {
                 extractedText
             } else {
-                "[PDF Document: ${file.name}]\nTotal Pages: $pageCount\nNotice: This PDF contains scanned images or encrypted streams. Direct text extraction yielded no selectable text."
+                "[PDF Document: ${file.name}]\nTotal Pages: $pageCount\nNotice: This PDF contains scanned images or custom-encoded streams. Direct text extraction yielded no selectable text."
             }
 
             ReadResult(
@@ -180,7 +182,8 @@ object DocumentIntelligence {
                 charCount = finalContent.length,
                 isTruncated = isTruncated,
                 isPdf = true,
-                pdfPageCount = pageCount
+                pdfPageCount = pageCount,
+                needsOcrFallback = !hasReadableText
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error extracting PDF document: ${e.message}", e)
@@ -190,21 +193,25 @@ object DocumentIntelligence {
                 fileName = file.name,
                 isPdf = true,
                 pdfPageCount = pageCount,
+                needsOcrFallback = true,
                 error = "Failed to parse PDF: ${e.message}"
             )
         }
     }
 
     /**
-     * Lightweight pure-Kotlin PDF stream text extractor.
-     * Decompresses Flate streams and extracts strings from BT...ET operators.
+     * Pure-Kotlin PDF text & Unicode CMap extractor.
+     * Pass 1: Collects all decompressed streams and parses `ToUnicode` CMap tables (`beginbfchar` / `beginbfrange`)
+     *         so CID/Type0 Myanmar & multilingual fonts are mapped back to Unicode code points.
+     * Pass 2: Extracts both literal `(...)` strings and hex `<...>` strings from `Tj` and `TJ` operators.
      */
-    private fun extractTextFromPdfBytes(file: File, maxBytes: Int): String {
+    internal fun extractTextFromPdfBytes(file: File, maxBytes: Int): String {
         val bytes = file.readBytes()
-        val textBuilder = StringBuilder()
+        val decompressedStreams = mutableListOf<ByteArray>()
+        val cmapTable = HashMap<Int, String>()
         var offset = 0
 
-        while (offset < bytes.size && textBuilder.length < maxBytes) {
+        while (offset < bytes.size) {
             val streamStart = indexOf(bytes, "stream".toByteArray(StandardCharsets.US_ASCII), offset)
             if (streamStart == -1) break
 
@@ -219,75 +226,209 @@ object DocumentIntelligence {
             if (streamLen > 0) {
                 val streamBytes = bytes.copyOfRange(dataStart, streamEnd)
                 val decompressed = tryDecompressFlate(streamBytes) ?: streamBytes
-                val streamText = extractTextFromPdfStream(decompressed)
-                if (streamText.isNotBlank()) {
-                    if (textBuilder.isNotEmpty()) textBuilder.append("\n")
-                    textBuilder.append(streamText)
+                val asciiPreview = String(decompressed, StandardCharsets.ISO_8859_1)
+                if (asciiPreview.contains("beginbfchar") || asciiPreview.contains("beginbfrange")) {
+                    parseToUnicodeCmap(asciiPreview, cmapTable)
+                } else {
+                    decompressedStreams.add(decompressed)
                 }
             }
             offset = streamEnd + 9
         }
 
+        val textBuilder = StringBuilder()
+        for (stream in decompressedStreams) {
+            if (textBuilder.length >= maxBytes) break
+            val streamText = extractTextFromPdfStream(stream, cmapTable)
+            if (streamText.isNotBlank()) {
+                if (textBuilder.isNotEmpty()) textBuilder.append("\n")
+                textBuilder.append(streamText)
+            }
+        }
+
         return textBuilder.toString().trim()
     }
 
-    private fun tryDecompressFlate(data: ByteArray): ByteArray? {
-        return try {
-            val inflater = Inflater(false)
-            val bis = ByteArrayInputStream(data)
-            val iis = InflaterInputStream(bis, inflater)
-            val bos = ByteArrayOutputStream()
-            val buf = ByteArray(1024)
-            var n: Int
-            while (iis.read(buf).also { n = it } != -1) {
-                bos.write(buf, 0, n)
-            }
-            bos.toByteArray()
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun extractTextFromPdfStream(streamBytes: ByteArray): String {
-        val streamStr = String(streamBytes, StandardCharsets.ISO_8859_1)
-        val out = StringBuilder()
-        
-        // Find text enclosed in ( ... ) followed by Tj or TJ
-        val tjRegex = Regex("""\((.*?)\)\s*(?:Tj|'|")""")
-        val tjMatches = tjRegex.findAll(streamStr)
-        for (match in tjMatches) {
-            val raw = match.groupValues[1]
-            val cleaned = unescapePdfString(raw)
-            if (cleaned.isNotBlank()) {
-                out.append(cleaned).append(" ")
-            }
-        }
-
-        // Also handle array of strings: [ (Hello) -20 (World) ] TJ
-        val arrayRegex = Regex("""\[(.*?)\]\s*TJ""")
-        val arrayMatches = arrayRegex.findAll(streamStr)
-        for (m in arrayMatches) {
-            val inner = m.groupValues[1]
-            val itemRegex = Regex("""\((.*?)\)""")
-            for (sub in itemRegex.findAll(inner)) {
-                val subClean = unescapePdfString(sub.groupValues[1])
-                if (subClean.isNotBlank()) {
-                    out.append(subClean).append(" ")
+    private fun parseToUnicodeCmap(cmapText: String, cmapTable: MutableMap<Int, String>) {
+        // 1. Parse beginbfchar ... endbfchar: <srcHex> <dstUtf16Hex>
+        val bfCharBlockRegex = Regex("""beginbfchar(.*?)endbfchar""", RegexOption.DOT_MATCHES_ALL)
+        val pairRegex = Regex("""<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>""")
+        for (block in bfCharBlockRegex.findAll(cmapText)) {
+            for (pair in pairRegex.findAll(block.groupValues[1])) {
+                val srcCode = pair.groupValues[1].toIntOrNull(16) ?: continue
+                val targetStr = decodeUtf16BeHex(pair.groupValues[2])
+                if (targetStr.isNotEmpty()) {
+                    cmapTable[srcCode] = targetStr
                 }
             }
         }
 
-        return out.toString().trim()
+        // 2. Parse beginbfrange ... endbfrange: <startHex> <endHex> <dstStartHex>
+        val bfRangeBlockRegex = Regex("""beginbfrange(.*?)endbfrange""", RegexOption.DOT_MATCHES_ALL)
+        val rangeRegex = Regex("""<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>""")
+        for (block in bfRangeBlockRegex.findAll(cmapText)) {
+            for (rng in rangeRegex.findAll(block.groupValues[1])) {
+                val startCode = rng.groupValues[1].toIntOrNull(16) ?: continue
+                val endCode = rng.groupValues[2].toIntOrNull(16) ?: continue
+                val dstBase = rng.groupValues[3].toIntOrNull(16) ?: continue
+                if (endCode >= startCode && (endCode - startCode) <= 1024) {
+                    for (code in startCode..endCode) {
+                        val mappedCp = dstBase + (code - startCode)
+                        if (mappedCp in 1..0x10FFFF) {
+                            cmapTable[code] = String(Character.toChars(mappedCp))
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    private fun unescapePdfString(str: String): String {
-        return str
+    private fun decodeUtf16BeHex(hex: String): String {
+        val clean = hex.trim()
+        if (clean.isEmpty()) return ""
+        val padded = if (clean.length % 2 != 0) "0$clean" else clean
+        val bytes = ByteArray(padded.length / 2)
+        for (i in bytes.indices) {
+            bytes[i] = padded.substring(i * 2, i * 2 + 2).toIntOrNull(16)?.toByte() ?: 0
+        }
+        return if (bytes.size >= 2 && bytes.size % 2 == 0) {
+            String(bytes, StandardCharsets.UTF_16BE)
+        } else {
+            String(bytes, StandardCharsets.ISO_8859_1)
+        }
+    }
+
+    private fun decodePdfHexToken(hex: String, cmapTable: Map<Int, String>): String {
+        val clean = hex.replace(Regex("\\s+"), "")
+        if (clean.isEmpty()) return ""
+        if (clean.startsWith("FEFF", ignoreCase = true) || clean.startsWith("FFFE", ignoreCase = true)) {
+            return decodeUtf16BeHex(clean.substring(4))
+        }
+        if (cmapTable.isNotEmpty() && clean.length % 4 == 0) {
+            val sb = StringBuilder()
+            var mappedCount = 0
+            for (i in 0 until clean.length step 4) {
+                val cid = clean.substring(i, i + 4).toIntOrNull(16) ?: continue
+                val mapped = cmapTable[cid]
+                if (mapped != null) {
+                    sb.append(mapped)
+                    mappedCount++
+                } else if (cid in 0x20..0x7E || cid in 0x1000..0x109F) {
+                    sb.append(cid.toChar())
+                }
+            }
+            if (mappedCount > 0 || sb.isNotEmpty()) return sb.toString()
+        }
+        if (cmapTable.isNotEmpty() && clean.length % 2 == 0) {
+            val sb = StringBuilder()
+            var mappedCount = 0
+            for (i in 0 until clean.length step 2) {
+                val cid = clean.substring(i, i + 2).toIntOrNull(16) ?: continue
+                val mapped = cmapTable[cid]
+                if (mapped != null) {
+                    sb.append(mapped)
+                    mappedCount++
+                }
+            }
+            if (mappedCount > 0) return sb.toString()
+        }
+        // Fallback: check if 4-hex chunks look like UTF-16BE (e.g., Myanmar 1000..109F or ASCII 0020..007E)
+        if (clean.length % 4 == 0) {
+            val utf16Candidate = decodeUtf16BeHex(clean)
+            if (utf16Candidate.any { it in '\u1000'..'\u109F' || it.isLetterOrDigit() }) {
+                return utf16Candidate
+            }
+        }
+        return ""
+    }
+
+    private fun tryDecompressFlate(data: ByteArray): ByteArray? {
+        for (nowrap in booleanArrayOf(false, true)) {
+            try {
+                val inflater = Inflater(nowrap)
+                val bis = ByteArrayInputStream(data)
+                val iis = InflaterInputStream(bis, inflater)
+                val bos = ByteArrayOutputStream()
+                val buf = ByteArray(2048)
+                var n: Int
+                while (iis.read(buf).also { n = it } != -1) {
+                    bos.write(buf, 0, n)
+                }
+                val res = bos.toByteArray()
+                if (res.isNotEmpty()) return res
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
+    private fun extractTextFromPdfStream(streamBytes: ByteArray, cmapTable: Map<Int, String> = emptyMap()): String {
+        val streamStr = String(streamBytes, StandardCharsets.ISO_8859_1)
+        val out = StringBuilder()
+
+        // Match (...) Tj, <...> Tj, or [...] TJ in document order
+        val operatorRegex = Regex("""(?:\(((?:\\.|[^\\()])*)\)|<([0-9A-Fa-f\s]+)>)\s*(?:Tj|'|")|\[(.*?)\]\s*TJ""", RegexOption.DOT_MATCHES_ALL)
+        val subTokenRegex = Regex("""\(((?:\\.|[^\\()])*)\)|<([0-9A-Fa-f\s]+)>""")
+
+        for (match in operatorRegex.findAll(streamStr)) {
+            val literalGroup = match.groups[1]?.value
+            val hexGroup = match.groups[2]?.value
+            val arrayGroup = match.groups[3]?.value
+
+            when {
+                literalGroup != null -> {
+                    val cleaned = unescapePdfString(literalGroup, cmapTable)
+                    if (cleaned.isNotBlank()) out.append(cleaned).append(" ")
+                }
+                hexGroup != null -> {
+                    val decoded = decodePdfHexToken(hexGroup, cmapTable)
+                    if (decoded.isNotBlank()) out.append(decoded).append(" ")
+                }
+                arrayGroup != null -> {
+                    val lineSb = StringBuilder()
+                    for (sub in subTokenRegex.findAll(arrayGroup)) {
+                        val subLit = sub.groups[1]?.value
+                        val subHex = sub.groups[2]?.value
+                        if (subLit != null) {
+                            lineSb.append(unescapePdfString(subLit, cmapTable))
+                        } else if (subHex != null) {
+                            lineSb.append(decodePdfHexToken(subHex, cmapTable))
+                        }
+                    }
+                    if (lineSb.isNotBlank()) out.append(lineSb).append(" ")
+                }
+            }
+        }
+
+        return out.toString().replace(Regex("[ \\t]+"), " ").trim()
+    }
+
+    private fun unescapePdfString(str: String, cmapTable: Map<Int, String> = emptyMap()): String {
+        val unescaped = str
             .replace("\\(", "(")
             .replace("\\)", ")")
             .replace("\\\\", "\\")
             .replace("\\r", "\r")
             .replace("\\n", "\n")
             .replace("\\t", "\t")
+        if (unescaped.length >= 2 && unescaped[0] == '\u00FE' && unescaped[1] == '\u00FF') {
+            val rawBytes = unescaped.substring(2).toByteArray(StandardCharsets.ISO_8859_1)
+            return String(rawBytes, StandardCharsets.UTF_16BE)
+        }
+        if (cmapTable.isNotEmpty()) {
+            val sb = StringBuilder()
+            var mappedAny = false
+            for (ch in unescaped) {
+                val mapped = cmapTable[ch.code]
+                if (mapped != null) {
+                    sb.append(mapped)
+                    mappedAny = true
+                } else {
+                    sb.append(ch)
+                }
+            }
+            if (mappedAny) return sb.toString()
+        }
+        return unescaped
     }
 
     private fun indexOf(source: ByteArray, target: ByteArray, fromIndex: Int = 0): Int {
