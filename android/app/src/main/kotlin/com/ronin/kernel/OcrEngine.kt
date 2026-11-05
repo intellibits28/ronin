@@ -24,7 +24,20 @@ object OcrEngine {
     private const val TAG = "Ronin_OcrEngine"
     private const val TESSDATA_DIR = "tessdata"
     private const val DEFAULT_LANG = "mya+eng"
-    private const val GITHUB_TESSDATA_FAST_URL = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main"
+    const val GITHUB_TESSDATA_FAST_URL = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main"
+    const val GITHUB_TESSDATA_BEST_URL = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main"
+
+    enum class TessdataVariant(val label: String, val baseUrl: String) {
+        FAST("tessdata_fast (Fast Int8 LSTM)", GITHUB_TESSDATA_FAST_URL),
+        BEST("tessdata_best (High-Accuracy Float LSTM)", GITHUB_TESSDATA_BEST_URL)
+    }
+
+    data class InstalledTessModel(
+        val langCode: String,
+        val fileName: String,
+        val sizeBytes: Long,
+        val lastModifiedMs: Long
+    )
 
     private val httpClient by lazy {
         OkHttpClient.Builder()
@@ -50,6 +63,122 @@ object OcrEngine {
         val tessDir = File(context.filesDir, TESSDATA_DIR)
         val targetFile = File(tessDir, "$langCode.traineddata")
         return targetFile.exists() && targetFile.length() > 100_000
+    }
+
+    /**
+     * Lists all installed `.traineddata` language models in `filesDir/tessdata`.
+     */
+    fun listInstalledModels(context: Context): List<InstalledTessModel> {
+        val tessDir = File(context.filesDir, TESSDATA_DIR)
+        if (!tessDir.exists()) return emptyList()
+        return tessDir.listFiles { f -> f.isFile && f.name.endsWith(".traineddata", ignoreCase = true) }
+            ?.map { f ->
+                InstalledTessModel(
+                    langCode = f.name.substringBeforeLast('.'),
+                    fileName = f.name,
+                    sizeBytes = f.length(),
+                    lastModifiedMs = f.lastModified()
+                )
+            }
+            ?.sortedBy { it.langCode }
+            ?: emptyList()
+    }
+
+    /**
+     * Validates that a file is a genuine non-empty `.traineddata` binary (> 50 KB, valid lang code).
+     */
+    internal fun validateTrainedDataFile(file: File, targetLangCode: String? = null): Result<String> {
+        if (!file.exists() || !file.isFile || !file.canRead()) {
+            return Result.failure(IllegalArgumentException("Traineddata file does not exist or is not readable: ${file.path}"))
+        }
+        val rawLang = (targetLangCode?.takeIf { it.isNotBlank() } ?: file.name.substringBeforeLast('.'))
+            .lowercase()
+            .trim()
+        if (!rawLang.matches(Regex("^[a-z0-9_]{2,16}$"))) {
+            return Result.failure(IllegalArgumentException("Invalid language code '$rawLang'. Expected format like 'mya', 'eng', or 'mya_custom'."))
+        }
+        if (file.length() < 50_000L) {
+            return Result.failure(IllegalArgumentException("File is too small (${file.length()} bytes) to be a valid Tesseract .traineddata model."))
+        }
+        return Result.success(rawLang)
+    }
+
+    /**
+     * Imports a custom `.traineddata` file from local storage into `filesDir/tessdata/<lang>.traineddata`.
+     */
+    suspend fun importCustomTrainedData(
+        context: Context,
+        sourceFile: File,
+        customLangCode: String? = null
+    ): Result<InstalledTessModel> = withContext(Dispatchers.IO) {
+        val validLangRes = validateTrainedDataFile(sourceFile, customLangCode)
+        val langCode = validLangRes.getOrElse { return@withContext Result.failure(it) }
+
+        val tessDir = File(context.filesDir, TESSDATA_DIR).apply { if (!exists()) mkdirs() }
+        val destFile = File(tessDir, "$langCode.traineddata")
+        val tempFile = File(tessDir, "$langCode.traineddata.import_tmp")
+
+        try {
+            sourceFile.inputStream().use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            if (destFile.exists()) destFile.delete()
+            if (!tempFile.renameTo(destFile)) {
+                tempFile.copyTo(destFile, overwrite = true)
+                tempFile.delete()
+            }
+            Result.success(
+                InstalledTessModel(
+                    langCode = langCode,
+                    fileName = destFile.name,
+                    sizeBytes = destFile.length(),
+                    lastModifiedMs = destFile.lastModified()
+                )
+            )
+        } catch (e: Exception) {
+            tempFile.delete()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Force-updates `.traineddata` language models from `tessdata_fast` or `tessdata_best`.
+     */
+    suspend fun updateLanguageModels(
+        context: Context,
+        languages: List<String> = listOf("mya", "eng"),
+        variant: TessdataVariant = TessdataVariant.FAST,
+        onProgress: ((String) -> Unit)? = null
+    ): Result<List<InstalledTessModel>> = withContext(Dispatchers.IO) {
+        val tessDir = File(context.filesDir, TESSDATA_DIR).apply { if (!exists()) mkdirs() }
+        val updated = mutableListOf<InstalledTessModel>()
+
+        for (rawLang in languages) {
+            val lang = rawLang.trim().lowercase()
+            if (!lang.matches(Regex("^[a-z0-9_]{2,16}$"))) continue
+            val destFile = File(tessDir, "$lang.traineddata")
+            val url = "${variant.baseUrl}/$lang.traineddata"
+            onProgress?.invoke("Downloading $lang.traineddata (${variant.label})...")
+            val ok = downloadFile(url, destFile) { p ->
+                onProgress?.invoke("$lang.traineddata — $p")
+            }
+            if (!ok) {
+                return@withContext Result.failure(
+                    IllegalStateException("Failed to download $lang.traineddata from ${variant.label}")
+                )
+            }
+            updated.add(
+                InstalledTessModel(
+                    langCode = lang,
+                    fileName = destFile.name,
+                    sizeBytes = destFile.length(),
+                    lastModifiedMs = destFile.lastModified()
+                )
+            )
+        }
+        Result.success(updated)
     }
 
     /**

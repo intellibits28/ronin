@@ -1515,9 +1515,9 @@ fun SettingsSection(
             }
         }
 
-        // Section 4: Local Brain
+        // Section 4: Local Brain & Hugging Face Hub
         item {
-            SettingsCardSection(title = "4. Local Brain") {
+            SettingsCardSection(title = "4. Local Brain & Hugging Face Hub") {
                 Text("Installed Models (${chatViewModel.discoveredModels.size})", color = Color.Gray, fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
                 if (chatViewModel.discoveredModels.isEmpty()) {
@@ -1543,7 +1543,80 @@ fun SettingsSection(
                 ) {
                     Icon(Icons.Default.FileOpen, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Import Brain (.litertlm)", fontWeight = FontWeight.Bold)
+                    Text("Import Local Model (.litertlm / .bin)", fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(14.dp))
+                HuggingFaceModelHubSection(
+                    chatViewModel = chatViewModel,
+                    activity = activity,
+                    showCompactHeader = true
+                )
+            }
+        }
+
+        // Section 4.5: OCR Engine & .traineddata Management
+        item {
+            SettingsCardSection(title = "OCR Engine & .traineddata Models") {
+                val installedModels = chatViewModel.installedTessModels
+                Text(
+                    if (installedModels.isEmpty()) "Installed: Auto-download on first /ocr use"
+                    else "Installed: " + installedModels.joinToString(", ") { "${it.langCode}.traineddata (${it.sizeBytes / 1024} KB)" },
+                    color = Color.Gray,
+                    fontSize = 12.sp
+                )
+                if (chatViewModel.ocrStatusMessage.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        chatViewModel.ocrStatusMessage,
+                        color = Color(0xFF00E5FF),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+                if (chatViewModel.isUpdatingOcr) {
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color(0xFF00E5FF),
+                        backgroundColor = Color(0xFF25283D)
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { activity?.updateTessdataModels(OcrEngine.TessdataVariant.FAST) },
+                        enabled = !chatViewModel.isUpdatingOcr,
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.CloudDownload, null, tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Update Fast", color = Color.White, fontSize = 11.sp)
+                    }
+                    Button(
+                        onClick = { activity?.updateTessdataModels(OcrEngine.TessdataVariant.BEST) },
+                        enabled = !chatViewModel.isUpdatingOcr,
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, null, tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Update Best", color = Color.White, fontSize = 11.sp)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { activity?.tessdataPicker?.launch(arrayOf("*/*")) },
+                    enabled = !chatViewModel.isUpdatingOcr,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFBBF24)),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.FileOpen, null, tint = Color(0xFFFBBF24), modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Import Custom .traineddata", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
         }
@@ -1894,6 +1967,343 @@ fun ModelRowItem(model: String, isSelected: Boolean, onClick: () -> Unit) {
         ) {
             Text(model, color = if (isSelected) Color(0xFF64B5F6) else Color.White, fontSize = 14.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
             RadioButton(selected = isSelected, onClick = onClick, colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF64B5F6)))
+        }
+    }
+}
+
+@Composable
+fun HuggingFaceModelHubSection(
+    chatViewModel: ChatViewModel,
+    activity: MainActivity?,
+    showCompactHeader: Boolean = false
+) {
+    val context = LocalContext.current
+    val hardwareProfile = remember { ModelDownloadManager.detectHardwareProfile(context) }
+    val catalog = remember(hardwareProfile) { ModelDownloadManager.getCatalogForDevice(hardwareProfile) }
+    var showCustomHfInput by remember { mutableStateOf(false) }
+    var customRepoUrl by remember { mutableStateOf("") }
+    var selectedCategoryFilter by remember { mutableStateOf<ModelDownloadManager.ModelCategory?>(null) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Hardware Telemetry Banner
+        Surface(
+            color = Color(0xFF121622),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.35f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "HUGGING FACE DIRECT HUB // HARDWARE MATCH",
+                        color = Color(0xFF00E5FF),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        "${hardwareProfile.primaryAbi} • ${hardwareProfile.cpuCores} Cores",
+                        color = Color(0xFF34D399),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "SoC: ${hardwareProfile.socModel}  |  RAM: ${"%.1f".format(hardwareProfile.availRamGb)} GB Free / ${"%.1f".format(hardwareProfile.totalRamGb)} GB Total",
+                    color = Color(0xFFA3A3A3),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Category Filter Chips (All / Reasoning / Embedding 768D)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val filters = listOf(
+                null to "ALL (${catalog.size})",
+                ModelDownloadManager.ModelCategory.REASONING to "REASONING LLM",
+                ModelDownloadManager.ModelCategory.EMBEDDING to "EMBEDDING (RAG)"
+            )
+            filters.forEach { (cat, label) ->
+                val selected = selectedCategoryFilter == cat
+                Surface(
+                    color = if (selected) Color(0xFF00E5FF).copy(alpha = 0.2f) else Color(0xFF1A1D2B),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, if (selected) Color(0xFF00E5FF) else Color(0xFF2D3142)),
+                    modifier = Modifier.weight(1f).clickable { selectedCategoryFilter = cat }
+                ) {
+                    Text(
+                        label,
+                        color = if (selected) Color(0xFF00E5FF) else Color.Gray,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        val filteredCatalog = catalog.filter { selectedCategoryFilter == null || it.first.category == selectedCategoryFilter }
+
+        filteredCatalog.forEach { (spec, tier) ->
+            val installedFile = chatViewModel.discoveredModels.find { File(it).name.equals(spec.fileName, ignoreCase = true) }
+            val isDownloaded = installedFile != null
+            val isActive = installedFile != null && installedFile == chatViewModel.localModelPath
+            val downloadProgress = chatViewModel.activeDownloads[spec.id]
+            val isDownloading = downloadProgress != null && !downloadProgress.isCompleted && downloadProgress.error == null
+
+            val tierColor = when (tier) {
+                ModelDownloadManager.CompatibilityTier.RECOMMENDED -> Color(0xFF34D399)
+                ModelDownloadManager.CompatibilityTier.ULTRA_LIGHT -> Color(0xFF00E5FF)
+                ModelDownloadManager.CompatibilityTier.COMPATIBLE -> Color(0xFFA3A3A3)
+                ModelDownloadManager.CompatibilityTier.HEAVY_RAM_WARNING -> Color(0xFFFBBF24)
+            }
+
+            Surface(
+                color = Color(0xFF161925),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(
+                    1.dp,
+                    when {
+                        isActive -> Color(0xFF34D399)
+                        tier == ModelDownloadManager.CompatibilityTier.RECOMMENDED -> Color(0xFF34D399).copy(alpha = 0.45f)
+                        else -> Color(0xFF262A3B)
+                    }
+                ),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            tier.badgeText,
+                            color = tierColor,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            "${spec.quantization} • ~${spec.approxSizeMb} MB • ≥${spec.minRamGb}GB RAM",
+                            color = Color.Gray,
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                spec.displayName,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                spec.hfRepo,
+                                color = Color(0xFF64B5F6),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Surface(
+                            color = if (spec.category == ModelDownloadManager.ModelCategory.EMBEDDING) Color(0xFF9C27B0).copy(alpha = 0.2f) else Color(0xFF00E5FF).copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                if (spec.category == ModelDownloadManager.ModelCategory.EMBEDDING) "768D RAG" else "LLM",
+                                color = if (spec.category == ModelDownloadManager.ModelCategory.EMBEDDING) Color(0xFFCE93D8) else Color(0xFF00E5FF),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        spec.description,
+                        color = Color(0xFFA3A3A3),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+
+                    if (isDownloading && downloadProgress != null) {
+                        Spacer(Modifier.height(8.dp))
+                        val pct = if (downloadProgress.totalBytes > 0) {
+                            (downloadProgress.downloadedBytes.toFloat() / downloadProgress.totalBytes.toFloat()).coerceIn(0f, 1f)
+                        } else 0f
+                        LinearProgressIndicator(
+                            progress = pct,
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFF00E5FF),
+                            backgroundColor = Color(0xFF25283D)
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val dlMb = downloadProgress.downloadedBytes / (1024 * 1024)
+                            val totMb = if (downloadProgress.totalBytes > 0) downloadProgress.totalBytes / (1024 * 1024) else spec.approxSizeMb.toLong()
+                            Text(
+                                "${downloadProgress.progressPercent}% ($dlMb / $totMb MB) • ${"%.1f".format(downloadProgress.speedMbPerSec)} MB/s",
+                                color = Color(0xFF00E5FF),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            TextButton(
+                                onClick = { activity?.cancelHfModelDownload(spec.id) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text("CANCEL", color = Color(0xFFEF5350), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    } else {
+                        if (downloadProgress?.error != null) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "⚠️ ${downloadProgress.error}",
+                                color = Color(0xFFEF5350),
+                                fontSize = 10.sp
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isDownloaded && installedFile != null) {
+                                if (spec.category == ModelDownloadManager.ModelCategory.EMBEDDING) {
+                                    Text(
+                                        "✓ READY FOR ON-DEMAND RAG",
+                                        color = Color(0xFF34D399),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                } else {
+                                    Button(
+                                        onClick = { if (!isActive) activity?.hydrateModel(installedFile) },
+                                        enabled = !isActive,
+                                        colors = ButtonDefaults.buttonColors(
+                                            backgroundColor = if (isActive) Color(0xFF2E7D32) else Color(0xFF00E5FF)
+                                        ),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.heightIn(min = 36.dp)
+                                    ) {
+                                        Text(
+                                            if (isActive) "✓ ACTIVE BRAIN" else "ACTIVATE MODEL",
+                                            color = if (isActive) Color.White else Color.Black,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                            } else {
+                                Button(
+                                    onClick = { activity?.startHfModelDownload(spec) },
+                                    colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D)),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.heightIn(min = 36.dp)
+                                ) {
+                                    Icon(Icons.Default.CloudDownload, null, tint = Color(0xFF00E5FF), modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "DOWNLOAD FROM HF",
+                                        color = Color(0xFF00E5FF),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { showCustomHfInput = !showCustomHfInput },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFA3A3A3)),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Icon(if (showCustomHfInput) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Custom Hugging Face Repo / Token", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        }
+
+        AnimatedVisibility(visible = showCustomHfInput) {
+            Surface(
+                color = Color(0xFF141724),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFF262A3B)),
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Text("HF Access Token (Optional, for gated repos)", color = Color.Gray, fontSize = 11.sp)
+                    Spacer(Modifier.height(4.dp))
+                    TextField(
+                        value = chatViewModel.hfAccessToken,
+                        onValueChange = { activity?.saveHfAccessToken(it) ?: run { chatViewModel.hfAccessToken = it } },
+                        placeholder = { Text("hf_...", fontSize = 11.sp, color = Color.DarkGray) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF1E2233), textColor = Color.White),
+                        textStyle = TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("Custom HF Path (owner/repo/model.litertlm or direct URL)", color = Color.Gray, fontSize = 11.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextField(
+                            value = customRepoUrl,
+                            onValueChange = { customRepoUrl = it },
+                            placeholder = { Text("google/gemma-3-1b-it-litert-lm/model.litertlm", fontSize = 11.sp, color = Color.DarkGray) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color(0xFF1E2233), textColor = Color.White),
+                            textStyle = TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                val spec = ModelDownloadManager.buildCustomHfSpec(customRepoUrl)
+                                if (spec != null) {
+                                    activity?.startHfModelDownload(spec)
+                                    customRepoUrl = ""
+                                } else {
+                                    Toast.makeText(context, "Use format: owner/repo/file.litertlm or https://...", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF00E5FF)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.heightIn(min = 44.dp)
+                        ) {
+                            Text("PULL", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                }
+            }
         }
     }
 }

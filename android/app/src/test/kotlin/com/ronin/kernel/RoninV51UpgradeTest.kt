@@ -202,5 +202,72 @@ class RoninV51UpgradeTest {
         assertTrue(McpClientManager.isLoopbackEndpoint("http://localhost:8765/mcp"))
         assertFalse(McpClientManager.isLoopbackEndpoint("http://192.168.1.50:8765/mcp"))
     }
+
+    @Test
+    fun `test hardware-aware Hugging Face model catalog recommends optimal models per RAM tier`() {
+        val lowRamDevice = ModelDownloadManager.DeviceHardwareProfile(
+            totalRamGb = 4.0f,
+            availRamGb = 1.5f,
+            cpuCores = 8,
+            primaryAbi = "arm64-v8a",
+            socModel = "Helio G99"
+        )
+        val highRamDevice = ModelDownloadManager.DeviceHardwareProfile(
+            totalRamGb = 8.0f,
+            availRamGb = 4.2f,
+            cpuCores = 8,
+            primaryAbi = "arm64-v8a",
+            socModel = "Snapdragon 8 Gen 2"
+        )
+
+        val lowRamCatalog = ModelDownloadManager.getCatalogForDevice(lowRamDevice).toMap()
+        val highRamCatalog = ModelDownloadManager.getCatalogForDevice(highRamDevice).toMap()
+
+        val gemma3_1b = ModelDownloadManager.CURATED_MODELS.first { it.id == "gemma-3-1b-it-int4" }
+        val gemma4_e2b = ModelDownloadManager.CURATED_MODELS.first { it.id == "gemma-4-e2b-it-int4" }
+        val gemma4_e4b = ModelDownloadManager.CURATED_MODELS.first { it.id == "gemma-4-e4b-it-int4" }
+        val embeddingGemma2 = ModelDownloadManager.CURATED_MODELS.first { it.id == "embedding-gemma-2-740m-int4" }
+        val gecko110m = ModelDownloadManager.CURATED_MODELS.first { it.id == "gecko-multilingual-110m-int8" }
+
+        // On 4GB RAM device: Gemma 3 1B and Gecko 110M are RECOMMENDED, Gemma 4 E4B has HEAVY_RAM_WARNING
+        assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, lowRamCatalog[gemma3_1b])
+        assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, lowRamCatalog[gecko110m])
+        assertEquals(ModelDownloadManager.CompatibilityTier.HEAVY_RAM_WARNING, lowRamCatalog[gemma4_e4b])
+
+        // On 8GB RAM device: Gemma 4 E2B, Gemma 4 E4B, and EmbeddingGemma 2 740M are RECOMMENDED
+        assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, highRamCatalog[gemma4_e2b])
+        assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, highRamCatalog[gemma4_e4b])
+        assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, highRamCatalog[embeddingGemma2])
+    }
+
+    @Test
+    fun `test custom Hugging Face repo parser and OCR traineddata validation`() {
+        val specShort = ModelDownloadManager.buildCustomHfSpec("google/gemma-3-1b-it-litert-lm/gemma3-1b-it-int4.litertlm")
+        assertNotNull(specShort)
+        assertEquals("google/gemma-3-1b-it-litert-lm", specShort!!.hfRepo)
+        assertEquals("gemma3-1b-it-int4.litertlm", specShort.fileName)
+        assertEquals(
+            "https://huggingface.co/google/gemma-3-1b-it-litert-lm/resolve/main/gemma3-1b-it-int4.litertlm",
+            specShort.downloadUrl
+        )
+
+        val specEmbed = ModelDownloadManager.buildCustomHfSpec("https://huggingface.co/google/embeddinggemma-2-740m-litert/resolve/main/embeddinggemma-2-740m-int8.litertlm")
+        assertNotNull(specEmbed)
+        assertEquals(ModelDownloadManager.ModelCategory.EMBEDDING, specEmbed!!.category)
+
+        // Test OcrEngine.validateTrainedDataFile
+        val tempValid = java.io.File.createTempFile("mya_test", ".traineddata")
+        tempValid.writeBytes(ByteArray(60 * 1024) { 0x42 })
+        val validRes = OcrEngine.validateTrainedDataFile(tempValid, "mya")
+        assertTrue(validRes.isSuccess)
+        assertEquals("mya", validRes.getOrNull())
+        tempValid.delete()
+
+        val tempTooSmall = java.io.File.createTempFile("bad_test", ".traineddata")
+        tempTooSmall.writeBytes(ByteArray(1024))
+        val invalidRes = OcrEngine.validateTrainedDataFile(tempTooSmall, "mya")
+        assertTrue(invalidRes.isFailure)
+        tempTooSmall.delete()
+    }
 }
 

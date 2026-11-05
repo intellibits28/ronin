@@ -233,6 +233,13 @@ class ChatViewModel : ViewModel() {
     var apiConnectionStatus by mutableStateOf("Standby")
     var apiLatencyMs by mutableStateOf(0L)
     var showModelPickerBottomSheet by mutableStateOf(false)
+
+    // v5.2: Hugging Face Direct Model Hub & OCR Update States
+    val activeDownloads = mutableStateMapOf<String, ModelDownloadManager.DownloadProgress>()
+    var hfAccessToken by mutableStateOf("")
+    var ocrStatusMessage by mutableStateOf("")
+    var isUpdatingOcr by mutableStateOf(false)
+    val installedTessModels = mutableStateListOf<OcrEngine.InstalledTessModel>()
 }
 
 class MainActivity : FragmentActivity() {
@@ -249,12 +256,136 @@ class MainActivity : FragmentActivity() {
         uri?.let { importModelFromUri(it) }
     }
 
+    val tessdataPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { importTessdataFromUri(it) }
+    }
+
     val memoryBackupLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/x-sqlite3")) { uri ->
         uri?.let { exportCognitiveMemoryToUri(it) }
     }
 
     val memoryRestoreLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importCognitiveMemoryFromUri(it) }
+    }
+
+    private fun importTessdataFromUri(uri: Uri) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        lifecycleScope.launch {
+            chatViewModel.isUpdatingOcr = true
+            chatViewModel.ocrStatusMessage = "Importing custom .traineddata..."
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val returnCursor = contentResolver.query(uri, null, null, null, null)
+                    val nameIndex = returnCursor?.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    returnCursor?.moveToFirst()
+                    val fileName = nameIndex?.let { returnCursor.getString(it) } ?: "custom.traineddata"
+                    returnCursor?.close()
+                    val tempFile = File(cacheDir, fileName)
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        java.io.FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+                    }
+                    val langCode = fileName.substringBeforeLast(".traineddata").lowercase()
+                    val res = OcrEngine.importCustomTrainedData(this@MainActivity, tempFile, langCode)
+                    tempFile.delete()
+                    res
+                } catch (e: Exception) {
+                    Result.failure(e)
+                }
+            }
+            chatViewModel.isUpdatingOcr = false
+            result.fold(
+                onSuccess = { installed ->
+                    refreshInstalledTessModels()
+                    val kb = installed.sizeBytes / 1024
+                    chatViewModel.ocrStatusMessage = "✅ Imported ${installed.langCode}.traineddata (${kb} KB)"
+                    Toast.makeText(this@MainActivity, "Imported ${installed.langCode}.traineddata", Toast.LENGTH_SHORT).show()
+                },
+                onFailure = { err ->
+                    chatViewModel.ocrStatusMessage = "❌ Import failed: ${err.message}"
+                    Toast.makeText(this@MainActivity, "Traineddata Import Failed: ${err.message}", Toast.LENGTH_LONG).show()
+                }
+            )
+        }
+    }
+
+    fun refreshInstalledTessModels() {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        val list = OcrEngine.listInstalledModels(this)
+        chatViewModel.installedTessModels.clear()
+        chatViewModel.installedTessModels.addAll(list)
+    }
+
+    fun updateTessdataModels(variant: OcrEngine.TessdataVariant) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        if (chatViewModel.isUpdatingOcr) return
+        lifecycleScope.launch {
+            chatViewModel.isUpdatingOcr = true
+            chatViewModel.ocrStatusMessage = "Updating mya+eng (${variant.label})..."
+            val res = OcrEngine.updateLanguageModels(
+                context = this@MainActivity,
+                languages = listOf("mya", "eng"),
+                variant = variant,
+                onProgress = { msg ->
+                    lifecycleScope.launch(Dispatchers.Main) {
+                        chatViewModel.ocrStatusMessage = msg
+                    }
+                }
+            )
+            chatViewModel.isUpdatingOcr = false
+            res.fold(
+                onSuccess = { models ->
+                    refreshInstalledTessModels()
+                    val summary = models.joinToString(", ") { "${it.langCode} (${it.sizeBytes / 1024} KB)" }
+                    chatViewModel.ocrStatusMessage = "✅ Updated (${variant.label}): $summary"
+                    Toast.makeText(this@MainActivity, "OCR Models Updated (${variant.label})", Toast.LENGTH_SHORT).show()
+                },
+                onFailure = { err ->
+                    chatViewModel.ocrStatusMessage = "❌ Update failed: ${err.message}"
+                    Toast.makeText(this@MainActivity, "OCR Update Failed: ${err.message}", Toast.LENGTH_LONG).show()
+                }
+            )
+        }
+    }
+
+    fun saveHfAccessToken(token: String) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        chatViewModel.hfAccessToken = token.trim()
+        sharedPreferences.edit().putString("hf_access_token", token.trim()).apply()
+    }
+
+    fun startHfModelDownload(spec: ModelDownloadManager.DownloadableModelSpec) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        val current = chatViewModel.activeDownloads[spec.id]
+        if (current != null && !current.isCompleted && current.error == null) return
+
+        lifecycleScope.launch {
+            val result = ModelDownloadManager.downloadModel(
+                context = this@MainActivity,
+                spec = spec,
+                hfToken = chatViewModel.hfAccessToken,
+                onProgress = { prog ->
+                    lifecycleScope.launch(Dispatchers.Main) {
+                        chatViewModel.activeDownloads[spec.id] = prog
+                    }
+                }
+            )
+            result.fold(
+                onSuccess = { file ->
+                    scanLocalModels()
+                    Toast.makeText(this@MainActivity, "Downloaded ${spec.displayName}", Toast.LENGTH_SHORT).show()
+                    if (spec.category == ModelDownloadManager.ModelCategory.REASONING && !chatViewModel.isGemmaReady) {
+                        hydrateModel(file.absolutePath)
+                    }
+                },
+                onFailure = { err ->
+                    Toast.makeText(this@MainActivity, "Download failed: ${err.message}", Toast.LENGTH_LONG).show()
+                }
+            )
+        }
+    }
+
+    fun cancelHfModelDownload(modelId: String) {
+        ModelDownloadManager.cancelDownload(modelId)
     }
 
     private fun importModelFromUri(uri: Uri) {
@@ -413,6 +544,8 @@ class MainActivity : FragmentActivity() {
         chatViewModel.isThinkingEnabled = sharedPreferences.getBoolean("is_thinking_enabled", true)
         chatViewModel.cloudOnlyMode = sharedPreferences.getBoolean("cloud_only_mode", false)
         chatViewModel.privacyShieldEnabled = sharedPreferences.getBoolean("privacy_shield_enabled", true)
+        chatViewModel.hfAccessToken = sharedPreferences.getString("hf_access_token", "") ?: ""
+        refreshInstalledTessModels()
 
         lifecycleScope.launch(Dispatchers.Main) {
             chatViewModel.kernelStatus = "Booting Engine..."
@@ -2419,15 +2552,106 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         if (cmdClean.startsWith("/ocr")) {
                                             val rest = raw.trim().substringAfter(" ", "").trim()
                                             val parts = rest.split(Regex("\\s+"))
-                                            val targetFile = parts.firstOrNull() ?: ""
-                                            val lang = parts.getOrNull(1) ?: "mya+eng"
-                                            if (targetFile.isEmpty()) {
-                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /ocr <image_path or name> [mya|eng|mya+eng]"))
-                                                chatViewModel.isGenerating = false
-                                                return@launch
+                                            val subOrFile = parts.firstOrNull() ?: ""
+                                            when (subOrFile.lowercase()) {
+                                                "status" -> {
+                                                    val models = OcrEngine.listInstalledModels(context)
+                                                    val listStr = if (models.isEmpty()) {
+                                                        "No `.traineddata` models downloaded yet (will auto-fetch on first `/ocr <image>`)."
+                                                    } else {
+                                                        models.joinToString("\n") {
+                                                            val kb = it.sizeBytes / 1024
+                                                            "• **`${it.fileName}`** — $kb KB (`tessdata/${it.fileName}`)"
+                                                        }
+                                                    }
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(
+                                                            System.currentTimeMillis(),
+                                                            "Ronin",
+                                                            "👁️ **Tesseract OCR Engine Status**\n\n**Installed Language Models (`tessdata`)**:\n$listStr\n\n**Commands**:\n• `/ocr <image_path> [mya|eng|mya+eng]` — Run OCR on image\n• `/ocr update [fast|best]` — Update `mya+eng` from official `tessdata_fast` or `tessdata_best`\n• `/ocr import <path_to_traineddata>` — Import custom `.traineddata` model"
+                                                        )
+                                                    )
+                                                    chatViewModel.isGenerating = false
+                                                    return@launch
+                                                }
+                                                "update" -> {
+                                                    val variantArg = parts.getOrNull(1)?.lowercase() ?: "fast"
+                                                    val variant = if (variantArg == "best") OcrEngine.TessdataVariant.BEST else OcrEngine.TessdataVariant.FAST
+                                                    val roninMsg = ChatMessage(
+                                                        System.currentTimeMillis(),
+                                                        "Ronin",
+                                                        "",
+                                                        initialIsThinking = true,
+                                                        initialThoughtContent = "[OCR_UPDATE] Downloading ${variant.label} for mya+eng..."
+                                                    )
+                                                    chatViewModel.messages.add(roninMsg)
+                                                    val res = OcrEngine.updateLanguageModels(
+                                                        context = context,
+                                                        languages = listOf("mya", "eng"),
+                                                        variant = variant
+                                                    ) { statusText ->
+                                                        scope.launch(Dispatchers.Main) {
+                                                            roninMsg.thoughtContent += "\n$statusText"
+                                                        }
+                                                    }
+                                                    roninMsg.isThinking = false
+                                                    res.fold(
+                                                        onSuccess = { updated ->
+                                                            activity?.refreshInstalledTessModels()
+                                                            val details = updated.joinToString("\n") { "• **`${it.fileName}`** — ${it.sizeBytes / 1024} KB" }
+                                                            roninMsg.content = "✅ **OCR Models Updated (`${variant.label}`)**\n\n$details"
+                                                        },
+                                                        onFailure = { err ->
+                                                            roninMsg.content = "❌ **OCR Update Failed**: ${err.message}"
+                                                        }
+                                                    )
+                                                    chatViewModel.isGenerating = false
+                                                    return@launch
+                                                }
+                                                "import" -> {
+                                                    val customPath = parts.getOrNull(1) ?: ""
+                                                    if (customPath.isEmpty()) {
+                                                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: `/ocr import <path_to_file.traineddata>`"))
+                                                        chatViewModel.isGenerating = false
+                                                        return@launch
+                                                    }
+                                                    val resolved = DocumentIntelligence.resolveFile(customPath) { engine.searchFiles(it) } ?: File(customPath)
+                                                    val res = OcrEngine.importCustomTrainedData(context, resolved)
+                                                    res.fold(
+                                                        onSuccess = { installed ->
+                                                            activity?.refreshInstalledTessModels()
+                                                            chatViewModel.messages.add(
+                                                                ChatMessage(
+                                                                    System.currentTimeMillis(),
+                                                                    "Ronin",
+                                                                    "✅ **Custom `.traineddata` Imported**:\n• Language Code: `${installed.langCode}`\n• Size: `${installed.sizeBytes / 1024} KB`\n• File: `tessdata/${installed.fileName}`"
+                                                                )
+                                                            )
+                                                        },
+                                                        onFailure = { err ->
+                                                            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ **Custom `.traineddata` Import Failed**: ${err.message}"))
+                                                        }
+                                                    )
+                                                    chatViewModel.isGenerating = false
+                                                    return@launch
+                                                }
+                                                "" -> {
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(
+                                                            System.currentTimeMillis(),
+                                                            "Ronin",
+                                                            "Usage:\n• `/ocr <image_path or name> [mya|eng|mya+eng]`\n• `/ocr status`\n• `/ocr update [fast|best]`\n• `/ocr import <path_to_traineddata>`"
+                                                        )
+                                                    )
+                                                    chatViewModel.isGenerating = false
+                                                    return@launch
+                                                }
+                                                else -> {
+                                                    val lang = parts.getOrNull(1) ?: "mya+eng"
+                                                    triggerOcrWorkflow(subOrFile, lang, false)
+                                                    return@launch
+                                                }
                                             }
-                                            triggerOcrWorkflow(targetFile, lang, false)
-                                            return@launch
                                         }
 
                                         if (cmdClean.startsWith("/privacy")) {
@@ -2977,7 +3201,57 @@ fun CloudProviderDialog(chatViewModel: ChatViewModel, activity: MainActivity?) {
 
 @Composable
 fun BootstrapWizard(chatViewModel: ChatViewModel, brainPicker: ActivityResultLauncher<Array<String>>) {
-    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(Icons.Default.AutoAwesome, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(80.dp)); Spacer(Modifier.height(24.dp)); Text("Ronin Kernel: Setup", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White); Spacer(Modifier.height(16.dp)); Text("No Reasoning Spine detected.\nPlease import a Gemma 4 (.litertlm) model.", fontSize = 14.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 48.dp)); Spacer(Modifier.height(48.dp)); when (chatViewModel.wizardState) { WizardState.IMPORTING -> Column(horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(color = Color(0xFF64B5F6)); Text("Copying Data...", color = Color.Gray, fontSize = 11.sp) } ; WizardState.VERIFYING -> Column(horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(color = Color.Green); Text("Validating...", color = Color.Gray, fontSize = 11.sp) } ; else -> { Button(onClick = { brainPicker.launch(arrayOf("*/*")) }, colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF64B5F6)), shape = RoundedCornerShape(24.dp)) { Text("IMPORT MODEL", color = Color.Black, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp)) } } } }
+    val context = LocalContext.current
+    val activity = context as? MainActivity
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(Icons.Default.AutoAwesome, null, tint = Color(0xFF00E5FF), modifier = Modifier.size(56.dp))
+        Spacer(Modifier.height(12.dp))
+        Text("RONIN KERNEL // INITIALIZATION", fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Select a local .litertlm model from device storage or download a hardware-matched Gemma / EmbeddingGemma 2 model directly from Hugging Face.",
+            fontSize = 12.sp,
+            color = Color(0xFF8B949E),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(Modifier.height(16.dp))
+        when (chatViewModel.wizardState) {
+            WizardState.IMPORTING -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = Color(0xFF00E5FF))
+                Spacer(Modifier.height(8.dp))
+                Text("Copying Model to Secure Storage...", color = Color.Gray, fontSize = 11.sp)
+            }
+            WizardState.VERIFYING -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = Color.Green)
+                Spacer(Modifier.height(8.dp))
+                Text("Validating LiteRT Signature...", color = Color.Gray, fontSize = 11.sp)
+            }
+            else -> {
+                Button(
+                    onClick = { brainPicker.launch(arrayOf("*/*")) },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF00E5FF)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) {
+                    Icon(Icons.Default.FileOpen, null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("IMPORT LOCAL MODEL (.litertlm / .bin)", color = Color.Black, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                }
+                Spacer(Modifier.height(20.dp))
+                HuggingFaceModelHubSection(
+                    chatViewModel = chatViewModel,
+                    activity = activity,
+                    showCompactHeader = false
+                )
+            }
+        }
+    }
 }
 
 @Composable
