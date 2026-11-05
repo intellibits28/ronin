@@ -17,8 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -26,6 +29,47 @@ import androidx.compose.ui.unit.sp
 import java.io.File
 import kotlinx.coroutines.launch
 import com.ronin.kernel.shm.*
+
+/**
+ * Ronin v5.1 — Hybrid Tactical Brutalist Theme Tokens & Myanmar-Safe Typography.
+ */
+object RoninThemeTokens {
+    val Background = Color(0xFF0A0A0A)
+    val Surface = Color(0xFF141414)
+    val SurfaceLight = Color(0xFF1E1E1E)
+    val Border = Color(0xFF262626)
+    val PrimaryEmerald = Color(0xFF34D399)
+    val PrimaryEmeraldDim = Color(0xFF34D399).copy(alpha = 0.16f)
+    val WarningAmber = Color(0xFFFBBF24)
+    val ErrorCrimson = Color(0xFFEF4444)
+    val TextPrimary = Color(0xFFF5F5F5)
+    val TextSecondary = Color(0xFFA3A3A3)
+    val TextMuted = Color(0xFF737373)
+
+    val RadiusSm = RoundedCornerShape(4.dp)
+    val RadiusMd = RoundedCornerShape(8.dp)
+    val RadiusLg = RoundedCornerShape(12.dp)
+
+    // Myanmar Unicode-safe body style (prevents vowel/diacritic clipping on Android)
+    val MyanmarBodyTextStyle = TextStyle(
+        color = TextPrimary,
+        fontSize = 15.sp,
+        lineHeight = 23.sp,
+        platformStyle = PlatformTextStyle(includeFontPadding = true),
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.None
+        )
+    )
+
+    val WhisperLabelStyle = TextStyle(
+        color = TextMuted,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        letterSpacing = 1.2.sp
+    )
+}
 
 @Composable
 fun SystemStatusCard(chatViewModel: ChatViewModel) {
@@ -35,9 +79,9 @@ fun SystemStatusCard(chatViewModel: ChatViewModel) {
         exit = shrinkVertically() + fadeOut()
     ) {
         Surface(
-            color = Color(0xFF161922),
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, Color(0xFF2D3142)),
+            color = RoninThemeTokens.Surface,
+            shape = RoninThemeTokens.RadiusMd,
+            border = BorderStroke(1.dp, RoninThemeTokens.Border),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
@@ -47,25 +91,34 @@ fun SystemStatusCard(chatViewModel: ChatViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ronin Kernel", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                        Text(
+                            "RONIN KERNEL",
+                            fontWeight = FontWeight.Bold,
+                            color = RoninThemeTokens.TextPrimary,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.sp
+                        )
                         Spacer(Modifier.width(8.dp))
                         val statusColor = when {
-                            chatViewModel.kernelStatus.contains("Ready", true) || chatViewModel.kernelStatus.contains("Active", true) -> Color(0xFF66BB6A)
-                            chatViewModel.kernelStatus.contains("Error", true) -> Color(0xFFEF5350)
-                            else -> Color(0xFFFFCA28)
+                            chatViewModel.kernelStatus.contains("Ready", true) || chatViewModel.kernelStatus.contains("Active", true) -> RoninThemeTokens.PrimaryEmerald
+                            chatViewModel.kernelStatus.contains("Error", true) -> RoninThemeTokens.ErrorCrimson
+                            else -> RoninThemeTokens.WarningAmber
                         }
                         Text(
-                            text = if (chatViewModel.kernelStatus.contains("Ready", true)) "🟢 Ready" else "🟡 ${chatViewModel.kernelStatus}",
+                            text = if (chatViewModel.kernelStatus.contains("Ready", true)) "● READY" else "◐ ${chatViewModel.kernelStatus.uppercase()}",
                             color = statusColor,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                     Text(
-                        text = "v3.0 Production",
-                        color = Color.Gray,
+                        text = "v5.1 SOVEREIGN",
+                        color = RoninThemeTokens.PrimaryEmerald,
                         fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 Spacer(Modifier.height(12.dp))
@@ -73,25 +126,25 @@ fun SystemStatusCard(chatViewModel: ChatViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    val tempColor = if (chatViewModel.systemTemperature > 40f) Color(0xFFEF5350) else Color(0xFF66BB6A)
-                    SystemMetricItem("Thermal", "${chatViewModel.systemTemperature}°C", tempColor)
-                    SystemMetricItem("RAM", "${"%.2f".format(chatViewModel.ramUsedGB)}GB / ${"%.1f".format(chatViewModel.ramTotalGB)}GB", Color.White)
-                    SystemMetricItem("LMK Pressure", "${chatViewModel.lmkPressure}%", if (chatViewModel.lmkPressure > 50) Color(0xFFFFCA28) else Color(0xFF64B5F6))
+                    val tempColor = if (chatViewModel.systemTemperature > 40f) RoninThemeTokens.ErrorCrimson else RoninThemeTokens.PrimaryEmerald
+                    SystemMetricItem("THERMAL", "${chatViewModel.systemTemperature}°C", tempColor)
+                    SystemMetricItem("RAM", "${"%.2f".format(chatViewModel.ramUsedGB)}GB / ${"%.1f".format(chatViewModel.ramTotalGB)}GB", RoninThemeTokens.TextPrimary)
+                    SystemMetricItem("LMK PRESSURE", "${chatViewModel.lmkPressure}%", if (chatViewModel.lmkPressure > 50) RoninThemeTokens.WarningAmber else RoninThemeTokens.PrimaryEmerald)
                 }
                 Spacer(Modifier.height(10.dp))
-                Divider(color = Color.DarkGray.copy(alpha = 0.5f))
+                Divider(color = RoninThemeTokens.Border)
                 Spacer(Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
-                        Text("Cloud Provider", fontSize = 10.sp, color = Color.Gray)
-                        Text("${chatViewModel.primaryCloudProvider} (${chatViewModel.apiConnectionStatus})", fontSize = 12.sp, color = if (chatViewModel.apiConnectionStatus == "Connected") Color(0xFF66BB6A) else Color.Cyan, fontWeight = FontWeight.Medium)
+                        Text("CLOUD FALLBACK", style = RoninThemeTokens.WhisperLabelStyle)
+                        Text("${chatViewModel.primaryCloudProvider} (${chatViewModel.apiConnectionStatus})", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = if (chatViewModel.apiConnectionStatus == "Connected") RoninThemeTokens.PrimaryEmerald else RoninThemeTokens.TextSecondary, fontWeight = FontWeight.Medium)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("Local Brain", fontSize = 10.sp, color = Color.Gray)
-                        Text(if (chatViewModel.isGemmaReady) "Active" else "Standby", fontSize = 12.sp, color = if (chatViewModel.isGemmaReady) Color(0xFF66BB6A) else Color.Gray, fontWeight = FontWeight.Medium)
+                        Text("LOCAL BRAIN", style = RoninThemeTokens.WhisperLabelStyle)
+                        Text(if (chatViewModel.isGemmaReady) "ACTIVE (GEMMA 4)" else "STANDBY", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = if (chatViewModel.isGemmaReady) RoninThemeTokens.PrimaryEmerald else RoninThemeTokens.TextMuted, fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -622,6 +675,183 @@ fun CognitiveTraceCard(traceText: String) {
 }
 
 @Composable
+fun ResearchResultCard(
+    rawReportContent: String
+) {
+    val context = LocalContext.current
+    val lines = remember(rawReportContent) { rawReportContent.lines() }
+    val queryLine = remember(rawReportContent) {
+        lines.firstOrNull { it.startsWith("QUERY:", ignoreCase = true) }?.substringAfter(":")?.trim() ?: "Web Research"
+    }
+    val timeMsLine = remember(rawReportContent) {
+        lines.firstOrNull { it.startsWith("TIME_MS:", ignoreCase = true) }?.substringAfter(":")?.trim() ?: ""
+    }
+    val cachePathLine = remember(rawReportContent) {
+        lines.firstOrNull { it.startsWith("CACHE:", ignoreCase = true) }?.substringAfter(":")?.trim() ?: ""
+    }
+    val sourcePairs = remember(rawReportContent) {
+        lines.filter { it.trim().startsWith("SOURCE_ITEM:") }.mapNotNull { line ->
+            val payload = line.substringAfter("SOURCE_ITEM:").trim()
+            val title = payload.substringBefore("|").trim()
+            val url = payload.substringAfter("|", "").trim()
+            if (url.startsWith("https://", ignoreCase = true)) title.ifBlank { url } to url else null
+        }
+    }
+    val synthesisBody = remember(rawReportContent) {
+        val markerIdx = rawReportContent.indexOf("---SYNTHESIS---")
+        if (markerIdx != -1) {
+            rawReportContent.substring(markerIdx + "---SYNTHESIS---".length).trim()
+        } else {
+            rawReportContent.replace("[RESEARCH_REPORT]", "").trim()
+        }
+    }
+
+    Surface(
+        color = RoninThemeTokens.Surface,
+        shape = RoninThemeTokens.RadiusMd,
+        border = BorderStroke(1.dp, RoninThemeTokens.PrimaryEmerald.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🌐", fontSize = 15.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "SOVEREIGN RESEARCH ENGINE",
+                        style = RoninThemeTokens.WhisperLabelStyle.copy(color = RoninThemeTokens.PrimaryEmerald)
+                    )
+                }
+                if (timeMsLine.isNotEmpty()) {
+                    Text(
+                        text = "${timeMsLine}ms",
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = RoninThemeTokens.TextSecondary
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = queryLine,
+                color = RoninThemeTokens.TextPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            Divider(color = RoninThemeTokens.Border)
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                text = synthesisBody,
+                style = RoninThemeTokens.MyanmarBodyTextStyle
+            )
+
+            if (sourcePairs.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Text("VERIFIED SOURCES (${sourcePairs.size})", style = RoninThemeTokens.WhisperLabelStyle)
+                Spacer(Modifier.height(6.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    sourcePairs.forEachIndexed { idx, (title, url) ->
+                        Surface(
+                            color = RoninThemeTokens.SurfaceLight,
+                            shape = RoninThemeTokens.RadiusSm,
+                            border = BorderStroke(1.dp, RoninThemeTokens.Border),
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                val opened = LocalResearchEngine.openSourceUrlSafely(context, url)
+                                if (!opened) {
+                                    Toast.makeText(context, "Blocked unsafe or invalid URL", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "[${idx + 1}] $title",
+                                        color = RoninThemeTokens.PrimaryEmerald,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = url,
+                                        color = RoninThemeTokens.TextSecondary,
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                               Spacer(Modifier.width(8.dp))
+                                Icon(
+                                    Icons.Default.OpenInNew,
+                                    contentDescription = "Open Source",
+                                    tint = RoninThemeTokens.PrimaryEmerald,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    color = RoninThemeTokens.PrimaryEmeraldDim,
+                    shape = RoninThemeTokens.RadiusSm,
+                    border = BorderStroke(1.dp, RoninThemeTokens.PrimaryEmerald.copy(alpha = 0.4f)),
+                    modifier = Modifier.clickable {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Research Synthesis", synthesisBody)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Research report copied", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = RoninThemeTokens.PrimaryEmerald, modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("COPY REPORT", color = RoninThemeTokens.PrimaryEmerald, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (cachePathLine.isNotEmpty() && File(cachePathLine).exists()) {
+                    Surface(
+                        color = RoninThemeTokens.SurfaceLight,
+                        shape = RoninThemeTokens.RadiusSm,
+                        border = BorderStroke(1.dp, RoninThemeTokens.Border),
+                        modifier = Modifier.clickable {
+                            FileSearchNodeHooks.performFileAction(context, cachePathLine, "view")
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Description, contentDescription = "Cache", tint = RoninThemeTokens.TextSecondary, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("OPEN CACHED MD", color = RoninThemeTokens.TextSecondary, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun AgentResponseCard(
     msg: ChatMessage,
     chatViewModel: ChatViewModel,
@@ -639,17 +869,17 @@ fun AgentResponseCard(
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
     ) {
         if (!isUser) {
-            Text("Ronin", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp, bottom = 3.dp))
+            Text(
+                "RONIN",
+                style = RoninThemeTokens.WhisperLabelStyle,
+                modifier = Modifier.padding(start = 4.dp, bottom = 3.dp)
+            )
         }
         Surface(
-            color = if (isUser) Color(0xFF2D3142) else Color(0xFF1E2130),
-            shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (isUser) 16.dp else 4.dp,
-                bottomEnd = if (isUser) 4.dp else 16.dp
-            ),
-            elevation = 3.dp
+            color = if (isUser) RoninThemeTokens.SurfaceLight else RoninThemeTokens.Surface,
+            shape = RoninThemeTokens.RadiusMd,
+            border = BorderStroke(1.dp, if (isUser) RoninThemeTokens.PrimaryEmerald.copy(alpha = 0.35f) else RoninThemeTokens.Border),
+            elevation = 2.dp
         ) {
             SelectionContainer {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -671,134 +901,134 @@ fun AgentResponseCard(
                             modifier = Modifier.fillMaxWidth().clickable { isThoughtExpanded = !isThoughtExpanded }.padding(bottom = if (isThoughtExpanded || msg.content.isNotEmpty()) 8.dp else 0.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(if (isThoughtExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                            Icon(if (isThoughtExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = RoninThemeTokens.TextSecondary, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text(if (msg.isThinking) "Reasoning..." else "Thought Process", color = Color.Gray, fontSize = 11.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                            Text(if (msg.isThinking) "REASONING..." else "THOUGHT TRACE", style = RoninThemeTokens.WhisperLabelStyle)
                             if (msg.isThinking) {
                                 Spacer(Modifier.width(8.dp))
-                                CircularProgressIndicator(modifier = Modifier.size(10.dp), strokeWidth = 1.dp, color = Color.Gray)
+                                CircularProgressIndicator(modifier = Modifier.size(10.dp), strokeWidth = 1.5.dp, color = RoninThemeTokens.PrimaryEmerald)
                             }
                         }
                         AnimatedVisibility(visible = isThoughtExpanded || msg.isThinking) {
-                            Text(msg.thoughtContent, color = Color.Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = if (msg.content.isNotEmpty()) 8.dp else 0.dp, start = 8.dp))
+                            Text(msg.thoughtContent, color = RoninThemeTokens.PrimaryEmerald, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = if (msg.content.isNotEmpty()) 8.dp else 0.dp, start = 8.dp))
                         }
                     }
 
                     if (!isUser && msg.content.isEmpty() && !msg.isThinking && msg.thoughtContent.isEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.Cyan)
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = RoninThemeTokens.PrimaryEmerald)
                             Spacer(Modifier.width(8.dp))
-                            Text("Ronin is preparing response...", color = Color.Cyan, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                            Text("Ronin is preparing response...", color = RoninThemeTokens.PrimaryEmerald, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                         }
                     }
 
                     if (msg.content.isNotEmpty()) {
-                        // Check if content is an actual SHM engineering analysis report
-                        val isShmStructured = !isUser && (
-                            msg.content.contains("Ronin SHM Vibration Analysis Report", ignoreCase = true) ||
-                            msg.content.contains("SHM Structural Session Data", ignoreCase = true) ||
-                            msg.content.contains("Structural Health Monitoring", ignoreCase = true) ||
-                            msg.content.contains("CRITICAL STRUCTURAL SHIFT DETECTED", ignoreCase = true) ||
-                            msg.content.contains("Vibration/SHM Warning Detected", ignoreCase = true) ||
-                            msg.content.contains("Structural Health Normal", ignoreCase = true) ||
-                            (msg.content.contains("Resonance", ignoreCase = true) && msg.content.contains("Health", ignoreCase = true))
-                        )
-                        if (isShmStructured) {
-                            val status = when {
-                                msg.content.contains("CRITICAL", ignoreCase = true) -> "CRITICAL"
-                                msg.content.contains("WARNING", ignoreCase = true) || msg.content.contains("DEGRADED", ignoreCase = true) -> "WARNING"
-                                msg.content.contains("HEALTHY", ignoreCase = true) || msg.content.contains("Normal", ignoreCase = true) -> "HEALTHY"
-                                else -> "NORMAL"
-                            }
-                            ShmResultCard(
-                                status = status,
-                                healthIndex = chatViewModel.sensorHealthIndex,
-                                resonanceHz = if (chatViewModel.sensorFreqHz > 0) "${"%.2f".format(chatViewModel.sensorFreqHz)} Hz" else "0.00 Hz",
-                                noiseDb = if (chatViewModel.sensorNoiseFloorDb != 0f) "${"%.1f".format(chatViewModel.sensorNoiseFloorDb)} dB" else "${"%.1f".format(chatViewModel.sensorPsdDb)} dB",
-                                confidence = chatViewModel.sensorConfidence,
-                                activity = context as? MainActivity,
-                                chatViewModel = chatViewModel
-                            )
-                            Spacer(Modifier.height(8.dp))
-                        }
-
-                        // Check for File Search Results & File Path Mentions
-                        val foundFiles = remember(msg.content, msg.fileResults.toList()) {
-                            if (msg.fileResults.isNotEmpty()) {
-                                msg.fileResults.toList()
-                            } else if (!isUser) {
-                                // 1. Direct line matching
-                                val lineMatches = msg.content.lines()
-                                    .map { it.trim().removePrefix("- ").trim() }
-                                    .filter { it.startsWith("/") && File(it).exists() && File(it).isFile }
-                                
-                                if (lineMatches.isNotEmpty()) {
-                                    lineMatches.distinct()
-                                } else {
-                                    // 2. Regex matching for storage paths anywhere in text
-                                    val pathRegex = Regex("""/(?:storage|sdcard|data)/[^\s\n"'\)\],`]+""")
-                                    pathRegex.findAll(msg.content)
-                                        .map { it.value.trim() }
-                                        .filter { File(it).exists() && File(it).isFile }
-                                        .distinct()
-                                        .toList()
-                                }
-                            } else {
-                                emptyList()
-                            }
-                        }
-
-                        val isPureFileList = remember(msg.content) {
-                            msg.content.startsWith("📁 Found") || msg.content.startsWith("[FILES FOUND]") || msg.content.startsWith("Found ")
-                        }
-
-                        if (isPureFileList && foundFiles.isNotEmpty() && !isUser) {
-                            val headerText = msg.content.substringBefore("\n/").substringBefore("\n- /").trim()
-                            Text(
-                                text = if (headerText.isNotEmpty()) headerText else "📁 Found ${foundFiles.size} file(s):",
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(bottom = 6.dp)
-                            )
-                            foundFiles.forEach { filePath ->
-                                FileResultCard(
-                                    filePath = filePath,
-                                    onSummarize = onSummarizeFile,
-                                    onOcr = onOcrFile
-                                )
-                            }
+                        val isResearchReport = !isUser && msg.content.startsWith("[RESEARCH_REPORT]")
+                        if (isResearchReport) {
+                            ResearchResultCard(rawReportContent = msg.content)
                         } else {
-                            Row(verticalAlignment = Alignment.Top) {
-                                Text(
-                                    text = msg.content,
-                                    color = Color.White,
-                                    fontSize = 15.sp,
-                                    lineHeight = 22.sp,
-                                    modifier = Modifier.weight(1f)
+                            // Check if content is an actual SHM engineering analysis report
+                            val isShmStructured = !isUser && (
+                                msg.content.contains("Ronin SHM Vibration Analysis Report", ignoreCase = true) ||
+                                msg.content.contains("SHM Structural Session Data", ignoreCase = true) ||
+                                msg.content.contains("Structural Health Monitoring", ignoreCase = true) ||
+                                msg.content.contains("CRITICAL STRUCTURAL SHIFT DETECTED", ignoreCase = true) ||
+                                msg.content.contains("Vibration/SHM Warning Detected", ignoreCase = true) ||
+                                msg.content.contains("Structural Health Normal", ignoreCase = true) ||
+                                (msg.content.contains("Resonance", ignoreCase = true) && msg.content.contains("Health", ignoreCase = true))
+                            )
+                            if (isShmStructured) {
+                                val status = when {
+                                    msg.content.contains("CRITICAL", ignoreCase = true) -> "CRITICAL"
+                                    msg.content.contains("WARNING", ignoreCase = true) || msg.content.contains("DEGRADED", ignoreCase = true) -> "WARNING"
+                                    msg.content.contains("HEALTHY", ignoreCase = true) || msg.content.contains("Normal", ignoreCase = true) -> "HEALTHY"
+                                    else -> "NORMAL"
+                                }
+                                ShmResultCard(
+                                    status = status,
+                                    healthIndex = chatViewModel.sensorHealthIndex,
+                                    resonanceHz = if (chatViewModel.sensorFreqHz > 0) "${"%.2f".format(chatViewModel.sensorFreqHz)} Hz" else "0.00 Hz",
+                                    noiseDb = if (chatViewModel.sensorNoiseFloorDb != 0f) "${"%.1f".format(chatViewModel.sensorNoiseFloorDb)} dB" else "${"%.1f".format(chatViewModel.sensorPsdDb)} dB",
+                                    confidence = chatViewModel.sensorConfidence,
+                                    activity = context as? MainActivity,
+                                    chatViewModel = chatViewModel
                                 )
-                                IconButton(
-                                    onClick = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                        val clip = android.content.ClipData.newPlainText("Ronin Message", msg.content)
-                                        clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.size(24.dp).padding(start = 4.dp, top = 2.dp)
-                                ) {
-                                    Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.height(8.dp))
+                            }
+
+                            // Check for File Search Results & File Path Mentions
+                            val foundFiles = remember(msg.content, msg.fileResults.toList()) {
+                                if (msg.fileResults.isNotEmpty()) {
+                                    msg.fileResults.toList()
+                                } else if (!isUser) {
+                                    val lineMatches = msg.content.lines()
+                                        .map { it.trim().removePrefix("- ").trim() }
+                                        .filter { it.startsWith("/") && File(it).exists() && File(it).isFile }
+                                    
+                                    if (lineMatches.isNotEmpty()) {
+                                        lineMatches.distinct()
+                                    } else {
+                                        val pathRegex = Regex("""/(?:storage|sdcard|data)/[^\s\n"'\)\],`]+""")
+                                        pathRegex.findAll(msg.content)
+                                            .map { it.value.trim() }
+                                            .filter { File(it).exists() && File(it).isFile }
+                                            .distinct()
+                                            .toList()
+                                    }
+                                } else {
+                                    emptyList()
                                 }
                             }
 
-                            // If text also mentions existing files, display cards below the text
-                            if (foundFiles.isNotEmpty() && !isUser) {
-                                Spacer(Modifier.height(8.dp))
+                            val isPureFileList = remember(msg.content) {
+                                msg.content.startsWith("📁 Found") || msg.content.startsWith("[FILES FOUND]") || msg.content.startsWith("Found ")
+                            }
+
+                            if (isPureFileList && foundFiles.isNotEmpty() && !isUser) {
+                                val headerText = msg.content.substringBefore("\n/").substringBefore("\n- /").trim()
+                                Text(
+                                    text = if (headerText.isNotEmpty()) headerText else "📁 Found ${foundFiles.size} file(s):",
+                                    color = RoninThemeTokens.TextPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(bottom = 6.dp)
+                                )
                                 foundFiles.forEach { filePath ->
                                     FileResultCard(
                                         filePath = filePath,
                                         onSummarize = onSummarizeFile,
                                         onOcr = onOcrFile
                                     )
+                                }
+                            } else {
+                                Row(verticalAlignment = Alignment.Top) {
+                                    Text(
+                                        text = msg.content,
+                                        style = RoninThemeTokens.MyanmarBodyTextStyle,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("Ronin Message", msg.content)
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.size(24.dp).padding(start = 4.dp, top = 2.dp)
+                                    ) {
+                                        Icon(Icons.Default.ContentCopy, "Copy", tint = RoninThemeTokens.TextSecondary, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+
+                                if (foundFiles.isNotEmpty() && !isUser) {
+                                    Spacer(Modifier.height(8.dp))
+                                    foundFiles.forEach { filePath ->
+                                        FileResultCard(
+                                            filePath = filePath,
+                                            onSummarize = onSummarizeFile,
+                                            onOcr = onOcrFile
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -807,7 +1037,7 @@ fun AgentResponseCard(
                     if (msg.isTruncated && !isUser) {
                         Spacer(Modifier.height(8.dp))
                         OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
-                            Text("Continue Generation", color = Color(0xFF64B5F6), fontSize = 12.sp)
+                            Text("Continue Generation", color = RoninThemeTokens.PrimaryEmerald, fontSize = 12.sp)
                         }
                     }
 
@@ -815,19 +1045,19 @@ fun AgentResponseCard(
                     if (!isUser && msg.content.isNotEmpty() && !msg.isThinking && !msg.feedbackGiven) {
                         Spacer(Modifier.height(12.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Helpful?", color = Color.Gray, fontSize = 11.sp)
+                            Text("HELPFUL?", style = RoninThemeTokens.WhisperLabelStyle)
                             Spacer(Modifier.width(8.dp))
                             IconButton(onClick = { msg.feedbackGiven = true; onFeedback(true) }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.ThumbUp, null, tint = Color.Gray.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.ThumbUp, null, tint = RoninThemeTokens.TextSecondary, modifier = Modifier.size(15.dp))
                             }
                             Spacer(Modifier.width(4.dp))
                             IconButton(onClick = { msg.feedbackGiven = true; onFeedback(false) }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.ThumbDown, null, tint = Color.Gray.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.ThumbDown, null, tint = RoninThemeTokens.TextSecondary, modifier = Modifier.size(15.dp))
                             }
                         }
                     } else if (!isUser && msg.feedbackGiven) {
                         Spacer(Modifier.height(8.dp))
-                        Text("Thanks for your feedback!", color = Color(0xFF64B5F6), fontSize = 10.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                        Text("FEEDBACK RECORDED", style = RoninThemeTokens.WhisperLabelStyle.copy(color = RoninThemeTokens.PrimaryEmerald))
                     }
                 }
             }
@@ -842,9 +1072,11 @@ data class RoninSlashCommand(
 
 val ALL_RONIN_COMMANDS = listOf(
     RoninSlashCommand("/help", "Show all capabilities & commands"),
+    RoninSlashCommand("/research", "Sovereign Local Web Research: /research <query>"),
+    RoninSlashCommand("/mcp", "Authenticated Termux MCP Bridge: /mcp [status|tools|call|token]"),
     RoninSlashCommand("/files", "Search files across storage: /files <name>"),
-    RoninSlashCommand("/summarize", "Summarize file or document: /summarize <path/name>"),
-    RoninSlashCommand("/docsearch", "Search inside document: /docsearch <path> <term>"),
+    RoninSlashCommand("/summarize", "Summarize file or document (RAG): /summarize <path/name>"),
+    RoninSlashCommand("/docsearch", "Hybrid RRF semantic+lexical search: /docsearch <path> <term>"),
     RoninSlashCommand("/read", "Preview document contents: /read <path> [lines]"),
     RoninSlashCommand("/ocr", "Extract text from image/PDF: /ocr <path> [mya|eng]"),
     RoninSlashCommand("/privacy", "Privacy Shield & PII Redaction: /privacy [on|off|test]"),

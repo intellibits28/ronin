@@ -384,9 +384,9 @@ object DocumentIntelligence {
      * Builds an effective summarization prompt for Gemma 4 / Ronin LLM.
      */
     fun buildSummaryPrompt(fileName: String, content: String, langMyanmar: Boolean = true): String {
-        // Cap content to MAX_SUMMARY_CHARS
+        // Use centrality-based RAG chunk selection for long documents (> MAX_SUMMARY_CHARS)
         val safeContent = if (content.length > MAX_SUMMARY_CHARS) {
-            content.take(MAX_SUMMARY_CHARS) + "\n\n[... Remaining content truncated for token limits ...]"
+            selectHighCentralityChunks(content, targetChars = MAX_SUMMARY_CHARS)
         } else {
             content
         }
@@ -416,5 +416,162 @@ object DocumentIntelligence {
             $safeContent
             """.trimIndent()
         }
+    }
+
+    /**
+     * Phase 2.3: RAG Centrality-Based Chunk Selector for Long Documents.
+     * Instead of blindly truncating at 8,000 characters, embeds all chunks into 768D space,
+     * computes document centroid vector, and selects the top most representative chunks
+     * preserving chronological order across the beginning, middle, and conclusion.
+     */
+    fun selectHighCentralityChunks(
+        fullText: String,
+        targetChars: Int = MAX_SUMMARY_CHARS,
+        customEmbeddings: List<FloatArray>? = null
+    ): String {
+        if (fullText.length <= targetChars) return fullText
+        val chunks = chunkText(fullText, chunkSize = 1600, overlap = 120)
+        if (chunks.size <= 3) return fullText.take(targetChars)
+
+        val dim = InferenceService.EMBEDDING_DIM
+        val embeddings = if (customEmbeddings != null && customEmbeddings.size == chunks.size) {
+            customEmbeddings
+        } else {
+            chunks.map { InferenceService.computeDeterministic768Embedding(it) }
+        }
+
+        // Compute normalized document centroid
+        val centroid = FloatArray(dim)
+        for (vec in embeddings) {
+            for (d in 0 until dim.coerceAtMost(vec.size)) {
+                centroid[d] += vec[d]
+            }
+        }
+        var normSq = 0.0
+        for (v in centroid) normSq += v.toDouble() * v.toDouble()
+        if (normSq > 1e-12) {
+            val inv = (1.0 / kotlin.math.sqrt(normSq)).toFloat()
+            for (i in centroid.indices) centroid[i] *= inv
+        }
+
+        // Score each chunk by cosine similarity to the document centroid
+        val scoredIndices = chunks.indices.map { idx ->
+            val vec = embeddings[idx]
+            var dot = 0.0f
+            for (d in 0 until dim.coerceAtMost(vec.size)) {
+                dot += vec[d] * centroid[d]
+            }
+            // Slight positional bonus for intro (chunk 0) and conclusion (last chunk)
+            val bonus = when (idx) {
+                0 -> 0.15f
+                chunks.lastIndex -> 0.10f
+                else -> 0.0f
+            }
+            idx to (dot + bonus)
+        }.sortedByDescending { it.second }
+
+        val selectedIndices = mutableListOf<Int>()
+        var accumulatedChars = 0
+        for ((idx, _) in scoredIndices) {
+            val len = chunks[idx].length
+            if (accumulatedChars + len <= targetChars || selectedIndices.isEmpty()) {
+                selectedIndices.add(idx)
+                accumulatedChars += len + 32
+            }
+        }
+
+        selectedIndices.sort()
+        return selectedIndices.joinToString("\n\n---\n\n") { idx ->
+            "[Section ${idx + 1}/${chunks.size}]\n${chunks[idx]}"
+        }
+    }
+
+    /**
+     * Phase 2.3: Hybrid Document Search (Exact Line Match + Scoped 768D Vector RRF).
+     */
+    suspend fun hybridSearchInDocument(
+        file: File,
+        query: String,
+        nativeEngine: NativeEngine? = null,
+        maxResults: Int = 6
+    ): SearchResult {
+        val readResult = readDocument(file)
+        if (!readResult.success) {
+            return SearchResult(file.absolutePath, query, 0, emptyList(), readResult.error)
+        }
+
+        // 1. Run fast lexical line search
+        val lexicalResult = searchInDocument(file, query, maxResults = maxResults)
+        val combinedMatches = mutableListOf<SearchMatch>()
+        combinedMatches.addAll(lexicalResult.matches)
+
+        // 2. Run semantic chunk indexing & hybrid RRF search
+        val chunks = chunkText(readResult.content, chunkSize = 1200, overlap = 100)
+        if (chunks.isNotEmpty()) {
+            val allTexts = ArrayList<String>(chunks.size + 1)
+            allTexts.add(query)
+            allTexts.addAll(chunks)
+
+            val vectors = if (nativeEngine != null) {
+                nativeEngine.generateEmbeddingsSubBatched(allTexts)
+            } else {
+                allTexts.map { InferenceService.computeDeterministic768Embedding(it) }
+            }
+
+            if (vectors.size == allTexts.size) {
+                val queryVec = vectors[0]
+                val chunkVecs = vectors.subList(1, vectors.size)
+
+                if (nativeEngine != null && nativeEngine.isNativeLibraryLoaded()) {
+                    for (i in chunks.indices) {
+                        nativeEngine.storeDocumentEmbeddingSafe(file.absolutePath, i, chunks[i], chunkVecs[i])
+                    }
+                    val hybridJsonList = nativeEngine.hybridSearchSafe(query, queryVec, file.absolutePath, topK = 4)
+                    for (j in hybridJsonList) {
+                        val cIdx = j.optInt("chunk_index", 0)
+                        val cText = j.optString("chunk_text", "").trim()
+                        val score = j.optDouble("rrf_score", 0.0)
+                        if (cText.isNotEmpty() && combinedMatches.none { cText.contains(it.lineContent) }) {
+                            combinedMatches.add(
+                                SearchMatch(
+                                    lineNumber = cIdx + 1,
+                                    lineContent = "[RAG Chunk #${cIdx + 1} • RRF ${"%.3f".format(score)}]",
+                                    snippet = cText.take(360)
+                                )
+                            )
+                        }
+                    }
+                } else {
+                    // Pure Kotlin fallback RRF when running in JVM host unit tests without JNI loaded
+                    val scored = chunks.indices.map { i ->
+                        var dot = 0.0f
+                        val cv = chunkVecs[i]
+                        for (d in queryVec.indices) dot += queryVec[d] * cv[d]
+                        i to dot
+                    }.sortedByDescending { it.second }.take(3)
+
+                    for ((cIdx, sim) in scored) {
+                        val cText = chunks[cIdx]
+                        if (combinedMatches.none { cText.contains(it.lineContent) }) {
+                            combinedMatches.add(
+                                SearchMatch(
+                                    lineNumber = cIdx + 1,
+                                    lineContent = "[RAG Chunk #${cIdx + 1} • Cosine ${"%.2f".format(sim)}]",
+                                    snippet = cText.take(360)
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        val finalMatches = combinedMatches.take(maxResults)
+        return SearchResult(
+            filePath = file.absolutePath,
+            query = query,
+            totalMatches = finalMatches.size,
+            matches = finalMatches
+        )
     }
 }

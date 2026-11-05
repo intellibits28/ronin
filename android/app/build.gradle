@@ -210,8 +210,7 @@ public interface IInferenceCallback extends android.os.IInterface {
 """
                 }
                 def serviceStubFile = new File(dir, "IInferenceService.java")
-                if (!serviceStubFile.exists()) {
-                    serviceStubFile.text = """package com.ronin.kernel;
+                serviceStubFile.text = """package com.ronin.kernel;
 public interface IInferenceService extends android.os.IInterface {
     public static abstract class Stub extends android.os.Binder implements com.ronin.kernel.IInferenceService {
         private static final java.lang.String DESCRIPTOR = "com.ronin.kernel.IInferenceService";
@@ -322,6 +321,15 @@ public interface IInferenceService extends android.os.IInterface {
                     java.lang.String _result = this.summarizeAndReset();
                     reply.writeNoException();
                     reply.writeString(_result);
+                    return true;
+                }
+                case TRANSACTION_generateEmbeddingsBatch: {
+                    data.enforceInterface(DESCRIPTOR);
+                    java.util.List<java.lang.String> _arg0 = data.createStringArrayList();
+                    java.lang.String _arg1 = data.readString();
+                    float[] _result = this.generateEmbeddingsBatch(_arg0, _arg1);
+                    reply.writeNoException();
+                    reply.writeFloatArray(_result);
                     return true;
                 }
                 default: {
@@ -508,6 +516,23 @@ public interface IInferenceService extends android.os.IInterface {
                 }
                 return _result;
             }
+            @Override public float[] generateEmbeddingsBatch(java.util.List<java.lang.String> texts, java.lang.String embeddingModelPath) throws android.os.RemoteException {
+                android.os.Parcel _data = android.os.Parcel.obtain();
+                android.os.Parcel _reply = android.os.Parcel.obtain();
+                float[] _result;
+                try {
+                    _data.writeInterfaceToken(DESCRIPTOR);
+                    _data.writeStringList(texts);
+                    _data.writeString(embeddingModelPath);
+                    mRemote.transact(Stub.TRANSACTION_generateEmbeddingsBatch, _data, _reply, 0);
+                    _reply.readException();
+                    _result = _reply.createFloatArray();
+                } finally {
+                    _reply.recycle();
+                    _data.recycle();
+                }
+                return _result;
+            }
         }
         static final int TRANSACTION_loadModel = (android.os.IBinder.FIRST_CALL_TRANSACTION + 0);
         static final int TRANSACTION_runReasoning = (android.os.IBinder.FIRST_CALL_TRANSACTION + 1);
@@ -521,6 +546,7 @@ public interface IInferenceService extends android.os.IInterface {
         static final int TRANSACTION_updateGenerationConfig = (android.os.IBinder.FIRST_CALL_TRANSACTION + 9);
         static final int TRANSACTION_isLowPerformanceMode = (android.os.IBinder.FIRST_CALL_TRANSACTION + 10);
         static final int TRANSACTION_summarizeAndReset = (android.os.IBinder.FIRST_CALL_TRANSACTION + 11);
+        static final int TRANSACTION_generateEmbeddingsBatch = (android.os.IBinder.FIRST_CALL_TRANSACTION + 12);
     }
     public java.lang.String loadModel(java.lang.String modelPath) throws android.os.RemoteException;
     public java.lang.String runReasoning(java.lang.String input) throws android.os.RemoteException;
@@ -534,9 +560,9 @@ public interface IInferenceService extends android.os.IInterface {
     public void updateGenerationConfig(float temperature, int topK, float topP, int maxTokens) throws android.os.RemoteException;
     public boolean isLowPerformanceMode() throws android.os.RemoteException;
     public java.lang.String summarizeAndReset() throws android.os.RemoteException;
+    public float[] generateEmbeddingsBatch(java.util.List<java.lang.String> texts, java.lang.String embeddingModelPath) throws android.os.RemoteException;
 }
 """
-                }
             }
         }
     }

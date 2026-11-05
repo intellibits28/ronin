@@ -96,6 +96,24 @@ public:
     bool indexFile(const std::string& name, const std::string& path, const std::string& ext, uint64_t modified);
     std::vector<std::string> searchFiles(const std::string& query);
 
+    // Phase 2: Vector Store & Hybrid RRF Search (v5.1)
+    struct HybridSearchMatch {
+        std::string doc_path;
+        int chunk_index = 0;
+        std::string chunk_text;
+        float rrf_score = 0.0f;
+        float cosine_score = 0.0f;
+        int lexical_hits = 0;
+    };
+
+    static void l2Normalize(std::vector<float>& vec);
+    static float alignedDotProduct(const float* a, const float* b, size_t dim);
+    static float cosineSimilarity(const float* a, const float* b, size_t dim);
+
+    bool storeDocumentEmbedding(const std::string& doc_path, int chunk_index, const std::string& chunk_text, const std::vector<float>& embedding);
+    std::vector<HybridSearchMatch> searchEmbeddings(const std::vector<float>& query_embedding, const std::string& doc_path_filter = "", int top_k = 5);
+    std::vector<HybridSearchMatch> hybridSearch(const std::string& query_text, const std::vector<float>& query_embedding, const std::string& doc_path_filter = "", int top_k = 5);
+
     // Lifecycle Management
     void applyDecay(uint64_t current_timestamp);
     int runMaintenance(bool is_charging);

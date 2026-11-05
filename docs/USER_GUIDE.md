@@ -339,3 +339,27 @@ Chat Box ထဲတွင် အောက်ပါ command များကို 
 * **Capability Policy Enforcement**: Tool များကို ခေါ်ယူအသုံးပြုရာတွင် Policy Manifest ဖြင့် စစ်ဆေးပြီး ခွင့်ပြုထားသော လုပ်ဆောင်ချက်များကိုသာ ဆောင်ရွက်ပေးပါသည်။
 * **Guaranteed Task Cancellation**: Timeout ဖြစ်သွားသော သို့မဟုတ် User ကိုယ်တိုင် Cancel လုပ်လိုက်သော လုပ်ဆောင်ချက်များကို နောက်ကွယ်မှ အသေအချာ ရပ်တန့်ပေးပြီး Memory မလိုလားအပ်ဘဲ ကျန်နေခြင်းမှ ကာကွယ်ပေးထားပါသည်။
 * **Improved Learning Model**: Agent ၏ သင်ယူမှုစနစ် (Reinforcement Learning) တွင် risk-weighted counters များကို ပိုမိုတိကျစွာ တွက်ချက်ပေးနိုင်ရန် ပြင်ဆင်ထားပါသည်။
+
+---
+
+## ၁၆။ Ronin v5.1 Sovereign Tactical Upgrade လုပ်ဆောင်ချက်သစ်များ
+
+### ၁၆.၁ Hybrid Tactical Brutalist UI & Myanmar-Safe Typography
+* **Pure Black Terminal Theme (`#0A0A0A`)**: AMOLED ဘက်ထရီသက်သာစေပြီး မျက်စိအေးစေသော `#0A0A0A` နောက်ခံ၊ `#141414` Surface Cards (`8.dp` radius) နှင့် `#34D399` Emerald Accent စနစ်။
+* **Myanmar Unicode Clipping Fix**: မြန်မာစာ အပေါ်တင်/အောက်မြစ်များ မပြတ်ထွက်စေရန် `PlatformTextStyle(includeFontPadding = true)` နှင့် `LineHeightStyle(Alignment.Center, Trim.None)` (`23.sp` line-height) ကို တစ်ပြေးညီ သတ်မှတ်ထားပါသည်။
+
+### ၁၆.၂ On-Demand `EmbeddingGemma 2` (768D) & Hybrid RRF Search
+* **Batch-First Model Swapper**: ဖုန်း RAM မပြည့်စေရန် Gemma 4 E2B နှင့် EmbeddingGemma 2 (768D) တို့ကို လိုအပ်သည့်အချိန်မှသာ အလှည့်ကျ (Sub-batched `<= 16` chunks per Binder IPC call) ခေါ်ယူအသုံးပြုပါသည်။
+* **Hybrid RRF (`/docsearch <path> <query>`)**: SQLite FTS5 စကားလုံးတိုက်ဆိုင်မှု (Lexical) နှင့် 768D Cosine Similarity (Semantic) တို့ကို **Reciprocal Rank Fusion (RRF, $k=60$)** ဖြင့် ပေါင်းစပ်ရှာဖွေပေးပါသည်။
+
+### ၁၆.၃ Sovereign Local Research Engine (`/research <query>`)
+* ပြင်ပ Paid LLM API များ လုံးဝမလိုအပ်ဘဲ DuckDuckGo Lite (`POST` form-urlencoded) မှ အချက်အလက်များကို ရှာဖွေကာ ဖုန်းတွင်းရှိ Gemma 4 E2B ဖြင့် တိုက်ရိုက် အနှစ်ချုပ် (`ResearchResultCard`) ထုတ်ပေးပြီး Offline Markdown ဖိုင်အဖြစ် သိမ်းဆည်းပေးပါသည်။
+
+### ၁၆.၄ Authenticated Termux MCP Bridge (`/mcp`)
+* Termux ထဲရှိ MCP Server (`http://127.0.0.1:8765/mcp`) နှင့် ချိတ်ဆက်ရာတွင် **256-bit Shared Bearer Token**၊ **`X-Ronin-Timestamp` (`±30s` Replay Window)**၊ **`X-Ronin-Signature` (HMAC-SHA256)** နှင့် **Human-In-The-Loop (HITL) Confirmation Dialog** တို့ဖြင့် အဆင့်ဆင့် ကာကွယ်ထားပါသည်။
+* အသုံးပြုနိုင်သော Command များ:
+  - `/mcp status` — Termux MCP Server ချိတ်ဆက်မှု စစ်ဆေးခြင်း
+  - `/mcp token` — Termux တွင် သတ်မှတ်ရမည့် `RONIN_MCP_SECRET` ကြည့်ရှုခြင်း
+  - `/mcp rotate` — Secret အသစ် ပြောင်းလဲခြင်း
+  - `/mcp tools` — အသုံးပြုနိုင်သော MCP Tools များ စာရင်းကြည့်ခြင်း
+  - `/mcp call <tool> <json>` — HITL ခွင့်ပြုချက်ဖြင့် Tool ခေါ်ယူအသုံးပြုခြင်း

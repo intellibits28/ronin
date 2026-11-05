@@ -118,5 +118,7 @@ JNIEXPORT jobjectArray JNICALL native_getChatHistory(JNIEnv* env, jobject thiz, 
 JNIEXPORT jboolean JNICALL native_loadMyanmarDictionary(JNIEnv* env, jobject thiz, jstring p);
 JNIEXPORT void JNICALL native_indexFiles(JNIEnv* env, jobject thiz, jobjectArray paths, jobjectArray names, jlongArray dates);
 JNIEXPORT jobjectArray JNICALL native_searchFiles(JNIEnv* env, jobject thiz, jstring q);
+JNIEXPORT jboolean JNICALL native_storeDocumentEmbedding(JNIEnv* env, jobject thiz, jstring docPath, jint chunkIndex, jstring chunkText, jfloatArray embedding);
+JNIEXPORT jobjectArray JNICALL native_hybridSearch(JNIEnv* env, jobject thiz, jstring queryText, jfloatArray queryEmbedding, jstring docPathFilter, jint topK);
 
 }

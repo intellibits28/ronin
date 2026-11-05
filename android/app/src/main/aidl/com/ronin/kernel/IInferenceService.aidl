@@ -15,4 +15,5 @@ interface IInferenceService {
     void updateGenerationConfig(float temperature, int topK, float topP, int maxTokens);
     boolean isLowPerformanceMode();
     String summarizeAndReset();
+    float[] generateEmbeddingsBatch(in List<String> texts, String embeddingModelPath);
 }

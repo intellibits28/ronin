@@ -367,6 +367,81 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun storePredictionNative(goalId: String, nodeId: String, predicted: String, actual: String, error: Float): Boolean
     private external fun updateBeliefNative(key: String, value: String, confidence: Float): Boolean
     private external fun applyHumanFeedbackNative(sessionId: String, wasHelpful: Boolean)
+    private external fun storeDocumentEmbeddingNative(docPath: String, chunkIndex: Int, chunkText: String, embedding: FloatArray): Boolean
+    private external fun hybridSearchNative(queryText: String, queryEmbedding: FloatArray, docPathFilter: String, topK: Int): Array<String>
+
+    var embeddingModelPath: String = ""
+
+    fun resolveEmbeddingModelPath(): String {
+        if (embeddingModelPath.isNotBlank() && File(embeddingModelPath).exists()) return embeddingModelPath
+        val candidates = listOf(
+            File(context.filesDir, "models/embeddinggemma-2-740m.litertlm"),
+            File(context.filesDir, "embeddinggemma-2-740m.litertlm")
+        )
+        for (c in candidates) {
+            if (c.exists() && c.isFile) {
+                embeddingModelPath = c.absolutePath
+                return embeddingModelPath
+            }
+        }
+        return ""
+    }
+
+    /**
+     * Generates 768D L2-normalized embeddings in sub-batches of at most 16 items per Binder IPC call
+     * to prevent Android Binder TransactionTooLargeException.
+     */
+    suspend fun generateEmbeddingsSubBatched(texts: List<String>, customEmbPath: String = ""): List<FloatArray> = withContext(Dispatchers.IO) {
+        if (texts.isEmpty()) return@withContext emptyList()
+        val modelPath = if (customEmbPath.isNotBlank()) customEmbPath else resolveEmbeddingModelPath()
+        val results = ArrayList<FloatArray>(texts.size)
+        val dim = InferenceService.EMBEDDING_DIM
+
+        for (subBatch in texts.chunked(16)) {
+            val flat: FloatArray? = try {
+                inferenceService?.generateEmbeddingsBatch(subBatch, modelPath)
+            } catch (e: Exception) {
+                Log.w(TAG, "Binder embedding sub-batch fallback: ${e.message}")
+                null
+            }
+
+            if (flat != null && flat.size == subBatch.size * dim) {
+                for (i in subBatch.indices) {
+                    val slice = FloatArray(dim)
+                    System.arraycopy(flat, i * dim, slice, 0, dim)
+                    results.add(slice)
+                }
+            } else {
+                for (txt in subBatch) {
+                    results.add(InferenceService.computeDeterministic768Embedding(txt))
+                }
+            }
+        }
+        results
+    }
+
+    fun storeDocumentEmbeddingSafe(docPath: String, chunkIndex: Int, chunkText: String, embedding: FloatArray): Boolean {
+        if (!isLibLoaded || embedding.isEmpty()) return false
+        return try {
+            storeDocumentEmbeddingNative(docPath, chunkIndex, chunkText, embedding)
+        } catch (e: Exception) {
+            Log.e(TAG, "storeDocumentEmbeddingSafe failed: ${e.message}")
+            false
+        }
+    }
+
+    fun hybridSearchSafe(queryText: String, queryEmbedding: FloatArray, docPathFilter: String = "", topK: Int = 5): List<JSONObject> {
+        if (!isLibLoaded) return emptyList()
+        return try {
+            val rawArr = hybridSearchNative(queryText, queryEmbedding, docPathFilter, topK)
+            rawArr.mapNotNull { jsonStr ->
+                try { JSONObject(jsonStr) } catch (_: Exception) { null }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "hybridSearchSafe failed: ${e.message}")
+            emptyList()
+        }
+    }
 
     fun submitCapabilityResponseSafe(requestId: String, success: Boolean, payload: String) {
         if (isLibLoaded) submitCapabilityResponseNative(requestId, success, payload)

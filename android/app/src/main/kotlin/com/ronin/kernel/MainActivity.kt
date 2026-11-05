@@ -1835,7 +1835,24 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 return@launch
             }
 
-            val prompt = DocumentIntelligence.buildSummaryPrompt(resolved.name, readRes.content, langMyanmar = true)
+            // Phase 2.3: For documents > 8,000 chars, select high-centrality chunks via EmbeddingGemma 2
+            val distilledContent = if (readRes.content.length > 8_000) {
+                roninMsg.content = "🧠 Selecting high-centrality passages via EmbeddingGemma 2 (768D RAG)..."
+                val embModelPath = chatViewModel.discoveredModels.firstOrNull {
+                    it.contains("embed", ignoreCase = true)
+                } ?: ""
+                val chunks = DocumentIntelligence.chunkText(readRes.content, chunkSize = 1600, overlap = 120)
+                val customVecs = engine.generateEmbeddingsSubBatched(chunks, embModelPath)
+                DocumentIntelligence.selectHighCentralityChunks(
+                    fullText = readRes.content,
+                    targetChars = 8_000,
+                    customEmbeddings = customVecs
+                )
+            } else {
+                readRes.content
+            }
+
+            val prompt = DocumentIntelligence.buildSummaryPrompt(resolved.name, distilledContent, langMyanmar = true)
             val promptToSend = if (chatViewModel.privacyShieldEnabled) {
                 val redaction = PrivacyShield.redact(prompt)
                 if (redaction.hasRedactions) {
@@ -2054,7 +2071,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0F111A))) {
+        Box(modifier = Modifier.padding(padding).fillMaxSize().background(RoninThemeTokens.Background)) {
             if (chatViewModel.wizardState != WizardState.ACTIVE) {
                 BootstrapWizard(chatViewModel, brainPicker)
             } else {
@@ -2202,17 +2219,168 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 chatViewModel.isGenerating = false
                                                 return@launch
                                             }
-                                            val searchRes = DocumentIntelligence.searchInDocument(resolved, queryTerm)
+                                            val searchRes = DocumentIntelligence.hybridSearchInDocument(
+                                                file = resolved,
+                                                query = queryTerm,
+                                                nativeEngine = engine,
+                                                maxResults = 6
+                                            )
                                             if (searchRes.error != null) {
                                                 chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Search error in ${resolved.name}: ${searchRes.error}"))
                                             } else if (searchRes.matches.isEmpty()) {
-                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 No matches for '$queryTerm' found inside **${resolved.name}**."))
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 No lexical or semantic matches for '$queryTerm' found inside **${resolved.name}**."))
                                             } else {
                                                 val snippetText = searchRes.matches.joinToString("\n\n") { match ->
-                                                    "**Line ${match.lineNumber}:**\n```\n${match.snippet}\n```"
+                                                    "**Line ${match.lineNumber} (${match.lineContent}):**\n```\n${match.snippet}\n```"
                                                 }
-                                                val outMsg = "🔍 Found **${searchRes.totalMatches}** match(es) for `\"$queryTerm\"` in **${resolved.name}**:\n\n$snippetText"
+                                                val outMsg = "🔍 **Hybrid RRF Search** (FTS5 Lexical + EmbeddingGemma 2 Semantic) — Found **${searchRes.totalMatches}** match(es) for `\"$queryTerm\"` in **${resolved.name}**:\n\n$snippetText"
                                                 chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", outMsg))
+                                            }
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
+
+                                        if (cmdClean.startsWith("/research")) {
+                                            val query = raw.trim().substringAfter(" ", "").trim()
+                                            if (query.isEmpty()) {
+                                                chatViewModel.messages.add(
+                                                    ChatMessage(
+                                                        System.currentTimeMillis(),
+                                                        "Ronin",
+                                                        "🌐 **Ronin Sovereign Local Research Engine**\n\nUsage: `/research <topic or question>`\n• Zero external LLM API dependency\n• DuckDuckGo Lite POST search + 5-Layer SSRF & Prompt-Injection Guardrails\n• Synthesized locally by Gemma 4 E2B and cached to offline Markdown"
+                                                    )
+                                                )
+                                                chatViewModel.isGenerating = false
+                                                return@launch
+                                            }
+
+                                            val roninMsg = ChatMessage(
+                                                System.currentTimeMillis() + 1,
+                                                "Ronin",
+                                                "🌐 Initializing Sovereign Web Research for: **$query**...",
+                                                initialIsThinking = true
+                                            )
+                                            chatViewModel.messages.add(roninMsg)
+
+                                            val report = LocalResearchEngine.runResearchPipeline(
+                                                context = context,
+                                                query = query,
+                                                nativeEngine = engine,
+                                                onProgress = { statusText ->
+                                                    scope.launch(Dispatchers.Main) {
+                                                        roninMsg.thoughtContent += "\n$statusText"
+                                                    }
+                                                }
+                                            )
+
+                                            if (!report.success) {
+                                                roninMsg.content = "❌ Sovereign Research Failed: ${report.error ?: "No accessible web sources"}"
+                                            } else {
+                                                val sb = StringBuilder()
+                                                sb.append("[RESEARCH_REPORT]\n")
+                                                sb.append("QUERY: ${report.query}\n")
+                                                sb.append("TIME_MS: ${report.durationMs}\n")
+                                                report.sources.forEach { src ->
+                                                    sb.append("SOURCE_ITEM: ${src.title.replace("|", " ")}|${src.url}\n")
+                                                }
+                                                sb.append("---SYNTHESIS---\n")
+                                                sb.append(report.synthesisMarkdown)
+                                                roninMsg.content = sb.toString()
+                                            }
+                                            roninMsg.isThinking = false
+                                            chatViewModel.isGenerating = false
+                                            return@launch
+                                        }
+
+                                        if (cmdClean.startsWith("/mcp")) {
+                                            val rest = raw.trim().substringAfter(" ", "").trim()
+                                            val parts = rest.split(Regex("\\s+"), limit = 3)
+                                            val subCmd = parts.firstOrNull()?.lowercase() ?: "status"
+
+                                            when (subCmd) {
+                                                "token" -> {
+                                                    val secret = McpClientManager.getOrCreateSharedSecret(context)
+                                                    val endpoint = McpClientManager.getEndpointUrl(context)
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(
+                                                            System.currentTimeMillis(),
+                                                            "Ronin",
+                                                            "🔐 **MCP Termux Bridge Authentication**\n\n• **Endpoint**: `$endpoint`\n• **Shared Secret (256-bit)**: `${secret.take(12)}...${secret.takeLast(8)}`\n• **Replay Window**: `±${McpClientManager.REPLAY_WINDOW_SECONDS}s` (`X-Ronin-Timestamp` + `X-Ronin-Signature` HMAC-SHA256)\n\nExport in Termux before launching MCP server:\n```bash\nexport RONIN_MCP_SECRET=\"$secret\"\n```"
+                                                        )
+                                                    )
+                                                }
+                                                "rotate" -> {
+                                                    val newSecret = McpClientManager.rotateSharedSecret(context)
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(
+                                                            System.currentTimeMillis(),
+                                                            "Ronin",
+                                                            "🔄 **Rotated 256-bit MCP Shared Secret**.\nUpdate your Termux server with:\n```bash\nexport RONIN_MCP_SECRET=\"$newSecret\"\n```"
+                                                        )
+                                                    )
+                                                }
+                                                "tools", "list" -> {
+                                                    val toolsRes = McpClientManager.listTools(context)
+                                                    toolsRes.fold(
+                                                        onSuccess = { tools ->
+                                                            if (tools.isEmpty()) {
+                                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🛠️ Connected to MCP server, but 0 tools were advertised."))
+                                                            } else {
+                                                                val listText = tools.joinToString("\n") { "• **`${it.name}`** — ${it.description}" }
+                                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🛠️ **Discovered MCP Tools (${tools.size})**:\n\n$listText\n\nInvoke with `/mcp call <tool_name> <json_args>`"))
+                                                            }
+                                                        },
+                                                        onFailure = { err ->
+                                                            chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "⚠️ Could not reach Termux MCP server at `${McpClientManager.getEndpointUrl(context)}`: ${err.message}\n\nUse `/mcp token` to view your shared secret and start your local Termux MCP server."))
+                                                        }
+                                                    )
+                                                }
+                                                "call" -> {
+                                                    val toolName = parts.getOrNull(1) ?: ""
+                                                    val jsonArgs = parts.getOrNull(2) ?: "{}"
+                                                    if (toolName.isEmpty()) {
+                                                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: `/mcp call <tool_name> [json_args]`"))
+                                                    } else {
+                                                        val callRes = McpClientManager.callToolWithHitl(
+                                                            context = context,
+                                                            toolName = toolName,
+                                                            argumentsJson = jsonArgs
+                                                        ) { tName, tArgs ->
+                                                            kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                                                                scope.launch(Dispatchers.Main) {
+                                                                    chatViewModel.hitlIntentName = "MCP:$tName"
+                                                                    chatViewModel.hitlMessage = "Approve Termux MCP tool execution?\n\nTool: $tName\nArguments: $tArgs"
+                                                                    chatViewModel.onHITLResult = { approved ->
+                                                                        if (cont.isActive) cont.resume(approved, null)
+                                                                    }
+                                                                    chatViewModel.showHITLDialog = true
+                                                                }
+                                                            }
+                                                        }
+                                                        val badge = if (callRes.success) "✅" else "❌"
+                                                        chatViewModel.messages.add(
+                                                            ChatMessage(
+                                                                System.currentTimeMillis(),
+                                                                "Ronin",
+                                                                "$badge **MCP Tool (`${callRes.toolName}`)**\n\n```text\n${callRes.output}\n```"
+                                                            )
+                                                        )
+                                                    }
+                                                }
+                                                else -> {
+                                                    val initRes = McpClientManager.initializeSession(context)
+                                                    val statusLine = initRes.fold(
+                                                        onSuccess = { "🟢 Connected ($it)" },
+                                                        onFailure = { "🟡 Offline (${it.message})" }
+                                                    )
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(
+                                                            System.currentTimeMillis(),
+                                                            "Ronin",
+                                                            "🔌 **Ronin Authenticated MCP Bridge (Termux)**\n\n• **Status**: $statusLine\n• **Endpoint**: `${McpClientManager.getEndpointUrl(context)}` (Loopback-Only)\n• **Security**: 256-bit Bearer + HMAC-SHA256 (`±30s` Replay Window) + Mandatory HITL Gate\n\n**Commands**:\n• `/mcp status` — Test handshake with Termux MCP server\n• `/mcp token` — View 256-bit shared secret for Termux\n• `/mcp rotate` — Rotate shared secret\n• `/mcp tools` — List tools exposed by Termux MCP\n• `/mcp call <tool> <json>` — Execute tool (with HITL confirmation)"
+                                                        )
+                                                    )
+                                                }
                                             }
                                             chatViewModel.isGenerating = false
                                             return@launch

@@ -51,7 +51,9 @@ JNINativeMethod g_methods[] = {
     {"setOfflineModeNative", "(Z)V", (void*)native_setOfflineMode},
     {"setPrimaryCloudProviderNative", "(Ljava/lang/String;)V", (void*)native_setPrimaryCloudProvider},
     {"indexFilesNative", "([Ljava/lang/String;[Ljava/lang/String;[J)V", (void*)native_indexFiles},
-    {"submitCapabilityResponseNative", "(Ljava/lang/String;ZLjava/lang/String;)V", (void*)native_submitCapabilityResponse}
+    {"submitCapabilityResponseNative", "(Ljava/lang/String;ZLjava/lang/String;)V", (void*)native_submitCapabilityResponse},
+    {"storeDocumentEmbeddingNative", "(Ljava/lang/String;ILjava/lang/String;[F)Z", (void*)native_storeDocumentEmbedding},
+    {"hybridSearchNative", "(Ljava/lang/String;[FLjava/lang/String;I)[Ljava/lang/String;", (void*)native_hybridSearch}
 };
 
 JNINativeMethod g_worker_methods[] = {

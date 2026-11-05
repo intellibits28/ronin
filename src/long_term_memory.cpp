@@ -97,7 +97,9 @@ bool LongTermMemory::initSchema() {
         "CREATE VIRTUAL TABLE IF NOT EXISTS file_index USING fts5(name, path, extension, last_modified UNINDEXED);",
         "CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, details TEXT, timestamp INTEGER);",
         "CREATE TABLE IF NOT EXISTS failures (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, failure_type INTEGER, timestamp INTEGER, retry_count INTEGER, resolution TEXT);",
-        "CREATE TABLE IF NOT EXISTS perception_history (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, state_type TEXT, state_value TEXT);"
+        "CREATE TABLE IF NOT EXISTS perception_history (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, state_type TEXT, state_value TEXT);",
+        "CREATE TABLE IF NOT EXISTS document_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_path TEXT NOT NULL, chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, embedding_blob BLOB NOT NULL, dimension INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(doc_path, chunk_index) ON CONFLICT REPLACE);",
+        "CREATE INDEX IF NOT EXISTS idx_doc_path ON document_embeddings(doc_path);"
     };
 
     if (sqlite3_exec(m_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
@@ -760,6 +762,292 @@ std::string LongTermMemory::getLatestPerceptionState() {
     }
     if (stmt) sqlite3_finalize(stmt);
     return val;
+}
+
+void LongTermMemory::l2Normalize(std::vector<float>& vec) {
+    if (vec.empty()) return;
+    double sum_sq = 0.0;
+    for (float v : vec) {
+        sum_sq += static_cast<double>(v) * static_cast<double>(v);
+    }
+    if (sum_sq > 1e-12) {
+        float inv_norm = static_cast<float>(1.0 / std::sqrt(sum_sq));
+        for (float& v : vec) {
+            v *= inv_norm;
+        }
+    }
+}
+
+float LongTermMemory::alignedDotProduct(const float* a, const float* b, size_t dim) {
+    if (!a || !b || dim == 0) return 0.0f;
+    // Unrolled 4-way loop friendly to ARM NEON / auto-vectorization
+    float sum0 = 0.0f, sum1 = 0.0f, sum2 = 0.0f, sum3 = 0.0f;
+    size_t i = 0;
+    for (; i + 3 < dim; i += 4) {
+        sum0 += a[i] * b[i];
+        sum1 += a[i + 1] * b[i + 1];
+        sum2 += a[i + 2] * b[i + 2];
+        sum3 += a[i + 3] * b[i + 3];
+    }
+    float total = (sum0 + sum1) + (sum2 + sum3);
+    for (; i < dim; ++i) {
+        total += a[i] * b[i];
+    }
+    return total;
+}
+
+float LongTermMemory::cosineSimilarity(const float* a, const float* b, size_t dim) {
+    if (!a || !b || dim == 0) return 0.0f;
+    double dot = 0.0, norm_a = 0.0, norm_b = 0.0;
+    for (size_t i = 0; i < dim; ++i) {
+        dot += static_cast<double>(a[i]) * static_cast<double>(b[i]);
+        norm_a += static_cast<double>(a[i]) * static_cast<double>(a[i]);
+        norm_b += static_cast<double>(b[i]) * static_cast<double>(b[i]);
+    }
+    double denom = std::sqrt(norm_a) * std::sqrt(norm_b);
+    if (denom <= 1e-12) return 0.0f;
+    return static_cast<float>(dot / denom);
+}
+
+bool LongTermMemory::storeDocumentEmbedding(const std::string& doc_path, int chunk_index, const std::string& chunk_text, const std::vector<float>& embedding) {
+    if (!m_db || embedding.empty()) return false;
+    if (m_read_only.load()) {
+        LOGW(TAG, "storeDocumentEmbedding blocked: Read-only SafeMode active");
+        return false;
+    }
+
+    std::vector<float> normalized = embedding;
+    l2Normalize(normalized);
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "INSERT INTO document_embeddings (doc_path, chunk_index, chunk_text, embedding_blob, dimension, created_at) "
+                      "VALUES (?, ?, ?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "storeDocumentEmbedding prepare failed: %s", sqlite3_errmsg(m_db));
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, doc_path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, chunk_index);
+    sqlite3_bind_text(stmt, 3, chunk_text.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_blob(stmt, 4, normalized.data(), static_cast<int>(normalized.size() * sizeof(float)), SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 5, static_cast<int>(normalized.size()));
+    sqlite3_bind_int64(stmt, 6, std::time(nullptr));
+
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (!ok) {
+        LOGE(TAG, "storeDocumentEmbedding step failed: %s", sqlite3_errmsg(m_db));
+    }
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::searchEmbeddings(
+    const std::vector<float>& query_embedding, const std::string& doc_path_filter, int top_k) {
+    if (!m_db || query_embedding.empty() || top_k <= 0) return {};
+
+    std::vector<float> q_norm = query_embedding;
+    l2Normalize(q_norm);
+    const size_t q_dim = q_norm.size();
+
+    // 16-byte aligned query buffer for SIMD dot product
+    alignas(16) float q_aligned[1024];
+    const float* q_ptr = q_norm.data();
+    if (q_dim <= 1024) {
+        std::memcpy(q_aligned, q_norm.data(), q_dim * sizeof(float));
+        q_ptr = q_aligned;
+    }
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = doc_path_filter.empty()
+        ? "SELECT doc_path, chunk_index, chunk_text, embedding_blob, dimension FROM document_embeddings;"
+        : "SELECT doc_path, chunk_index, chunk_text, embedding_blob, dimension FROM document_embeddings WHERE doc_path = ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return {};
+    if (!doc_path_filter.empty()) {
+        sqlite3_bind_text(stmt, 1, doc_path_filter.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    std::vector<HybridSearchMatch> candidates;
+    alignas(16) float row_aligned[1024];
+    std::vector<float> fallback_buf;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int dim = sqlite3_column_int(stmt, 4);
+        int blob_bytes = sqlite3_column_bytes(stmt, 3);
+        const void* blob_ptr = sqlite3_column_blob(stmt, 3);
+        if (!blob_ptr || dim <= 0 || static_cast<size_t>(dim) != q_dim || blob_bytes < static_cast<int>(q_dim * sizeof(float))) {
+            continue;
+        }
+
+        const float* row_ptr = nullptr;
+        if (q_dim <= 1024) {
+            std::memcpy(row_aligned, blob_ptr, q_dim * sizeof(float));
+            row_ptr = row_aligned;
+        } else {
+            fallback_buf.resize(q_dim);
+            std::memcpy(fallback_buf.data(), blob_ptr, q_dim * sizeof(float));
+            row_ptr = fallback_buf.data();
+        }
+
+        float sim = alignedDotProduct(q_ptr, row_ptr, q_dim);
+        HybridSearchMatch match;
+        match.doc_path = columnText(stmt, 0);
+        match.chunk_index = sqlite3_column_int(stmt, 1);
+        match.chunk_text = columnText(stmt, 2);
+        match.cosine_score = sim;
+        match.rrf_score = sim;
+        candidates.push_back(std::move(match));
+    }
+    sqlite3_finalize(stmt);
+
+    std::sort(candidates.begin(), candidates.end(), [](const HybridSearchMatch& a, const HybridSearchMatch& b) {
+        return a.cosine_score > b.cosine_score;
+    });
+
+    if (static_cast<int>(candidates.size()) > top_k) {
+        candidates.resize(static_cast<size_t>(top_k));
+    }
+    return candidates;
+}
+
+std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::hybridSearch(
+    const std::string& query_text, const std::vector<float>& query_embedding, const std::string& doc_path_filter, int top_k) {
+    if (!m_db || top_k <= 0) return {};
+
+    // Extract lowercase query tokens + Myanmar segmented tokens for lexical scoring
+    std::vector<std::string> query_tokens;
+    if (!query_text.empty()) {
+        std::string lower_q = query_text;
+        std::transform(lower_q.begin(), lower_q.end(), lower_q.begin(), [](unsigned char c) { return std::tolower(c); });
+        std::stringstream ss(lower_q);
+        std::string tok;
+        while (ss >> tok) {
+            if (tok.size() >= 2) query_tokens.push_back(tok);
+        }
+        auto seg_tokens = segmentText(query_text);
+        for (const auto& st : seg_tokens) {
+            if (st.size() >= 2 && std::find(query_tokens.begin(), query_tokens.end(), st) == query_tokens.end()) {
+                query_tokens.push_back(st);
+            }
+        }
+    }
+
+    std::vector<float> q_norm = query_embedding;
+    if (!q_norm.empty()) l2Normalize(q_norm);
+    const size_t q_dim = q_norm.size();
+
+    alignas(16) float q_aligned[1024];
+    const float* q_ptr = q_norm.data();
+    if (!q_norm.empty() && q_dim <= 1024) {
+        std::memcpy(q_aligned, q_norm.data(), q_dim * sizeof(float));
+        q_ptr = q_aligned;
+    }
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = doc_path_filter.empty()
+        ? "SELECT doc_path, chunk_index, chunk_text, embedding_blob, dimension FROM document_embeddings;"
+        : "SELECT doc_path, chunk_index, chunk_text, embedding_blob, dimension FROM document_embeddings WHERE doc_path = ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return {};
+    if (!doc_path_filter.empty()) {
+        sqlite3_bind_text(stmt, 1, doc_path_filter.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    std::vector<HybridSearchMatch> pool;
+    alignas(16) float row_aligned[1024];
+    std::vector<float> fallback_buf;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        HybridSearchMatch m;
+        m.doc_path = columnText(stmt, 0);
+        m.chunk_index = sqlite3_column_int(stmt, 1);
+        m.chunk_text = columnText(stmt, 2);
+
+        // 1. Semantic similarity
+        int dim = sqlite3_column_int(stmt, 4);
+        int blob_bytes = sqlite3_column_bytes(stmt, 3);
+        const void* blob_ptr = sqlite3_column_blob(stmt, 3);
+        if (q_dim > 0 && blob_ptr && static_cast<size_t>(dim) == q_dim && blob_bytes >= static_cast<int>(q_dim * sizeof(float))) {
+            const float* row_ptr = nullptr;
+            if (q_dim <= 1024) {
+                std::memcpy(row_aligned, blob_ptr, q_dim * sizeof(float));
+                row_ptr = row_aligned;
+            } else {
+                fallback_buf.resize(q_dim);
+                std::memcpy(fallback_buf.data(), blob_ptr, q_dim * sizeof(float));
+                row_ptr = fallback_buf.data();
+            }
+            m.cosine_score = alignedDotProduct(q_ptr, row_ptr, q_dim);
+        }
+
+        // 2. Lexical term frequency & exact phrase hits
+        if (!query_tokens.empty()) {
+            std::string lower_chunk = m.chunk_text;
+            std::transform(lower_chunk.begin(), lower_chunk.end(), lower_chunk.begin(), [](unsigned char c) { return std::tolower(c); });
+            int hits = 0;
+            for (const auto& qt : query_tokens) {
+                size_t pos = 0;
+                while ((pos = lower_chunk.find(qt, pos)) != std::string::npos) {
+                    hits++;
+                    pos += qt.size();
+                }
+            }
+            m.lexical_hits = hits;
+        }
+
+        pool.push_back(std::move(m));
+    }
+    sqlite3_finalize(stmt);
+
+    if (pool.empty()) return {};
+
+    // Compute Semantic Ranks
+    std::vector<size_t> vec_order(pool.size());
+    for (size_t i = 0; i < pool.size(); ++i) vec_order[i] = i;
+    std::sort(vec_order.begin(), vec_order.end(), [&](size_t a, size_t b) {
+        return pool[a].cosine_score > pool[b].cosine_score;
+    });
+
+    // Compute Lexical Ranks
+    std::vector<size_t> lex_order(pool.size());
+    for (size_t i = 0; i < pool.size(); ++i) lex_order[i] = i;
+    std::sort(lex_order.begin(), lex_order.end(), [&](size_t a, size_t b) {
+        if (pool[a].lexical_hits != pool[b].lexical_hits) {
+            return pool[a].lexical_hits > pool[b].lexical_hits;
+        }
+        return pool[a].cosine_score > pool[b].cosine_score;
+    });
+
+    constexpr float kRrfK = 60.0f;
+    for (size_t rank = 0; rank < vec_order.size(); ++rank) {
+        size_t idx = vec_order[rank];
+        if (q_dim > 0) {
+            pool[idx].rrf_score += 1.0f / (kRrfK + static_cast<float>(rank + 1));
+        }
+    }
+    for (size_t rank = 0; rank < lex_order.size(); ++rank) {
+        size_t idx = lex_order[rank];
+        if (pool[idx].lexical_hits > 0) {
+            // Boost exact lexical matches in RRF
+            pool[idx].rrf_score += 1.25f / (kRrfK + static_cast<float>(rank + 1));
+        }
+    }
+
+    std::sort(pool.begin(), pool.end(), [](const HybridSearchMatch& a, const HybridSearchMatch& b) {
+        if (std::abs(a.rrf_score - b.rrf_score) > 1e-6f) {
+            return a.rrf_score > b.rrf_score;
+        }
+        return a.cosine_score > b.cosine_score;
+    });
+
+    if (static_cast<int>(pool.size()) > top_k) {
+        pool.resize(static_cast<size_t>(top_k));
+    }
+    return pool;
 }
 
 } // namespace Ronin::Kernel::Memory

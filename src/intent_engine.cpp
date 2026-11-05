@@ -480,14 +480,33 @@ bool IntentEngine::handleCommand(const std::string& input, std::string& output) 
         return true;
     }
 
+    if (cmd == "/research" || cmd.rfind("/research ", 0) == 0) {
+        std::string query = (cmd.length() > 10) ? trim(input.substr(10)) : "";
+        if (query.empty()) {
+            output = "Usage: /research <topic> — Runs Sovereign Local Web Research using DuckDuckGo Lite + Gemma 4 E2B.";
+        } else {
+            output = "[RESEARCH_INIT] Initiating Sovereign Local Research for: " + query;
+        }
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(output);
+        return true;
+    }
+
+    if (cmd == "/mcp" || cmd.rfind("/mcp ", 0) == 0) {
+        std::string sub = (cmd.length() > 5) ? trim(input.substr(5)) : "status";
+        output = "[MCP_CMD] " + sub;
+        Ronin::Kernel::Capability::HardwareBridge::pushMessage(output);
+        return true;
+    }
+
     if (cmd == "/help" || cmd == "/capabilities") {
-        output = "=== Ronin Kernel v5.0+ Capabilities & Commands ===\n"
+        output = "=== Ronin Kernel v5.1 Sovereign Tactical Capabilities & Commands ===\n"
                  "• SHM Diagnostics: Multi-axis 100Hz vibration analysis, Welch FFT (<0.05Hz resolution), structural resonance detection.\n"
                  "• Musical Tuner: Real-time audio pitch & Guitar string tuning (E2, A2, D3, G3, B3, E4) with visual cent needle.\n"
+                 "• Local Research Engine: Zero-API DuckDuckGo Lite + 5-Layer Security Distiller + Gemma 4 E2B cited report (/research <topic>).\n"
+                 "• Hybrid RAG & Doc Intelligence: On-Demand EmbeddingGemma-2-740M + SQLite FTS5 & 16-byte aligned Cosine RRF (/docsearch, /summarize).\n"
+                 "• MCP & Termux Bridge: Authenticated JSON-RPC 2.0 Client with Bearer + Timestamped HMAC & HITL approval (/mcp list, /mcp token).\n"
                  "• Device Tools: Flashlight on/off, Location (GPS), Wi-Fi, Bluetooth, File Search, SMS, Contacts.\n"
-                 "• Memory & Vault: SQLite FTS5 lexical recall, AES encrypted vault, Disaster Recovery backup/restore.\n"
-                 "• Hybrid Inference: On-device LiteRT-LM (Gemma 4) + Multi-Cloud (Gemini, OpenAI, OpenRouter).\n"
-                 "• Commands: /help, /capabilities, /status, /skills, /model, /history, /reset, /clear, /reflect, /shm, /tuner";
+                 "• Commands: /help, /status, /research, /mcp, /files, /summarize, /docsearch, /skills, /model, /history, /reset, /clear, /reflect, /shm, /tuner";
         Ronin::Kernel::Capability::HardwareBridge::pushMessage("[HELP] " + output);
         return true;
     }

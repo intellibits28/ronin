@@ -164,4 +164,61 @@ JNIEXPORT jobjectArray JNICALL native_searchFiles(JNIEnv* env, jobject thiz, jst
     return toStringArray(env, runtime.ltm->searchFiles(ConvertJStringToString(env, q)));
 }
 
+JNIEXPORT jboolean JNICALL native_storeDocumentEmbedding(JNIEnv* env, jobject thiz, jstring docPath, jint chunkIndex, jstring chunkText, jfloatArray embedding) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm || !embedding) return JNI_FALSE;
+    jsize len = env->GetArrayLength(embedding);
+    if (len <= 0) return JNI_FALSE;
+    jfloat* ptr = env->GetFloatArrayElements(embedding, nullptr);
+    if (!ptr) return JNI_FALSE;
+    std::vector<float> vec(ptr, ptr + len);
+    env->ReleaseFloatArrayElements(embedding, ptr, JNI_ABORT);
+
+    bool ok = runtime.ltm->storeDocumentEmbedding(
+        ConvertJStringToString(env, docPath),
+        static_cast<int>(chunkIndex),
+        ConvertJStringToString(env, chunkText),
+        vec
+    );
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jobjectArray JNICALL native_hybridSearch(JNIEnv* env, jobject thiz, jstring queryText, jfloatArray queryEmbedding, jstring docPathFilter, jint topK) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return nullptr;
+
+    std::vector<float> vec;
+    if (queryEmbedding) {
+        jsize len = env->GetArrayLength(queryEmbedding);
+        if (len > 0) {
+            jfloat* ptr = env->GetFloatArrayElements(queryEmbedding, nullptr);
+            if (ptr) {
+                vec.assign(ptr, ptr + len);
+                env->ReleaseFloatArrayElements(queryEmbedding, ptr, JNI_ABORT);
+            }
+        }
+    }
+
+    auto matches = runtime.ltm->hybridSearch(
+        ConvertJStringToString(env, queryText),
+        vec,
+        ConvertJStringToString(env, docPathFilter),
+        static_cast<int>(topK)
+    );
+
+    std::vector<std::string> out;
+    out.reserve(matches.size());
+    for (const auto& m : matches) {
+        nlohmann::json j;
+        j["doc_path"] = m.doc_path;
+        j["chunk_index"] = m.chunk_index;
+        j["chunk_text"] = m.chunk_text;
+        j["rrf_score"] = m.rrf_score;
+        j["cosine_score"] = m.cosine_score;
+        j["lexical_hits"] = m.lexical_hits;
+        out.push_back(j.dump());
+    }
+    return toStringArray(env, out);
+}
+
 } // extern "C"

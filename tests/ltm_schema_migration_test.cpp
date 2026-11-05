@@ -113,3 +113,43 @@ TEST(LongTermMemoryDecay, PrunesLowRetentionFactsAndEpisodes) {
     EXPECT_EQ(ltm.lookupFact("user", "preference"), "dark_mode");
 }
 
+TEST(LongTermMemoryVectorHybrid, L2NormalizationAndAlignedDotProduct) {
+    std::vector<float> v1 = {3.0f, 4.0f, 0.0f, 0.0f};
+    LongTermMemory::l2Normalize(v1);
+    EXPECT_NEAR(v1[0], 0.6f, 1e-5f);
+    EXPECT_NEAR(v1[1], 0.8f, 1e-5f);
+
+    std::vector<float> v2 = {0.6f, 0.8f, 0.0f, 0.0f};
+    float dot = LongTermMemory::alignedDotProduct(v1.data(), v2.data(), v1.size());
+    EXPECT_NEAR(dot, 1.0f, 1e-5f);
+}
+
+TEST(LongTermMemoryVectorHybrid, DeduplicatesOnConflictAndRunsHybridRRF) {
+    LongTermMemory ltm(":memory:");
+    std::vector<float> vec_quake = {1.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<float> vec_music = {0.0f, 1.0f, 0.0f, 0.0f};
+
+    // Insert chunk 0 and overwrite chunk 0 to verify UNIQUE(doc_path, chunk_index) ON CONFLICT REPLACE
+    ASSERT_TRUE(ltm.storeDocumentEmbedding("/docs/shm.md", 0, "Old draft text", vec_quake));
+    ASSERT_TRUE(ltm.storeDocumentEmbedding("/docs/shm.md", 0, "Yangon earthquake fault line structural resonance 8.06Hz", vec_quake));
+    ASSERT_TRUE(ltm.storeDocumentEmbedding("/docs/shm.md", 1, "Guitar tuning E2 82.4Hz standard acoustic", vec_music));
+    ASSERT_TRUE(ltm.storeDocumentEmbedding("/docs/other.md", 0, "Unrelated document chunk", vec_quake));
+
+    // Verify deduplication: /docs/shm.md should only have 2 rows (chunk 0 and chunk 1)
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM document_embeddings WHERE doc_path='/docs/shm.md';"), 2);
+
+    // Scoped hybrid search on /docs/shm.md
+    auto results = ltm.hybridSearch("earthquake resonance", vec_quake, "/docs/shm.md", 2);
+    ASSERT_EQ(results.size(), 2u);
+    EXPECT_EQ(results[0].chunk_index, 0);
+    EXPECT_GT(results[0].cosine_score, 0.99f);
+    EXPECT_GT(results[0].lexical_hits, 0);
+    EXPECT_GT(results[0].rrf_score, results[1].rrf_score);
+
+    // SafeMode read-only guard test on storeDocumentEmbedding
+    ltm.setReadOnly(true);
+    EXPECT_FALSE(ltm.storeDocumentEmbedding("/docs/shm.md", 2, "Blocked in safe mode", vec_quake));
+    EXPECT_FALSE(ltm.storeVault("secret_title", "encrypted_payload"));
+    ltm.setReadOnly(false);
+}
+
