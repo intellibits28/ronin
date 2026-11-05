@@ -226,18 +226,18 @@ class RoninV51UpgradeTest {
         val gemma3_1b = ModelDownloadManager.CURATED_MODELS.first { it.id == "gemma-3-1b-it-int4" }
         val gemma4_e2b = ModelDownloadManager.CURATED_MODELS.first { it.id == "gemma-4-e2b-it-int4" }
         val gemma4_e4b = ModelDownloadManager.CURATED_MODELS.first { it.id == "gemma-4-e4b-it-int4" }
-        val embeddingGemma2 = ModelDownloadManager.CURATED_MODELS.first { it.id == "embedding-gemma-2-740m-int4" }
-        val gecko110m = ModelDownloadManager.CURATED_MODELS.first { it.id == "gecko-multilingual-110m-int8" }
+        val embeddingGemma2_740m = ModelDownloadManager.CURATED_MODELS.first { it.id == "embedding-gemma-2-740m-int4" }
+        val embeddingGemma2_270m = ModelDownloadManager.CURATED_MODELS.first { it.id == "embedding-gemma-2-270m-int8" }
 
-        // On 4GB RAM device: Gemma 3 1B and Gecko 110M are RECOMMENDED, Gemma 4 E4B has HEAVY_RAM_WARNING
+        // On 4GB RAM device: Gemma 3 1B and EmbeddingGemma 2 270M are RECOMMENDED, Gemma 4 E4B has HEAVY_RAM_WARNING
         assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, lowRamCatalog[gemma3_1b])
-        assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, lowRamCatalog[gecko110m])
+        assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, lowRamCatalog[embeddingGemma2_270m])
         assertEquals(ModelDownloadManager.CompatibilityTier.HEAVY_RAM_WARNING, lowRamCatalog[gemma4_e4b])
 
         // On 8GB RAM device: Gemma 4 E2B, Gemma 4 E4B, and EmbeddingGemma 2 740M are RECOMMENDED
         assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, highRamCatalog[gemma4_e2b])
         assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, highRamCatalog[gemma4_e4b])
-        assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, highRamCatalog[embeddingGemma2])
+        assertEquals(ModelDownloadManager.CompatibilityTier.RECOMMENDED, highRamCatalog[embeddingGemma2_740m])
     }
 
     @Test

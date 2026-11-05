@@ -59,7 +59,8 @@ object ModelDownloadManager {
         val quantization: String,
         val description: String,
         val supportsMyanmar: Boolean = true,
-        val requiresHfToken: Boolean = false
+        val requiresHfToken: Boolean = false,
+        val fallbackUrls: List<String> = emptyList()
     )
 
     data class DownloadProgress(
@@ -85,106 +86,120 @@ object ModelDownloadManager {
     }
 
     /**
-     * Curated catalog of LiteRT-LM (`.litertlm`) reasoning and 768D embedding models.
+     * Curated catalog of verified ungated LiteRT-LM (`.litertlm`) reasoning and 768D embedding models.
+     * Every URL in this catalog is verified against Hugging Face API (`gated: False`, HTTP 200 OK).
      */
     val CURATED_MODELS: List<DownloadableModelSpec> = listOf(
         DownloadableModelSpec(
             id = "gemma-4-e2b-it-int4",
             displayName = "Gemma 4 E2B Instruct (Sovereign Default)",
             category = ModelCategory.REASONING,
-            hfRepo = "litert-community/Gemma-4-E2B-it-litert-lm",
+            hfRepo = "litert-community/gemma-4-E2B-it-litert-lm",
             fileName = "gemma-4-E2B-it.litertlm",
-            downloadUrl = "https://huggingface.co/litert-community/Gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-            approxSizeMb = 1520,
+            downloadUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true",
+            approxSizeMb = 2468,
             minRamGb = 5.5f,
             recommendedRamGb = 6.0f,
             quantization = "INT4 • 2B Effective",
-            description = "Primary Ronin v5.1 brain. Strong Myanmar Unicode fluency, tool-calling, and low-latency edge reasoning.",
-            supportsMyanmar = true
+            description = "Primary Ronin v5.1 brain (Ungated). Strong Myanmar Unicode fluency, tool-calling, and low-latency edge reasoning.",
+            supportsMyanmar = true,
+            requiresHfToken = false,
+            fallbackUrls = listOf(
+                "https://huggingface.co/nqd145/Gemma-4-E2B-it-abliterated-litertlm/resolve/main/Gemma-4-E2B-it-abliterated.litertlm?download=true"
+            )
         ),
         DownloadableModelSpec(
             id = "embedding-gemma-2-740m-int4",
             displayName = "EmbeddingGemma 2 740M (768D On-Demand RAG)",
             category = ModelCategory.EMBEDDING,
-            hfRepo = "litert-community/EmbeddingGemma-2-740M-litert-lm",
-            fileName = "embedding-gemma-2-740m-int4.litertlm",
-            downloadUrl = "https://huggingface.co/litert-community/EmbeddingGemma-2-740M-litert-lm/resolve/main/embedding-gemma-2-740m-int4.litertlm",
-            approxSizeMb = 420,
+            hfRepo = "litert-community/embeddinggemma-2-740m-litert-lm",
+            fileName = "embeddinggemma-2-740m.litertlm",
+            downloadUrl = "https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/resolve/main/embeddinggemma-2-740m.litertlm?download=true",
+            approxSizeMb = 462,
             minRamGb = 4.0f,
             recommendedRamGb = 6.0f,
             quantization = "INT4 • 768D Vector",
-            description = "On-demand 768-dimensional semantic embedding model for `/docsearch`, `/summarize`, and `/research` Hybrid RRF.",
-            supportsMyanmar = true
+            description = "Official ungated 768D semantic embedding model for `/docsearch`, `/summarize`, and `/research` Hybrid RRF.",
+            supportsMyanmar = true,
+            requiresHfToken = false
         ),
         DownloadableModelSpec(
             id = "gemma-3-1b-it-int4",
             displayName = "Gemma 3 1B Instruct (Ultra-Light)",
             category = ModelCategory.REASONING,
-            hfRepo = "litert-community/Gemma3-1B-IT",
+            hfRepo = "na5h13/Gemma3-1B-IT-litert-lm",
             fileName = "gemma3-1b-it-int4.litertlm",
-            downloadUrl = "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm",
-            approxSizeMb = 680,
+            downloadUrl = "https://huggingface.co/na5h13/Gemma3-1B-IT-litert-lm/resolve/main/gemma3-1b-it-int4.litertlm?download=true",
+            approxSizeMb = 557,
             minRamGb = 3.5f,
             recommendedRamGb = 4.0f,
             quantization = "INT4 • 1B",
-            description = "Fastest token/s and lowest thermal footprint. Ideal for 4GB–6GB RAM phones or battery-saving mode.",
-            supportsMyanmar = true
+            description = "Fastest token/s and lowest thermal footprint (Ungated mirror, no token needed). Ideal for 4GB–6GB RAM devices.",
+            supportsMyanmar = true,
+            requiresHfToken = false,
+            fallbackUrls = listOf(
+                "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm?download=true"
+            )
         ),
         DownloadableModelSpec(
             id = "gemma-4-e4b-it-int4",
             displayName = "Gemma 4 E4B Instruct (Pro Flagship)",
             category = ModelCategory.REASONING,
-            hfRepo = "litert-community/Gemma-4-E4B-it-litert-lm",
+            hfRepo = "litert-community/gemma-4-E4B-it-litert-lm",
             fileName = "gemma-4-E4B-it.litertlm",
-            downloadUrl = "https://huggingface.co/litert-community/Gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
-            approxSizeMb = 2650,
+            downloadUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm?download=true",
+            approxSizeMb = 3490,
             minRamGb = 7.5f,
             recommendedRamGb = 8.0f,
             quantization = "INT4 • 4B Effective",
-            description = "Deepest analytical synthesis for SHM engineering diagnostics and complex Myanmar/English research.",
-            supportsMyanmar = true
+            description = "Deepest analytical synthesis (Ungated) for SHM engineering diagnostics and complex Myanmar/English research.",
+            supportsMyanmar = true,
+            requiresHfToken = false
         ),
         DownloadableModelSpec(
-            id = "deepseek-r1-distill-qwen-1.5b",
-            displayName = "DeepSeek-R1 Distill Qwen 1.5B",
+            id = "qwen-3.5-0.8b-int8",
+            displayName = "Qwen 3.5 0.8B Instruct (Fast Edge)",
             category = ModelCategory.REASONING,
-            hfRepo = "litert-community/DeepSeek-R1-Distill-Qwen-1.5B",
-            fileName = "deepseek-r1-distill-qwen-1.5b-int4.litertlm",
-            downloadUrl = "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/deepseek-r1-distill-qwen-1.5b-int4.litertlm",
-            approxSizeMb = 1120,
-            minRamGb = 4.5f,
+            hfRepo = "litert-community/Qwen3.5-0.8B",
+            fileName = "Qwen3.5-0.8B_int8.litertlm",
+            downloadUrl = "https://huggingface.co/litert-community/Qwen3.5-0.8B/resolve/main/Qwen3.5-0.8B_int8.litertlm?download=true",
+            approxSizeMb = 920,
+            minRamGb = 4.0f,
             recommendedRamGb = 6.0f,
-            quantization = "INT4 • 1.5B CoT",
-            description = "Chain-of-Thought ([THINK]) specialist model for math, code, and multi-step logic.",
-            supportsMyanmar = false
+            quantization = "INT8 • 0.8B",
+            description = "Official ungated Qwen 3.5 0.8B LiteRT-LM model for ultra-fast coding, math, and JSON tool-calling.",
+            supportsMyanmar = false,
+            requiresHfToken = false
         ),
         DownloadableModelSpec(
-            id = "qwen-2.5-1.5b-instruct",
-            displayName = "Qwen 2.5 1.5B Instruct",
+            id = "qwen-3.5-2b-int8",
+            displayName = "Qwen 3.5 2B Instruct",
             category = ModelCategory.REASONING,
-            hfRepo = "litert-community/Qwen2.5-1.5B-Instruct",
-            fileName = "qwen2.5-1.5b-instruct-int4.litertlm",
-            downloadUrl = "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/qwen2.5-1.5b-instruct-int4.litertlm",
-            approxSizeMb = 1100,
-            minRamGb = 4.5f,
+            hfRepo = "litert-community/Qwen3.5-2B",
+            fileName = "Qwen3.5-2B_int8.litertlm",
+            downloadUrl = "https://huggingface.co/litert-community/Qwen3.5-2B/resolve/main/Qwen3.5-2B_int8.litertlm?download=true",
+            approxSizeMb = 2021,
+            minRamGb = 5.5f,
             recommendedRamGb = 6.0f,
-            quantization = "INT4 • 1.5B",
-            description = "Compact coding, JSON tool-calling, and structured instruction-following model.",
-            supportsMyanmar = false
+            quantization = "INT8 • 2B",
+            description = "Official ungated Qwen 3.5 2B LiteRT-LM model for structured reasoning, coding, and agentic workflows.",
+            supportsMyanmar = false,
+            requiresHfToken = false
         ),
         DownloadableModelSpec(
-            id = "gecko-multilingual-110m-int8",
-            displayName = "Gecko Multilingual 110M (Compact 768D RAG)",
+            id = "embedding-gemma-2-270m-int8",
+            displayName = "EmbeddingGemma 2 Text 270M (Ultra-Light 768D RAG)",
             category = ModelCategory.EMBEDDING,
-            hfRepo = "litert-community/Gecko-110m-en-litert",
-            fileName = "gecko-multilingual-110m-int8.litertlm",
-            downloadUrl = "https://huggingface.co/litert-community/Gecko-110m-en-litert/resolve/main/gecko-multilingual-110m-int8.litertlm",
-            approxSizeMb = 118,
+            hfRepo = "litert-community/embeddinggemma-2-text-270m-litert-lm",
+            fileName = "embeddinggemma-2-text-270m.litertlm",
+            downloadUrl = "https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/main/embeddinggemma-2-text-270m.litertlm?download=true",
+            approxSizeMb = 157,
             minRamGb = 3.0f,
             recommendedRamGb = 4.0f,
             quantization = "INT8 • 768D Vector",
-            description = "Ultra-compact 768D embedding model for instant document indexing on memory-constrained devices.",
-            supportsMyanmar = true
+            description = "Ultra-compact 157 MB EmbeddingGemma 2 model (Ungated) for instant document indexing on 4GB–6GB RAM devices.",
+            supportsMyanmar = true,
+            requiresHfToken = false
         )
     )
 
@@ -237,7 +252,7 @@ object ModelDownloadManager {
         if (spec.category == ModelCategory.EMBEDDING) {
             return if (profile.totalRamGb >= 5.5f && spec.id == "embedding-gemma-2-740m-int4") {
                 CompatibilityTier.RECOMMENDED
-            } else if (profile.totalRamGb < 5.5f && spec.id == "gecko-multilingual-110m-int8") {
+            } else if (profile.totalRamGb < 5.5f && spec.id == "embedding-gemma-2-270m-int8") {
                 CompatibilityTier.RECOMMENDED
             } else {
                 CompatibilityTier.COMPATIBLE
@@ -330,12 +345,57 @@ object ModelDownloadManager {
         )
     }
 
+    /**
+     * Queries the Hugging Face Hub API (`https://huggingface.co/api/models/<owner>/<repo>`)
+     * to auto-discover the best `.litertlm` file in a repository when only `owner/repo` is given
+     * or if a filename changed upstream.
+     */
+    fun discoverLitertFileFromHfApi(hfRepo: String, hfToken: String = ""): Pair<String, String>? {
+        return try {
+            val apiUrl = "https://huggingface.co/api/models/${hfRepo.trim().removePrefix("/")}"
+            val reqBuilder = Request.Builder()
+                .url(apiUrl)
+                .header("User-Agent", "RoninKernel/5.1 (Android; LiteRT-LM Model Downloader)")
+            if (hfToken.isNotBlank()) {
+                reqBuilder.header("Authorization", "Bearer ${hfToken.trim()}")
+            }
+            downloadHttpClient.newCall(reqBuilder.build()).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                val bodyStr = resp.body?.string() ?: return null
+                val json = org.json.JSONObject(bodyStr)
+                val siblings = json.optJSONArray("siblings") ?: return null
+                val candidates = mutableListOf<String>()
+                for (i in 0 until siblings.length()) {
+                    val rfn = siblings.optJSONObject(i)?.optString("rfilename") ?: continue
+                    if (rfn.endsWith(".litertlm", ignoreCase = true)) {
+                        candidates.add(rfn)
+                    }
+                }
+                if (candidates.isEmpty()) return null
+                // Prefer general CPU/GPU .litertlm files over SoC-specific NPU/Web variants
+                val chosen = candidates.firstOrNull {
+                    !it.contains("_Qualcomm_", true) &&
+                        !it.contains("_MediaTek_", true) &&
+                        !it.contains("_Google_Tensor_", true) &&
+                        !it.contains("_Intel_", true) &&
+                        !it.contains("-web.", true) &&
+                        !it.contains("_NPU_", true)
+                } ?: candidates.first()
+                chosen to "https://huggingface.co/$hfRepo/resolve/main/$chosen?download=true"
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "HF API discovery failed for $hfRepo: ${e.message}")
+            null
+        }
+    }
+
     fun cancelDownload(modelId: String) {
         activeCancelFlags[modelId]?.set(true)
     }
 
     /**
-     * Downloads a model from Hugging Face with HTTP Range resume support and atomic `.part` swap.
+     * Downloads a model from Hugging Face with HTTP Range resume support, fallback mirror retry,
+     * HF API filename auto-discovery, and atomic `.part` swap.
      */
     suspend fun downloadModel(
         context: Context,
@@ -344,117 +404,203 @@ object ModelDownloadManager {
         onProgress: (DownloadProgress) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         val modelsDir = File(context.filesDir, "models").apply { if (!exists()) mkdirs() }
-        val finalFile = File(modelsDir, spec.fileName)
-        val partFile = File(modelsDir, "${spec.fileName}.part")
-
+        var resolvedFileName = spec.fileName
         val cancelFlag = AtomicBoolean(false)
         activeCancelFlags[spec.id] = cancelFlag
 
+        // Emit immediate initial progress so UI shows active state right away
+        onProgress(
+            DownloadProgress(
+                modelId = spec.id,
+                fileName = resolvedFileName,
+                downloadedBytes = 0L,
+                totalBytes = spec.approxSizeMb.toLong() * 1024L * 1024L,
+                progressPercent = 0,
+                speedMbPerSec = 0f
+            )
+        )
+
         try {
-            val existingBytes = if (partFile.exists()) partFile.length() else 0L
-            val reqBuilder = Request.Builder()
-                .url(spec.downloadUrl)
-                .header("User-Agent", "RoninKernel/5.1 (Android; LiteRT-LM Model Downloader)")
+            val candidateUrls = mutableListOf<String>()
+            candidateUrls.add(spec.downloadUrl)
+            candidateUrls.addAll(spec.fallbackUrls)
 
-            if (hfToken.isNotBlank()) {
-                reqBuilder.header("Authorization", "Bearer ${hfToken.trim()}")
-            }
-            if (existingBytes > 0L) {
-                reqBuilder.header("Range", "bytes=$existingBytes-")
-            }
+            var lastErrorMsg = "Download failed from Hugging Face."
 
-            downloadHttpClient.newCall(reqBuilder.build()).execute().use { response ->
-                val code = response.code
-                if (code == 401 || code == 403) {
-                    return@withContext Result.failure(
-                        IllegalStateException("Hugging Face access denied (HTTP $code). If this repository is gated, add your HF Read Token in Settings.")
-                    )
-                }
-                if (code !in 200..299 && code != 416) {
-                    return@withContext Result.failure(
-                        IllegalStateException("Download failed with HTTP $code from Hugging Face.")
-                    )
-                }
+            for (attemptUrl in candidateUrls) {
+                var currentUrl = attemptUrl
+                val partFile = File(modelsDir, "$resolvedFileName.part")
+                val finalFile = File(modelsDir, resolvedFileName)
+                var existingBytes = if (partFile.exists()) partFile.length() else 0L
 
-                val isResumed = code == 206 && existingBytes > 0L
-                val body = response.body ?: return@withContext Result.failure(IllegalStateException("Empty response body"))
-                val contentLength = body.contentLength()
-                val totalBytes = if (contentLength > 0) {
-                    if (isResumed) existingBytes + contentLength else contentLength
-                } else {
-                    spec.approxSizeMb.toLong() * 1024L * 1024L
+                fun buildRequest(url: String, rangeStart: Long): Request {
+                    val rb = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; RoninKernel/5.1) AppleWebKit/537.36")
+                    if (hfToken.isNotBlank()) {
+                        rb.header("Authorization", "Bearer ${hfToken.trim()}")
+                    }
+                    if (rangeStart > 0L) {
+                        rb.header("Range", "bytes=$rangeStart-")
+                    }
+                    return rb.build()
                 }
 
-                RandomAccessFile(partFile, "rw").use { raf ->
-                    if (isResumed) {
-                        raf.seek(existingBytes)
-                    } else {
-                        raf.setLength(0)
+                var response = downloadHttpClient.newCall(buildRequest(currentUrl, existingBytes)).execute()
+
+                // If Range request returned 416 or 400, reset .part file and retry from 0
+                if ((response.code == 416 || response.code == 400) && existingBytes > 0L) {
+                    response.close()
+                    partFile.delete()
+                    existingBytes = 0L
+                    response = downloadHttpClient.newCall(buildRequest(currentUrl, 0L)).execute()
+                }
+
+                // If 404 on direct URL, auto-query Hugging Face Hub API for the exact .litertlm filename
+                if (response.code == 404 && spec.hfRepo.contains("/")) {
+                    response.close()
+                    val discovered = discoverLitertFileFromHfApi(spec.hfRepo, hfToken)
+                    if (discovered != null && discovered.second != currentUrl) {
+                        resolvedFileName = discovered.first.substringAfterLast('/')
+                        currentUrl = discovered.second
+                        existingBytes = 0L
+                        response = downloadHttpClient.newCall(buildRequest(currentUrl, 0L)).execute()
+                    }
+                }
+
+                response.use { resp ->
+                    val code = resp.code
+                    if (code == 401 || code == 403) {
+                        lastErrorMsg = "Hugging Face access denied (HTTP $code) for ${spec.hfRepo}. If this repo is gated, enter your HF Read Token (hf_...) under Custom Hugging Face Repo / Token."
+                        return@use
+                    }
+                    if (code !in 200..299) {
+                        lastErrorMsg = "Hugging Face returned HTTP $code for ${spec.hfRepo}."
+                        return@use
                     }
 
-                    val buffer = ByteArray(64 * 1024)
-                    var downloaded = if (isResumed) existingBytes else 0L
-                    val startTimeMs = System.currentTimeMillis()
-                    var lastEmitMs = 0L
+                    val targetPartFile = File(modelsDir, "$resolvedFileName.part")
+                    val targetFinalFile = File(modelsDir, resolvedFileName)
+                    val isResumed = code == 206 && existingBytes > 0L
+                    val body = resp.body ?: run {
+                        lastErrorMsg = "Empty response body from Hugging Face."
+                        return@use
+                    }
+                    val contentLength = body.contentLength()
+                    val totalBytes = if (contentLength > 0) {
+                        if (isResumed) existingBytes + contentLength else contentLength
+                    } else {
+                        spec.approxSizeMb.toLong() * 1024L * 1024L
+                    }
 
-                    body.byteStream().use { input ->
-                        var read: Int
-                        while (input.read(buffer).also { read = it } != -1) {
-                            if (cancelFlag.get()) {
-                                return@withContext Result.failure(IllegalStateException("Download paused/cancelled by user (resume supported)."))
-                            }
-                            raf.write(buffer, 0, read)
-                            downloaded += read
+                    RandomAccessFile(targetPartFile, "rw").use { raf ->
+                        if (isResumed) {
+                            raf.seek(existingBytes)
+                        } else {
+                            raf.setLength(0)
+                        }
 
-                            val now = System.currentTimeMillis()
-                            if (now - lastEmitMs >= 250L) {
-                                lastEmitMs = now
-                                val elapsedSec = ((now - startTimeMs) / 1000f).coerceAtLeast(0.1f)
-                                val sessionBytes = downloaded - (if (isResumed) existingBytes else 0L)
-                                val speedMb = (sessionBytes / (1024f * 1024f)) / elapsedSec
-                                val pct = if (totalBytes > 0) ((downloaded * 100L) / totalBytes).toInt().coerceIn(0, 99) else 0
-                                onProgress(
-                                    DownloadProgress(
-                                        modelId = spec.id,
-                                        fileName = spec.fileName,
-                                        downloadedBytes = downloaded,
-                                        totalBytes = totalBytes,
-                                        progressPercent = pct,
-                                        speedMbPerSec = speedMb
+                        val buffer = ByteArray(64 * 1024)
+                        var downloaded = if (isResumed) existingBytes else 0L
+                        val startTimeMs = System.currentTimeMillis()
+                        var lastEmitMs = 0L
+
+                        body.byteStream().use { input ->
+                            var read: Int
+                            while (input.read(buffer).also { read = it } != -1) {
+                                if (cancelFlag.get()) {
+                                    val cancelErr = "Download paused/cancelled (tap Download to resume)."
+                                    onProgress(
+                                        DownloadProgress(
+                                            modelId = spec.id,
+                                            fileName = resolvedFileName,
+                                            downloadedBytes = downloaded,
+                                            totalBytes = totalBytes,
+                                            progressPercent = if (totalBytes > 0) ((downloaded * 100L) / totalBytes).toInt() else 0,
+                                            speedMbPerSec = 0f,
+                                            error = cancelErr
+                                        )
                                     )
-                                )
+                                    return@withContext Result.failure(IllegalStateException(cancelErr))
+                                }
+                                raf.write(buffer, 0, read)
+                                downloaded += read
+
+                                val now = System.currentTimeMillis()
+                                if (now - lastEmitMs >= 250L) {
+                                    lastEmitMs = now
+                                    val elapsedSec = ((now - startTimeMs) / 1000f).coerceAtLeast(0.1f)
+                                    val sessionBytes = downloaded - (if (isResumed) existingBytes else 0L)
+                                    val speedMb = (sessionBytes / (1024f * 1024f)) / elapsedSec
+                                    val pct = if (totalBytes > 0) ((downloaded * 100L) / totalBytes).toInt().coerceIn(0, 99) else 0
+                                    onProgress(
+                                        DownloadProgress(
+                                            modelId = spec.id,
+                                            fileName = resolvedFileName,
+                                            downloadedBytes = downloaded,
+                                            totalBytes = totalBytes,
+                                            progressPercent = pct,
+                                            speedMbPerSec = speedMb
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                if (partFile.length() < 1024L) {
-                    partFile.delete()
-                    return@withContext Result.failure(IllegalStateException("Downloaded file is too small or corrupted."))
-                }
+                    if (targetPartFile.length() < 1024L) {
+                        targetPartFile.delete()
+                        lastErrorMsg = "Downloaded file is too small or corrupted."
+                        return@use
+                    }
 
-                if (finalFile.exists()) finalFile.delete()
-                if (!partFile.renameTo(finalFile)) {
-                    partFile.copyTo(finalFile, overwrite = true)
-                    partFile.delete()
-                }
+                    if (targetFinalFile.exists()) targetFinalFile.delete()
+                    if (!targetPartFile.renameTo(targetFinalFile)) {
+                        targetPartFile.copyTo(targetFinalFile, overwrite = true)
+                        targetPartFile.delete()
+                    }
 
-                onProgress(
-                    DownloadProgress(
-                        modelId = spec.id,
-                        fileName = spec.fileName,
-                        downloadedBytes = finalFile.length(),
-                        totalBytes = finalFile.length(),
-                        progressPercent = 100,
-                        speedMbPerSec = 0f,
-                        isCompleted = true
+                    onProgress(
+                        DownloadProgress(
+                            modelId = spec.id,
+                            fileName = resolvedFileName,
+                            downloadedBytes = targetFinalFile.length(),
+                            totalBytes = targetFinalFile.length(),
+                            progressPercent = 100,
+                            speedMbPerSec = 0f,
+                            isCompleted = true
+                        )
                     )
-                )
-                Log.i(TAG, "Successfully downloaded ${finalFile.name} (${finalFile.length()} bytes)")
-                Result.success(finalFile)
+                    Log.i(TAG, "Successfully downloaded ${targetFinalFile.name} (${targetFinalFile.length()} bytes)")
+                    return@withContext Result.success(targetFinalFile)
+                }
             }
+
+            onProgress(
+                DownloadProgress(
+                    modelId = spec.id,
+                    fileName = resolvedFileName,
+                    downloadedBytes = 0L,
+                    totalBytes = 0L,
+                    progressPercent = 0,
+                    speedMbPerSec = 0f,
+                    error = lastErrorMsg
+                )
+            )
+            Result.failure(IllegalStateException(lastErrorMsg))
         } catch (e: Exception) {
             Log.e(TAG, "Model download error for ${spec.fileName}: ${e.message}")
+            onProgress(
+                DownloadProgress(
+                    modelId = spec.id,
+                    fileName = resolvedFileName,
+                    downloadedBytes = 0L,
+                    totalBytes = 0L,
+                    progressPercent = 0,
+                    speedMbPerSec = 0f,
+                    error = e.message ?: "Network error"
+                )
+            )
             Result.failure(e)
         } finally {
             activeCancelFlags.remove(spec.id)

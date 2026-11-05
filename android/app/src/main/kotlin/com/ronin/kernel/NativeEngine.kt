@@ -374,8 +374,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     fun resolveEmbeddingModelPath(): String {
         if (embeddingModelPath.isNotBlank() && File(embeddingModelPath).exists()) return embeddingModelPath
+        val modelsDir = File(context.filesDir, "models")
         val candidates = listOf(
-            File(context.filesDir, "models/embeddinggemma-2-740m.litertlm"),
+            File(modelsDir, "embeddinggemma-2-740m.litertlm"),
+            File(modelsDir, "embeddinggemma-2-text-270m.litertlm"),
+            File(modelsDir, "embedding-gemma-2-740m-int4.litertlm"),
             File(context.filesDir, "embeddinggemma-2-740m.litertlm")
         )
         for (c in candidates) {
@@ -383,6 +386,13 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 embeddingModelPath = c.absolutePath
                 return embeddingModelPath
             }
+        }
+        val dynamicEmb = modelsDir.listFiles { f ->
+            f.isFile && f.name.endsWith(".litertlm", true) && f.name.contains("embedding", true)
+        }?.firstOrNull()
+        if (dynamicEmb != null) {
+            embeddingModelPath = dynamicEmb.absolutePath
+            return embeddingModelPath
         }
         return ""
     }
