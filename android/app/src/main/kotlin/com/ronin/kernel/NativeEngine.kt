@@ -477,8 +477,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      */
     @Suppress("unused")
     fun pushTokenToUI(fragment: String, isFinal: Boolean) {
-        // v10.2.9: Correct silence logic. Only allow final packets or unsilenced tokens.
-        if (inferenceSilencedFlag && !isFinal) return
+        // v10.2.9: Suppress all emissions when inference is silenced for background/internal reasoning
+        if (inferenceSilencedFlag) return
         scope.launch { _inferenceFlow.emit(InferencePacket(0, fragment, isFinal)) }
     }
 
@@ -727,7 +727,13 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      * Ideal for document summarization, extraction, and direct Q&A.
      */
     suspend fun performLocalInferenceAsync(input: String): ProcessResult = withContext(Dispatchers.IO) {
-        val rawJson = runNeuralReasoning(input)
+        val prevSilence = inferenceSilencedFlag
+        val rawJson = try {
+            inferenceSilencedFlag = true
+            runNeuralReasoning(input)
+        } finally {
+            inferenceSilencedFlag = prevSilence
+        }
         try {
             val j = JSONObject(rawJson)
             if (j.optBoolean("success", false)) {
@@ -1174,7 +1180,11 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         return false
     }
 
+    var primaryCloudProviderName: String = "Gemini"
+        private set
+
     fun setPrimaryCloudProviderSafe(provider: String) {
+        primaryCloudProviderName = provider
         if (isLibLoaded) try { setPrimaryCloudProviderNative(provider) } catch (e: Exception) {}
     }
 

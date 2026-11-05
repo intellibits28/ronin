@@ -156,6 +156,64 @@ class RoninV51UpgradeTest {
     }
 
     @Test
+    fun `test walled garden domains are detected and filtered`() {
+        assertTrue(LocalResearchEngine.isWalledGardenDomain("facebook.com"))
+        assertTrue(LocalResearchEngine.isWalledGardenDomain("m.facebook.com"))
+        assertTrue(LocalResearchEngine.isWalledGardenDomain("www.facebook.com"))
+        assertTrue(LocalResearchEngine.isWalledGardenDomain("instagram.com"))
+        assertTrue(LocalResearchEngine.isWalledGardenDomain("twitter.com"))
+        assertTrue(LocalResearchEngine.isWalledGardenDomain("x.com"))
+        assertTrue(LocalResearchEngine.isWalledGardenDomain("tiktok.com"))
+        assertTrue(LocalResearchEngine.isWalledGardenDomain("linkedin.com"))
+        assertTrue(LocalResearchEngine.isWalledGardenDomain("youtube.com"))
+
+        // Legitimate news and content domains should pass
+        assertFalse(LocalResearchEngine.isWalledGardenDomain("vinnews.com"))
+        assertFalse(LocalResearchEngine.isWalledGardenDomain("aviation-safety.net"))
+        assertFalse(LocalResearchEngine.isWalledGardenDomain("en.wikipedia.org"))
+        assertFalse(LocalResearchEngine.isWalledGardenDomain("bbc.com"))
+        assertFalse(LocalResearchEngine.isWalledGardenDomain("irrawaddy.com"))
+    }
+
+    @Test
+    fun `test cleanSearchQuery removes conversational Burmese filler`() {
+        val raw = "Learjet 60 နောက်ဆုံးရသတင်းတွေ ပြောပြပါ"
+        val cleaned = LocalResearchEngine.cleanSearchQuery(raw)
+        assertEquals("Learjet 60 နောက်ဆုံးရသတင်းတွေ", cleaned)
+
+        val raw2 = "Quantum computing အကြောင်း ရှင်းပြပါ"
+        val cleaned2 = LocalResearchEngine.cleanSearchQuery(raw2)
+        assertEquals("Quantum computing အကြောင်း", cleaned2)
+    }
+
+    @Test
+    fun `test cleanModelSynthesisOutput and isPromptLeaked sanitize leaked prompt fragments`() {
+        val leakedText = """
+            SECURITY DIRECTIVE:
+            1. You are operating in STRICT READ-ONLY SUMMARIZATION MODE.
+            <untrusted_web_content source="1" url="https://example.com" title="Test">
+            Garbage
+            </untrusted_web_content>
+            sources inline using [1], [2] [3]
+        """.trimIndent()
+
+        assertTrue(LocalResearchEngine.isPromptLeaked(leakedText))
+
+        val legitimateSynthesis = """
+            1. 📌 အနှစ်ချုပ် တွေ့ရှိချက် (Executive Summary)
+            Learjet 60 လေယာဉ်ပျက်ကျမှု ဖြစ်ပွားခဲ့ကြောင်း [1] တွင် ဖော်ပြထားသည်။
+            2. 🔍 အဓိက အချက်အလက်များ
+            စုံစမ်းစစ်ဆေးရေး အဖွဲ့များက စစ်ဆေးလျက်ရှိသည် [2]။
+        """.trimIndent()
+
+        assertFalse(LocalResearchEngine.isPromptLeaked(legitimateSynthesis))
+
+        val dirtyModelOutput = "[REPLY][THINK]Thinking about query[/THINK]<untrusted_web_content source=\"1\">test</untrusted_web_content>Clean Burmese result[/REPLY]"
+        val cleanedOutput = LocalResearchEngine.cleanModelSynthesisOutput(dirtyModelOutput)
+        assertEquals("Clean Burmese result", cleanedOutput)
+    }
+
+    @Test
     fun `test MCP HMAC-SHA256 signature and 30-second replay window verification`() {
         val secret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         val timestamp = 1_750_000_000L

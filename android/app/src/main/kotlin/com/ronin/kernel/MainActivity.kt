@@ -2421,8 +2421,9 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             val roninMsg = ChatMessage(
                                                 System.currentTimeMillis() + 1,
                                                 "Ronin",
-                                                "🌐 Initializing Sovereign Web Research for: **$query**...",
-                                                initialIsThinking = true
+                                                "",
+                                                initialIsThinking = true,
+                                                initialThoughtContent = "🌐 Initializing Sovereign Web Research for: **$query**..."
                                             )
                                             chatViewModel.messages.add(roninMsg)
 
@@ -2432,7 +2433,11 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 nativeEngine = engine,
                                                 onProgress = { statusText ->
                                                     scope.launch(Dispatchers.Main) {
-                                                        roninMsg.thoughtContent += "\n$statusText"
+                                                        if (roninMsg.thoughtContent.isEmpty()) {
+                                                            roninMsg.thoughtContent = statusText
+                                                        } else {
+                                                            roninMsg.thoughtContent += "\n$statusText"
+                                                        }
                                                     }
                                                 }
                                             )

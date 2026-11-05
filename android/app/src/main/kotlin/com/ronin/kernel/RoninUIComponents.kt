@@ -699,11 +699,12 @@ fun ResearchResultCard(
     }
     val synthesisBody = remember(rawReportContent) {
         val markerIdx = rawReportContent.indexOf("---SYNTHESIS---")
-        if (markerIdx != -1) {
+        val rawBody = if (markerIdx != -1) {
             rawReportContent.substring(markerIdx + "---SYNTHESIS---".length).trim()
         } else {
             rawReportContent.replace("[RESEARCH_REPORT]", "").trim()
         }
+        LocalResearchEngine.cleanModelSynthesisOutput(rawBody)
     }
 
     Surface(
