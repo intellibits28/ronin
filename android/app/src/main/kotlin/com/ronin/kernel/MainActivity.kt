@@ -1992,17 +1992,24 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 }
             }
 
-            // Phase 2.3: For documents > 8,000 chars, select high-centrality chunks via EmbeddingGemma 2
-            val distilledContent = if (readRes.content.length > 8_000) {
+            // Phase 2.3: Dynamic Safe Token Budgeting for Myanmar & Multilingual Documents
+            val isMyanmarDoc = DocumentIntelligence.isMyanmarScript(readRes.content)
+            val safeCharLimit = DocumentIntelligence.calculateSafeSummaryCharLimit(readRes.content)
+
+            val distilledContent = if (readRes.content.length > safeCharLimit) {
                 roninMsg.content = "🧠 Selecting high-centrality passages via EmbeddingGemma 2 (768D RAG)..."
                 val embModelPath = chatViewModel.discoveredModels.firstOrNull {
                     it.contains("embed", ignoreCase = true)
                 } ?: ""
-                val chunks = DocumentIntelligence.chunkText(readRes.content, chunkSize = 1600, overlap = 120)
+                val chunks = DocumentIntelligence.chunkText(
+                    readRes.content,
+                    chunkSize = if (isMyanmarDoc) 600 else 1400,
+                    overlap = if (isMyanmarDoc) 60 else 100
+                )
                 val customVecs = engine.generateEmbeddingsSubBatched(chunks, embModelPath)
                 DocumentIntelligence.selectHighCentralityChunks(
                     fullText = readRes.content,
-                    targetChars = 8_000,
+                    targetChars = safeCharLimit,
                     customEmbeddings = customVecs
                 )
             } else {
@@ -2349,8 +2356,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             return@launch
                                         }
 
-                                        if (cmdClean.startsWith("/summarize")) {
-                                            val target = raw.trim().substringAfter(" ", "").trim()
+                                        if (cmdClean.startsWith("/summarize") || cmdClean.startsWith("/summary") || cmdClean.startsWith("/youtube-summarizer")) {
+                                            val target = raw.trim().substringAfter(" ", "").trim().trim('"', '\'')
                                             if (target.isEmpty()) {
                                                 chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /summarize <filename or path>"))
                                                 chatViewModel.isGenerating = false
@@ -2904,8 +2911,10 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                         val rawLower = raw.lowercase()
                                         val isSummaryIntent = rawLower.contains("summary") || rawLower.contains("summarize") || raw.contains("အကျဉ်းချုပ်")
                                         if (isSummaryIntent) {
+                                            val quotedMatch = Regex("""["']([^"']+\.(?:md|txt|pdf|json|csv|log|cpp|h|kt|java|py|html))["']""", RegexOption.IGNORE_CASE).find(raw)?.groupValues?.get(1)
+                                            val fullPathMatch = Regex("""(/[^\r\n]+\.(?:md|txt|pdf|json|csv|log|cpp|h|kt|java|py|html))""", RegexOption.IGNORE_CASE).find(raw)?.groupValues?.get(1)
                                             val fileRegex = Regex("""([a-zA-Z0-9_\-./\\]+\.(?:md|txt|pdf|json|csv|log|cpp|h|kt|java|py|html))""", RegexOption.IGNORE_CASE)
-                                            val fileMatch = fileRegex.find(raw)?.value
+                                            val fileMatch = quotedMatch ?: fullPathMatch ?: fileRegex.find(raw)?.value
                                             val targetFile = if (fileMatch != null) {
                                                 fileMatch
                                             } else {

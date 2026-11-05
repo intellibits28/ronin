@@ -318,5 +318,25 @@ class RoninV51UpgradeTest {
         assertTrue("Image-only PDF must set needsOcrFallback = true", scannedRes.needsOcrFallback)
         scannedPdf.delete()
     }
+
+    @Test
+    fun `test dynamic safe token budget for Myanmar text prevents LiteRT 4000 token limit violation`() {
+        val myanmarSample = "အဆင့်မြင့် AI Prompting နှင့် Context Engineering နည်းပညာများသည် ကြီးမားသော ဘာသာစကားမော်ဒယ်များ (LLMs) ကို ထိရောက်စွာ အသုံးချရာတွင် မရှိမဖြစ် အရေးပါသည်။ ".repeat(40)
+        assertTrue(myanmarSample.length > 5000)
+
+        // Must detect Myanmar Unicode
+        assertTrue(DocumentIntelligence.isMyanmarScript(myanmarSample))
+        assertEquals(1800, DocumentIntelligence.calculateSafeSummaryCharLimit(myanmarSample))
+
+        // English text should allow higher character limit
+        val englishSample = "Advanced AI Prompting and Context Engineering strategies for on-device reasoning models. ".repeat(60)
+        assertFalse(DocumentIntelligence.isMyanmarScript(englishSample))
+        assertEquals(4500, DocumentIntelligence.calculateSafeSummaryCharLimit(englishSample))
+
+        // When distilled, Myanmar document must strictly not exceed safe char limit (~1,800 chars / ~1,800 tokens)
+        val distilledMyanmar = DocumentIntelligence.selectHighCentralityChunks(myanmarSample)
+        assertTrue("Distilled Myanmar text (${distilledMyanmar.length} chars) must not exceed 1800", distilledMyanmar.length <= 1800)
+        assertTrue(distilledMyanmar.isNotBlank())
+    }
 }
 

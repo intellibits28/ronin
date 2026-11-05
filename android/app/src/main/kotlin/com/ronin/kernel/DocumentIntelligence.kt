@@ -22,7 +22,8 @@ object DocumentIntelligence {
     private const val TAG = "Ronin_DocIntelligence"
 
     const val MAX_READ_BYTES = 512 * 1024 // 512 KB safe ceiling for on-device RAM
-    const val MAX_SUMMARY_CHARS = 8000     // Fits comfortably in Gemma 4's 4k token window
+    const val MAX_SUMMARY_CHARS = 4500     // Default upper bound for Latin/English text
+    const val MYANMAR_MAX_SUMMARY_CHARS = 1800 // Safe upper bound for Myanmar text (~1,800 tokens in Gemma)
     const val DEFAULT_CHUNK_SIZE = 2500
     const val DEFAULT_OVERLAP = 200
 
@@ -522,12 +523,39 @@ object DocumentIntelligence {
     }
 
     /**
+     * Checks if a text snippet contains Myanmar Unicode characters.
+     */
+    fun isMyanmarScript(text: String): Boolean {
+        var myanmarChars = 0
+        val sampleLen = text.length.coerceAtMost(1000)
+        for (i in 0 until sampleLen) {
+            val ch = text[i]
+            if (ch in '\u1000'..'\u109F' || ch in '\uAA60'..'\uAA7F' || ch in '\uA9E0'..'\uA9FF') {
+                myanmarChars++
+                if (myanmarChars >= 3) return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Determines the maximum safe character budget for on-device Gemma 4 / LiteRT-LM.
+     * In SentencePiece tokenization, Myanmar Unicode characters average ~0.9 to 1.2 tokens per character.
+     * To strictly stay below LiteRT's 4,000-token context limit and leave ~1,500 tokens for output generation,
+     * Myanmar documents must be budgeted at ~1,800 characters (~1,800 tokens).
+     * English/Latin documents average ~4 characters per token, allowing ~4,500 characters.
+     */
+    fun calculateSafeSummaryCharLimit(content: String): Int {
+        return if (isMyanmarScript(content)) MYANMAR_MAX_SUMMARY_CHARS else MAX_SUMMARY_CHARS
+    }
+
+    /**
      * Builds an effective summarization prompt for Gemma 4 / Ronin LLM.
      */
     fun buildSummaryPrompt(fileName: String, content: String, langMyanmar: Boolean = true): String {
-        // Use centrality-based RAG chunk selection for long documents (> MAX_SUMMARY_CHARS)
-        val safeContent = if (content.length > MAX_SUMMARY_CHARS) {
-            selectHighCentralityChunks(content, targetChars = MAX_SUMMARY_CHARS)
+        val safeLimit = calculateSafeSummaryCharLimit(content)
+        val safeContent = if (content.length > safeLimit) {
+            selectHighCentralityChunks(content, targetChars = safeLimit)
         } else {
             content
         }
@@ -561,18 +589,21 @@ object DocumentIntelligence {
 
     /**
      * Phase 2.3: RAG Centrality-Based Chunk Selector for Long Documents.
-     * Instead of blindly truncating at 8,000 characters, embeds all chunks into 768D space,
+     * Instead of blindly truncating or blowing up LiteRT token contexts, embeds all chunks into 768D space,
      * computes document centroid vector, and selects the top most representative chunks
      * preserving chronological order across the beginning, middle, and conclusion.
      */
     fun selectHighCentralityChunks(
         fullText: String,
-        targetChars: Int = MAX_SUMMARY_CHARS,
+        targetChars: Int = calculateSafeSummaryCharLimit(fullText),
         customEmbeddings: List<FloatArray>? = null
     ): String {
         if (fullText.length <= targetChars) return fullText
-        val chunks = chunkText(fullText, chunkSize = 1600, overlap = 120)
-        if (chunks.size <= 3) return fullText.take(targetChars)
+        val isMyanmar = isMyanmarScript(fullText)
+        val chunkSize = if (isMyanmar) 600 else 1400
+        val overlap = if (isMyanmar) 60 else 120
+        val chunks = chunkText(fullText, chunkSize = chunkSize, overlap = overlap)
+        if (chunks.size <= 1) return fullText.take(targetChars)
 
         val dim = InferenceService.EMBEDDING_DIM
         val embeddings = if (customEmbeddings != null && customEmbeddings.size == chunks.size) {
@@ -602,7 +633,7 @@ object DocumentIntelligence {
             for (d in 0 until dim.coerceAtMost(vec.size)) {
                 dot += vec[d] * centroid[d]
             }
-            // Slight positional bonus for intro (chunk 0) and conclusion (last chunk)
+            // Positional bonus for intro (chunk 0) and conclusion (last chunk)
             val bonus = when (idx) {
                 0 -> 0.15f
                 chunks.lastIndex -> 0.10f
@@ -615,16 +646,23 @@ object DocumentIntelligence {
         var accumulatedChars = 0
         for ((idx, _) in scoredIndices) {
             val len = chunks[idx].length
-            if (accumulatedChars + len <= targetChars || selectedIndices.isEmpty()) {
+            if (accumulatedChars + len <= targetChars) {
                 selectedIndices.add(idx)
                 accumulatedChars += len + 32
+            } else if (selectedIndices.isEmpty()) {
+                selectedIndices.add(idx)
+                accumulatedChars += len
+                break
             }
         }
 
+        if (selectedIndices.isEmpty()) return fullText.take(targetChars)
+
         selectedIndices.sort()
-        return selectedIndices.joinToString("\n\n---\n\n") { idx ->
+        val combined = selectedIndices.joinToString("\n\n---\n\n") { idx ->
             "[Section ${idx + 1}/${chunks.size}]\n${chunks[idx]}"
         }
+        return if (combined.length > targetChars) combined.take(targetChars) else combined
     }
 
     /**

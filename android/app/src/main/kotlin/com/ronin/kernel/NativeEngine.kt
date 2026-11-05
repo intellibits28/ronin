@@ -278,8 +278,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
     private val _inferenceFlow = MutableSharedFlow<InferencePacket>(replay = 0)
