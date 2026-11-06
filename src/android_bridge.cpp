@@ -43,6 +43,14 @@ void AndroidBridge::sendRequest(const CapabilityRequest& req) {
                 jstring jStr = env->NewStringUTF(json_str.c_str());
                 jstring jRes = (jstring)env->CallObjectMethod(runtime.instance, method, jStr);
                 
+                // Check and clear any pending Java exception (RONIN-SEC-08) to prevent SIGABRT
+                if (env->ExceptionCheck()) {
+                    LOGE(TAG, "Unhandled exception during onCapabilityRequest JNI call");
+                    env->ExceptionDescribe();
+                    env->ExceptionClear();
+                    jRes = nullptr;
+                }
+                
                 if (jRes) {
                     const char* cstr = env->GetStringUTFChars(jRes, nullptr);
                     std::string res_json(cstr);

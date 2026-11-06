@@ -1668,12 +1668,8 @@ fun SettingsSection(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
-                            val backupPath = activity?.backupCognitiveMemoryToDownloads()
-                            if (backupPath != null) {
-                                Toast.makeText(activity, "Memory backed up to: $backupPath", Toast.LENGTH_LONG).show()
-                            } else {
-                                activity?.memoryBackupLauncher?.launch("ronin_cognitive_backup.db")
-                            }
+                            // Secure export via SAF CreateDocument launcher (RONIN-SEC-04)
+                            activity?.memoryBackupLauncher?.launch("ronin_cognitive_backup.db")
                         },
                         modifier = Modifier.weight(1f).heightIn(min = 44.dp),
                         colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF1E88E5)),

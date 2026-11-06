@@ -24,5 +24,5 @@ When `Safe Mode` is toggled, all write operations to the `LongTermMemory` (inclu
 
 ## Authenticated Termux MCP Bridge (v5.1)
 1. **Loopback Restriction**: Rejects non-loopback MCP endpoints (`127.0.0.1` / `localhost` only).
-2. **256-bit Bearer + Per-Request HMAC-SHA256 Replay Protection**: Every JSON-RPC 2.0 call includes `Authorization: Bearer <secret>`, `X-Ronin-Timestamp: <epoch_sec>`, and `X-Ronin-Signature: HMAC_SHA256(secret, "$timestamp.$rawJsonBody")`, verified within a strict `±30s` window.
+2. **Per-Request HMAC-SHA256 Replay Protection**: Every JSON-RPC 2.0 call includes `X-Ronin-Timestamp: <epoch_sec>` and `X-Ronin-Signature: HMAC_SHA256(secret, "$timestamp.$rawJsonBody")`, verified within a strict `±30s` window without transmitting the raw secret over loopback (mitigating sniffing attacks).
 3. **Mandatory HITL Gate**: Every `tools/call` execution requires explicit user approval via the Android HITL confirmation dialog.

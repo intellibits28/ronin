@@ -6,6 +6,8 @@ import java.io.*
 import java.security.KeyStore
 import java.security.SecureRandom
 import javax.crypto.Cipher
+import javax.crypto.CipherInputStream
+import javax.crypto.CipherOutputStream
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -115,18 +117,34 @@ object PrivacyVault {
             val gcmSpec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
             cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec)
 
-            val originalBytes = sourceFile.readBytes()
-            val encryptedBytes = cipher.doFinal(originalBytes)
+            val tagBytes = GCM_TAG_LENGTH / 8
+            val sourceLength = sourceFile.length()
+            val encSize = sourceLength + tagBytes
+            if (encSize > Int.MAX_VALUE) {
+                return VaultResult(false, error = "File too large for vault (exceeds 2GB)")
+            }
 
+            // Stream encryption in 64KB chunks to prevent OutOfMemoryError (RONIN-SEC-07)
             DataOutputStream(FileOutputStream(destVaultFile)).use { out ->
                 // Write Header
                 out.writeUTF(HEADER_MAGIC)
                 out.writeUTF(sourceFile.name)
-                out.writeLong(sourceFile.length())
+                out.writeLong(sourceLength)
                 out.writeInt(iv.size)
                 out.write(iv)
-                out.writeInt(encryptedBytes.size)
-                out.write(encryptedBytes)
+                out.writeInt(encSize.toInt())
+                out.flush()
+
+                CipherOutputStream(out, cipher).use { cipherOut ->
+                    FileInputStream(sourceFile).use { fileIn ->
+                        val buffer = ByteArray(64 * 1024)
+                        var bytesRead: Int
+                        while (fileIn.read(buffer).also { bytesRead = it } != -1) {
+                            cipherOut.write(buffer, 0, bytesRead)
+                        }
+                        cipherOut.flush()
+                    }
+                }
             }
 
             if (deleteSource) {
@@ -137,7 +155,7 @@ object PrivacyVault {
             return VaultResult(
                 success = true,
                 file = destVaultFile,
-                details = "Encrypted ${sourceFile.name} (${originalBytes.size} bytes) -> Vault"
+                details = "Encrypted ${sourceFile.name} ($sourceLength bytes) -> Vault"
             )
         } catch (e: Exception) {
             Log.e(TAG, "Encryption failed: ${e.message}", e)
@@ -170,19 +188,30 @@ object PrivacyVault {
                 input.readFully(iv)
 
                 val encSize = input.readInt()
-                val encryptedBytes = ByteArray(encSize)
-                input.readFully(encryptedBytes)
 
                 val secretKey = getSecretKey(context)
                 val cipher = Cipher.getInstance(TRANSFORMATION)
                 val gcmSpec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
                 cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
 
-                val decryptedBytes = cipher.doFinal(encryptedBytes)
-
+                // Sanitize file name to prevent path traversal on vault restore
+                val safeOriginalName = File(originalName).name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
                 if (!targetDir.exists()) targetDir.mkdirs()
-                val targetFile = File(targetDir, originalName)
-                targetFile.writeBytes(decryptedBytes)
+                val targetFile = File(targetDir, safeOriginalName)
+                if (!targetFile.canonicalPath.startsWith(targetDir.canonicalPath)) {
+                    return VaultResult(false, error = "Path traversal detected in vault filename: $originalName")
+                }
+
+                // Stream decryption in 64KB chunks to prevent OutOfMemoryError (RONIN-SEC-07)
+                val cipherIn = CipherInputStream(input, cipher)
+                FileOutputStream(targetFile).use { fileOut ->
+                    val buffer = ByteArray(64 * 1024)
+                    var bytesRead: Int
+                    while (cipherIn.read(buffer).also { bytesRead = it } != -1) {
+                        fileOut.write(buffer, 0, bytesRead)
+                    }
+                    fileOut.flush()
+                }
 
                 Log.i(TAG, "Decrypted $vaultFileName -> ${targetFile.absolutePath}")
                 return VaultResult(

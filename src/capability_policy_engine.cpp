@@ -39,7 +39,12 @@ void CapabilityPolicyEngine::loadManifest() {
     const char* manifestPath = "policy_manifest.json";
     AAsset* asset = AAssetManager_open(mgr, manifestPath, AASSET_MODE_BUFFER);
     if (!asset) {
-        LOGW(TAG, "CapabilityPolicyEngine: %s not found in assets", manifestPath);
+        LOGW(TAG, "CapabilityPolicyEngine: %s not found in assets, trying capabilities.json", manifestPath);
+        manifestPath = "capabilities.json";
+        asset = AAssetManager_open(mgr, manifestPath, AASSET_MODE_BUFFER);
+    }
+    if (!asset) {
+        LOGE(TAG, "CapabilityPolicyEngine: neither policy_manifest.json nor capabilities.json found in assets");
         return;
     }
     size_t size = AAsset_getLength(asset);
@@ -52,17 +57,31 @@ void CapabilityPolicyEngine::loadManifest() {
         LOGE(TAG, "CapabilityPolicyEngine: failed to parse manifest JSON.");
         return;
     }
-    // Populate policy map.
-    for (auto& [key, val] : j.items()) {
-        PolicyEntry entry;
-        entry.allowed = val.value("allowed", true);
-        entry.battery_min = val.value("battery_min", 0);
-        entry.requires_network = val.value("requires_network", false);
-        entry.requires_human = val.value("requires_human", false);
-        if (val.contains("allowed_versions")) {
-            entry.allowed_versions = val["allowed_versions"].get<std::vector<int>>();
+    // Populate policy map from object map or array.
+    if (j.is_object()) {
+        for (auto& [key, val] : j.items()) {
+            PolicyEntry entry;
+            entry.allowed = val.value("allowed", true);
+            entry.battery_min = val.value("battery_min", 0);
+            entry.requires_network = val.value("requires_network", false);
+            entry.requires_human = val.value("requires_human", false);
+            if (val.contains("allowed_versions")) {
+                entry.allowed_versions = val["allowed_versions"].get<std::vector<int>>();
+            }
+            m_policyMap.emplace(key, std::move(entry));
         }
-        m_policyMap.emplace(key, std::move(entry));
+    } else if (j.is_array()) {
+        for (auto& item : j) {
+            std::string name = item.value("name", "");
+            if (name.empty()) continue;
+            PolicyEntry entry;
+            entry.allowed = true;
+            entry.battery_min = 5;
+            entry.requires_network = false;
+            entry.requires_human = false;
+            entry.allowed_versions = {1};
+            m_policyMap.emplace(name, std::move(entry));
+        }
     }
     LOGI(TAG, "CapabilityPolicyEngine: loaded %zu policy entries", m_policyMap.size());
 #else

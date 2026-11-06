@@ -1,0 +1,128 @@
+{
+  "LOCATION": {
+    "allowed": true,
+    "battery_min": 15,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "SMS": {
+    "allowed": true,
+    "battery_min": 5,
+    "requires_network": true,
+    "requires_human": true,
+    "allowed_versions": [1]
+  },
+  "SENSOR": {
+    "allowed": true,
+    "battery_min": 5,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "CAMERA": {
+    "allowed": true,
+    "battery_min": 10,
+    "requires_network": false,
+    "requires_human": true,
+    "allowed_versions": [1]
+  },
+  "AUDIO": {
+    "allowed": true,
+    "battery_min": 10,
+    "requires_network": false,
+    "requires_human": true,
+    "allowed_versions": [1]
+  },
+  "FILES": {
+    "allowed": true,
+    "battery_min": 5,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "MEMORY": {
+    "allowed": true,
+    "battery_min": 5,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "MAP": {
+    "allowed": true,
+    "battery_min": 10,
+    "requires_network": true,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "TEST": {
+    "allowed": true,
+    "battery_min": 0,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "CONTACTS": {
+    "allowed": true,
+    "battery_min": 5,
+    "requires_network": false,
+    "requires_human": true,
+    "allowed_versions": [1]
+  },
+  "ALARM": {
+    "allowed": true,
+    "battery_min": 5,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "CALENDAR": {
+    "allowed": true,
+    "battery_min": 5,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "MAIL": {
+    "allowed": true,
+    "battery_min": 5,
+    "requires_network": true,
+    "requires_human": true,
+    "allowed_versions": [1]
+  },
+  "FlashlightNode": {
+    "allowed": true,
+    "battery_min": 10,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "WiFiNode": {
+    "allowed": true,
+    "battery_min": 10,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "BluetoothNode": {
+    "allowed": true,
+    "battery_min": 10,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "FileSearchNode": {
+    "allowed": true,
+    "battery_min": 5,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  },
+  "ChatSkill": {
+    "allowed": true,
+    "battery_min": 5,
+    "requires_network": false,
+    "requires_human": false,
+    "allowed_versions": [1]
+  }
+}

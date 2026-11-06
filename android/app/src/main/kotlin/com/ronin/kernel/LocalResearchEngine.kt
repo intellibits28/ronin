@@ -660,10 +660,22 @@ object LocalResearchEngine {
         for ((src, chunks) in sourcesWithChunks) {
             val body = if (chunks.isNotEmpty()) chunks.joinToString("\n---\n") else src.snippet
             val truncatedBody = body.trim().take(maxCharsPerSource)
+            // Neutralize indirect prompt injection delimiter breakout (RONIN-SEC-06)
+            val sanitizedBody = truncatedBody
+                .replace("</untrusted_web_content>", "&lt;/untrusted_web_content&gt;")
+                .replace("<untrusted_web_content", "&lt;untrusted_web_content")
+            val sanitizedTitle = src.title
+                .replace("\"", "&quot;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            val sanitizedUrl = src.url
+                .replace("\"", "&quot;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
             xmlBlocks.append(
                 """
-                <untrusted_web_content source="${src.index}" url="${src.url}" title="${src.title}">
-                $truncatedBody
+                <untrusted_web_content source="${src.index}" url="$sanitizedUrl" title="$sanitizedTitle">
+                $sanitizedBody
                 </untrusted_web_content>
                 
                 """.trimIndent()

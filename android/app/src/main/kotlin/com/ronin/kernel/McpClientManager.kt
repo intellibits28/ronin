@@ -22,11 +22,11 @@ import kotlin.math.abs
  * Security Invariants:
  * 1. Loopback-only endpoint enforcement (`127.0.0.1` or `localhost`) unless explicitly authorized.
  * 2. 256-bit cryptographically random Shared Secret Token stored in private SharedPreferences.
- * 3. Per-request Replay Protection:
- *    - `Authorization: Bearer <secret>`
+ * 3. Per-request Replay & Integrity Protection:
  *    - `X-Ronin-Timestamp: <epoch_seconds>`
  *    - `X-Ronin-Signature: HMAC_SHA256(secret, "$timestamp.$rawJsonBody")` (hex-encoded)
  *    - Strict ±30s replay window verification helper.
+ *    - No cleartext secret transmission over shared loopback port (RONIN-SEC-03).
  * 4. Mandatory Human-In-The-Loop (HITL) approval callback before any `tools/call` invocation.
  */
 object McpClientManager {
@@ -311,7 +311,8 @@ object McpClientManager {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
-                setRequestProperty("Authorization", "Bearer $secret")
+                // Mitigate RONIN-SEC-03: Do not send raw secret in cleartext over shared loopback port.
+                // Request authenticity and integrity are verified exclusively via HMAC-SHA256 signature + timestamp.
                 setRequestProperty("X-Ronin-Timestamp", timestamp.toString())
                 setRequestProperty("X-Ronin-Signature", signature)
             }

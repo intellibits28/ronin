@@ -278,13 +278,18 @@ class MainActivity : FragmentActivity() {
                     val returnCursor = contentResolver.query(uri, null, null, null, null)
                     val nameIndex = returnCursor?.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                     returnCursor?.moveToFirst()
-                    val fileName = nameIndex?.let { returnCursor.getString(it) } ?: "custom.traineddata"
+                    val rawFileName = nameIndex?.let { returnCursor.getString(it) } ?: "custom.traineddata"
                     returnCursor?.close()
-                    val tempFile = File(cacheDir, fileName)
+                    // Sanitize file name to prevent path traversal (RONIN-SEC-01)
+                    val safeFileName = File(rawFileName).name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                    val tempFile = File(cacheDir, safeFileName)
+                    if (!tempFile.canonicalPath.startsWith(cacheDir.canonicalPath)) {
+                        throw SecurityException("Path traversal attempt detected in filename: $rawFileName")
+                    }
                     contentResolver.openInputStream(uri)?.use { input ->
                         java.io.FileOutputStream(tempFile).use { output -> input.copyTo(output) }
                     }
-                    val langCode = fileName.substringBeforeLast(".traineddata").lowercase()
+                    val langCode = safeFileName.substringBeforeLast(".traineddata").lowercase()
                     val res = OcrEngine.importCustomTrainedData(this@MainActivity, tempFile, langCode)
                     tempFile.delete()
                     res
@@ -397,10 +402,16 @@ class MainActivity : FragmentActivity() {
                     val returnCursor = contentResolver.query(uri, null, null, null, null)
                     val nameIndex = returnCursor?.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                     returnCursor?.moveToFirst()
-                    val fileName = nameIndex?.let { returnCursor.getString(it) } ?: "imported_model.litertlm"
+                    val rawFileName = nameIndex?.let { returnCursor.getString(it) } ?: "imported_model.litertlm"
                     returnCursor?.close()
+                    // Sanitize file name to prevent path traversal (RONIN-SEC-01)
+                    val safeFileName = File(rawFileName).name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                    val modelsDir = File(filesDir, "models").apply { if (!exists()) mkdirs() }
+                    val targetFile = File(modelsDir, safeFileName)
+                    if (!targetFile.canonicalPath.startsWith(modelsDir.canonicalPath)) {
+                        throw SecurityException("Path traversal attempt detected in filename: $rawFileName")
+                    }
                     val inputStream = contentResolver.openInputStream(uri)
-                    val targetFile = File(File(filesDir, "models").apply { if (!exists()) mkdirs() }, fileName)
                     inputStream?.use { input -> java.io.FileOutputStream(targetFile).use { output -> input.copyTo(output) } }
                     nativeEngine.isValidModel(targetFile.absolutePath)
                 } catch (e: Exception) { false }
@@ -436,19 +447,10 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    @Deprecated("Insecure public cleartext export disabled (RONIN-SEC-04). Use exportCognitiveMemoryToUri via SAF.")
     fun backupCognitiveMemoryToDownloads(): String? {
-        return try {
-            val dbFile = File(filesDir, "ronin_cognitive.db")
-            if (!dbFile.exists() || dbFile.length() == 0L) return null
-            val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-            if (!downloadDir.exists()) downloadDir.mkdirs()
-            val backupFile = File(downloadDir, "ronin_cognitive_backup.db")
-            dbFile.copyTo(backupFile, overwrite = true)
-            backupFile.absolutePath
-        } catch (e: Exception) {
-            Log.e("RoninKernel", "Backup to downloads failed: ${e.message}")
-            null
-        }
+        // Disabled to prevent leaking unencrypted cognitive DB to shared storage.
+        return null
     }
 
     fun importCognitiveMemoryFromUri(uri: Uri) {
