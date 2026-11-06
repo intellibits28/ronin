@@ -1106,7 +1106,7 @@ fun InputBar(
     onAttachClick: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        if (showCommandSuggestions) {
+        if (showCommandSuggestions && currentInput.startsWith("/") && !currentInput.contains(" ") && currentInput.isNotBlank()) {
             val query = currentInput.trim().lowercase()
             val suggestions = ALL_RONIN_COMMANDS.filter { it.command.startsWith(query) }
             if (suggestions.isNotEmpty()) {

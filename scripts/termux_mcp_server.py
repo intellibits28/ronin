@@ -8,12 +8,20 @@ import http.server
 import json
 import subprocess
 import os
+import shlex
 import hmac
 import hashlib
 import time
 
 PORT = 8765
 SHARED_SECRET = os.environ.get("RONIN_MCP_SECRET", "").strip()
+
+# Allowlist of safe shell commands to prevent command-line injection (CWE-78)
+ALLOWED_COMMANDS = {
+    "uname", "uptime", "whoami", "date", "pwd", "df", "free", "ps", "top",
+    "cat", "ls", "echo", "head", "tail", "wc", "id", "which", "printenv",
+    "python", "python3", "git", "ping", "curl", "grep", "find"
+}
 
 class McpRequestHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -80,11 +88,11 @@ class McpRequestHandler(http.server.BaseHTTPRequestHandler):
                 "tools": [
                     {
                         "name": "run_bash",
-                        "description": "Execute a shell command in Termux environment",
+                        "description": "Execute an allowed shell command in Termux environment",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "command": {"type": "string", "description": "Bash command line to execute"}
+                                "command": {"type": "string", "description": "Command line to execute"}
                             },
                             "required": ["command"]
                         }
@@ -113,31 +121,59 @@ class McpRequestHandler(http.server.BaseHTTPRequestHandler):
             args = params.get("arguments", {})
 
             if tool_name == "run_bash":
-                cmd = args.get("command", "echo 'No command provided'")
-                try:
-                    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
-                    output = proc.stdout if proc.returncode == 0 else (proc.stdout + "\n" + proc.stderr).strip()
-                    res["result"] = {
-                        "content": [{"type": "text", "text": output.strip() if output.strip() else "(command executed with no output)"}],
-                        "isError": proc.returncode != 0
-                    }
-                except Exception as e:
-                    res["result"] = {"content": [{"type": "text", "text": f"Execution error: {str(e)}"}], "isError": True}
+                cmd_str = args.get("command", "").strip()
+                if not cmd_str:
+                    res["result"] = {"content": [{"type": "text", "text": "No command provided"}], "isError": True}
+                else:
+                    try:
+                        # Safely parse into argument vector to prevent shell injection (CWE-78)
+                        cmd_tokens = shlex.split(cmd_str)
+                        base_cmd = os.path.basename(cmd_tokens[0]) if cmd_tokens else ""
+                        if base_cmd not in ALLOWED_COMMANDS:
+                            res["result"] = {
+                                "content": [{"type": "text", "text": f"Command '{base_cmd}' is not in the allowed commands list for security."}],
+                                "isError": True
+                            }
+                        else:
+                            proc = subprocess.run(
+                                cmd_tokens,
+                                shell=False,
+                                capture_output=True,
+                                text=True,
+                                timeout=30
+                            )
+                            output = proc.stdout if proc.returncode == 0 else (proc.stdout + "\n" + proc.stderr).strip()
+                            res["result"] = {
+                                "content": [{"type": "text", "text": output.strip() if output.strip() else "(command executed with no output)"}],
+                                "isError": proc.returncode != 0
+                            }
+                    except Exception as e:
+                        res["result"] = {"content": [{"type": "text", "text": f"Execution error: {str(e)}"}], "isError": True}
 
             elif tool_name == "get_device_info":
-                uname = subprocess.getoutput("uname -a")
-                uptime = subprocess.getoutput("uptime")
-                whoami = subprocess.getoutput("whoami")
+                uname = subprocess.run(["uname", "-a"], capture_output=True, text=True).stdout.strip()
+                uptime = subprocess.run(["uptime"], capture_output=True, text=True).stdout.strip()
+                whoami = subprocess.run(["whoami"], capture_output=True, text=True).stdout.strip()
                 info_text = f"User: {whoami}\nSystem: {uname}\nUptime: {uptime}"
                 res["result"] = {"content": [{"type": "text", "text": info_text}], "isError": False}
 
             elif tool_name == "list_files":
-                target_dir = args.get("path", os.path.expanduser("~"))
-                try:
-                    entries = os.listdir(target_dir)
-                    res["result"] = {"content": [{"type": "text", "text": "\n".join(entries[:50])}], "isError": False}
-                except Exception as e:
-                    res["result"] = {"content": [{"type": "text", "text": f"Error: {str(e)}"}], "isError": True}
+                raw_path = args.get("path", "")
+                base_dir = os.path.realpath(os.path.expanduser("~"))
+                target_dir = os.path.realpath(os.path.expanduser(raw_path)) if raw_path else base_dir
+
+                # Enforce directory confinement to prevent path injection (CWE-22)
+                if not target_dir.startswith(base_dir):
+                    res["result"] = {
+                        "content": [{"type": "text", "text": f"Access denied: path '{raw_path}' is outside home directory"}],
+                        "isError": True
+                    }
+                else:
+                    try:
+                        entries = sorted(os.listdir(target_dir))
+                        res["result"] = {"content": [{"type": "text", "text": "\n".join(entries[:50])}], "isError": False}
+                    except Exception as e:
+                        res["result"] = {"content": [{"type": "text", "text": f"Error: {str(e)}"}], "isError": True}
 
             else:
                 res["error"] = {"code": -32601, "message": f"Tool '{tool_name}' not found"}
@@ -159,8 +195,8 @@ def main():
     print("=" * 60)
     print(f"🚀 Ronin Termux MCP Server starting on http://127.0.0.1:{PORT}/mcp")
     if SHARED_SECRET:
-        masked = SHARED_SECRET[:8] + "..." + SHARED_SECRET[-6:]
-        print(f"🔐 Security: HMAC-SHA256 Auth ACTIVE (Secret: {masked})")
+        # Avoid cleartext logging of sensitive secret (CWE-532)
+        print("🔐 Security: HMAC-SHA256 Auth ACTIVE")
     else:
         print("⚠️  Security Warning: RONIN_MCP_SECRET is not set in environment.")
         print("    Run: export RONIN_MCP_SECRET=\"<token from /mcp token>\"")

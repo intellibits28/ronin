@@ -2288,7 +2288,10 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
 
                     InputBar(
                         currentInput = currentInput,
-                        onInputChange = { currentInput = it; chatViewModel.showCommandSuggestions = it.startsWith("/") },
+                        onInputChange = {
+                            currentInput = it
+                            chatViewModel.showCommandSuggestions = it.startsWith("/") && !it.contains(" ")
+                        },
                         isGenerating = chatViewModel.isGenerating,
                         onSendOrStop = {
                             if (chatViewModel.isGenerating) {
@@ -2296,6 +2299,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                 engine.stopInference()
                             } else if (currentInput.isNotBlank()) {
                                 val raw = currentInput
+                                // Dismiss slash command suggestions overlay immediately upon sending
+                                chatViewModel.showCommandSuggestions = false
                                 chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", raw))
                                 currentInput = ""
                                 chatViewModel.isGenerating = true

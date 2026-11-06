@@ -1157,8 +1157,8 @@ void cffti1_ps(int n, float *wa, int *ifac)
       for (ii = 4; ii <= idot; ii += 2) {
         i += 2;
         fi += 1;
-        wa[i-1] = cos(fi*argld);
-        wa[i] = sin(fi*argld);
+        wa[i-1] = cos((double)fi * argld);
+        wa[i] = sin((double)fi * argld);
       }
       if (ip > 5) {
         wa[i1-1] = wa[i-1];
