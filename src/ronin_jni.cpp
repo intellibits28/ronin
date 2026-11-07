@@ -360,7 +360,7 @@ JNIEXPORT void JNICALL native_runNightlyReflection(JNIEnv *env, jobject thiz) {
         runtimeContext().graph_executor->getReflectionEngine().reflectOnRecentTasks();
     }
     // Phase 3 Active Inference: Surprise-Driven Epistemic Consolidation when device temp < 38.0C
-    float currentTemp = HardwareBridge::getDeviceTemperature();
+    float currentTemp = HardwareBridge::getTemperature();
     if (runtimeContext().ltm && currentTemp < 38.0f) {
         auto surprisingFacts = runtimeContext().ltm->getTopSurprisingFacts(5, 0.35f);
         if (!surprisingFacts.empty()) {
