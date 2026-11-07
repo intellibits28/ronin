@@ -1,8 +1,12 @@
 # Ronin Kernel User Guide & Manual (အသုံးပြုသူ လမ်းညွှန်)
 
-Welcome to the official user manual for **Ronin Kernel** — a sovereign, on-device cognitive AI agent and Structural Health Monitoring (SHM) runtime for Android.
+> **📥 Download Latest APK (နောက်ဆုံးထွက် APK ဒေါင်းလုဒ်ရယူရန်):**  
+> 👉 **[Download from GitHub Latest Release (`https://github.com/intellibits28/ronin/releases/latest`)](https://github.com/intellibits28/ronin/releases/latest)**  
+> *(သို့မဟုတ် [All Releases Page](https://github.com/intellibits28/ronin/releases) မှတစ်ဆင့် ရယူနိုင်ပါသည်)*
 
-Ronin Kernel ၏ အသုံးပြုသူလက်စွဲစာအုပ်မှ ကြိုဆိုပါသည်။ ဤလမ်းညွှန်တွင် Ronin ကို ထည့်သွင်းခြင်း၊ On-device Brain တင်ခြင်း၊ Cloud Providers ချိတ်ဆက်ခြင်း၊ အဆောက်အအုံတုန်ခါမှု တိုင်းတာခြင်း (SHM)၊ ရေရှည်မှတ်ဉာဏ် (LTM) ထိန်းသိမ်းခြင်းနှင့် Backup ရယူနည်းများကို အသေးစိတ် ရှင်းပြထားပါသည်။
+Welcome to the official user manual for **Ronin Kernel (v5.1.1 Sovereign Tactical Upgrade)** — a sovereign, on-device cognitive AI agent, Hybrid RAG document assistant, and Structural Health Monitoring (SHM) runtime for Android.
+
+Ronin Kernel ၏ အသုံးပြုသူလက်စွဲစာအုပ်မှ ကြိုဆိုပါသည်။ ဤလမ်းညွှန်တွင် Ronin APK ဒေါင်းလုဒ်ရယူထည့်သွင်းခြင်း၊ On-device Brain (Gemma 4 & EmbeddingGemma 2) တင်သွင်းခြင်း၊ Cloud Providers ချိတ်ဆက်ခြင်း၊ ဝဘ်သုတေသနပြုလုပ်ခြင်း (`/research`)၊ စာရွက်စာတမ်း Hybrid RRF ရှာဖွေခြင်း (`/docsearch`)၊ Termux MCP Bridge (`/mcp`) ချိတ်ဆက်ခြင်း၊ အဆောက်အအုံတုန်ခါမှု တိုင်းတာခြင်း (SHM) နှင့် လုံခြုံစိတ်ချရသော `.roninvault` Backup ရယူနည်းများကို အသေးစိတ် ရှင်းပြထားပါသည်။
 
 ---
 
@@ -32,21 +36,25 @@ Ronin Kernel ၏ အသုံးပြုသူလက်စွဲစာအုပ
 Ronin သည် အင်တာနက်မလိုဘဲ ဖုန်းထဲတွင် သီးသန့်အလုပ်လုပ်နိုင်သော Native C++20 Cognitive Microkernel ဖြစ်ပြီး Android စနစ်နှင့် တိုက်ရိုက် ပေါင်းစပ်ထားပါသည်။
 
 ### အဓိက စွမ်းဆောင်ရည်များ (Core Capabilities):
-* **On-Device Local AI**: Google LiteRT-LM (Gemma 4) မော်ဒယ်များကို ဖုန်းထဲတွင် offline အပြည့်အဝ run နိုင်ခြင်း။
+* **On-Device Local AI & EmbeddingGemma 2**: Google LiteRT-LM (Gemma 4 E2B & EmbeddingGemma 2) မော်ဒယ်များကို ဖုန်းထဲတွင် offline အပြည့်အဝ run နိုင်ခြင်း။
+* **Hybrid RRF Document RAG (`/docsearch`)**: SQLite FTS5 BM25 (Lexical) + 768D SIMD Cosine Similarity (Semantic) တို့ကို Reciprocal Rank Fusion ($k=60$) ဖြင့် ပေါင်းစပ်၍ စာအုပ်/စာတမ်းကြီးများထဲမှ အပိုဒ်များကို တိကျစွာ ရှာဖွေပေးနိုင်ခြင်း။
+* **Privacy-Aware Local Research (`/research`)**: DuckDuckGo Lite (`POST`) မှ ရှာဖွေကာ ဖုန်းတွင်းရှိ Gemma 4 E2B ဖြင့် 100% Local Synthesis ပြုလုပ်ပြီး Inline Citations `[1][2][3]` ဖြင့် အစီရင်ခံစာ ထုတ်ပေးနိုင်ခြင်း။
+* **Authenticated Termux MCP Bridge (`/mcp`)**: HMAC-SHA256 + Timestamp + Nonce Anti-Replay လုံခြုံရေးဖြင့် Termux ရှိ Developer Tools များကို ချိတ်ဆက်အသုံးပြုနိုင်ခြင်း။
 * **Hybrid Cloud Fallback**: Gemini, OpenAI, OpenRouter နှင့် မိမိစိတ်ကြိုက် Cloud API များကို အချိန်မရွေး ပြောင်းလဲအသုံးပြုနိုင်ခြင်း။
 * **Structural Health Monitoring (SHM)**: 3-Axis Accelerometer နှင့် 2048-pt Welch Fast Fourier Transform (FFT) အသုံးပြု၍ အဆောက်အအုံ၊ တံတားနှင့် စက်ပစ္စည်းများ၏ တုန်ခါမှုကြိမ်နှုန်း (Resonance Frequency) ကို 0.05 Hz တိကျမှုဖြင့် တိုင်းတာစစ်ဆေးပေးနိုင်ခြင်း။
 * **Musical Instrument & Guitar Tuner**: ဖုန်းမိုက်ခရိုဖုန်းမှတစ်ဆင့် အသံလှိုင်း (PCM Audio) ကို ဖမ်းယူပြီး Fast Fourier Transform (FFT) နှင့် Peak Detection ဖြင့် ဂစ်တာကြိုး (E2, A2, D3, G3, B3, E4) နှင့် အခြားတူရိယာများကို Visual Cent Meter အပ်တံဖြင့် တိကျစွာ အသံညှိပေးနိုင်ခြင်း။
 * **Device Control Tools**: ဖုန်းဓာတ်မီး (Flashlight)၊ Wi-Fi၊ Bluetooth၊ GPS တည်နေရာ၊ ဖိုင်ရှာဖွေခြင်း (File Search)၊ မက်ဆေ့ခ်ျ (SMS) ပို့ခြင်းများကို AI မှ အလိုအလျောက် ခိုင်းစေနိုင်ခြင်း။
-* **Long-Term Memory (LTM)**: စကားပြောဆိုမှုများ၊ အရေးကြီး အချက်အလက် (Facts) များကို SQLite FTS5 lexical search ဖြင့် အမြဲတမ်း မှတ်သားထားနိုင်ခြင်း။
-* **Disaster Recovery**: App ကို update သို့မဟုတ် reinstall လုပ်သည့်အခါ မူလမှတ်ဉာဏ်များ မပျောက်စေရန် တစ်ချက်နှိပ်ရုံဖြင့် Downloads ထဲသို့ Backup ထုတ်ပေးနိုင်ခြင်း။
+* **Long-Term Memory (LTM) & Encrypted Vault (`.roninvault`)**: စကားပြောဆိုမှုများ၊ အရေးကြီး အချက်အလက် (Facts) များကို SQLite FTS5 ဖြင့် မှတ်သားထားနိုင်ပြီး AES-256-GCM Encrypted Snapshot (`.roninvault`) အဖြစ် လုံခြုံစွာ Backup/Restore ပြုလုပ်နိုင်ခြင်း။
 
 ---
 
 ## ၂။ စတင်ထည့်သွင်းခြင်းနှင့် Setup (Installation & Initial Setup)
 
-### APK ထည့်သွင်းခြင်း
-1. GitHub Releases သို့မဟုတ် GitHub Actions Artifact မှ `ronin-kernel-app-debug.apk` ကို ဒေါင်းလုဒ်ရယူပါ။
-2. APK ကို ဖွင့်၍ "Install" (သို့မဟုတ် ရှိပြီးသားအပေါ်မှ "Update") ပြုလုပ်ပါ။
+### APK ဒေါင်းလုဒ်ရယူခြင်းနှင့် ထည့်သွင်းခြင်း (Download & Install APK)
+1. **တိုက်ရိုက် ဒေါင်းလုဒ်ရယူရန် (Direct Download Link)**:
+   - 🔗 **[Ronin Latest Release APK (`https://github.com/intellibits28/ronin/releases/latest`)](https://github.com/intellibits28/ronin/releases/latest)** သို့ ဝင်ရောက်ပြီး Assets အောက်ရှိ `ronin-kernel-*.apk` ဖိုင်ကို ဒေါင်းလုဒ်ရယူပါ။
+   - *(ဗားရှင်းအားလုံးကို ကြည့်ရှုလိုပါက [GitHub Releases (`https://github.com/intellibits28/ronin/releases`)](https://github.com/intellibits28/ronin/releases) သို့မဟုတ် [GitHub Actions Artifacts (`https://github.com/intellibits28/ronin/actions`)](https://github.com/intellibits28/ronin/actions) တွင် ရယူနိုင်ပါသည်)*
+2. ဒေါင်းလုဒ်ရရှိလာသော APK ကို ဖွင့်၍ **"Install"** (သို့မဟုတ် ရှိပြီးသားအပေါ်မှ **"Update"**) ပြုလုပ်ပါ။
    *(မှတ်ချက် - Ronin တွင် ပုံသေ Deterministic Keystore သုံးထားသောကြောင့် နောင်ထွက်မည့် version များကို uninstall လုပ်စရာမလိုဘဲ အပေါ်ကနေ တိုက်ရိုက် Update တင်နိုင်ပါသည်)*
 
 ### လိုအပ်သော Permissions များ ခွင့်ပြုပေးခြင်း

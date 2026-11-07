@@ -39,13 +39,13 @@ The project is developed primarily on-device through Termux and Codex CLI. Full 
 - `tests/`: host-native tests.
 - `android/app/src/test/`: Android/JVM tests.
 
-## Current Engineering Priorities
+## Completed Milestones (v5.1.1 Sovereign Tactical Upgrade)
 
-1. Split `src/ronin_jni.cpp` into focused binding modules.
-2. Replace native global runtime pointers with an explicit `KernelRuntimeContext`.
-3. Add schema-versioned SQLite migrations and migration tests.
-4. Make native/Kotlin bridge results typed instead of relying on free-form error strings.
-5. Centralize sensitive capability policy and audit behavior.
-6. Improve structured logs with session, execution, correlation, node, and latency IDs.
+1. Split `src/ronin_jni.cpp` into focused binding modules (`src/jni/jni_memory_bindings.cpp`, `src/jni/jni_registration.cpp`).
+2. Replaced native global runtime pointers with an explicit RAII `KernelRuntimeContext`.
+3. Added schema-versioned SQLite v3 migrations, external-content FTS5 sync triggers, and Hybrid RRF vector store (`document_embeddings`).
+4. Implemented Privacy-Aware Local Research Engine (`/research`) with DuckDuckGo Lite POST, 256 KB stream cap, SSRF DNS-pinning, and Gemma 4 E2B synthesis.
+5. Hardened Termux MCP Bridge (`/mcp`) with HMAC-SHA256 + Timestamp + Nonce LRU anti-replay and strict Capability Security Policy.
+6. Replaced cleartext DB dumps with AES-256-GCM encrypted `.roninvault` snapshots via Android SAF.
 
-See `docs/IMPLEMENTATION_IMPROVEMENT_PLAN.md` for the implementation plan.
+See `RELEASE_NOTES_v5.1.1.md` and `CHANGELOG.md` for full release details.

@@ -76,9 +76,9 @@ Rooted in Karl Friston's Free Energy Principle (FEP), Ronin implements a hierarc
   - **Epistemic Slot Entropy ($H_{\text{slot}}$)**: Computes intent entropy $H_{\text{slot}} = 0.4(1 - \text{conf}) + 0.6(N_{\text{missing}} / N_{\text{total}})$. When $H_{\text{slot}} > 0.45$, `CLARIFY_USER` is selected to proactively request missing parameters before execution.
 - **Developer HUD Telemetry**: Real-time JNI export of Free Energy $F$, Gaze State, and selected Policy to Compose HUD gauges.
 
-## Document Intelligence & Personal File Assistant
+## Document Intelligence & Hybrid RRF RAG (`/docsearch`)
 
-Ronin features an integrated on-device personal document intelligence subsystem bridging Android OS pickers, native search, and local LLMs:
+Ronin features an integrated on-device personal document intelligence and Hybrid RAG subsystem bridging Android OS pickers, native SQLite vector search, and local LLMs:
 
 - **Attachment Gateway (📎)**:
   - **Photo Picker (`PickVisualMedia`)**: Privacy-first system photo picker that reads images without requiring `READ_MEDIA_IMAGES` permissions.
@@ -87,10 +87,30 @@ Ronin features an integrated on-device personal document intelligence subsystem 
   - Dispatches `FileProvider` intents for viewing and `ACTION_SEND` ShareSheet intents for email/app sharing.
   - Features one-tap clipboard path copy and on-device Gemma 4 sliding-window document summarization.
   - Native Google ML Kit OCR engine extracting bilingual Myanmar Unicode and English text.
+- **Hybrid RRF Vector Store (`document_embeddings`)**:
+  - Supports 3 model tiers (`EmbeddingGemma-2-270M`, `440M`, `740M`) with multi-model coexistence (`UNIQUE(doc_path, model_id, chunk_index)`).
+  - External-content SQLite FTS5 synchronization triggers (`document_embeddings_ai`, `document_embeddings_ad`, `document_embeddings_au`).
+  - 16-byte aligned SIMD Cosine Similarity combined with SQLite FTS5 BM25 via Reciprocal Rank Fusion ($k=60$).
+  - Mutex-guarded 16-chunk Binder IPC sub-batching and clean fallback to `MyanmarSegmenter` + FTS5 BM25 when no embedding model is loaded.
 - **Command Dispatch**:
   - `/files <query>`: Rapid FTS5 lexical file index search.
   - `/summarize <path>`: Direct chunked summarization.
-  - `/docsearch <path> <query>`: In-document chunk retrieval.
+  - `/docsearch <path> <query>`: Hybrid RRF semantic + lexical in-document chunk retrieval.
+
+## Privacy-Aware Local Research Engine (`/research`)
+
+- **Zero Cloud LLM Tracking**: Queries DuckDuckGo Lite via HTTP `POST` (`application/x-www-form-urlencoded`) to prevent query string and referrer leakage.
+- **Resource & SSRF Hardening**: Enforces a 256 KB decompressed stream cap and strict DNS-pinning across redirect hops (blocking loopback, RFC1918 private, link-local, CGNAT, multicast, and broadcast IPs).
+- **100% On-Device Synthesis**: Synthesizes extracted content locally using Gemma 4 E2B with inline `[1][2][3]` citations.
+- **Provenance Persistence ("SAVE TO VAULT")**: Never auto-injects unverified web results into LTM; requires explicit user confirmation to save with `source_type = "web_research"` provenance metadata.
+
+## Hardened Termux MCP Bridge (`/mcp`)
+
+- **Loopback Cryptographic Authentication**: Connects to `http://127.0.0.1:8765/mcp` without cleartext `Bearer` tokens, signing every request with HMAC-SHA256 (`X-Ronin-Signature`), `X-Ronin-Timestamp` (`±30s` window), and a 16-byte random hex nonce (`X-Ronin-Nonce` + LRU replay cache).
+- **Capability Security Policy**:
+  - `ALLOW`: Safe read-only tools (`get_device_info`, `list_files`, `read_file` with 128 KB cap, `git_status`, `git_diff`).
+  - `CONFIRM`: Modifying tools gated behind Human-In-The-Loop (HITL) approval.
+  - `DENY`: Arbitrary shell execution (`run_bash`, `shell`, `exec`) permanently blocked (CWE-78 remediation).
 
 ## Privacy Shield & Data Redaction
 
@@ -106,15 +126,15 @@ Ronin features an integrated on-device personal document intelligence subsystem 
 
 - **Human-in-the-Loop (HITL)**: High-risk operations (Vault access, device modifications) strictly require user consent.
 - **Encrypted Vault**: Sensitive facts and credentials stored in AES-256-GCM / EncryptedSharedPreferences with biometric authentication. Unconditional auth bypasses are prohibited.
+- **Scoped FileProvider & Path Sanitization**: File imports sanitize `DISPLAY_NAME` and verify canonical directory containment (`CWE-22`); `file_paths.xml` strictly scopes sharing to `documents/`, `attachments/`, and `docs/` (`CWE-732`).
 - **Android Backup Disabled**: `android:allowBackup="false"` prevents extraction of private database files across unencrypted ADB backups.
 - **FTS5 Query Sanitization**: User input is sanitized and bound with `SQLITE_TRANSIENT` to prevent SQL syntax injection errors.
 
-## Persistence & Disaster Recovery
+## Persistence & Encrypted Disaster Recovery (`.roninvault`)
 
 - **Databases**:
-  - `ronin_cognitive.db`: SQLite database storing memories, facts, perception states, and FTS5 indexes.
+  - `ronin_cognitive.db`: SQLite database storing memories, facts, vector embeddings (`document_embeddings`), perception states, and FTS5 indexes.
   - `ronin_graph.db`: Capability graph topology.
   - `checkpoint.bin`: Shadow buffer checkpointing for crash-consistent state recovery.
-- **In-App Disaster Recovery**: Settings includes one-tap SQLite database backup to `/sdcard/Download/ronin_cognitive_backup.db` and Storage Access Framework (SAF) export/import.
-- **Fresh Install Auto-Recovery**: On startup, an empty database automatically checks for and restores previous backups in Downloads.
+- **Encrypted Cognitive Vault Backup (`.roninvault`)**: Eliminates cleartext database exports (`CWE-312`). Executes `PRAGMA wal_checkpoint(TRUNCATE)` for atomic consistency, encrypts the snapshot via `PrivacyVault` (AES-256-GCM), and exports/imports through Android Storage Access Framework (SAF).
 - **Deterministic APK Signing**: The repository includes a permanent `debug.keystore`, ensuring all GitHub Actions artifact APKs share the exact same SHA-256 signature, allowing seamless in-place updates without losing local data.

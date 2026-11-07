@@ -76,40 +76,36 @@ Current native memory database schema is defined in `LongTermMemory::initSchema(
 - `facts`
 - `vault`
 - `episodes` and `episodes_fts`
+- `document_embeddings` and `document_chunks_fts` (External-content FTS5 with `ai`/`ad`/`au` sync triggers and `UNIQUE(doc_path, model_id, chunk_index)` multi-model coexistence)
 - `predictions`
 - `chat_history`
 - `file_index`
 - `audit`
 - `failures`
 
-Schema changes are managed through the native `schema_version` table. Current migrations archive the legacy `facts(key, value)` shape as `facts_legacy_v0`, create the current facts schema, rebuild FTS content, and keep notes/episodes FTS rows synchronized on insert, update, and delete.
+Schema changes are managed through the native `schema_version` table (currently v3). Current migrations archive legacy tables safely, maintain compound indexes (`idx_doc_path_model`), rebuild FTS content, and keep notes, episodes, and document chunks FTS rows synchronized on insert, update, and delete.
 
 ## Capabilities And Safety
 
 Capabilities are split between:
 
 - Native skills in `src/capabilities/`.
-- Android drivers/callbacks in Kotlin.
+- Centralized policy governance in `CapabilityPolicyEngine` (`src/capability_policy_engine.cpp`) reading `assets/capabilities.json`.
+- Android drivers/callbacks in Kotlin (`LocalResearchEngine.kt`, `McpClientManager.kt`, `DocumentIntelligence.kt`, `OcrEngine.kt`).
 - Capability graph nodes persisted through `GraphStorage`.
-- Human-in-the-loop confirmation for sensitive planner actions such as SMS and calendar operations.
-
-Current gap: sensitive capability policy is distributed across JNI, planner logic, manifests, and Android permission handling. It should be centralized in a policy engine.
+- Human-in-the-loop (HITL) confirmation for sensitive planner actions, MCP write tools, SMS, and calendar operations.
 
 ## Build And CI
 
-The project is developed on Termux, but full validation should run in GitHub Actions.
+The project is developed on Termux, with full validation running in GitHub Actions:
 
-Primary workflow:
+- `.github/workflows/build.yml` (`Ronin Kernel Build & Test`): Host C++ tests (`ctest`), Android debug APK assembly, and GitHub Release publication.
+- `.github/workflows/ronin-ci.yml` (`Ronin Isolated Inference CI`): Inference module validation, benchmarks, and JNI shared library verification.
 
-- `.github/workflows/build.yml`
+## Completed Architectural & Security Upgrades (v5.1.1)
 
-The workflow runs host tests, then builds the Android debug APK and uploads it as an artifact. Local Termux work should prioritize small edits, static review, and focused commands; CI should be treated as the build authority.
-
-## Known Technical Debt
-
-- `src/ronin_jni.cpp` is too broad and should be split into focused binding files.
-- Native runtime ownership relies on process-global pointers.
-- SQLite migration strategy is ad hoc.
-- Several bridge APIs return plain strings for typed failures.
-- Capability policy and audit rules are not centralized.
-- Structured observability is incomplete for multi-step agent sessions.
+- Split JNI implementation into modular bindings (`src/ronin_jni.cpp`, `src/jni/jni_memory_bindings.cpp`, `src/jni/jni_registration.cpp`).
+- Encapsulated native runtime ownership in RAII-managed `KernelRuntimeContext` (`src/jni/ronin_jni_context.h`).
+- Implemented schema v3 SQLite migrations with multi-model vector embedding coexistence and 16-byte aligned SIMD Cosine Similarity + FTS5 Hybrid RRF search.
+- Centralized capability policy enforcement via `CapabilityPolicyEngine` and hardened `scripts/termux_mcp_server.py` (eliminated arbitrary shell execution, enforced HMAC-SHA256 + Timestamp + Nonce LRU anti-replay).
+- Implemented AES-256-GCM encrypted `.roninvault` WAL-checkpointed snapshot backups via Android SAF.

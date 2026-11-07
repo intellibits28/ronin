@@ -1,184 +1,132 @@
-# Ronin Kernel
+# Ronin Kernel (v5.1.1 — Sovereign Tactical Upgrade)
 
-Ronin is a mobile AI runtime for Android with a C++20 native kernel, Kotlin/JNI integration, on-device LiteRT-LM inference, local SQLite memory, and advanced hardware/tool capabilities. The project is aimed at sovereign mobile agent behavior: observe device state, classify intent, retrieve memory, plan actions, execute capabilities, record outcomes, and adapt future routing through feedback.
+[![Ronin Kernel Build & Test](https://github.com/intellibits28/ronin/actions/workflows/build.yml/badge.svg)](https://github.com/intellibits28/ronin/actions/workflows/build.yml)
+[![Ronin Isolated Inference CI](https://github.com/intellibits28/ronin/actions/workflows/ronin-ci.yml/badge.svg)](https://github.com/intellibits28/ronin/actions/workflows/ronin-ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 
-A core feature of the Ronin Kernel is the **Structural Health Monitoring (SHM) Subsystem**. It includes a real-time native DSP engine with Modal Validation (v3.0) and an AI Review Pipeline that evaluates structural integrity using both local (Gemma) and cloud (Gemini/OpenRouter) AI models.
+> **📥 Download Latest Android APK / နောက်ဆုံးထွက် APK ဒေါင်းလုဒ်ရယူရန်:**  
+> 👉 **[Download from GitHub Latest Release (`https://github.com/intellibits28/ronin/releases/latest`)](https://github.com/intellibits28/ronin/releases/latest)**  
+> 📖 **[User Guide & Manual (အသုံးပြုသူ လမ်းညွှန် - English / မြန်မာ)](docs/USER_GUIDE.md)** • **[v5.1.1 Release Notes](RELEASE_NOTES_v5.1.1.md)** • **[Changelog](CHANGELOG.md)**
 
-The repository contains both the Android application and the native runtime it loads. The current implementation is best read as a native cognitive kernel plus an Android shell that provides UI, permissions, hardware access, dynamic cloud provider configuration, and an isolated inference worker process.
+---
 
-This project is currently developed from Termux/Codex CLI on Android. Full host and APK validation is expected to run in GitHub Actions.
+## 🌐 Overview (English) | စနစ်မိတ်ဆက် (မြန်မာ)
 
-## Current Architecture
+### 🇬🇧 English Overview
+**Ronin** is a sovereign, privacy-first mobile AI runtime and cognitive agent for Android. It combines a **C++20 native microkernel**, Kotlin/JNI integration, isolated on-device **LiteRT-LM (`Gemma 4 E2B` & `EmbeddingGemma 2`)** inference, a **SQLite FTS5 + 16-byte aligned SIMD Vector Store**, and hardware/tool capabilities. Ronin is engineered for autonomous on-device intelligence: observe device state, minimize Variational Free Energy (RAIK), retrieve hybrid lexical/semantic memory, plan multi-step actions, execute capabilities with Human-In-The-Loop (HITL) governance, and analyze physical structural integrity via its **Structural Health Monitoring (SHM v3.0)** DSP subsystem.
 
-At runtime the Android app initializes the native kernel through `NativeEngine`, then binds an `InferenceService` running in the `:inference_core` process. User input flows from Kotlin into JNI, through the native intent and graph layers, and either dispatches a deterministic skill or asks the LiteRT-LM reasoning spine for planning or response generation.
+### 🇲🇲 မြန်မာဘာသာဖြင့် မိတ်ဆက်
+**Ronin Kernel** သည် အင်တာနက်မလိုဘဲ ဖုန်းထဲတွင် သီးသန့် လုံခြုံစွာ အလုပ်လုပ်နိုင်သော **On-Device Sovereign AI Agent** နှင့် **အဆောက်အအုံ ကြံ့ခိုင်မှု တိုင်းတာရေး (SHM) Runtime** ဖြစ်ပါသည်။ C++20 Native Cognitive Microkernel နှင့် Android (Kotlin/Jetpack Compose) တို့ကို တိုက်ရိုက် ပေါင်းစပ်ထားပြီး Google LiteRT-LM (`Gemma 4` နှင့် `EmbeddingGemma 2`) မော်ဒယ်များကို ဖုန်းထဲတွင် Offline အပြည့်အဝ သုံးစွဲနိုင်သကဲ့သို့၊ လိုအပ်ပါက Cloud AI (Gemini, OpenAI, OpenRouter) များနှင့်လည်း ချိတ်ဆက်အသုံးပြုနိုင်ပါသည်။
 
-Key runtime pieces:
+---
 
-- Native kernel: `ronin_core`, built from `src/` and exposed to Android through `src/ronin_jni.cpp`.
-- Android bridge: `NativeEngine.kt`, which owns JNI calls, capability callbacks, cloud inference, model loading coordination, and service binding.
-- Inference worker: `InferenceService.kt`, a foreground Android service in `:inference_core` using `com.google.ai.edge.litertlm:litertlm-android:0.12.0`.
-- Persistence: SQLite with FTS5 for notes, facts, vault records, episodes, predictions, failures, chat history, graph state, and file indexes.
-- Capability execution: C++ skill dispatch plus Kotlin drivers for Android-only actions such as location, SMS, contacts, calendar, files, sensors, and UI-mediated human confirmation.
-- Learning and recovery: graph execution, Thompson sampling, failure telemetry, checkpoints, adaptive budgets, speculative execution, and runtime healing controllers.
+## 🚀 Key Capabilities (v5.1.1 Sovereign Tactical Upgrade) | အဓိက စွမ်းဆောင်ရည်များ
 
-## Source Map
+| Feature / စွမ်းဆောင်ရည် | English Description | မြန်မာဘာသာ ရှင်းလင်းချက် |
+| :--- | :--- | :--- |
+| **🎨 Tactical Brutalist UI & Myanmar Typography** | AMOLED pure black (`#0A0A0A`) theme, unified `8.dp` card geometry, diacritic-safe `21.sp` Myanmar dual-font system, and dismissible `/` command overlay. | AMOLED ဘက်ထရီချွေတာသည့် အနက်ရောင် ဒီဇိုင်း၊ မြန်မာစာ အပေါ်တင်/အောက်မြစ် မပြတ်တောက်သော `21.sp` စာလုံးစနစ်နှင့် အလွယ်တကူ ပိတ်နိုင်သော `/` Command list။ |
+| **📚 Hybrid RRF Document RAG (`/docsearch`)** | 3 configurable `EmbeddingGemma 2` tiers (`270M`, `440M`, `740M`), SQLite FTS5 BM25 + 768D SIMD Cosine Similarity fused via Reciprocal Rank Fusion ($k=60$), with `MyanmarSegmenter` fallback. | စာအုပ်နှင့် PDF စာတမ်းကြီးများကို `EmbeddingGemma 2` (Semantic) နှင့် SQLite FTS5 (Lexical) ပေါင်းစပ်ထားသော Hybrid RRF စနစ်ဖြင့် အပိုဒ်လိုက် တိကျစွာ ရှာဖွေပေးခြင်း။ |
+| **🔎 Privacy-Aware Local Research (`/research`)** | Queries DuckDuckGo Lite via HTTP `POST` (256 KB stream cap, SSRF DNS-pinning) and synthesizes locally via **Gemma 4 E2B** with `[1][2][3]` citations & **"SAVE TO VAULT"**. | ပြင်ပ Paid API မလိုဘဲ DuckDuckGo Lite မှ ရှာဖွေကာ ဖုန်းတွင်းရှိ Gemma 4 ဖြင့် 100% Local အနှစ်ချုပ်ထုတ်ပေးပြီး Source Citations `[1][2]` များဖြင့် ပြသပေးခြင်း။ |
+| **🔌 Hardened Termux MCP Bridge (`/mcp`)** | Loopback `127.0.0.1:8765` bridge secured with HMAC-SHA256, `±30s` timestamp window, 16-byte Nonce LRU anti-replay cache, and strict Capability Policy (`ALLOW`/`CONFIRM`/`DENY`). | Termux ရှိ Developer Tools များနှင့် HMAC-SHA256 + Nonce Anti-Replay စနစ်ဖြင့် လုံခြုံစွာ ချိတ်ဆက်ပြီး ဖိုင်စစ်ဆေးခြင်းနှင့် Git လုပ်ငန်းများ ဆောင်ရွက်နိုင်ခြင်း။ |
+| **🏗️ Structural Health Monitoring (SHM v3)** | 100Hz 3-axis accelerometer ingestion, 2048-pt Welch FFT (`pffft`), Modal Validation Engine v3 (<0.05Hz resolution), Kalman NIS tracking, and AI structural review. | ဖုန်း၏ Accelerometer အာရုံခံကိရိယာနှင့် 2048-pt Welch FFT တို့ဖြင့် အဆောက်အအုံ၊ တံတားနှင့် စက်ပစ္စည်းများ၏ တုန်ခါမှုကြိမ်နှုန်း ($F_0$) ကို တိကျစွာ တိုင်းတာစစ်ဆေးပေးခြင်း။ |
+| **🧠 Active Inference Kernel (RAIK)** | Karl Friston's Free Energy Principle in a $0.81\ \mu\text{s}$ C++20 hot-loop with 3-state sensory gaze gating (10Hz / 50Hz / 200Hz) and Expected Free Energy ($G(\pi)$) policy routing. | Free Energy Principle (FEP) အပေါ် အခြေခံ၍ ဖုန်းအပူချိန်၊ ဘက်ထရီနှင့် လှုပ်ရှားမှုအလိုက် အာရုံခံကြိမ်နှုန်းကို (10Hz / 50Hz / 200Hz) အလိုအလျောက် ချိန်ညှိပေးခြင်း။ |
+| **🛡️ Privacy Shield & `.roninvault` Backup** | On-device PII redaction (Myanmar NRC, phone, email, bank cards) and atomic WAL-checkpointed SQLite backups encrypted with **AES-256-GCM** via Android SAF. | မြန်မာမှတ်ပုံတင် (NRC)၊ ဖုန်းနံပါတ်နှင့် ဘဏ်ကတ်များကို အလိုအလျောက် ဖုံးကွယ်ပေးခြင်းနှင့် မှတ်ဉာဏ် Database ကို AES-256-GCM ဖြင့် ကုဒ်ဝှက်၍ `.roninvault` အဖြစ် သိမ်းဆည်းခြင်း။ |
 
-Native source is organized around the kernel subsystems:
+---
+
+## 📲 Quick Start & APK Installation | စတင်ထည့်သွင်းအသုံးပြုနည်း
+
+1. **Download APK / APK ဒေါင်းလုဒ်ရယူရန်**:
+   - Visit **[GitHub Latest Release (`https://github.com/intellibits28/ronin/releases/latest`)](https://github.com/intellibits28/ronin/releases/latest)** and download `ronin-kernel-*.apk`.
+   - [GitHub Latest Release](https://github.com/intellibits28/ronin/releases/latest) သို့ ဝင်ရောက်၍ `ronin-kernel-*.apk` ကို ဒေါင်းလုဒ်ဆွဲပြီး Install (သို့မဟုတ် ရှိပြီးသားအပေါ်မှ တိုက်ရိုက် Update) ပြုလုပ်ပါ။
+2. **Load Local Brain or Cloud Provider / မော်ဒယ် ချိတ်ဆက်ရန်**:
+   - **Local On-Device Mode**: Open **Menu (☰) > Settings > Section 4: Local Brain** and tap **Import Brain (`.litertlm`)** to load `Gemma 4 E2B` or `EmbeddingGemma 2` models.
+   - **Cloud Mode**: Open **Settings > Section 3: Cloud Providers** to configure Gemini, OpenAI, OpenRouter, or custom OpenAI-compatible endpoints.
+3. **Full User Guide / အသေးစိတ် လမ်းညွှန်**:
+   - Read the complete bilingual guide in **[`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)**.
+
+---
+
+## ⚡ Slash Commands Reference | အမြန်သုံး Command များ
+
+| Command | English Function | မြန်မာဘာသာ လုပ်ဆောင်ချက် |
+| :--- | :--- | :--- |
+| `/help`, `/capabilities` | Show available capabilities and tools | သုံးနိုင်သော စွမ်းဆောင်ရည်နှင့် Tool များ စာရင်းကြည့်ရန် |
+| `/status` | Inspect kernel health, thermal state, and RAM | စနစ်၏ ကျန်းမာရေး၊ အပူချိန်နှင့် RAM အခြေအနေ စစ်ဆေးရန် |
+| `/research <query>` | Run privacy-aware web research with local Gemma 4 synthesis | DuckDuckGo Lite + Local Gemma 4 ဖြင့် ဝဘ်သုတေသန ပြုလုပ်ရန် |
+| `/docsearch <path> <query>` | Hybrid RRF (FTS5 + 768D SIMD Vector) in-document search | စာရွက်စာတမ်းကြီးများထဲမှ အပိုဒ်များကို Hybrid RRF ဖြင့် ရှာဖွေရန် |
+| `/summarize <path>` | Sliding-window document summarization | သတ်မှတ်ထားသော ဖိုင်ကို AI ဖြင့် အနှစ်ချုပ်ခိုင်းရန် |
+| `/files <keyword>` | Fast SQLite FTS5 file search with `FileResultCard` | ဖုန်းထဲရှိ ဖိုင်များကို အမြန်ရှာဖွေပြီး ကတ်ဖြင့် ပြသရန် |
+| `/mcp status\|token\|tools` | Manage and inspect authenticated Termux MCP Bridge | Termux MCP Server ချိတ်ဆက်မှု၊ Token နှင့် Tool စာရင်း စစ်ဆေးရန် |
+| `/mcp call <tool> <json>` | Execute Termux MCP tool with HITL confirmation | Termux MCP Tool ကို အတည်ပြုချက်ဖြင့် လှမ်းခေါ်အသုံးပြုရန် |
+| `/model`, `/skills` | Inspect active `.litertlm` model and capability nodes | လက်ရှိ သုံးနေသော Model နှင့် Native Skill များကို စစ်ဆေးရန် |
+| `/reset`, `/reflect` | Reset KV cache/conversation or trigger reflection | စကားပြောမှတ်တမ်း အသစ်ပြန်စရန် သို့မဟုတ် Reflection run ရန် |
+
+---
+
+## 🏗️ Current Architecture | ဗိသုကာ တည်ဆောက်ပုံ
+
+At runtime, the Android application initializes the native C++20 kernel through `NativeEngine` (`KernelRuntimeContext`) and binds an isolated `InferenceService` running in the `:inference_core` process. User input flows from Jetpack Compose into JNI (`JniExecutionGateway`), through the Active Inference & Intent layers, and either executes a policy-governed skill or invokes the LiteRT-LM reasoning spine.
+
+```mermaid
+flowchart LR
+    UI["Compose UI\n(MainActivity / RoninUIComponents)"] --> Engine["NativeEngine (Kotlin)\nIPC Sub-Batching & Drivers"]
+    Engine <-->|AIDL Stream| Worker["InferenceService (:inference_core)\nLiteRT-LM (Gemma 4 / EmbeddingGemma 2)"]
+    Engine <-->|JNI Bridge| Kernel["C++20 Native Kernel (libronin_kernel.so)\nRAIK + IntentEngine + GraphExecutor"]
+    Kernel <--> LTM["SQLite + FTS5 + SIMD Vector Store\n(ronin_cognitive.db / .roninvault)"]
+    Engine <-->|HMAC-SHA256 + Nonce| MCP["Termux MCP Server\n(127.0.0.1:8765)"]
+```
+
+### Source Map
 
 | Path | Purpose |
-| --- | --- |
+| :--- | :--- |
 | `src/ronin_kernel.cpp`, `include/ronin_kernel.hpp` | Top-level observe/orient/decide/act kernel loop and world-state hooks. |
-| `src/ronin_jni.cpp`, `src/jni_utils.cpp`, `src/jni_gateway.cpp` | JNI registration, Kotlin bridge methods, execution governance, cancellation, memory APIs, sensor APIs, and model notifications. |
-| `src/intent_engine.cpp`, `include/intent_engine.h` | Intent classification, slash commands, task planning, skill registry, cloud/offline metadata, and skill execution. |
-| `src/agent_scheduler.cpp`, `src/agent_session.cpp`, `include/agent_scheduler.h` | Priority-based background execution of multi-step agent sessions. |
-| `src/graph_executor.cpp`, `src/capability_graph.cpp`, `src/graph_storage.cpp` | Capability graph planning, Thompson-sampling route selection, graph persistence, and episode/prediction recording. |
-| `src/long_term_memory.cpp`, `src/memory_manager.cpp` | SQLite-backed notes, facts, vault entries, episodes, predictions, files, failures, chat history, memory pressure, and maintenance. |
-| `src/capabilities/` | Native skill implementations and Android hardware bridge nodes. |
-| `src/reasoning/`, `include/reasoning/` | Active Inference Kernel (RAIK), Free Energy minimization, and Expected Free Energy (EFE) tactical policy router. |
-| `src/models/` | Native inference abstraction and model hydration support used by the planner/bridge. |
-| `src/dsp/vibe_monitor.cpp`, `src/dsp/resonance_analyzer.cpp` | Real-time sensor DSP analysis, Modal Validation Engine v3, detrending, filtering, and telemetry export. |
-| `android/app/src/main/kotlin/com/ronin/kernel/shm/` | SHM Session data models, Android Compose UI bindings, engineering exports, and the AI Review Pipeline. |
-| `android/app/src/main/kotlin/com/ronin/kernel/*` | Document Intelligence, ML Kit OCR Engine, Privacy Shield redaction, Privacy Vault, and Jetpack Compose Developer HUD. |
-| `src/*healing*`, `src/*budget*`, `src/*checkpoint*`, `src/failure_telemetry_bus.cpp` | Governance, checkpointing, retry, telemetry, and recovery infrastructure. |
-| `include/` | Public/native headers mirroring the source modules. |
+| `src/ronin_jni.cpp`, `src/jni/jni_memory_bindings.cpp`, `src/jni/jni_registration.cpp` | Modular JNI registration, memory/vector/hybrid search bindings, governance, and lifecycle hooks. |
+| `src/intent_engine.cpp`, `include/intent_engine.h` | Intent classification, slash commands, task planning, skill registry, and thread-safe cloud/model routing. |
+| `src/long_term_memory.cpp`, `include/long_term_memory.h` | SQLite v3 persistence, FTS5 sync triggers (`ai`/`ad`/`au`), multi-model vector store (`document_embeddings`), and 16-byte aligned SIMD Hybrid RRF search. |
+| `src/capability_policy_engine.cpp`, `assets/capabilities.json` | Centralized capability security policy enforcement and manifest governance. |
+| `src/reasoning/`, `include/reasoning/` | Active Inference Kernel (RAIK), Variational Free Energy ($F$), and Expected Free Energy ($G(\pi)$) router. |
+| `src/dsp/vibe_monitor.cpp`, `src/dsp/resonance_analyzer.cpp` | Real-time sensor DSP analysis, Modal Validation Engine v3, Welch PSD, and Kalman NIS tracking. |
+| `android/app/src/main/kotlin/com/ronin/kernel/MainActivity.kt` | Compose UI host, SAF encrypted `.roninvault` backup/restore, model/traineddata import sanitization. |
+| `android/app/src/main/kotlin/com/ronin/kernel/RoninUIComponents.kt` | Tactical Brutalist UI cards (`8.dp`), Myanmar-safe typography, `ResearchResultCard`, `FileResultCard`, and dismissible command overlay. |
+| `android/app/src/main/kotlin/com/ronin/kernel/LocalResearchEngine.kt` | DuckDuckGo Lite POST client, 256 KB stream cap, SSRF multi-hop DNS-pinning, and local citation synthesis. |
+| `android/app/src/main/kotlin/com/ronin/kernel/McpClientManager.kt`, `scripts/termux_mcp_server.py` | Authenticated Termux MCP client and server with HMAC-SHA256, timestamp, and 16-byte Nonce LRU anti-replay. |
+| `android/app/src/main/kotlin/com/ronin/kernel/DocumentIntelligence.kt`, `OcrEngine.kt`, `PrivacyShield.kt`, `PrivacyVault.kt` | Document chunking, 16-chunk IPC sub-batching, ML Kit bilingual OCR, PII redaction, and AES-256-GCM encryption. |
 
-Android source is under `android/app/src/main/`:
+---
 
-| Path | Purpose |
-| --- | --- |
-| `kotlin/com/ronin/kernel/MainActivity.kt` | Compose UI, live FEP telemetry gauges, attachment dialogs, and app-level interaction surface. |
-| `kotlin/com/ronin/kernel/NativeEngine.kt` | Main Android facade for JNI, AIDL service binding, cloud requests, memory/search APIs, and capability callbacks. |
-| `kotlin/com/ronin/kernel/InferenceService.kt` | Isolated LiteRT-LM worker service with streaming AIDL callbacks, model hydration, RAM guard, KV-cache reset, and conversation summarization. |
-| `aidl/com/ronin/kernel/` | `IInferenceService` and `IInferenceCallback` contracts for cross-process inference calls. |
-| `kotlin/com/ronin/kernel/*Driver.kt` | Android capability drivers for location, SMS, sensors, security, and file/search integration. |
-| `assets/capabilities.json`, `assets/providers.json`, `assets/myanmar_dictionary.txt` | Packaged capability/provider config and Myanmar segmentation dictionary. |
+## 🛠️ Build & Test | တည်ဆောက်ခြင်းနှင့် စမ်းသပ်စစ်ဆေးခြင်း
 
-Tests live in `tests/` for native host checks and `android/app/src/test/` for JVM-side Android tests.
-
-## Implemented Capabilities
-
-The codebase currently includes:
-
-- On-device Gemma/LiteRT-LM model loading from `.litertlm` files through the isolated inference service.
-- Streaming model output over AIDL back to the UI-facing `NativeEngine`.
-- Cloud fallback/provider requests through OkHttp using provider configuration JSON.
-- Tiered long-term memory APIs for notes, facts, vault data, episodes, predictions, failures, files, and chat history.
-- SQLite FTS5 lexical search with Myanmar segmentation support.
-- Agent planning and multi-step session scheduling with human-in-the-loop gates for sensitive actions.
-- Device world-state injection for battery, RAM, GPS, network, charging, and time-of-day context.
-- **Production-Grade Structural Health Monitoring (SHM)**: Ingests 100Hz MEMS accelerometer batches, applies high-pass filtering/detrending, and extracts modal frequencies (F₀) via a robust Modal Validation Engine to achieve <2% F₀ CV repeatability.
-- **SHM AI Review Pipeline**: Structures extracted telemetry into engineering JSON, formats it for human consumption, and routes it to cloud (Gemini, OpenRouter) or local (Gemma 4 E2B) LLMs to generate actionable structural reviews, warnings, and confidence scoring.
-- **Ronin Active Inference Kernel (RAIK)**: Karl Friston's Free Energy Principle running in a sub-microsecond C++20 hot-loop ($0.81\ \mu\text{s}$) with clamped precision regularization, 3-state adaptive sensory gaze gating (10Hz / 50Hz / 200Hz), and Level 2 Expected Free Energy router with epistemic intent entropy ($H_{\text{slot}}$).
-- **Personal Document AI Assistant & OCR**: System photo picker (`PickVisualMedia`) and SAF (`OpenDocument`) via 📎 clip attachment button, interactive `FileResultCard` with FileProvider opening, app/email sharing, on-device Gemma 4 sliding-window summarizer, and Google ML Kit bilingual text recognition.
-- **Privacy Shield & Data Redaction**: Real-time regex and token-based on-device redaction for Myanmar NRC, phone numbers, email addresses, and bank cards, with AES-GCM-256 encrypted sandbox vault.
-- Runtime health features such as cancellation, safe mode hooks, memory pressure handling, checkpoint storage, telemetry, speculative graph execution, and self-healing controllers.
-
-Legacy design documents and intermediate roadmaps are archived under `docs/archive/` and `old_logs_and_context/`. Consult `docs/USER_GUIDE.md` for user setup and feature usage, `docs/ARCHITECTURE_CURRENT.md` for runtime design, `docs/TECHNICAL_SPECS.md` for engineering specifications, and `docs/MANUAL_INDEX.md` for the complete documentation index.
-
-## Build Requirements
-
-Host/native development:
-
-- CMake 3.22.1 or newer
-- C++20 compiler
-- Network access during first CMake configure to fetch SQLite amalgamation, FlatBuffers, nlohmann/json, and GoogleTest
-
-Android development:
-
-- Android Gradle Plugin 8.4.2
-- Kotlin 2.3.21
-- JDK 17
-- Android SDK 34
-- NDK/CMake integration
-- arm64-v8a device or emulator for the Android native build
-
-The Android app depends on LiteRT-LM 0.12.0 and builds `libronin_kernel.so` from the repository root `CMakeLists.txt`.
-
-Local Termux development does not need to run every build command before each commit. Use the commands below when the required tools are available locally; otherwise rely on `.github/workflows/build.yml`.
-
-## Build And Test
-
-Configure and build native host targets:
-
+### Host Native Build & C++ Tests (18/18 Suites)
 ```bash
 cmake -S . -B build_host -DCMAKE_BUILD_TYPE=Debug
-cmake --build build_host
+cmake --build build_host -j2
+cd build_host && ctest --output-on-failure
 ```
 
-Run registered native tests:
-
-```bash
-cd build_host
-ctest --output-on-failure
-```
-
-Run the main native test binaries directly:
-
-```bash
-cd build_host
-./ronin_atomic_test
-./ronin_integration_test
-./ronin_governance_test
-./ronin_self_healing_test
-./ronin_evolution_test
-./ronin_segmenter_test
-```
-
-Build the Android debug APK:
-
+### Android APK Build & JVM Unit Tests
 ```bash
 cd android
+gradle testDebugUnitTest
 gradle assembleDebug
 ```
 
-Run Android/JVM tests:
+---
 
-```bash
-cd android
-gradle test
-```
+## 📚 Documentation Index | စာရွက်စာတမ်း လမ်းညွှန်များ
 
-## Runtime Setup & User Guide
+* **[`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)**: Complete Bilingual User Guide & Operations Manual (အသုံးပြုသူ လမ်းညွှန် အပြည့်အစုံ).
+* **[`RELEASE_NOTES_v5.1.1.md`](RELEASE_NOTES_v5.1.1.md)**: Executive Release Notes for Ronin v5.1.1 Sovereign Tactical Upgrade.
+* **[`CHANGELOG.md`](CHANGELOG.md)**: Chronological version history and release changelog.
+* **[`docs/MANUAL_INDEX.md`](docs/MANUAL_INDEX.md)**: Master documentation index and deep-dive technical links.
+* **[`docs/ARCHITECTURE_CURRENT.md`](docs/ARCHITECTURE_CURRENT.md)**: Production runtime architecture, RAIK math, Hybrid RAG, and security model.
+* **[`docs/TECHNICAL_SPECS.md`](docs/TECHNICAL_SPECS.md)**: Native core, Android layer, SQLite v3 schemas, and CI specifications.
+* **[`docs/SHM_PIPELINE_V3_ARCHITECTURE.md`](docs/SHM_PIPELINE_V3_ARCHITECTURE.md)**: Modal Validation Engine v3, Welch PSD, and SHM AI Review Pipeline.
+* **[`docs/08_SECURITY.md`](docs/08_SECURITY.md)**: Security governance, PII redaction, and vulnerability remediation notes.
 
-For step-by-step installation, on-device `.litertlm` setup, cloud API keys, SHM vibration monitoring, hardware tool usage, disaster recovery backup/restore, and troubleshooting, consult the bilingual manual:
+---
 
-- [`docs/USER_GUIDE.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/USER_GUIDE.md): Complete End-User & Developer Operations Manual (Myanmar & English).
+## 📄 License
 
-Cloud inference requires provider configuration (Gemini, OpenAI, OpenRouter) managed securely through the Android app settings. Do not commit API keys, model files, logs, or device-specific secrets.
-
-Useful logcat filters:
-
-```bash
-adb logcat -s RoninKernel_Native:V RoninKernel_Worker:V RoninKernel_JNI:V
-```
-
-Useful in-app slash commands include `/help`, `/capabilities`, `/status`, `/reset`, `/clear`, `/export`, and `/audit`.
-
-## Technical Documentation
-
-Master index and navigation:
-- [`docs/MANUAL_INDEX.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/MANUAL_INDEX.md): Complete repository documentation index and cross-references.
-
-Current source-of-truth documents:
-- [`docs/USER_GUIDE.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/USER_GUIDE.md): Operations manual, setup, hardware control, disaster recovery, and troubleshooting.
-- [`docs/ARCHITECTURE_CURRENT.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/ARCHITECTURE_CURRENT.md): Production architecture (v5.0+), `KernelRuntimeContext`, IPC daemon, SHM pipeline, governance, and recovery.
-- [`docs/TECHNICAL_SPECS.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/TECHNICAL_SPECS.md): Current native, Android, inference, persistence, capability, and CI specs.
-- [`docs/MANIFEST.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/MANIFEST.md): Repository goals, technical stack, module mapping, and architectural rules.
-- [`docs/SHM_PIPELINE_V3_ARCHITECTURE.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/SHM_PIPELINE_V3_ARCHITECTURE.md): Modal Validation Engine, continuous zero-copy IMU pipeline, and AI Review Layer.
-
-Historical drafts and legacy plans:
-- [`docs/archive/`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/archive): Archived blueprints (`BLUEPRINT_V1_3.md`, `MEMORY_MODEL_V2.md`, `SENSOR_DSP_V1.md`, `EVOLUTION_V1_6.md`, `COGNITIVE_RUNTIME_V1_0_PRODUCTION.md`, `COGNITIVE_RUNTIME_V3-V7_PLAN.md`, `BETA_TESTING.md`, etc.). See [`docs/archive/README.md`](file:///data/data/com.termux/files/home/play-ground/ronin/docs/archive/README.md) for historical notes.
-- `old_logs_and_context/`: Legacy pre-v2 notes and transcripts.
-
-## Development Notes
-
-- Keep native module structure mirrored between `src/` and `include/`.
-- Register new native sources in `CMakeLists.txt`.
-- Keep JNI-facing code in `src/ronin_jni.cpp`, `src/jni_utils.cpp`, `src/jni_gateway.cpp`, and the matching Kotlin facade.
-- Keep packaged capability manifests synchronized when behavior changes: `assets/capabilities.json` and `android/app/src/main/assets/capabilities.json`.
-- Add host tests under `tests/` and register them in `CMakeLists.txt`.
-- Add Android/JVM tests under `android/app/src/test/kotlin/`.
-
-## License
-
-This project is licensed under the [MIT License](file:///data/data/com.termux/files/home/play-ground/ronin/LICENSE).
+This project is licensed under the [MIT License](LICENSE).
