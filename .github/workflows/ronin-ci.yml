@@ -101,7 +101,7 @@ jobs:
       - name: Extract Native Library (.so)
         run: |
           mkdir -p output_libs
-          find android/app/build/intermediates/cmake/debug -name "libronin_kernel.so" -exec cp {} output_libs/ \;
+          find android/app/build -name "libronin_kernel.so" -exec cp {} output_libs/ \; || true
           cp android/app/build/outputs/apk/debug/app-debug.apk ronin-kernel-debug.apk
 
       - name: Upload Build Artifacts
