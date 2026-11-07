@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Privacy-Aware Local Research Engine (`/research`)**: 100% on-device synthesis with Gemma 4 E2B, DuckDuckGo Lite form-encoded search, 256 KB stream limit, SSRF redirect DNS-pinning, and interactive "SAVE TO VAULT" persistence with citation provenance.
 - **Hardened Termux MCP Bridge (`/mcp`)**: Authenticated local bridge with HMAC-SHA256 request signing, `±30s` timestamp window, 16-byte random hex nonce LRU cache, and strict Capability Security Policy (`ALLOW`, `CONFIRM`, and `DENY` for arbitrary shell execution).
 - **Encrypted Cognitive Vault Backup & Restore (`.roninvault`)**: Atomic WAL-checkpointed SQLite snapshotting encrypted with AES-256-GCM via Android Storage Access Framework (SAF).
+- **4-Phase Active Inference Subsystem Expansion**:
+  - **Phase 1 (Smart RAG Wakeup)**: Dual-Gate BM25 normalized Shannon entropy evaluator (`LEXICAL_ONLY` vs `INSPECT_DOC`) to skip unnecessary `EmbeddingGemma 2` model swaps on exact lexical matches.
+  - **Phase 2 (Privacy-Weighted Brain Router & Multi-Hop Research)**: $+100.0$ PII pragmatic cost barrier against `ESCALATE_CLOUD` and quadratic hop cost $C_{\text{hop}}(k) = c_0 \cdot k^2$ ($k_{\max}=2$) with $\Delta F < \epsilon$ early-stopping for `/research`.
+  - **Phase 3 (MCP Anomaly Gate & Surprise-Driven LTM Reflection)**: 32-slot ring buffer escalating `ALLOW` tools to `MCP_HITL_CONFIRM` when contextual surprise $F_{\text{mcp}} > 0.70$, plus write-time `surprise_score` tagging in `facts` and thermal-safe ($< 38^\circ\text{C}$) top-5 reconciliation during `/reflect`.
+  - **Phase 4 (Lock-Free Audio Kalman Precision Filter)**: Real-time inline precision-weighted Kalman gain ($\Pi_{\text{audio}} = \exp(-\beta \cdot \text{noise\_rms})$) in `ResonanceAnalyzer`.
 
 ### Changed
 - **Database Schema v3 Migration**: Added compound index `idx_doc_path_model` and automatic SQLite FTS5 external-content triggers (`document_embeddings_ai`, `document_embeddings_ad`, `document_embeddings_au`) to synchronize `document_chunks_fts` on inserts, deletes, and updates.

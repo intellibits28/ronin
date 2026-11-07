@@ -53,6 +53,16 @@
 * **Hardware-Backed AES-256-GCM Encryption**: Snapshots are encrypted with `PrivacyVault` using AES-256-GCM into `.roninvault` bundles.
 * **Scoped Storage Access Framework (SAF)**: Native Android SAF file pickers handle vault export and import securely.
 
+### 6. 4-Phase Active Inference Unified Subsystem Expansion
+* **Phase 1 — Dual-Gate BM25 Entropy for Smart RAG Wakeup (`/docsearch`)**: Evaluates temperature-scaled Softmax probabilities and normalized Shannon entropy $\hat{H} \in [0, 1]$ over SQLite FTS5 BM25 scores (`ExpectedFreeEnergyRouter::evaluateRagWakeup`). Selects `LEXICAL_ONLY` (skipping `EmbeddingGemma 2` model swap) iff $|s_1| > \theta_{\text{min}}$ AND $\hat{H} < 0.35$.
+* **Phase 2 — Privacy-Weighted Brain Router & Multi-Hop Research (`/research`)**:
+  * `evaluateBrainRoute`: Combines pre-inference query complexity $H_{\text{prior}}$ and 8-token speculative probe entropy $H_{\text{probe}}$ with a $+100.0$ pragmatic penalty when `PrivacyShield` detects PII, strictly blocking `ESCALATE_CLOUD`.
+  * `evaluateResearchHop`: Governs multi-hop web research with quadratic hop cost $C_{\text{hop}}(k) = c_0 \cdot k^2$ ($k_{\max}=2$) and diminishing-returns early-stopping ($\Delta F < \epsilon$).
+* **Phase 3 — Sliding-Window MCP Anomaly Gate & Surprise-Driven Reflection (`/mcp` & `/reflect`)**:
+  * 32-slot C++ & Kotlin ring buffer tracking burst rate surprise, path sensitivity (`..`, `.ssh`, `.env`, `/sdcard/dcim`, `ronin_cognitive`), and intent-path divergence; escalates `ALLOW` tools to `MCP_HITL_CONFIRM` when $F_{\text{mcp}} > 0.70$.
+  * Write-time `surprise_score` calculation in `LongTermMemory::storeFact` and thermal-gated ($< 38^\circ\text{C}$) top-5 surprise reconciliation during `/reflect`.
+* **Phase 4 — Lock-Free Audio Kalman Precision Filter**: Inline real-time sensory precision weighting ($\Pi_{\text{audio}} = \exp(-\beta \cdot \text{noise\_rms})$) in `ResonanceAnalyzer::computeAudioKalmanPrecision` with zero mutex contention.
+
 ---
 
 ## Database & RAG Architecture Details

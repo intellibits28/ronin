@@ -23,13 +23,14 @@ Major subsystems:
 
 - `RoninKernel`: top-level observe/orient/decide/act loop and world-state state hooks.
 - `ActiveInferenceCore`: hot-loop Level 1 Variational Free Energy ($F$) calculation (<1 µs latency) with dimensionless Mahalanobis prediction error and clamped precision regularization.
-- `ExpectedFreeEnergyRouter`: Level 2 event-driven Expected Free Energy ($G(\pi)$) policy router (~3 µs latency) over $K=6$ candidate policies with Epistemic Slot Entropy ($H_{\text{slot}}$).
+- `ExpectedFreeEnergyRouter`: Level 2 event-driven Expected Free Energy ($G(\pi)$) policy router (~3 µs latency) over base candidate policies and extended subsystem primitives (`LEXICAL_ONLY`, `RESEARCH_HOP`, `ESCALATE_CLOUD`, `MCP_HITL_CONFIRM`), providing `evaluateRagWakeup`, `evaluateBrainRoute`, and `evaluateResearchHop`.
 - `IntentEngine`: command handling, intent classification, planner wiring, skill registry, and skill execution.
-- `LongTermMemory`: SQLite schema creation, memory APIs, FTS5 search, chat history, failure records, and file indexing.
+- `LongTermMemory`: SQLite schema creation, memory APIs, write-time `surprise_score` tagging on `facts`, `computeLexicalFreeEnergy` (Dual-Gate BM25 entropy), FTS5 search, chat history, failure records, and file indexing.
+- `CapabilityPolicyEngine`: static capability manifest validator plus a 32-slot sliding-window MCP anomaly ring buffer (`evaluateMcpToolCall`) that escalates `ALLOW` tools to `MCP_HITL_CONFIRM` when contextual surprise $F_{\text{mcp}} > 0.70$.
 - `GraphExecutor`: capability graph execution, Thompson-sampling outcome updates, episode and prediction recording.
 - `AgentScheduler`: priority queue for multi-step agent sessions.
 - `HardwareBridge`: C++ to Kotlin callback surface for Android-only capabilities and inference.
-- `ResonanceAnalyzer` & `VibeMonitorEngine`: native DSP summary generation, Welch PSD, Kalman NIS filtering, and 3-state Active Gaze sensory gating (10Hz / 50Hz / 200Hz).
+- `ResonanceAnalyzer` & `VibeMonitorEngine`: native DSP summary generation, Welch PSD, Kalman NIS filtering, lock-free inline audio Kalman precision weighting (`computeAudioKalmanPrecision`), and 3-state Active Gaze sensory gating (10Hz / 50Hz / 200Hz).
 - Execution governance: `JniExecutionGateway`, checkpoints, failure telemetry, adaptive budgets, speculative execution, and runtime healing.
 
 ## Android Layer

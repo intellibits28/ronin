@@ -269,6 +269,22 @@ Menu မှတစ်ဆင့် **Developer HUD** ကို ဖွင့်ထ�
 * **Epistemic vs Pragmatic Policy Selection**:
   - အသုံးပြုသူက ညွှန်ကြားချက် မပြည့်မစုံ ပေးသည့်အခါ (ဥပမာ- "ဖိုင်ပို့ပေးပါ" ဟု ပြောပြီး ဘယ်ဖိုင်၊ ဘယ်သူ့ဆီ ပို့ရမည် မပါသည့်အခါ) Slot Entropy မြင့်တက်လာပြီး Epistemic Information Gain အရ `CLARIFY_USER` policy ကို အလိုအလျောက် ရွေးချယ်ကာ ဘာပို့ရမလဲ အရင် မေးမြန်းခြင်း ပြုလုပ်ပါသည်။
 
+### ၁၀.၁ Active Inference 4-Phase Unified Expansion (Subsystem ၆ ခုလုံးသို့ တိုးချဲ့အသုံးချမှု)
+Ronin v5.1.1 တွင် Active Inference (`ActiveInferenceCore` နှင့် `ExpectedFreeEnergyRouter`) ကို SHM နှင့် Intent Clarification အပြင် အောက်ပါ Subsystem (၆) ခုသို့ တိုးချဲ့ပေါင်းစည်းထားပါသည်-
+
+1. **Smart RAG Wakeup (`/docsearch` — `LEXICAL_ONLY` vs `INSPECT_DOC`)**:
+   - စာရွက်စာတမ်း ရှာဖွေရာတွင် SQLite FTS5 BM25 ရလဒ်များ၏ အမြင့်ဆုံးအမှတ် ($|s_1| > \theta_{\text{min}}$) နှင့် Normalized Shannon Entropy ($\hat{H} < 0.35$) နှစ်ချက်လုံး ပြည့်မီပါက `LEXICAL_ONLY` policy ကို ရွေးချယ်ပြီး `EmbeddingGemma 2` (~165 MB) မော်ဒယ်ကို မလိုအပ်ဘဲ နှိုးခြင်း (Model Swap) မှ ရှောင်ရှားကာ ဘက်ထရီနှင့် အချိန်ကို ချွေတာပေးပါသည်။
+2. **Privacy-Weighted Brain Router (`EXEC_TOOL` vs `ESCALATE_CLOUD`)**:
+   - မေးခွန်း၏ ရှုပ်ထွေးမှု ($H_{\text{prior}}$) နှင့် 8-Token Speculative Probe မသေချာမှု ($H_{\text{probe}}$) တို့အပေါ် မူတည်၍ Local Gemma 4 E2B သို့မဟုတ် Cloud AI သို့ လမ်းကြောင်းရွေးချယ်ပေးပါသည်။ အကယ်၍ `PrivacyShield` က မြန်မာမှတ်ပုံတင် (NRC)၊ ဖုန်းနံပါတ် သို့မဟုတ် ဘဏ်ကတ်ကဲ့သို့ PII အချက်အလက် တွေ့ရှိပါက Cloud Cost တွင် $+100.0$ ဒဏ်ကြေးပေါင်းထည့်ပြီး Cloud သို့ ပို့ဆောင်ခြင်းကို အလိုအလျောက် ပိတ်ပင်ပေးပါသည်။
+3. **Multi-Hop Research Foraging (`/research` — `RESEARCH_HOP`)**:
+   - ဝဘ်သုတေသန ပြုလုပ်ရာတွင် ပထမအကြိမ် ရှာဖွေမှုမှ အချက်အလက် လုံလောက်မှုမရှိပါက Quadratic Hop Cost ($C_{\text{hop}}(k) = c_0 \cdot k^2$, အများဆုံး $2$ hops) နှင့် Diminishing Returns Early-Stop ($\Delta F < \epsilon$) တို့ဖြင့် ဒုတိယအကြိမ် ထပ်မံရှာဖွေသင့်/မသင့် သင်္ချာနည်းကျ ဆုံးဖြတ်ပေးပါသည်။
+4. **32-Slot Sliding-Window Termux MCP Anomaly Gate (`/mcp` — `MCP_HITL_CONFIRM`)**:
+   - Termux MCP Bridge တွင် `read_file` သို့မဟုတ် `list_files` ကဲ့သို့ `ALLOW` အဆင့် သတ်မှတ်ထားသော Tool များကို အချိန်တိုအတွင်း အဆက်မပြတ် ခေါ်ယူခြင်း (Burst Attack) သို့မဟုတ် အရေးကြီးလမ်းကြောင်းများ (`../.ssh`, `.env`, `ronin_cognitive`) သို့ ဝင်ရောက်ရန် ကြိုးပမ်းခြင်းကြောင့် Contextual Surprise $F_{\text{mcp}} > 0.70$ ကျော်လွန်ပါက လူကိုယ်တိုင် အတည်ပြုရမည့် `CONFIRM` (`MCP_HITL_CONFIRM`) အဆင့်သို့ အလိုအလျောက် တိုးမြှင့်ပေးပါသည်။
+5. **Surprise-Driven Nightly Reflection (`/reflect`)**:
+   - Long-Term Memory (`facts` table) တွင် အချက်အလက်အသစ် သိမ်းဆည်းတိုင်း လက်ရှိမှတ်သားထားချက်နှင့် ကွဲလွဲမှုရှိ/မရှိ စစ်ဆေးပြီး `surprise_score` သတ်မှတ်ပေးပါသည်။ `/reflect` ပြုလုပ်သည့်အခါ ဖုန်းအပူချိန် $< 38^\circ\text{C}$ ရှိမှသာ အံ့အားသင့်မှုအမြင့်ဆုံး Fact (၅) ခု (`ORDER BY surprise_score DESC LIMIT 5`) ကို ဦးစားပေး ပြန်လည်ညှိနှိုင်းပေးပါသည်။
+6. **Lock-Free Audio Kalman Precision Filter (Guitar Tuner & Audio DSP)**:
+   - ပတ်ဝန်းကျင် ဆူညံသံ (`noise_rms`) ပေါ်မူတည်၍ အသံအာရုံခံ တိကျမှု $\Pi_{\text{audio}} = \exp(-\beta \cdot \text{noise\_rms})$ နှင့် Kalman Gain $K_t$ ကို Real-Time Audio Thread ပေါ်တွင် Mutex Lock လုံးဝမသုံးဘဲ တိုက်ရိုက် တွက်ချက်ပေးသဖြင့် အပ်တံ (Cent Needle) တုန်ခါမှုကို ချောမွေ့တည်ငြိမ်စေပါသည်။
+
 ---
 
 ## ၁၁။ ရေရှည်မှတ်ဉာဏ်နှင့် လုံခြုံရေး Vault (Long-Term Memory & Vault)
