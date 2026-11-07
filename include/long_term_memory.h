@@ -97,6 +97,12 @@ public:
     std::vector<std::string> searchFiles(const std::string& query);
 
     // Phase 2: Vector Store & Hybrid RRF Search (v5.1)
+    struct DocumentChunk {
+        int index = 0;
+        std::string text;
+        std::vector<float> embedding;
+    };
+
     struct HybridSearchMatch {
         std::string doc_path;
         int chunk_index = 0;
@@ -104,15 +110,21 @@ public:
         float rrf_score = 0.0f;
         float cosine_score = 0.0f;
         int lexical_hits = 0;
+        float fts_bm25_score = 0.0f;
+        std::string model_id;
     };
 
     static void l2Normalize(std::vector<float>& vec);
     static float alignedDotProduct(const float* a, const float* b, size_t dim);
     static float cosineSimilarity(const float* a, const float* b, size_t dim);
 
+    bool isDocumentIndexed(const std::string& doc_path, const std::string& doc_hash, const std::string& model_id = "embeddinggemma-2-270m");
+    bool deleteDocumentEmbeddings(const std::string& doc_path, const std::string& model_id = "");
     bool storeDocumentEmbedding(const std::string& doc_path, int chunk_index, const std::string& chunk_text, const std::vector<float>& embedding);
-    std::vector<HybridSearchMatch> searchEmbeddings(const std::vector<float>& query_embedding, const std::string& doc_path_filter = "", int top_k = 5);
-    std::vector<HybridSearchMatch> hybridSearch(const std::string& query_text, const std::vector<float>& query_embedding, const std::string& doc_path_filter = "", int top_k = 5);
+    bool storeDocumentEmbedding(const std::string& doc_path, const std::string& doc_hash, int chunk_index, const std::string& chunk_text, const std::vector<float>& embedding, const std::string& model_id = "embeddinggemma-2-270m");
+    bool storeDocumentChunksAtomic(const std::string& doc_path, const std::string& doc_hash, const std::string& model_id, const std::vector<DocumentChunk>& chunks);
+    std::vector<HybridSearchMatch> searchEmbeddings(const std::vector<float>& query_embedding, const std::string& doc_path_filter = "", int top_k = 5, const std::string& model_id = "");
+    std::vector<HybridSearchMatch> hybridSearch(const std::string& query_text, const std::vector<float>& query_embedding, const std::string& doc_path_filter = "", int top_k = 5, const std::string& model_id = "");
 
     // Lifecycle Management
     void applyDecay(uint64_t current_timestamp);

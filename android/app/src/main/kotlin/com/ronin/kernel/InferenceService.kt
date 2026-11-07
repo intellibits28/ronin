@@ -180,8 +180,16 @@ class InferenceService : Service() {
 
         override fun generateEmbeddingsBatch(texts: List<String>?, embeddingModelPath: String?): FloatArray {
             if (texts.isNullOrEmpty()) return FloatArray(0)
-            // Enforce max 16 texts per Binder IPC transaction to prevent TransactionTooLargeException
-            val safeTexts = if (texts.size > 16) texts.take(16) else texts
+            // Enforce max 16 chunks and <= 128 KB UTF-8 byte budget per Binder IPC transaction
+            var byteCount = 0
+            val safeTexts = mutableListOf<String>()
+            for (t in texts) {
+                if (safeTexts.size >= 16) break
+                val tBytes = t.toByteArray(Charsets.UTF_8).size
+                if (safeTexts.isNotEmpty() && byteCount + tBytes > 128 * 1024) break
+                byteCount += tBytes
+                safeTexts.add(t)
+            }
             return runBlocking(Dispatchers.IO) {
                 computeEmbeddingsBatchInternal(safeTexts, embeddingModelPath ?: "")
             }
@@ -199,8 +207,9 @@ class InferenceService : Service() {
 
         /**
          * Deterministic L2-normalized 768D multilingual feature-hash / n-gram embedding.
-         * Used as a zero-latency fallback or blended representation for Myanmar & English text.
+         * Deprecated in Phase 2: Do NOT inject non-neural hash vectors into neural embedding space.
          */
+        @Deprecated("Do not use feature-hash fallback vectors in neural embedding space (Phase 2 Refinement)")
         fun computeDeterministic768Embedding(text: String): FloatArray {
             val vec = FloatArray(EMBEDDING_DIM)
             val normalized = text.lowercase().trim()
@@ -235,19 +244,18 @@ class InferenceService : Service() {
     }
 
     private suspend fun computeEmbeddingsBatchInternal(texts: List<String>, embeddingModelPath: String): FloatArray {
-        val result = FloatArray(texts.size * EMBEDDING_DIM)
         val embFile = if (embeddingModelPath.isNotBlank()) File(embeddingModelPath) else null
         val canUseLitertEmb = embFile != null && embFile.exists() && embFile.isFile
 
         if (!canUseLitertEmb) {
-            for (i in texts.indices) {
-                val emb = computeDeterministic768Embedding(texts[i])
-                System.arraycopy(emb, 0, result, i * EMBEDDING_DIM, EMBEDDING_DIM)
-            }
-            return result
+            // Zero feature-hash fallback: When neural embedding model is absent, return empty array
+            // so callers cleanly fall back to SQLite FTS5 BM25 lexical search without vector space pollution.
+            return FloatArray(0)
         }
 
-        // Batch-First On-Demand Model Swapping with RAM Guard
+        val result = FloatArray(texts.size * EMBEDDING_DIM)
+
+        // Batch-First On-Demand Model Swapping with RAM Guard & Mutex Protection
         inferenceMutex.withLock {
             val previousModelPath = currentModelPath
             val freeRam = try { getFreeRamGBNative() } catch (_: Throwable) { 4.0f }
@@ -269,8 +277,7 @@ class InferenceService : Service() {
                     }
                 }
 
-                // Attempt native LiteRT embedding extraction via reflection if exposed by runtime,
-                // seamlessly blending with deterministic 768D multilingual n-gram projection
+                // Attempt native LiteRT embedding extraction
                 val embedMethod = try {
                     engineToUse.javaClass.methods.firstOrNull {
                         it.name.contains("embed", ignoreCase = true) && it.parameterCount == 1
@@ -287,24 +294,22 @@ class InferenceService : Service() {
                         }
                     } catch (_: Throwable) { null }
 
-                    val finalVec = if (rawVec != null && rawVec.size == EMBEDDING_DIM) {
+                    if (rawVec != null && rawVec.size == EMBEDDING_DIM) {
                         var sumSq = 0.0
                         for (v in rawVec) sumSq += v.toDouble() * v.toDouble()
-                        if (sumSq > 1e-12) {
+                        val finalVec = if (sumSq > 1e-12) {
                             val inv = (1.0 / kotlin.math.sqrt(sumSq)).toFloat()
                             FloatArray(EMBEDDING_DIM) { idx -> rawVec[idx] * inv }
                         } else rawVec
+                        System.arraycopy(finalVec, 0, result, i * EMBEDDING_DIM, EMBEDDING_DIM)
                     } else {
-                        computeDeterministic768Embedding(texts[i])
+                        Log.w(TAG, "LiteRT embedding extraction failed for chunk $i; falling back cleanly to lexical search")
+                        return FloatArray(0)
                     }
-                    System.arraycopy(finalVec, 0, result, i * EMBEDDING_DIM, EMBEDDING_DIM)
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "EmbeddingGemma 2 on-demand pass fallback: ${t.message}")
-                for (i in texts.indices) {
-                    val emb = computeDeterministic768Embedding(texts[i])
-                    System.arraycopy(emb, 0, result, i * EMBEDDING_DIM, EMBEDDING_DIM)
-                }
+                Log.w(TAG, "EmbeddingGemma 2 on-demand pass failed: ${t.message}")
+                return FloatArray(0)
             } finally {
                 try { tempEngine?.close() } catch (_: Throwable) {}
             }

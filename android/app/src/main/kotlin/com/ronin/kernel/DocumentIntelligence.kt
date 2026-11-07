@@ -593,6 +593,27 @@ object DocumentIntelligence {
      * computes document centroid vector, and selects the top most representative chunks
      * preserving chronological order across the beginning, middle, and conclusion.
      */
+    fun computeFileSha256(file: File): String {
+        return try {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buf = ByteArray(64 * 1024)
+                var read: Int
+                while (input.read(buf).also { read = it } != -1) {
+                    md.update(buf, 0, read)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            "${file.length()}_${file.lastModified()}"
+        }
+    }
+
+    /**
+     * Phase 2.2: Semantic Document Summarization.
+     * When neural embeddings are available, extracts high-centrality chunks.
+     * When neural embeddings are absent, extracts structured lead/conclusion chunks without feature-hash pollution.
+     */
     fun selectHighCentralityChunks(
         fullText: String,
         targetChars: Int = calculateSafeSummaryCharLimit(fullText),
@@ -605,42 +626,48 @@ object DocumentIntelligence {
         val chunks = chunkText(fullText, chunkSize = chunkSize, overlap = overlap)
         if (chunks.size <= 1) return fullText.take(targetChars)
 
-        val dim = InferenceService.EMBEDDING_DIM
-        val embeddings = if (customEmbeddings != null && customEmbeddings.size == chunks.size) {
-            customEmbeddings
+        val hasNeural = customEmbeddings != null && customEmbeddings.size == chunks.size
+        val scoredIndices = if (hasNeural) {
+            val dim = InferenceService.EMBEDDING_DIM
+            val embeddings = customEmbeddings!!
+            val centroid = FloatArray(dim)
+            for (vec in embeddings) {
+                for (d in 0 until dim.coerceAtMost(vec.size)) {
+                    centroid[d] += vec[d]
+                }
+            }
+            var normSq = 0.0
+            for (v in centroid) normSq += v.toDouble() * v.toDouble()
+            if (normSq > 1e-12) {
+                val inv = (1.0 / kotlin.math.sqrt(normSq)).toFloat()
+                for (i in centroid.indices) centroid[i] *= inv
+            }
+
+            chunks.indices.map { idx ->
+                val vec = embeddings[idx]
+                var dot = 0.0f
+                for (d in 0 until dim.coerceAtMost(vec.size)) {
+                    dot += vec[d] * centroid[d]
+                }
+                val bonus = when (idx) {
+                    0 -> 0.15f
+                    chunks.lastIndex -> 0.10f
+                    else -> 0.0f
+                }
+                idx to (dot + bonus)
+            }.sortedByDescending { it.second }
         } else {
-            chunks.map { InferenceService.computeDeterministic768Embedding(it) }
+            // Clean structural Lead/Conclusion heuristic when neural embedding model is absent
+            chunks.indices.map { idx ->
+                val score = when (idx) {
+                    0 -> 1.0f              // Executive summary / introduction chunk
+                    chunks.lastIndex -> 0.85f // Conclusion / recommendations chunk
+                    1 -> 0.6f
+                    else -> 0.3f
+                }
+                idx to score
+            }.sortedByDescending { it.second }
         }
-
-        // Compute normalized document centroid
-        val centroid = FloatArray(dim)
-        for (vec in embeddings) {
-            for (d in 0 until dim.coerceAtMost(vec.size)) {
-                centroid[d] += vec[d]
-            }
-        }
-        var normSq = 0.0
-        for (v in centroid) normSq += v.toDouble() * v.toDouble()
-        if (normSq > 1e-12) {
-            val inv = (1.0 / kotlin.math.sqrt(normSq)).toFloat()
-            for (i in centroid.indices) centroid[i] *= inv
-        }
-
-        // Score each chunk by cosine similarity to the document centroid
-        val scoredIndices = chunks.indices.map { idx ->
-            val vec = embeddings[idx]
-            var dot = 0.0f
-            for (d in 0 until dim.coerceAtMost(vec.size)) {
-                dot += vec[d] * centroid[d]
-            }
-            // Positional bonus for intro (chunk 0) and conclusion (last chunk)
-            val bonus = when (idx) {
-                0 -> 0.15f
-                chunks.lastIndex -> 0.10f
-                else -> 0.0f
-            }
-            idx to (dot + bonus)
-        }.sortedByDescending { it.second }
 
         val selectedIndices = mutableListOf<Int>()
         var accumulatedChars = 0
@@ -666,7 +693,8 @@ object DocumentIntelligence {
     }
 
     /**
-     * Phase 2.3: Hybrid Document Search (Exact Line Match + Scoped 768D Vector RRF).
+     * Phase 2.3: Hybrid Document Search (Exact Line Match + FTS5 BM25 + Scoped Neural Vector RRF).
+     * Routes cleanly to SQLite FTS5 BM25 + MyanmarSegmenter lexical search whenever the embedding model is absent.
      */
     suspend fun hybridSearchInDocument(
         file: File,
@@ -684,62 +712,59 @@ object DocumentIntelligence {
         val combinedMatches = mutableListOf<SearchMatch>()
         combinedMatches.addAll(lexicalResult.matches)
 
-        // 2. Run semantic chunk indexing & hybrid RRF search
         val chunks = chunkText(readResult.content, chunkSize = 1200, overlap = 100)
         if (chunks.isNotEmpty()) {
-            val allTexts = ArrayList<String>(chunks.size + 1)
-            allTexts.add(query)
-            allTexts.addAll(chunks)
+            val embModelPath = nativeEngine?.resolveEmbeddingModelPath() ?: ""
+            val hasNeuralModel = embModelPath.isNotBlank() && File(embModelPath).exists()
+            val modelId = nativeEngine?.configuredEmbeddingTier?.modelId ?: "embeddinggemma-2-270m"
 
-            val vectors = if (nativeEngine != null) {
-                nativeEngine.generateEmbeddingsSubBatched(allTexts)
-            } else {
-                allTexts.map { InferenceService.computeDeterministic768Embedding(it) }
-            }
+            if (hasNeuralModel && nativeEngine != null && nativeEngine.isNativeLibraryLoaded()) {
+                val docHash = computeFileSha256(file)
 
-            if (vectors.size == allTexts.size) {
-                val queryVec = vectors[0]
-                val chunkVecs = vectors.subList(1, vectors.size)
-
-                if (nativeEngine != null && nativeEngine.isNativeLibraryLoaded()) {
-                    for (i in chunks.indices) {
-                        nativeEngine.storeDocumentEmbeddingSafe(file.absolutePath, i, chunks[i], chunkVecs[i])
+                // Atomic re-indexing check: only generate and index embeddings if document hash changed
+                val alreadyIndexed = nativeEngine.isDocumentIndexedSafe(file.absolutePath, docHash, modelId)
+                if (!alreadyIndexed) {
+                    val chunkVectors = nativeEngine.generateEmbeddingsSubBatched(chunks, embModelPath)
+                    if (chunkVectors.size == chunks.size) {
+                        val chunksWithIndex = chunks.mapIndexed { idx, txt -> idx to txt }
+                        nativeEngine.storeDocumentChunksAtomicSafe(file.absolutePath, docHash, modelId, chunksWithIndex, chunkVectors)
                     }
-                    val hybridJsonList = nativeEngine.hybridSearchSafe(query, queryVec, file.absolutePath, topK = 4)
-                    for (j in hybridJsonList) {
-                        val cIdx = j.optInt("chunk_index", 0)
-                        val cText = j.optString("chunk_text", "").trim()
-                        val score = j.optDouble("rrf_score", 0.0)
-                        if (cText.isNotEmpty() && combinedMatches.none { cText.contains(it.lineContent) }) {
-                            combinedMatches.add(
-                                SearchMatch(
-                                    lineNumber = cIdx + 1,
-                                    lineContent = "[RAG Chunk #${cIdx + 1} • RRF ${"%.3f".format(score)}]",
-                                    snippet = cText.take(360)
-                                )
-                            )
-                        }
-                    }
-                } else {
-                    // Pure Kotlin fallback RRF when running in JVM host unit tests without JNI loaded
-                    val scored = chunks.indices.map { i ->
-                        var dot = 0.0f
-                        val cv = chunkVecs[i]
-                        for (d in queryVec.indices) dot += queryVec[d] * cv[d]
-                        i to dot
-                    }.sortedByDescending { it.second }.take(3)
+                }
 
-                    for ((cIdx, sim) in scored) {
-                        val cText = chunks[cIdx]
-                        if (combinedMatches.none { cText.contains(it.lineContent) }) {
-                            combinedMatches.add(
-                                SearchMatch(
-                                    lineNumber = cIdx + 1,
-                                    lineContent = "[RAG Chunk #${cIdx + 1} • Cosine ${"%.2f".format(sim)}]",
-                                    snippet = cText.take(360)
-                                )
+                // Query vector extraction
+                val queryVecList = nativeEngine.generateEmbeddingsSubBatched(listOf(query), embModelPath)
+                val queryVec = if (queryVecList.isNotEmpty()) queryVecList[0] else FloatArray(0)
+
+                val hybridJsonList = nativeEngine.hybridSearchWithModelSafe(query, queryVec, file.absolutePath, topK = 4, modelId = modelId)
+                for (j in hybridJsonList) {
+                    val cIdx = j.optInt("chunk_index", 0)
+                    val cText = j.optString("chunk_text", "").trim()
+                    val score = j.optDouble("rrf_score", 0.0)
+                    if (cText.isNotEmpty() && combinedMatches.none { it.snippet.contains(cText.take(60)) || cText.contains(it.lineContent) }) {
+                        combinedMatches.add(
+                            SearchMatch(
+                                lineNumber = cIdx + 1,
+                                lineContent = "[RAG Chunk #${cIdx + 1} • RRF ${"%.3f".format(score)}]",
+                                snippet = cText.take(360)
                             )
-                        }
+                        )
+                    }
+                }
+            } else if (nativeEngine != null && nativeEngine.isNativeLibraryLoaded()) {
+                // Clean Fallback: Route to SQLite FTS5 BM25 + MyanmarSegmenter with empty query vector (zero hash pollution)
+                val ftsJsonList = nativeEngine.hybridSearchSafe(query, FloatArray(0), file.absolutePath, topK = 4)
+                for (j in ftsJsonList) {
+                    val cIdx = j.optInt("chunk_index", 0)
+                    val cText = j.optString("chunk_text", "").trim()
+                    val score = j.optDouble("rrf_score", 0.0)
+                    if (cText.isNotEmpty() && combinedMatches.none { it.snippet.contains(cText.take(60)) || cText.contains(it.lineContent) }) {
+                        combinedMatches.add(
+                            SearchMatch(
+                                lineNumber = cIdx + 1,
+                                lineContent = "[FTS5 BM25 Chunk #${cIdx + 1} • RRF ${"%.3f".format(score)}]",
+                                snippet = cText.take(360)
+                            )
+                        )
                     }
                 }
             }

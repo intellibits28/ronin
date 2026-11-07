@@ -58,7 +58,7 @@ TEST(LongTermMemorySchemaMigration, ArchivesLegacyFactsAndSetsSchemaVersion) {
     LongTermMemory ltm(path);
     ASSERT_NE(ltm.getDatabase(), nullptr);
 
-    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 2);
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 3);
     EXPECT_TRUE(tableExists(ltm.getDatabase(), "facts_legacy_v0"));
     EXPECT_TRUE(tableExists(ltm.getDatabase(), "facts"));
 
@@ -151,5 +151,81 @@ TEST(LongTermMemoryVectorHybrid, DeduplicatesOnConflictAndRunsHybridRRF) {
     EXPECT_FALSE(ltm.storeDocumentEmbedding("/docs/shm.md", 2, "Blocked in safe mode", vec_quake));
     EXPECT_FALSE(ltm.storeVault("secret_title", "encrypted_payload"));
     ltm.setReadOnly(false);
+}
+
+TEST(LongTermMemoryVectorHybrid, AtomicReindexingPurgesStaleTrailingChunksAndTracksHash) {
+    LongTermMemory ltm(":memory:");
+    const std::string doc_path = "/docs/spec_v5.md";
+    const std::string model_id = "embeddinggemma-2-270m";
+
+    // 1. Initial indexing with 10 chunks
+    std::vector<LongTermMemory::DocumentChunk> initial_chunks;
+    for (int i = 0; i < 10; ++i) {
+        LongTermMemory::DocumentChunk chunk;
+        chunk.index = i;
+        chunk.text = "Initial chunk version 1 section " + std::to_string(i);
+        chunk.embedding = {static_cast<float>(i + 1), 1.0f, 0.5f, 0.2f};
+        initial_chunks.push_back(chunk);
+    }
+
+    ASSERT_TRUE(ltm.storeDocumentChunksAtomic(doc_path, "sha256_hash_v1", model_id, initial_chunks));
+    EXPECT_TRUE(ltm.isDocumentIndexed(doc_path, "sha256_hash_v1", model_id));
+    EXPECT_FALSE(ltm.isDocumentIndexed(doc_path, "sha256_hash_v2", model_id));
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), ("SELECT COUNT(*) FROM document_embeddings WHERE doc_path='" + doc_path + "';").c_str()), 10);
+
+    // 2. Re-indexing with only 7 chunks (e.g. document was shortened)
+    std::vector<LongTermMemory::DocumentChunk> updated_chunks;
+    for (int i = 0; i < 7; ++i) {
+        LongTermMemory::DocumentChunk chunk;
+        chunk.index = i;
+        chunk.text = "Shortened revision 2 section " + std::to_string(i);
+        chunk.embedding = {1.0f, static_cast<float>(i + 1), 0.2f, 0.8f};
+        updated_chunks.push_back(chunk);
+    }
+
+    ASSERT_TRUE(ltm.storeDocumentChunksAtomic(doc_path, "sha256_hash_v2", model_id, updated_chunks));
+
+    // Verify atomic purge: exactly 7 rows must remain, old chunks 7, 8, 9 must be completely gone
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), ("SELECT COUNT(*) FROM document_embeddings WHERE doc_path='" + doc_path + "';").c_str()), 7);
+    EXPECT_TRUE(ltm.isDocumentIndexed(doc_path, "sha256_hash_v2", model_id));
+    EXPECT_FALSE(ltm.isDocumentIndexed(doc_path, "sha256_hash_v1", model_id));
+
+    // Verify safe mode blocks atomic re-indexing
+    ltm.setReadOnly(true);
+    EXPECT_FALSE(ltm.storeDocumentChunksAtomic(doc_path, "sha256_hash_v3", model_id, updated_chunks));
+    ltm.setReadOnly(false);
+}
+
+TEST(LongTermMemoryVectorHybrid, ModelIdIsolationAndCleanFtsFallback) {
+    LongTermMemory ltm(":memory:");
+    const std::string doc_270 = "/docs/ai_architecture_270.md";
+    const std::string doc_440 = "/docs/ai_architecture_440.md";
+    const std::string model_270m = "embeddinggemma-2-270m";
+    const std::string model_440m = "embeddinggemma-2-440m";
+
+    std::vector<float> vec_a = {1.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<float> vec_b = {0.0f, 1.0f, 0.0f, 0.0f};
+
+    ASSERT_TRUE(ltm.storeDocumentEmbedding(doc_270, "hash_270", 0, "Transformer attention head pruning", vec_a, model_270m));
+    ASSERT_TRUE(ltm.storeDocumentEmbedding(doc_440, "hash_440", 0, "Multimodal vision encoder cross-attention", vec_b, model_440m));
+
+    // Search strictly with 270m model
+    auto results_270m = ltm.searchEmbeddings(vec_a, doc_270, 5, model_270m);
+    ASSERT_EQ(results_270m.size(), 1u);
+    EXPECT_EQ(results_270m[0].model_id, model_270m);
+    EXPECT_GT(results_270m[0].cosine_score, 0.99f);
+
+    // Search strictly with 440m model
+    auto results_440m = ltm.searchEmbeddings(vec_b, doc_440, 5, model_440m);
+    ASSERT_EQ(results_440m.size(), 1u);
+    EXPECT_EQ(results_440m[0].model_id, model_440m);
+    EXPECT_GT(results_440m[0].cosine_score, 0.99f);
+
+    // Clean FTS fallback test: when query vector is empty, hybridSearch falls back to FTS BM25
+    std::vector<float> empty_vec;
+    auto fts_fallback_results = ltm.hybridSearch("pruning", empty_vec, "", 5, model_270m);
+    ASSERT_FALSE(fts_fallback_results.empty());
+    EXPECT_EQ(fts_fallback_results[0].model_id, model_270m);
+    EXPECT_GT(fts_fallback_results[0].rrf_score, 0.0f);
 }
 

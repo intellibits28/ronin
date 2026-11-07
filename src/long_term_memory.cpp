@@ -15,7 +15,7 @@
 namespace Ronin::Kernel::Memory {
 
 namespace {
-constexpr int kCurrentSchemaVersion = 2;
+constexpr int kCurrentSchemaVersion = 3;
 
 std::string columnText(sqlite3_stmt* stmt, int column) {
     const unsigned char* text = sqlite3_column_text(stmt, column);
@@ -98,8 +98,9 @@ bool LongTermMemory::initSchema() {
         "CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, details TEXT, timestamp INTEGER);",
         "CREATE TABLE IF NOT EXISTS failures (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, failure_type INTEGER, timestamp INTEGER, retry_count INTEGER, resolution TEXT);",
         "CREATE TABLE IF NOT EXISTS perception_history (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, state_type TEXT, state_value TEXT);",
-        "CREATE TABLE IF NOT EXISTS document_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_path TEXT NOT NULL, chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, embedding_blob BLOB NOT NULL, dimension INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(doc_path, chunk_index) ON CONFLICT REPLACE);",
-        "CREATE INDEX IF NOT EXISTS idx_doc_path ON document_embeddings(doc_path);"
+        "CREATE TABLE IF NOT EXISTS document_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_path TEXT NOT NULL, doc_hash TEXT NOT NULL DEFAULT '', chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, embedding_blob BLOB NOT NULL, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-270m', dimension INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(doc_path, chunk_index) ON CONFLICT REPLACE);",
+        "CREATE INDEX IF NOT EXISTS idx_doc_path_model ON document_embeddings(doc_path, model_id);",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks_fts USING fts5(chunk_text, content='document_embeddings', content_rowid='id');"
     };
 
     if (sqlite3_exec(m_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
@@ -120,8 +121,12 @@ bool LongTermMemory::initSchema() {
         "CREATE TRIGGER IF NOT EXISTS episodes_ai AFTER INSERT ON episodes BEGIN INSERT INTO episodes_fts(rowid, summary) VALUES (new.id, new.summary); END;",
         "CREATE TRIGGER IF NOT EXISTS episodes_ad AFTER DELETE ON episodes BEGIN INSERT INTO episodes_fts(episodes_fts, rowid, summary) VALUES ('delete', old.id, old.summary); END;",
         "CREATE TRIGGER IF NOT EXISTS episodes_au AFTER UPDATE ON episodes BEGIN INSERT INTO episodes_fts(episodes_fts, rowid, summary) VALUES ('delete', old.id, old.summary); INSERT INTO episodes_fts(rowid, summary) VALUES (new.id, new.summary); END;",
+        "CREATE TRIGGER IF NOT EXISTS doc_chunks_ai AFTER INSERT ON document_embeddings BEGIN INSERT INTO document_chunks_fts(rowid, chunk_text) VALUES (new.id, new.chunk_text); END;",
+        "CREATE TRIGGER IF NOT EXISTS doc_chunks_ad AFTER DELETE ON document_embeddings BEGIN INSERT INTO document_chunks_fts(document_chunks_fts, rowid, chunk_text) VALUES ('delete', old.id, old.chunk_text); END;",
+        "CREATE TRIGGER IF NOT EXISTS doc_chunks_au AFTER UPDATE ON document_embeddings BEGIN INSERT INTO document_chunks_fts(document_chunks_fts, rowid, chunk_text) VALUES ('delete', old.id, old.chunk_text); INSERT INTO document_chunks_fts(rowid, chunk_text) VALUES (new.id, new.chunk_text); END;",
         "INSERT INTO notes_fts(notes_fts) VALUES('rebuild');",
-        "INSERT INTO episodes_fts(episodes_fts) VALUES('rebuild');"
+        "INSERT INTO episodes_fts(episodes_fts) VALUES('rebuild');",
+        "INSERT INTO document_chunks_fts(document_chunks_fts) VALUES('rebuild');"
     };
 
     if (!executeStatements(fts_statements)) {
@@ -173,6 +178,15 @@ bool LongTermMemory::setSchemaVersion(int version) {
 bool LongTermMemory::runMigrations(int current_version) {
     if (current_version < 1 && !migrateLegacyFactsTable()) {
         return false;
+    }
+    if (current_version < 3) {
+        if (!tableHasColumn(m_db, "document_embeddings", "doc_hash")) {
+            sqlite3_exec(m_db, "ALTER TABLE document_embeddings ADD COLUMN doc_hash TEXT NOT NULL DEFAULT '';", nullptr, nullptr, nullptr);
+        }
+        if (!tableHasColumn(m_db, "document_embeddings", "model_id")) {
+            sqlite3_exec(m_db, "ALTER TABLE document_embeddings ADD COLUMN model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-270m';", nullptr, nullptr, nullptr);
+        }
+        sqlite3_exec(m_db, "CREATE INDEX IF NOT EXISTS idx_doc_path_model ON document_embeddings(doc_path, model_id);", nullptr, nullptr, nullptr);
     }
     return true;
 }
@@ -809,7 +823,42 @@ float LongTermMemory::cosineSimilarity(const float* a, const float* b, size_t di
     return static_cast<float>(dot / denom);
 }
 
-bool LongTermMemory::storeDocumentEmbedding(const std::string& doc_path, int chunk_index, const std::string& chunk_text, const std::vector<float>& embedding) {
+bool LongTermMemory::isDocumentIndexed(const std::string& doc_path, const std::string& doc_hash, const std::string& model_id) {
+    if (!m_db || doc_path.empty() || doc_hash.empty()) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "SELECT id FROM document_embeddings WHERE doc_path = ? AND doc_hash = ? AND model_id = ? LIMIT 1;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_text(stmt, 1, doc_path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, doc_hash.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    bool exists = (sqlite3_step(stmt) == SQLITE_ROW);
+    sqlite3_finalize(stmt);
+    return exists;
+}
+
+bool LongTermMemory::deleteDocumentEmbeddings(const std::string& doc_path, const std::string& model_id) {
+    if (!m_db || doc_path.empty()) return false;
+    if (m_read_only.load()) {
+        LOGW(TAG, "deleteDocumentEmbeddings blocked: Read-only SafeMode active");
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::string sql = model_id.empty()
+        ? "DELETE FROM document_embeddings WHERE doc_path = ?;"
+        : "DELETE FROM document_embeddings WHERE doc_path = ? AND model_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_text(stmt, 1, doc_path.c_str(), -1, SQLITE_TRANSIENT);
+    if (!model_id.empty()) {
+        sqlite3_bind_text(stmt, 2, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+bool LongTermMemory::storeDocumentEmbedding(const std::string& doc_path, const std::string& doc_hash, int chunk_index, const std::string& chunk_text, const std::vector<float>& embedding, const std::string& model_id) {
     if (!m_db || embedding.empty()) return false;
     if (m_read_only.load()) {
         LOGW(TAG, "storeDocumentEmbedding blocked: Read-only SafeMode active");
@@ -820,8 +869,8 @@ bool LongTermMemory::storeDocumentEmbedding(const std::string& doc_path, int chu
     l2Normalize(normalized);
 
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = "INSERT INTO document_embeddings (doc_path, chunk_index, chunk_text, embedding_blob, dimension, created_at) "
-                      "VALUES (?, ?, ?, ?, ?, ?);";
+    const char* sql = "INSERT INTO document_embeddings (doc_path, doc_hash, chunk_index, chunk_text, embedding_blob, model_id, dimension, created_at) "
+                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         LOGE(TAG, "storeDocumentEmbedding prepare failed: %s", sqlite3_errmsg(m_db));
@@ -829,11 +878,13 @@ bool LongTermMemory::storeDocumentEmbedding(const std::string& doc_path, int chu
     }
 
     sqlite3_bind_text(stmt, 1, doc_path.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 2, chunk_index);
-    sqlite3_bind_text(stmt, 3, chunk_text.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_blob(stmt, 4, normalized.data(), static_cast<int>(normalized.size() * sizeof(float)), SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 5, static_cast<int>(normalized.size()));
-    sqlite3_bind_int64(stmt, 6, std::time(nullptr));
+    sqlite3_bind_text(stmt, 2, doc_hash.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, chunk_index);
+    sqlite3_bind_text(stmt, 4, chunk_text.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_blob(stmt, 5, normalized.data(), static_cast<int>(normalized.size() * sizeof(float)), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 6, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 7, static_cast<int>(normalized.size()));
+    sqlite3_bind_int64(stmt, 8, std::time(nullptr));
 
     bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
     if (!ok) {
@@ -843,8 +894,91 @@ bool LongTermMemory::storeDocumentEmbedding(const std::string& doc_path, int chu
     return ok;
 }
 
+bool LongTermMemory::storeDocumentEmbedding(const std::string& doc_path, int chunk_index, const std::string& chunk_text, const std::vector<float>& embedding) {
+    return storeDocumentEmbedding(doc_path, "", chunk_index, chunk_text, embedding, "embeddinggemma-2-270m");
+}
+
+bool LongTermMemory::storeDocumentChunksAtomic(
+    const std::string& doc_path,
+    const std::string& doc_hash,
+    const std::string& model_id,
+    const std::vector<DocumentChunk>& chunks) {
+    if (!m_db || doc_path.empty() || chunks.empty()) return false;
+    if (m_read_only.load()) {
+        LOGW(TAG, "storeDocumentChunksAtomic blocked: Read-only SafeMode active");
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (sqlite3_exec(m_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "storeDocumentChunksAtomic begin transaction failed: %s", sqlite3_errmsg(m_db));
+        return false;
+    }
+
+    // 1. Delete all existing chunks for this (doc_path, model_id) so stale trailing chunks never remain
+    const char* del_sql = "DELETE FROM document_embeddings WHERE doc_path = ? AND model_id = ?;";
+    sqlite3_stmt* del_stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, del_sql, -1, &del_stmt, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "storeDocumentChunksAtomic prepare delete failed: %s", sqlite3_errmsg(m_db));
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+    sqlite3_bind_text(del_stmt, 1, doc_path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(del_stmt, 2, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(del_stmt) != SQLITE_DONE) {
+        LOGE(TAG, "storeDocumentChunksAtomic delete failed: %s", sqlite3_errmsg(m_db));
+        sqlite3_finalize(del_stmt);
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+    sqlite3_finalize(del_stmt);
+
+    // 2. Insert new chunks
+    const char* ins_sql = "INSERT INTO document_embeddings (doc_path, doc_hash, chunk_index, chunk_text, embedding_blob, model_id, dimension, created_at) "
+                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
+    sqlite3_stmt* ins_stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, ins_sql, -1, &ins_stmt, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "storeDocumentChunksAtomic prepare insert failed: %s", sqlite3_errmsg(m_db));
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    int64_t now = std::time(nullptr);
+    for (const auto& chunk : chunks) {
+        if (chunk.embedding.empty()) continue;
+        std::vector<float> normalized = chunk.embedding;
+        l2Normalize(normalized);
+
+        sqlite3_reset(ins_stmt);
+        sqlite3_clear_bindings(ins_stmt);
+        sqlite3_bind_text(ins_stmt, 1, doc_path.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(ins_stmt, 2, doc_hash.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(ins_stmt, 3, chunk.index);
+        sqlite3_bind_text(ins_stmt, 4, chunk.text.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_blob(ins_stmt, 5, normalized.data(), static_cast<int>(normalized.size() * sizeof(float)), SQLITE_TRANSIENT);
+        sqlite3_bind_text(ins_stmt, 6, model_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(ins_stmt, 7, static_cast<int>(normalized.size()));
+        sqlite3_bind_int64(ins_stmt, 8, now);
+
+        if (sqlite3_step(ins_stmt) != SQLITE_DONE) {
+            LOGE(TAG, "storeDocumentChunksAtomic insert chunk %d failed: %s", chunk.index, sqlite3_errmsg(m_db));
+            sqlite3_finalize(ins_stmt);
+            sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+            return false;
+        }
+    }
+    sqlite3_finalize(ins_stmt);
+
+    if (sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "storeDocumentChunksAtomic commit failed: %s", sqlite3_errmsg(m_db));
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+    return true;
+}
+
 std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::searchEmbeddings(
-    const std::vector<float>& query_embedding, const std::string& doc_path_filter, int top_k) {
+    const std::vector<float>& query_embedding, const std::string& doc_path_filter, int top_k, const std::string& model_id) {
     if (!m_db || query_embedding.empty() || top_k <= 0) return {};
 
     std::vector<float> q_norm = query_embedding;
@@ -860,14 +994,23 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::searchEmbeddings(
     }
 
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = doc_path_filter.empty()
-        ? "SELECT doc_path, chunk_index, chunk_text, embedding_blob, dimension FROM document_embeddings;"
-        : "SELECT doc_path, chunk_index, chunk_text, embedding_blob, dimension FROM document_embeddings WHERE doc_path = ?;";
+    std::string sql = "SELECT doc_path, chunk_index, chunk_text, embedding_blob, dimension, model_id FROM document_embeddings WHERE 1=1";
+    if (!model_id.empty()) {
+        sql += " AND model_id = ?";
+    }
+    if (!doc_path_filter.empty()) {
+        sql += " AND doc_path = ?";
+    }
+    sql += ";";
 
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return {};
+    if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return {};
+    int param_idx = 1;
+    if (!model_id.empty()) {
+        sqlite3_bind_text(stmt, param_idx++, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    }
     if (!doc_path_filter.empty()) {
-        sqlite3_bind_text(stmt, 1, doc_path_filter.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, param_idx++, doc_path_filter.c_str(), -1, SQLITE_TRANSIENT);
     }
 
     std::vector<HybridSearchMatch> candidates;
@@ -899,6 +1042,7 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::searchEmbeddings(
         match.chunk_text = columnText(stmt, 2);
         match.cosine_score = sim;
         match.rrf_score = sim;
+        match.model_id = columnText(stmt, 5);
         candidates.push_back(std::move(match));
     }
     sqlite3_finalize(stmt);
@@ -914,10 +1058,10 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::searchEmbeddings(
 }
 
 std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::hybridSearch(
-    const std::string& query_text, const std::vector<float>& query_embedding, const std::string& doc_path_filter, int top_k) {
+    const std::string& query_text, const std::vector<float>& query_embedding, const std::string& doc_path_filter, int top_k, const std::string& model_id) {
     if (!m_db || top_k <= 0) return {};
 
-    // Extract lowercase query tokens + Myanmar segmented tokens for lexical scoring
+    // 1. Tokenize query text for lexical and FTS5 BM25 search
     std::vector<std::string> query_tokens;
     if (!query_text.empty()) {
         std::string lower_q = query_text;
@@ -935,6 +1079,7 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::hybridSearch(
         }
     }
 
+    // 2. Prepare normalized query embedding
     std::vector<float> q_norm = query_embedding;
     if (!q_norm.empty()) l2Normalize(q_norm);
     const size_t q_dim = q_norm.size();
@@ -947,30 +1092,85 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::hybridSearch(
     }
 
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = doc_path_filter.empty()
-        ? "SELECT doc_path, chunk_index, chunk_text, embedding_blob, dimension FROM document_embeddings;"
-        : "SELECT doc_path, chunk_index, chunk_text, embedding_blob, dimension FROM document_embeddings WHERE doc_path = ?;";
 
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return {};
-    if (!doc_path_filter.empty()) {
-        sqlite3_bind_text(stmt, 1, doc_path_filter.c_str(), -1, SQLITE_TRANSIENT);
+    // 3. Optional FTS5 BM25 lookup
+    std::unordered_map<int64_t, int> fts_ranks; // rowid -> 1-based rank
+    std::unordered_map<int64_t, float> fts_bm25_scores;
+    if (!query_tokens.empty()) {
+        std::string fts_query;
+        for (const auto& qt : query_tokens) {
+            std::string clean = sanitizeFts5Query(qt);
+            if (clean.empty()) continue;
+            // Trim whitespace
+            size_t s = clean.find_first_not_of(" \t\r\n");
+            if (s == std::string::npos) continue;
+            size_t e = clean.find_last_not_of(" \t\r\n");
+            std::string word = clean.substr(s, e - s + 1);
+            if (word.empty()) continue;
+            if (!fts_query.empty()) fts_query += " OR ";
+            fts_query += "\"" + word + "\"";
+        }
+
+        if (!fts_query.empty()) {
+            const char* fts_sql = "SELECT rowid, bm25(document_chunks_fts) FROM document_chunks_fts WHERE document_chunks_fts MATCH ? ORDER BY bm25(document_chunks_fts) ASC LIMIT 100;";
+            sqlite3_stmt* fts_stmt = nullptr;
+            if (sqlite3_prepare_v2(m_db, fts_sql, -1, &fts_stmt, nullptr) == SQLITE_OK) {
+                sqlite3_bind_text(fts_stmt, 1, fts_query.c_str(), -1, SQLITE_TRANSIENT);
+                int rank = 1;
+                while (sqlite3_step(fts_stmt) == SQLITE_ROW) {
+                    int64_t rowid = sqlite3_column_int64(fts_stmt, 0);
+                    double bm25 = sqlite3_column_double(fts_stmt, 1);
+                    fts_ranks[rowid] = rank++;
+                    fts_bm25_scores[rowid] = static_cast<float>(bm25);
+                }
+                sqlite3_finalize(fts_stmt);
+            }
+        }
     }
 
-    std::vector<HybridSearchMatch> pool;
+    // 4. Retrieve candidate chunks with optional model_id and doc_path filters
+    std::string sql = "SELECT id, doc_path, chunk_index, chunk_text, embedding_blob, dimension, model_id FROM document_embeddings WHERE 1=1";
+    if (!model_id.empty()) {
+        sql += " AND model_id = ?";
+    }
+    if (!doc_path_filter.empty()) {
+        sql += " AND doc_path = ?";
+    }
+    sql += ";";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return {};
+    int param_idx = 1;
+    if (!model_id.empty()) {
+        sqlite3_bind_text(stmt, param_idx++, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    if (!doc_path_filter.empty()) {
+        sqlite3_bind_text(stmt, param_idx++, doc_path_filter.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    struct Candidate {
+        int64_t id = 0;
+        HybridSearchMatch match;
+        int vec_rank = 0;
+        int fts_rank = 0;
+    };
+
+    std::vector<Candidate> candidates;
     alignas(16) float row_aligned[1024];
     std::vector<float> fallback_buf;
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-        HybridSearchMatch m;
-        m.doc_path = columnText(stmt, 0);
-        m.chunk_index = sqlite3_column_int(stmt, 1);
-        m.chunk_text = columnText(stmt, 2);
+        Candidate c;
+        c.id = sqlite3_column_int64(stmt, 0);
+        c.match.doc_path = columnText(stmt, 1);
+        c.match.chunk_index = sqlite3_column_int(stmt, 2);
+        c.match.chunk_text = columnText(stmt, 3);
+        c.match.model_id = columnText(stmt, 6);
 
-        // 1. Semantic similarity
-        int dim = sqlite3_column_int(stmt, 4);
-        int blob_bytes = sqlite3_column_bytes(stmt, 3);
-        const void* blob_ptr = sqlite3_column_blob(stmt, 3);
+        // Vector similarity
+        int dim = sqlite3_column_int(stmt, 5);
+        int blob_bytes = sqlite3_column_bytes(stmt, 4);
+        const void* blob_ptr = sqlite3_column_blob(stmt, 4);
         if (q_dim > 0 && blob_ptr && static_cast<size_t>(dim) == q_dim && blob_bytes >= static_cast<int>(q_dim * sizeof(float))) {
             const float* row_ptr = nullptr;
             if (q_dim <= 1024) {
@@ -981,13 +1181,20 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::hybridSearch(
                 std::memcpy(fallback_buf.data(), blob_ptr, q_dim * sizeof(float));
                 row_ptr = fallback_buf.data();
             }
-            m.cosine_score = alignedDotProduct(q_ptr, row_ptr, q_dim);
+            c.match.cosine_score = alignedDotProduct(q_ptr, row_ptr, q_dim);
         }
 
-        // 2. Lexical term frequency & exact phrase hits
+        // FTS5 rank lookup
+        auto it_fts = fts_ranks.find(c.id);
+        if (it_fts != fts_ranks.end()) {
+            c.fts_rank = it_fts->second;
+            c.match.fts_bm25_score = fts_bm25_scores[c.id];
+        }
+
+        // Lexical token hits count
         if (!query_tokens.empty()) {
-            std::string lower_chunk = m.chunk_text;
-            std::transform(lower_chunk.begin(), lower_chunk.end(), lower_chunk.begin(), [](unsigned char c) { return std::tolower(c); });
+            std::string lower_chunk = c.match.chunk_text;
+            std::transform(lower_chunk.begin(), lower_chunk.end(), lower_chunk.begin(), [](unsigned char ch) { return std::tolower(ch); });
             int hits = 0;
             for (const auto& qt : query_tokens) {
                 size_t pos = 0;
@@ -996,58 +1203,61 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::hybridSearch(
                     pos += qt.size();
                 }
             }
-            m.lexical_hits = hits;
+            c.match.lexical_hits = hits;
         }
 
-        pool.push_back(std::move(m));
+        candidates.push_back(std::move(c));
     }
     sqlite3_finalize(stmt);
 
-    if (pool.empty()) return {};
+    if (candidates.empty()) return {};
 
-    // Compute Semantic Ranks
-    std::vector<size_t> vec_order(pool.size());
-    for (size_t i = 0; i < pool.size(); ++i) vec_order[i] = i;
-    std::sort(vec_order.begin(), vec_order.end(), [&](size_t a, size_t b) {
-        return pool[a].cosine_score > pool[b].cosine_score;
-    });
-
-    // Compute Lexical Ranks
-    std::vector<size_t> lex_order(pool.size());
-    for (size_t i = 0; i < pool.size(); ++i) lex_order[i] = i;
-    std::sort(lex_order.begin(), lex_order.end(), [&](size_t a, size_t b) {
-        if (pool[a].lexical_hits != pool[b].lexical_hits) {
-            return pool[a].lexical_hits > pool[b].lexical_hits;
+    // 5. Rank vector candidates
+    if (q_dim > 0) {
+        std::vector<size_t> vec_order(candidates.size());
+        for (size_t i = 0; i < candidates.size(); ++i) vec_order[i] = i;
+        std::sort(vec_order.begin(), vec_order.end(), [&](size_t a, size_t b) {
+            return candidates[a].match.cosine_score > candidates[b].match.cosine_score;
+        });
+        for (size_t rank = 0; rank < vec_order.size(); ++rank) {
+            candidates[vec_order[rank]].vec_rank = static_cast<int>(rank + 1);
         }
-        return pool[a].cosine_score > pool[b].cosine_score;
-    });
+    }
 
+    // 6. Reciprocal Rank Fusion: RRF = 1 / (60 + rank_fts) + 1 / (60 + rank_vec)
     constexpr float kRrfK = 60.0f;
-    for (size_t rank = 0; rank < vec_order.size(); ++rank) {
-        size_t idx = vec_order[rank];
-        if (q_dim > 0) {
-            pool[idx].rrf_score += 1.0f / (kRrfK + static_cast<float>(rank + 1));
+    for (auto& c : candidates) {
+        float rrf = 0.0f;
+        if (c.fts_rank > 0) {
+            rrf += 1.0f / (kRrfK + static_cast<float>(c.fts_rank));
+        } else if (c.match.lexical_hits > 0) {
+            // Lexical fallback ranking if FTS virtual table had no exact index match
+            rrf += 0.5f / (kRrfK + 10.0f);
         }
-    }
-    for (size_t rank = 0; rank < lex_order.size(); ++rank) {
-        size_t idx = lex_order[rank];
-        if (pool[idx].lexical_hits > 0) {
-            // Boost exact lexical matches in RRF
-            pool[idx].rrf_score += 1.25f / (kRrfK + static_cast<float>(rank + 1));
+        if (c.vec_rank > 0) {
+            rrf += 1.0f / (kRrfK + static_cast<float>(c.vec_rank));
         }
+        c.match.rrf_score = rrf;
     }
 
-    std::sort(pool.begin(), pool.end(), [](const HybridSearchMatch& a, const HybridSearchMatch& b) {
-        if (std::abs(a.rrf_score - b.rrf_score) > 1e-6f) {
-            return a.rrf_score > b.rrf_score;
+    // 7. Sort by RRF score descending, tie-breaking by cosine score and lexical hits
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+        if (std::abs(a.match.rrf_score - b.match.rrf_score) > 1e-6f) {
+            return a.match.rrf_score > b.match.rrf_score;
         }
-        return a.cosine_score > b.cosine_score;
+        if (std::abs(a.match.cosine_score - b.match.cosine_score) > 1e-6f) {
+            return a.match.cosine_score > b.match.cosine_score;
+        }
+        return a.match.lexical_hits > b.match.lexical_hits;
     });
 
-    if (static_cast<int>(pool.size()) > top_k) {
-        pool.resize(static_cast<size_t>(top_k));
+    std::vector<HybridSearchMatch> results;
+    int limit = std::min(top_k, static_cast<int>(candidates.size()));
+    results.reserve(limit);
+    for (int i = 0; i < limit; ++i) {
+        results.push_back(std::move(candidates[i].match));
     }
-    return pool;
+    return results;
 }
 
 } // namespace Ronin::Kernel::Memory

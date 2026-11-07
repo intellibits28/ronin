@@ -26,6 +26,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import java.io.FileOutputStream
+import java.io.DataInputStream
+import java.io.InputStream
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
@@ -260,7 +262,7 @@ class MainActivity : FragmentActivity() {
         uri?.let { importTessdataFromUri(it) }
     }
 
-    val memoryBackupLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/x-sqlite3")) { uri ->
+    val memoryBackupLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         uri?.let { exportCognitiveMemoryToUri(it) }
     }
 
@@ -431,13 +433,38 @@ class MainActivity : FragmentActivity() {
                     }
                     return@launch
                 }
-                contentResolver.openOutputStream(uri)?.use { output ->
-                    dbFile.inputStream().use { input ->
-                        input.copyTo(output)
-                    }
+
+                // Checkpoint WAL to flush pending transactions into the main DB file
+                try {
+                    val db = android.database.sqlite.SQLiteDatabase.openDatabase(dbFile.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE)
+                    db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).close()
+                    db.close()
+                } catch (e: Exception) {
+                    Log.w("RoninKernel", "WAL checkpoint before export: ${e.message}")
                 }
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Cognitive Memory Exported Successfully!", Toast.LENGTH_LONG).show()
+
+                // Create a temporary snapshot for encryption
+                val snapshotFile = File(cacheDir, "cognitive_export_${System.currentTimeMillis()}.db")
+                dbFile.copyTo(snapshotFile, overwrite = true)
+
+                // Encrypt via PrivacyVault (AES-256-GCM) - RONIN-SEC-04
+                val encResult = PrivacyVault.encryptFile(this@MainActivity, snapshotFile, deleteSource = true)
+                val encryptedFile = encResult.file
+                if (!encResult.success || encryptedFile == null || !encryptedFile.exists()) {
+                    throw IllegalStateException("Vault encryption failed: ${encResult.error}")
+                }
+
+                try {
+                    contentResolver.openOutputStream(uri)?.use { output ->
+                        encryptedFile.inputStream().use { input ->
+                            input.copyTo(output)
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Cognitive Memory Encrypted & Exported Successfully!", Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    encryptedFile.delete()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -456,36 +483,83 @@ class MainActivity : FragmentActivity() {
     fun importCognitiveMemoryFromUri(uri: Uri) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val isSQLite = contentResolver.openInputStream(uri)?.use { stream ->
-                    val header = ByteArray(16)
-                    val read = stream.read(header)
-                    read == 16 && String(header, Charsets.US_ASCII).startsWith("SQLite format 3")
-                } ?: false
+                val tempVaultDir = PrivacyVault.getVaultDirectory(this@MainActivity)
+                val tempImportName = "import_${System.currentTimeMillis()}.roninvault"
+                val tempVaultFile = File(tempVaultDir, tempImportName)
 
-                if (!isSQLite) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Invalid file: Not a SQLite cognitive database.", Toast.LENGTH_LONG).show()
-                    }
-                    return@launch
-                }
-
-                val dbFile = File(filesDir, "ronin_cognitive.db")
-                if (dbFile.exists()) {
-                    val preRestoreBackup = File(filesDir, "ronin_cognitive_pre_restore.bak")
-                    dbFile.copyTo(preRestoreBackup, overwrite = true)
-                }
-
+                // Copy stream to temp vault file to inspect header and decrypt
                 contentResolver.openInputStream(uri)?.use { input ->
-                    java.io.FileOutputStream(dbFile).use { output ->
+                    tempVaultFile.outputStream().use { output ->
                         input.copyTo(output)
                     }
                 }
 
-                File(filesDir, "ronin_cognitive.db-wal").delete()
-                File(filesDir, "ronin_cognitive.db-shm").delete()
+                var restoredFile: File? = null
+                val tempRestoreDir = File(cacheDir, "restore_${System.currentTimeMillis()}").apply { mkdirs() }
 
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Cognitive Memory Restored! Please restart app to reload cache.", Toast.LENGTH_LONG).show()
+                try {
+                    // Check if file is encrypted with PrivacyVault
+                    val isVault = try {
+                        DataInputStream(tempVaultFile.inputStream()).use { dis ->
+                            val magic = dis.readUTF()
+                            magic == "RONIN_VAULT_V1"
+                        }
+                    } catch (e: Exception) {
+                        false
+                    }
+
+                    if (isVault) {
+                        val decResult = PrivacyVault.decryptFile(this@MainActivity, tempImportName, tempRestoreDir)
+                        if (!decResult.success || decResult.file == null) {
+                            throw IllegalStateException("Decryption failed: ${decResult.error}")
+                        }
+                        restoredFile = decResult.file
+                    } else {
+                        // Fallback: check if valid raw SQLite DB
+                        val isSQLite = tempVaultFile.inputStream().use { stream ->
+                            val header = ByteArray(16)
+                            val read = stream.read(header)
+                            read == 16 && String(header, Charsets.US_ASCII).startsWith("SQLite format 3")
+                        }
+                        if (!isSQLite) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@MainActivity, "Invalid file: Not an encrypted Ronin vault or SQLite database.", Toast.LENGTH_LONG).show()
+                            }
+                            return@launch
+                        }
+                        restoredFile = tempVaultFile
+                    }
+
+                    // Verify SQLite header of restored file
+                    val isSQLite = restoredFile.inputStream().use { stream ->
+                        val header = ByteArray(16)
+                        val read = stream.read(header)
+                        read == 16 && String(header, Charsets.US_ASCII).startsWith("SQLite format 3")
+                    }
+                    if (!isSQLite) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, "Invalid decrypted database.", Toast.LENGTH_LONG).show()
+                        }
+                        return@launch
+                    }
+
+                    val dbFile = File(filesDir, "ronin_cognitive.db")
+                    if (dbFile.exists()) {
+                        val preRestoreBackup = File(filesDir, "ronin_cognitive_pre_restore.bak")
+                        dbFile.copyTo(preRestoreBackup, overwrite = true)
+                    }
+
+                    restoredFile.copyTo(dbFile, overwrite = true)
+
+                    File(filesDir, "ronin_cognitive.db-wal").delete()
+                    File(filesDir, "ronin_cognitive.db-shm").delete()
+
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Cognitive Memory Restored! Please restart app to reload cache.", Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    tempVaultFile.delete()
+                    tempRestoreDir.deleteRecursively()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -496,19 +570,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun checkAutoRestoreMemory() {
-        val dbFile = File(filesDir, "ronin_cognitive.db")
-        if (!dbFile.exists() || dbFile.length() == 0L) {
-            val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-            val backupFile = File(downloadDir, "ronin_cognitive_backup.db")
-            if (backupFile.exists() && backupFile.length() > 0) {
-                try {
-                    backupFile.copyTo(dbFile, overwrite = true)
-                    Log.i("RoninKernel", "Auto-restored cognitive memory from ${backupFile.absolutePath}")
-                } catch (e: Exception) {
-                    Log.w("RoninKernel", "Auto-restore failed: ${e.message}")
-                }
-            }
-        }
+        // Disabled: Insecure public cleartext auto-restore eliminated (RONIN-SEC-04).
     }
 
     fun scanLocalModels() {

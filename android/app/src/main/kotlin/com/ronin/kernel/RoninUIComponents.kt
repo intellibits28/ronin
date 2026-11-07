@@ -1668,8 +1668,8 @@ fun SettingsSection(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
-                            // Secure export via SAF CreateDocument launcher (RONIN-SEC-04)
-                            activity?.memoryBackupLauncher?.launch("ronin_cognitive_backup.db")
+                            // Secure encrypted export via SAF CreateDocument launcher (RONIN-SEC-04)
+                            activity?.memoryBackupLauncher?.launch("ronin_cognitive_backup.roninvault")
                         },
                         modifier = Modifier.weight(1f).heightIn(min = 44.dp),
                         colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF1E88E5)),

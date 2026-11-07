@@ -53,7 +53,10 @@ JNINativeMethod g_methods[] = {
     {"indexFilesNative", "([Ljava/lang/String;[Ljava/lang/String;[J)V", (void*)native_indexFiles},
     {"submitCapabilityResponseNative", "(Ljava/lang/String;ZLjava/lang/String;)V", (void*)native_submitCapabilityResponse},
     {"storeDocumentEmbeddingNative", "(Ljava/lang/String;ILjava/lang/String;[F)Z", (void*)native_storeDocumentEmbedding},
-    {"hybridSearchNative", "(Ljava/lang/String;[FLjava/lang/String;I)[Ljava/lang/String;", (void*)native_hybridSearch}
+    {"storeDocumentChunksAtomicNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[I[Ljava/lang/String;[FI)Z", (void*)native_storeDocumentChunksAtomic},
+    {"isDocumentIndexedNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_isDocumentIndexed},
+    {"hybridSearchNative", "(Ljava/lang/String;[FLjava/lang/String;I)[Ljava/lang/String;", (void*)native_hybridSearch},
+    {"hybridSearchWithModelNative", "(Ljava/lang/String;[FLjava/lang/String;ILjava/lang/String;)[Ljava/lang/String;", (void*)native_hybridSearchWithModel}
 };
 
 JNINativeMethod g_worker_methods[] = {

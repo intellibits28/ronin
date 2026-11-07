@@ -164,6 +164,63 @@ JNIEXPORT jobjectArray JNICALL native_searchFiles(JNIEnv* env, jobject thiz, jst
     return toStringArray(env, runtime.ltm->searchFiles(ConvertJStringToString(env, q)));
 }
 
+JNIEXPORT jboolean JNICALL native_isDocumentIndexed(JNIEnv* env, jobject thiz, jstring docPath, jstring docHash, jstring modelId) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return JNI_FALSE;
+    bool indexed = runtime.ltm->isDocumentIndexed(
+        ConvertJStringToString(env, docPath),
+        ConvertJStringToString(env, docHash),
+        ConvertJStringToString(env, modelId)
+    );
+    return indexed ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL native_storeDocumentChunksAtomic(
+    JNIEnv* env, jobject thiz,
+    jstring docPath, jstring docHash, jstring modelId,
+    jintArray chunkIndices, jobjectArray chunkTexts, jfloatArray flatEmbeddings, jint dimension) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return JNI_FALSE;
+    if (!chunkIndices || !chunkTexts || !flatEmbeddings || dimension <= 0) return JNI_FALSE;
+
+    jsize numChunks = env->GetArrayLength(chunkIndices);
+    if (numChunks <= 0 || env->GetArrayLength(chunkTexts) != numChunks) return JNI_FALSE;
+    if (env->GetArrayLength(flatEmbeddings) < numChunks * dimension) return JNI_FALSE;
+
+    jint* idxPtr = env->GetIntArrayElements(chunkIndices, nullptr);
+    jfloat* embPtr = env->GetFloatArrayElements(flatEmbeddings, nullptr);
+    if (!idxPtr || !embPtr) {
+        if (idxPtr) env->ReleaseIntArrayElements(chunkIndices, idxPtr, JNI_ABORT);
+        if (embPtr) env->ReleaseFloatArrayElements(flatEmbeddings, embPtr, JNI_ABORT);
+        return JNI_FALSE;
+    }
+
+    std::vector<LongTermMemory::DocumentChunk> chunks;
+    chunks.reserve(numChunks);
+    for (jsize i = 0; i < numChunks; ++i) {
+        jstring jText = (jstring)env->GetObjectArrayElement(chunkTexts, i);
+        std::string text = ConvertJStringToString(env, jText);
+        if (jText) env->DeleteLocalRef(jText);
+
+        LongTermMemory::DocumentChunk chunk;
+        chunk.index = idxPtr[i];
+        chunk.text = std::move(text);
+        chunk.embedding.assign(embPtr + i * dimension, embPtr + (i + 1) * dimension);
+        chunks.push_back(std::move(chunk));
+    }
+
+    env->ReleaseIntArrayElements(chunkIndices, idxPtr, JNI_ABORT);
+    env->ReleaseFloatArrayElements(flatEmbeddings, embPtr, JNI_ABORT);
+
+    bool ok = runtime.ltm->storeDocumentChunksAtomic(
+        ConvertJStringToString(env, docPath),
+        ConvertJStringToString(env, docHash),
+        ConvertJStringToString(env, modelId),
+        chunks
+    );
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jboolean JNICALL native_storeDocumentEmbedding(JNIEnv* env, jobject thiz, jstring docPath, jint chunkIndex, jstring chunkText, jfloatArray embedding) {
     auto& runtime = runtimeContext();
     if (!runtime.ltm || !embedding) return JNI_FALSE;
@@ -183,7 +240,7 @@ JNIEXPORT jboolean JNICALL native_storeDocumentEmbedding(JNIEnv* env, jobject th
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 
-JNIEXPORT jobjectArray JNICALL native_hybridSearch(JNIEnv* env, jobject thiz, jstring queryText, jfloatArray queryEmbedding, jstring docPathFilter, jint topK) {
+JNIEXPORT jobjectArray JNICALL native_hybridSearchWithModel(JNIEnv* env, jobject thiz, jstring queryText, jfloatArray queryEmbedding, jstring docPathFilter, jint topK, jstring modelId) {
     auto& runtime = runtimeContext();
     if (!runtime.ltm) return nullptr;
 
@@ -199,11 +256,13 @@ JNIEXPORT jobjectArray JNICALL native_hybridSearch(JNIEnv* env, jobject thiz, js
         }
     }
 
+    std::string mId = modelId ? ConvertJStringToString(env, modelId) : "";
     auto matches = runtime.ltm->hybridSearch(
         ConvertJStringToString(env, queryText),
         vec,
         ConvertJStringToString(env, docPathFilter),
-        static_cast<int>(topK)
+        static_cast<int>(topK),
+        mId
     );
 
     std::vector<std::string> out;
@@ -216,9 +275,15 @@ JNIEXPORT jobjectArray JNICALL native_hybridSearch(JNIEnv* env, jobject thiz, js
         j["rrf_score"] = m.rrf_score;
         j["cosine_score"] = m.cosine_score;
         j["lexical_hits"] = m.lexical_hits;
+        j["fts_bm25_score"] = m.fts_bm25_score;
+        j["model_id"] = m.model_id;
         out.push_back(j.dump());
     }
     return toStringArray(env, out);
+}
+
+JNIEXPORT jobjectArray JNICALL native_hybridSearch(JNIEnv* env, jobject thiz, jstring queryText, jfloatArray queryEmbedding, jstring docPathFilter, jint topK) {
+    return native_hybridSearchWithModel(env, thiz, queryText, queryEmbedding, docPathFilter, topK, nullptr);
 }
 
 } // extern "C"
