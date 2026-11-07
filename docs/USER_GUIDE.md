@@ -19,9 +19,11 @@ Ronin Kernel ၏ အသုံးပြုသူလက်စွဲစာအုပ
 9. [ကိုယ်ရေးကိုယ်တာ လုံခြုံရေးနှင့် ဒေတာဖုံးကွယ်မှု (Privacy Shield & Data Redaction)](#၉-ကိုယ်ရေးကိုယ်တာ-လုံခြုံရေးနှင့်-ဒေတာဖုံးကွယ်မှု-privacy-shield--data-redaction)
 10. [Active Inference နှင့် အာရုံခံကြိမ်နှုန်း ချိန်ညှိမှု (RAIK & Developer HUD)](#၁၀-active-inference-နှင့်-အာရုံခံကြိမ်နှုန်း-ချိန်ညှိမှု-raik--developer-hud)
 11. [ရေရှည်မှတ်ဉာဏ်နှင့် လုံခြုံရေး Vault (Long-Term Memory & Vault)](#၁၁-ရေရှည်မှတ်ဉာဏ်နှင့်-လုံခြုံရေး-vault-long-term-memory--vault)
-12. [မှတ်ဉာဏ် Backup ရယူခြင်းနှင့် အသစ်ပြန်တင်ခြင်း (Disaster Recovery & Backup)](#၁၂-မှတ်ဉာဏ်-backup-ရယူခြင်းနှင့်-အသစ်ပြန်တင်ခြင်း-disaster-recovery--backup)
+12. [လုံခြုံစိတ်ချရသော မှတ်ဉာဏ် Backup နှင့် Restore (.roninvault) (Encrypted Backup & Recovery)](#၁၂-လုံခြုံစိတ်ချရသော-မှတ်ဉာဏ်-backup-နှင့်-restore-roninvault-encrypted-backup--recovery)
 13. [အမြန်သုံး Command များ (Slash Commands Reference)](#၁၃-အမြန်သုံး-command-များ-slash-commands-reference)
 14. [မကြာခဏမေးလေ့ရှိသော မေးခွန်းများနှင့် ဖြေရှင်းနည်းများ (FAQ & Troubleshooting)](#၁၄-မကြာခဏမေးလေ့ရှိသော-မေးခွန်းများနှင့်-ဖြေရှင်းနည်းများ-faq--troubleshooting)
+15. [လုံခြုံရေးနှင့် တည်ငြိမ်မှု အဆင့်မြှင့်တင်ချက်များ (Security & Stability Updates)](#၁၅-လုံခြုံရေးနှင့်-တည်ငြိမ်မှု-အဆင့်မြှင့်တင်ချက်များ-security--stability-updates)
+16. [Ronin v5.1.1 Sovereign Tactical Upgrade ပြည့်စုံသော လမ်းညွှန် (v5.1.1 Tactical Upgrade Manual)](#၁၆-ronin-v511-sovereign-tactical-upgrade-ပြည့်စုံသော-လမ်းညွှန်-v511-tactical-upgrade-manual)
 
 ---
 
@@ -273,20 +275,26 @@ Menu မှတစ်ဆင့် **Developer HUD** ကို ဖွင့်ထ�
 
 ---
 
-## ၁၂။ မှတ်ဉာဏ် Backup ရယူခြင်းနှင့် အသစ်ပြန်တင်ခြင်း (Disaster Recovery & Backup)
+## ၁၂။ လုံခြုံစိတ်ချရသော မှတ်ဉာဏ် Backup နှင့် Restore (.roninvault) (Encrypted Backup & Recovery)
 
-App ကို ဖျက်လိုက်ရသည့်အခါ သို့မဟုတ် ဖုန်းအသစ်သို့ ပြောင်းရွှေ့သည့်အခါ မိမိ၏ Cognitive Memory များ မပျောက်ပျက်စေရန် အထူးပြုလုပ်ထားသော စနစ်ဖြစ်ပါသည်။
+Ronin v5.1.1 တွင် ကိုယ်ရေးကိုယ်တာနှင့် မှတ်ဉာဏ်လုံခြုံရေးအတွက် မူလ Cleartext SQLite Dump စနစ်ကို အဆင့်မြှင့်တင်ထားပြီး **AES-256-GCM Encrypted Snapshot (`.roninvault`)** စနစ်ဖြင့်သာ လုံခြုံစွာ Backup ထုတ်ယူ/ပြန်လည်တင်သွင်းနိုင်ပါသည်။
 
-### Backup ယူနည်း (အလွန်လွယ်ကူပါသည်):
+### လုံခြုံရေးနှင့် နည်းပညာ အခြေခံမူ (Security Architecture):
+* **No Cleartext Leaks (CWE-312 Remediation)**: စကားပြောဆိုမှုများ၊ အရေးကြီးမှတ်စုများနှင့် Vector Embeddings များ ပါဝင်သော `ronin_cognitive.db` ကို Public Downloads ထဲသို့ cleartext အဖြစ် မည်သည့်အခါမျှ တိုက်ရိုက် မထုတ်ပေးပါ။
+* **Atomic WAL Checkpointing**: Backup မပြုလုပ်မီ SQLite Write-Ahead Log ကို `PRAGMA wal_checkpoint(TRUNCATE)` ဖြင့် Flush လုပ်ပြီး Snapshot ပြုလုပ်သဖြင့် Query များ အလုပ်လုပ်နေချိန်၌ပင် ဒေတာမပျက်စီးဘဲ အပြည့်အဝ တိကျစွာ ရရှိပါသည်။
+* **Military-Grade Encryption**: Snapshot ဖိုင်ကို `PrivacyVault` ၏ **AES-256-GCM** (Android Keystore Hardware-backed Key) ဖြင့် Authenticated Encryption ပြုလုပ်ပြီးမှသာ `.roninvault` ဖိုင်အဖြစ် ထုတ်ပေးပါသည်။
+* **Scoped Storage Access Framework (SAF)**: Android SAF File Picker ဖြင့်သာ သုံးစွဲသူ စိတ်ကြိုက် လမ်းကြောင်း သတ်မှတ်၍ Export/Import လုပ်ဆောင်နိုင်ပါသည်။
+
+### Backup ယူနည်း (Export Encrypted Vault):
 1. ဘယ်ဘက်အပေါ် Menu (☰) > Settings သို့ သွားပါ။
 2. **Section 6: Cognitive Memory & Disaster Recovery** သို့ ဆင်းပါ။
-3. **Backup DB** ခလုတ်ကို နှိပ်ပါ။
-4. ဖုန်း၏ **Downloads** ဖိုဒါထဲသို့ `ronin_cognitive_backup.db` ဖိုင်အဖြစ် အလိုအလျောက် သိမ်းဆည်းပေးပါမည်။
+3. **Backup Vault (.roninvault)** ခလုတ်ကို နှိပ်ပါ။
+4. Android Storage Access Framework (SAF) ပေါ်လာပါက မိမိ သိမ်းဆည်းလိုသော ဖိုဒါ သို့မဟုတ် Cloud Drive (Google Drive/Nextcloud/USB) ကို ရွေးချယ်၍ သိမ်းဆည်းနိုင်ပါသည်။
 
-### Backup ပြန်တင်နည်း (Restore):
+### Backup ပြန်တင်နည်း (Restore Encrypted Vault):
 1. Settings > Section 6 သို့ သွားပါ။
-2. **Restore DB** ခလုတ်ကို နှိပ်ပြီး မိမိ backup ယူထားသော `.db` ဖိုင်ကို ရွေးချယ်ပေးလိုက်ရုံပင် ဖြစ်ပါသည်။
-3. *(Auto-Recovery)*: App ကို clean install အသစ်ပြန်တင်သည့်အခါ ဖုန်း၏ Downloads ထဲတွင် `ronin_cognitive_backup.db` ရှိနေပါက App ဖွင့်သည်နှင့် အလိုအလျောက် မှတ်ဉာဏ်များကို ပြန်လည်ဆယ်ယူ (auto-restore) ပေးပါသည်။
+2. **Restore Vault** ခလုတ်ကို နှိပ်ပါ။
+3. ဖုန်းထဲရှိ မိမိ backup ယူထားသော `.roninvault` ဖိုင်ကို ရွေးချယ်ပေးလိုက်ရုံဖြင့် Decryption စစ်ဆေးပြီး အောင်မြင်ပါက Cognitive Memory ကို လုံခြုံစွာ ပြန်လည် ထည့်သွင်းပေးပါမည်။
 
 ---
 
@@ -296,9 +304,15 @@ Chat Box ထဲတွင် အောက်ပါ command များကို 
 
 * `/help` သို့မဟုတ် `/capabilities`: Ronin ၏ စွမ်းဆောင်ရည်များနှင့် သုံးနိုင်သော tool များကို အကျဉ်းချုပ် ပြသပေးခြင်း။
 * `/status`: စနစ်၏ လက်ရှိ ကျန်းမာရေးအခြေအနေ၊ CPU အပူချိန်နှင့် RAM အသုံးပြုမှုကို စစ်ဆေးခြင်း။
+* `/research <query>`: စက်တွင်း Local AI (Gemma 4 E2B) နှင့် DuckDuckGo Lite ကို အသုံးပြု၍ သီးသန့်လုံခြုံသော ဝဘ်သုတေသနပြုလုပ်ပြီး Source Citations ပါဝင်သည့် အနှစ်ချုပ် ထုတ်ယူပေးခြင်း။
+* `/docsearch <path> <query>`: စာမျက်နှာ ရာချီရှိသော စာအုပ်/စာချုပ်ကြီးများထဲမှ မိမိသိလိုသော အပိုဒ်များကို SQLite FTS5 (Lexical) + 768D Cosine Similarity (Semantic) ပေါင်းစပ်ထားသော **Hybrid RRF ($k=60$)** ဖြင့် ရှာဖွေပေးခြင်း။
 * `/files <name>`: ဖုန်းထဲရှိ ဖိုင်အမည်များကို SQLite FTS5 အမြန်နှုန်းဖြင့် ရှာဖွေပြီး `FileResultCard` ပြသပေးခြင်း။
 * `/summarize <path>`: သတ်မှတ်ထားသော ဖိုင်ကို Gemma 4 ဖြင့် တိုက်ရိုက် အကျဉ်းချုပ်ခိုင်းခြင်း။
-* `/docsearch <path> <query>`: စာရွက်စာတမ်းကြီးများထဲမှ အပိုဒ်များကို ရှာဖွေခြင်း။
+* `/mcp status`: Termux Local MCP Bridge ချိတ်ဆက်မှု အခြေအနေ စစ်ဆေးခြင်း။
+* `/mcp token`: Termux တွင် Export လုပ်ရမည့် ၂၅၆-ဘစ် HMAC Shared Secret ကို ကြည့်ရှုခြင်း။
+* `/mcp rotate`: Termux ချိတ်ဆက်မှု လျှို့ဝှက်ကုဒ် (Secret) အသစ် လဲလှယ်သတ်မှတ်ခြင်း။
+* `/mcp tools`: Termux MCP Server မှ ခွင့်ပြုထားသော Tool စာရင်း ကြည့်ရှုခြင်း။
+* `/mcp call <tool> <json>`: Termux MCP Tool ကို Human-In-The-Loop (HITL) အတည်ပြုချက်ဖြင့် ခေါ်ယူ အသုံးပြုခြင်း။
 * `/skills`: လက်ရှိ အလုပ်လုပ်နေသော Native Capability Nodes များကို ကြည့်ရှုခြင်း။
 * `/model`: အသုံးပြုနေသော Brain Model ဖိုင်လမ်းကြောင်းကို စစ်ဆေးခြင်း။
 * `/reset`: စကားပြောဆိုမှု မှတ်တမ်းနှင့် KV Cache ကို ရှင်းလင်း၍ Turn 1 သို့ ပြန်လည်စတင်ခြင်း။
@@ -342,24 +356,133 @@ Chat Box ထဲတွင် အောက်ပါ command များကို 
 
 ---
 
-## ၁၆။ Ronin v5.1 Sovereign Tactical Upgrade လုပ်ဆောင်ချက်သစ်များ
+## ၁၆။ Ronin v5.1.1 Sovereign Tactical Upgrade ပြည့်စုံသော လမ်းညွှန် (v5.1.1 Tactical Upgrade Manual)
 
-### ၁၆.၁ Hybrid Tactical Brutalist UI & Myanmar-Safe Typography
-* **Pure Black Terminal Theme (`#0A0A0A`)**: AMOLED ဘက်ထရီသက်သာစေပြီး မျက်စိအေးစေသော `#0A0A0A` နောက်ခံ၊ `#141414` Surface Cards (`8.dp` radius) နှင့် `#34D399` Emerald Accent စနစ်။
-* **Myanmar Unicode Clipping Fix**: မြန်မာစာ အပေါ်တင်/အောက်မြစ်များ မပြတ်ထွက်စေရန် `PlatformTextStyle(includeFontPadding = true)` နှင့် `LineHeightStyle(Alignment.Center, Trim.None)` (`23.sp` line-height) ကို တစ်ပြေးညီ သတ်မှတ်ထားပါသည်။
+Ronin v5.1.1 သည် Native Kernel ၏ တည်ငြိမ်မှု၊ ကိုယ်ရေးကိုယ်တာလုံခြုံရေး၊ မြန်မာစာဖတ်ရှုမှု စနစ်နှင့် ဒေသတွင်း AI စွမ်းဆောင်ရည်များကို စစ်ဘက်အဆင့် (Sovereign Tactical Grade) သို့ အလုံးစုံ အဆင့်မြှင့်တင်ထားသော ဗားရှင်းသစ်ဖြစ်ပါသည်။
 
-### ၁၆.၂ On-Demand `EmbeddingGemma 2` (768D) & Hybrid RRF Search
-* **Batch-First Model Swapper**: ဖုန်း RAM မပြည့်စေရန် Gemma 4 E2B နှင့် EmbeddingGemma 2 (768D) တို့ကို လိုအပ်သည့်အချိန်မှသာ အလှည့်ကျ (Sub-batched `<= 16` chunks per Binder IPC call) ခေါ်ယူအသုံးပြုပါသည်။
-* **Hybrid RRF (`/docsearch <path> <query>`)**: SQLite FTS5 စကားလုံးတိုက်ဆိုင်မှု (Lexical) နှင့် 768D Cosine Similarity (Semantic) တို့ကို **Reciprocal Rank Fusion (RRF, $k=60$)** ဖြင့် ပေါင်းစပ်ရှာဖွေပေးပါသည်။
+---
 
-### ၁၆.၃ Sovereign Local Research Engine (`/research <query>`)
-* ပြင်ပ Paid LLM API များ လုံးဝမလိုအပ်ဘဲ DuckDuckGo Lite (`POST` form-urlencoded) မှ အချက်အလက်များကို ရှာဖွေကာ ဖုန်းတွင်းရှိ Gemma 4 E2B ဖြင့် တိုက်ရိုက် အနှစ်ချုပ် (`ResearchResultCard`) ထုတ်ပေးပြီး Offline Markdown ဖိုင်အဖြစ် သိမ်းဆည်းပေးပါသည်။
+### ၁၆.၁ Tactical Brutalist UI & Myanmar-Safe Dual-Font System
+အသုံးပြုသူ၏ အာရုံစိုက်မှုကို မလွင့်စေဘဲ အချက်အလက်များကို ရှင်းလင်းစွာ ဖတ်ရှုနိုင်ရန် UI နှင့် Typography ကို အသစ်ပြင်ဆင်ထားပါသည်-
+* **Tactical AMOLED Black Theme (`#0A0A0A`)**: AMOLED မျက်နှာပြင်များတွင် ဘက်ထရီစားသုံးမှုကို အနည်းဆုံးဖြစ်စေသော `#0A0A0A` နောက်ခံ၊ `#141414` Surface Cards နှင့် `#34D399` Emerald Accent စနစ်။
+* **Unified `8.dp` Geometry**: Chat bubbles၊ `ResearchResultCard`၊ `FileResultCard` နှင့် Tool Execution dialog များ အားလုံးကို ညီညာသော `8.dp` rounded corner geometry ဖြင့် တစ်ပြေးညီ စနစ်တကျ ပုံဖော်ထားပါသည်။
+* **Myanmar Diacritic Clipping Fix (Dual-Font System)**:
+  - မြန်မာစာ အပေါ်တင် (ိ၊ ီ၊ ဲ) နှင့် အောက်မြစ် (ု၊ ူ၊ ့) များ အစွန်းထွက်မပြတ်စေရန် `PlatformTextStyle(includeFontPadding = true)` နှင့် `LineHeightStyle(Alignment.Center, Trim.None)` စနစ်ကို တပ်ဆင်ထားပါသည်။
+  - စာလုံးအရွယ်အစားကို `21.sp` font-size နှင့် `23.sp` line-height ဖြင့် ချိန်ညှိထားသဖြင့် သေးငယ်သော မျက်နှာပြင်များတွင်ပင် စာလုံးများ ရှင်းလင်းပြတ်သားစွာ ဖတ်ရှုနိုင်ပါသည်။
+* **Dismissible Slash Command Overlay**:
+  - Chat Box တွင် `/` ရိုက်ထည့်လိုက်သည့်အခါ ပေါ်လာသော Suggestion Overlay သည် စကားပြောဆိုမှု (Chat Bubble) များကို ကွယ်မသွားစေရန် ထိန်းချုပ်နိုင်သည့် နည်းလမ်း ၃ မျိုး ထည့်သွင်းထားပါသည်-
+    1. **Close Button (`✕`)**: Overlay ၏ ထိပ်ဆုံးရှိ `✕` ခလုတ်ကို နှိပ်၍ ပိတ်ခြင်း။
+    2. **Back Button**: ဖုန်း၏ Android Back ခလုတ် သို့မဟုတ် Back Gesture ဖြင့် ချက်ချင်း ပိတ်ခြင်း။
+    3. **Tap Outside**: Chat Message မျက်နှာပြင်ပေါ်သို့ တစ်ချက် ထိပုတ် (Tap) လိုက်ရုံဖြင့် အလိုအလျောက် ပျောက်ကွယ်သွားခြင်း။
 
-### ၁၆.၄ Authenticated Termux MCP Bridge (`/mcp`)
-* Termux ထဲရှိ MCP Server (`http://127.0.0.1:8765/mcp`) နှင့် ချိတ်ဆက်ရာတွင် **256-bit Shared Bearer Token**၊ **`X-Ronin-Timestamp` (`±30s` Replay Window)**၊ **`X-Ronin-Signature` (HMAC-SHA256)** နှင့် **Human-In-The-Loop (HITL) Confirmation Dialog** တို့ဖြင့် အဆင့်ဆင့် ကာကွယ်ထားပါသည်။
-* အသုံးပြုနိုင်သော Command များ:
-  - `/mcp status` — Termux MCP Server ချိတ်ဆက်မှု စစ်ဆေးခြင်း
-  - `/mcp token` — Termux တွင် သတ်မှတ်ရမည့် `RONIN_MCP_SECRET` ကြည့်ရှုခြင်း
-  - `/mcp rotate` — Secret အသစ် ပြောင်းလဲခြင်း
-  - `/mcp tools` — အသုံးပြုနိုင်သော MCP Tools များ စာရင်းကြည့်ခြင်း
-  - `/mcp call <tool> <json>` — HITL ခွင့်ပြုချက်ဖြင့် Tool ခေါ်ယူအသုံးပြုခြင်း
+---
+
+### ၁၆.၂ On-Demand `EmbeddingGemma 2` & Hybrid RAG (`/docsearch`)
+
+Ronin v5.1.1 တွင် စာအုပ်များ၊ စာတမ်းများနှင့် စာချုပ်ကြီးများကို အင်တာနက်မလိုဘဲ ဖုန်းတွင်း၌ပင် အမြန်ဆုံး ရှာဖွေနိုင်ရန် **On-Demand EmbeddingGemma 2** နှင့် **Hybrid Reciprocal Rank Fusion (RRF)** စနစ်ကို တပ်ဆင်ထားပါသည်။
+
+#### (က) စိတ်ကြိုက် ရွေးချယ်နိုင်သော Model Tier ၃ မျိုး (3 Model Tiers):
+1. **Default Tier — `EmbeddingGemma-2-270M` (~165 MB)**:
+   - စာသားသက်သန့် (Text-only) Embedding Model ဖြစ်ပြီး 6GB မှ 8GB RAM ရှိသော ဖုန်းများအတွက် အထူးသင့်လျော်ပါသည်။
+   - RAM အသုံးပြုမှု အလွန်နည်းပါးပြီး စာမျက်နှာ ထောင်ချီရှိသော စာအုပ်များကို လျင်မြန်စွာ Vector Chunks အဖြစ် ပြောင်းလဲပေးနိုင်ပါသည်။
+2. **Optional Tier — `EmbeddingGemma-2-440M` (~280 MB)**:
+   - စာသားအပြင် ရုပ်ပုံနှင့် ပုံကြမ်းများ (Text + Vision) ပါဝင်သော စာတမ်းများအတွက် Multimodal Embedding Model ဖြစ်ပါသည်။
+3. **Optional Tier — `EmbeddingGemma-2-740M` (~460 MB)**:
+   - ရှုပ်ထွေးသော စာတမ်းကြီးများ၊ ဥပဒေစာအုပ်များနှင့် သုတေသနစာတမ်းများအတွက် တိကျမှု အမြင့်ဆုံး Full Multimodal Embedding Model ဖြစ်ပါသည်။
+
+#### (ခ) Model တင်သွင်းခြင်းနှင့် အလိုအလျောက် ပူးတွဲတည်ရှိနိုင်မှု (Multi-Model Coexistence):
+* **တင်သွင်းနည်း**: Settings > Section 4 (Local Brain) သို့သွားပြီး **Import Brain (.litertlm)** မှတစ်ဆင့် `.litertlm` မော်ဒယ်ဖိုင်ကို ရွေးချယ်ပေးနိုင်ပါသည်။
+* **Multi-Model Isolation**: SQLite Database တွင် `UNIQUE(doc_path, model_id, chunk_index)` စနစ် သုံးထားသောကြောင့် မော်ဒယ်တစ်ခုမှ တစ်ခုသို့ ပြောင်းလဲအသုံးပြုသော်လည်း ယခင်မော်ဒယ်ဖြင့် တွက်ထားသော Embeddings များ ပျက်စီးမသွားဘဲ သီးခြားစီ အတူတကွ တည်ရှိနေပါမည်။
+* **Automatic Fallback (Lexical + MyanmarSegmenter)**:
+  - ဖုန်းတွင် Embedding Model မတင်ရသေးသည့်အခါ သို့မဟုတ် RAM ချွေတာလိုသည့်အခါ `/docsearch` သည် Native C++ `MyanmarSegmenter` စကားလုံးဖြတ်စနစ်နှင့် **SQLite FTS5 BM25 Lexical Ranking** သို့ အလိုအလျောက် (Zero Crash / Zero Error) ပြောင်းလဲအလုပ်လုပ်ပေးပါသည်။
+
+#### (ဂ) `/docsearch` အသုံးပြုပုံနှင့် Memory စီမံခန့်ခွဲမှု:
+* **အသုံးပြုနည်း**:
+  ```text
+  /docsearch /sdcard/Documents/contract.pdf "လျှို့ဝှက်ချက် ထိန်းသိမ်းခြင်း စည်းမျဉ်း"
+  ```
+* **16-Chunk Sub-Batching**: Binder IPC Buffer (1 MB Limit) မပြည့်စေရန် Android Service နှင့် C++ Kernel ကြားတွင် စာပိုဒ် (Chunks) များကို Mutex-guarded sub-batching စနစ်ဖြင့် တစ်ကြိမ်လျှင် ၁၆ ပိုဒ်စီသာ စနစ်တကျ ပို့ဆောင်တွက်ချက်ပါသည်။
+* **SIMD 16-Byte Aligned Dot Product**: ARM NEON အထူးပြု စနစ်ဖြင့် Vector Cosine Similarity ကို အမြန်ဆုံး တွက်ချက်ပြီး Lexical Score နှင့် ပေါင်းစပ်ကာ အသင့်တော်ဆုံး စာပိုဒ်များကို ထုတ်ပေးပါသည်။
+
+---
+
+### ၁၆.၃ သီးသန့်လုံခြုံသော ဒေသတွင်း သုတေသနအင်ဂျင် (`/research`)
+
+ပြင်ပ Paid Search API (Tavily/SerpApi) သို့မဟုတ် Cloud AI များသို့ မိမိ၏ သုတေသနပြုချက်များ မပေါက်ကြားစေရန် Ronin တွင် **Privacy-Aware Local Research Engine** ကို ထည့်သွင်းထားပါသည်။
+
+```mermaid
+flowchart TD
+    User["အသုံးပြုသူ၏ မေးခွန်း\n('/research ...')"] --> PIIFilter["Privacy Shield PII Redaction"]
+    PIIFilter --> DDG["DuckDuckGo Lite\n(HTTP POST form-urlencoded)"]
+    DDG --> StreamCap["Stream Cap (256 KB)\n+ SSRF / DNS-Pinning"]
+    StreamCap --> LocalLLM["On-Device Local Gemma 4 E2B\n(100% Local Inference)"]
+    LocalLLM --> Card["ResearchResultCard\n(Inline [1][2] Citations + Source Pills)"]
+    Card --> UserDecision{"အသုံးပြုသူ ဆုံးဖြတ်ချက်"}
+    UserDecision -->|မသိမ်းဆည်းပါ| Ephemeral["ယာယီသာ ဖတ်ရှုခြင်း"]
+    UserDecision -->|'SAVE TO VAULT'| Vault["Cognitive Vault (LTM)\n(source_type = 'web_research')"]
+```
+
+#### (က) စတင် အသုံးပြုနည်း:
+Chat Box ထဲတွင် Slash Command သို့မဟုတ် သဘာဝဘာသာစကားဖြင့် တိုက်ရိုက် မေးမြန်းနိုင်ပါသည်-
+* `/research မြန်မာနိုင်ငံရှိ ပြန်လည်ပြည့်ဖြိုးမြဲစွမ်းအင် အလားအလာ`
+* `"Quantum Computing အကြောင်း သုတေသနလုပ်ပေးပါ"`
+* `"Research about solid-state battery technology 2026"`
+
+#### (ခ) လုံခြုံရေးနှင့် ကိုယ်ရေးကိုယ်တာ ကာကွယ်မှု မူဘောင် (Security Architecture):
+1. **HTTP POST via DuckDuckGo Lite**: ရှာဖွေလိုသော Query ကို URL parameters ထဲတွင် မထည့်ဘဲ `POST` form body ဖြင့်သာ ပေးပို့သဖြင့် ISP၊ Proxy သို့မဟုတ် Referrer header များမှတစ်ဆင့် အချက်အလက် မပေါက်ကြားနိုင်ပါ။
+2. **256 KB Decompressed Stream Cap**: ရှာဖွေရရှိသော HTML ဝဘ်စာမျက်နှာများကို အများဆုံး 256 KB သာ ဖတ်ရှုကန့်သတ်ထားသဖြင့် ဖုန်း RAM ပြည့်လျှံခြင်း (Out-of-Memory) နှင့် Zip-bomb/HTML-bomb တိုက်ခိုက်မှုများကို အပြည့်အဝ တားဆီးပေးပါသည်။
+3. **SSRF & DNS-Pinning on Redirects**:
+   - ဝဘ်ဆိုက် Redirect ခုန်ပျံသည့် အဆင့်တိုင်းတွင် Target IP ကို စစ်ဆေးပြီး Loopback (`127.0.0.1`), Private Network (`10.0.0.0/8`, `192.168.0.0/16`, `172.16.0.0/12`), CGNAT (`100.64.0.0/10`), Link-Local (`169.254.0.0/16`) သို့မဟုတ် Broadcast/Multicast IP များကို တင်းကျပ်စွာ ပိတ်ပင်ထားပါသည်။
+4. **100% Local Synthesis (Gemma 4 E2B)**: ရရှိလာသော အချက်အလက်များကို ပြင်ပ Cloud Server များသို့ မပို့ဘဲ ဖုန်းထဲရှိ On-Device Gemma 4 ဖြင့်သာ အနှစ်ချုပ် အဖြေထုတ်ပေးပြီး Inline Citations `[1][2][3]` များကို တိကျစွာ ချိတ်ဆက်ပေးပါသည်။
+
+#### (ဂ) "SAVE TO VAULT" ဖြင့် အတည်ပြု မှတ်သားခြင်း:
+* သုတေသနပြုချက်များကို AI Fact အဖြစ် **အလိုအလျောက် ရေးသွင်းခြင်း လုံးဝ မပြုလုပ်ပါ** (Halucination မပြန့်ပွားစေရန်)။
+* အသုံးပြုသူသည် ရလဒ်ကတ် (`ResearchResultCard`) တွင် ဖော်ပြထားသော Source Pills (HTTPS Verified URLs) များကို ကြည့်ရှုစစ်ဆေးပြီး စိတ်ကြိုက်တွေ့မှသာ **"SAVE TO VAULT"** ခလုတ်ကို နှိပ်၍ Cognitive Vault ထဲသို့ သိမ်းဆည်းနိုင်ပါသည်။
+* သိမ်းဆည်းသည့်အခါ `source_type = "web_research"`၊ မူရင်းဝဘ်လိပ်စာများနှင့် နေ့စွဲအချိန် Provenance Metadata များ အပြည့်အစုံ ပါဝင်ပါသည်။
+
+---
+
+### ၁၆.၄ လုံခြုံမှုအဆင့်မြှင့်တင်ထားသော Termux MCP Bridge (`/mcp`)
+
+Android ၏ စွမ်းအားကြီးမားသော Linux Environment ဖြစ်သည့် **Termux** နှင့် Ronin Kernel ချိတ်ဆက်၍ ဖိုင်များနှင့် Git စနစ်များကို ထိန်းချုပ်နိုင်သော စနစ်ဖြစ်ပါသည်။
+
+#### (က) စတင် တပ်ဆင် ချိတ်ဆက်နည်း (Step-by-Step Setup):
+1. **Termux ဖွင့်ပါ**:
+   ```bash
+   pkg update && pkg install python git
+   ```
+2. **Ronin ထဲတွင် Secret ရယူပါ**:
+   - Ronin Chat Box တွင် `/mcp token` ဟု ရိုက်ထည့်ပါ။
+   - Ronin က ထုတ်ပေးသော ၂၅၆-ဘစ် လျှို့ဝှက်ကုဒ် (HMAC Secret) ကို ကူးယူပါ။
+3. **Termux တွင် Secret ကို Export လုပ်၍ Server ကို စတင် Run ပါ**:
+   ```bash
+   export RONIN_MCP_SECRET="<သင်၏_256-bit_token_ဒီမှာထည့်ပါ>"
+   python3 scripts/termux_mcp_server.py
+   ```
+   *(Server သည် `http://127.0.0.1:8765/mcp` တွင် အလုပ်လုပ်နေပါမည်)*
+4. **Ronin မှ စစ်ဆေး ချိတ်ဆက်ပါ**:
+   - `/mcp status` — ချိတ်ဆက်မှု အောင်မြင်ကြောင်း စိမ်းပြာရောင်ဖြင့် ပြသပါမည်။
+   - `/mcp tools` — အသုံးပြုနိုင်သော Tool များ စာရင်းကို စစ်ဆေးနိုင်ပါသည်။
+
+#### (ခ) Cryptographic Authentication & Anti-Replay Security:
+* **No Cleartext Authorization**: Loopback HTTP တွင် Cleartext Bearer Token ပေးပို့ခြင်းကို လုံးဝ ပယ်ဖျက်ထားပါသည်။
+* **HMAC-SHA256 Signature (`X-Ronin-Signature`)**: Request တိုင်းကို ၂၅၆-ဘစ် Secret ဖြင့် HMAC-SHA256 Sign ပြုလုပ်ပြီးမှ ပို့ဆောင်ပါသည်။
+* **Timestamp + 16-Byte Nonce Cache**:
+  - `X-Ronin-Timestamp`: ±30 စက္ကန့်အတွင်း ပေးပို့သော Request များကိုသာ လက်ခံပါသည်။
+  - `X-Ronin-Nonce`: ၁၆-ဘိုက် Cryptographic Random Hex Nonce ကို သုံးထားပြီး LRU Cache ဖြင့် စစ်ဆေးသဖြင့် ယခင် Request များကို ပြန်လည် ကြားဖြတ် ခိုးယူသုံးစွဲခြင်း (Replay Attack) ကို ၁၀၀% ကာကွယ်ပေးထားပါသည်။
+
+#### (ဂ) စည်းမျဉ်းသတ်မှတ်ချက်များနှင့် ခွင့်ပြုချက်မူဝါဒ (Capability Security Policy):
+စက်၏ လုံခြုံရေးကို ထိခိုက်စေနိုင်သော အန္တရာယ်များကို ကာကွယ်ရန် Tool များကို အဆင့် ၃ ဆင့် ခွဲခြားထားပါသည်-
+
+| အဆင့် (Policy) | ခွင့်ပြုထားသော Tool များ | လုပ်ဆောင်ပုံနှင့် လုံခြုံရေးစည်းမျဉ်း |
+| :--- | :--- | :--- |
+| **ALLOW (အစိမ်း)** | `get_device_info`, `list_files`, `read_file`, `git_status`, `git_diff` | စနစ်မထိခိုက်သော ဖတ်ရှုစစ်ဆေးမှုများ ဖြစ်သဖြင့် ချက်ချင်း ဆောင်ရွက်ခွင့် ပြုပါသည်။ (ဖိုင်ဖတ်ရှုရာတွင် အများဆုံး 128 KB ကန့်သတ်ထားပါသည်) |
+| **CONFIRM (လိမ္မော်)** | ဖိုင်အသစ်ရေးခြင်း၊ ပြင်ဆင်ခြင်းဆိုင်ရာ Tool များ | အသုံးပြုသူထံမှ **Human-In-The-Loop (HITL)** အတည်ပြုချက် Popup Dialog ဖြင့် မေးမြန်းပြီး "Confirm" နှိပ်မှသာ လုပ်ဆောင်ပါသည်။ |
+| **DENY (အနီ - အပြီးတိုင် ပိတ်ပင်)** | Arbitrary Shell Execution (`run_bash`, `shell`, `exec`, arbitrary pipes) | ဖုန်း၏ OS နှင့် ဖိုင်များကို ထိခိုက်စေနိုင်သော Command Line ရိုက်ခိုင်းမှုများကို Server အဆင့်၌ပင် အပြီးတိုင် ပိတ်ပင်ထားပါသည် (CodeQL #18 CWE-78 ဖြေရှင်းချက်)။ |
+
+* **Tool ခေါ်ယူ အသုံးပြုနည်း**:
+  ```text
+  /mcp call list_files {"path": "/data/data/com.termux/files/home"}
+  /mcp call read_file {"path": "/data/data/com.termux/files/home/sample.txt"}
+  /mcp call git_status {"repo_path": "/data/data/com.termux/files/home/play-ground/ronin"}
+  ```

@@ -5,7 +5,34 @@ All notable changes to the Ronin Kernel project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased / v3.0] - 2026-07-28
+## [5.1.1] - 2026-11-07
+
+### Added
+- **Tactical Brutalist UI & Myanmar Typography**: Unified AMOLED pure black theme (`#0A0A0A`), `8.dp` rounded corner geometry across all UI cards, diacritic-safe Myanmar dual-font system (`21.sp` body with `PlatformTextStyle(includeFontPadding = true)`), and dismissible slash command overlay with header `✕`, back button, and tap-outside handling.
+- **On-Demand EmbeddingGemma 2 & Hybrid RAG (`/docsearch`)**: Configurable 3 model tiers (`270M`, `440M`, `740M`), multi-model SQLite embedding coexistence under `UNIQUE(doc_path, model_id, chunk_index)`, 16-byte aligned SIMD Cosine Similarity, and automatic fallback to `MyanmarSegmenter` + SQLite FTS5 BM25 lexical search when no model is active.
+- **Privacy-Aware Local Research Engine (`/research`)**: 100% on-device synthesis with Gemma 4 E2B, DuckDuckGo Lite form-encoded search, 256 KB stream limit, SSRF redirect DNS-pinning, and interactive "SAVE TO VAULT" persistence with citation provenance.
+- **Hardened Termux MCP Bridge (`/mcp`)**: Authenticated local bridge with HMAC-SHA256 request signing, `±30s` timestamp window, 16-byte random hex nonce LRU cache, and strict Capability Security Policy (`ALLOW`, `CONFIRM`, and `DENY` for arbitrary shell execution).
+- **Encrypted Cognitive Vault Backup & Restore (`.roninvault`)**: Atomic WAL-checkpointed SQLite snapshotting encrypted with AES-256-GCM via Android Storage Access Framework (SAF).
+
+### Changed
+- **Database Schema v3 Migration**: Added compound index `idx_doc_path_model` and automatic SQLite FTS5 external-content triggers (`document_embeddings_ai`, `document_embeddings_ad`, `document_embeddings_au`) to synchronize `document_chunks_fts` on inserts, deletes, and updates.
+- **Binder IPC Sub-Batching**: Mutex-guarded 16-chunk sub-batching across Android Service and C++ Kernel to eliminate `TransactionTooLargeException`.
+- **JNI Architecture Hardening**: Standardized `LongTermMemory` namespace qualification across all JNI bindings.
+
+### Fixed
+- **CodeQL #18 (CWE-78)**: Eliminated arbitrary shell command execution in `scripts/termux_mcp_server.py`.
+- **CodeQL #7 (CWE-190)**: Fixed 32-bit multiplication before 64-bit conversion in `pffft.c:1161`.
+- **Security Audit (RONIN-SEC-01 to RONIN-SEC-08)**:
+  - Sanitized display names and validated canonical paths during model and traineddata imports (CWE-22).
+  - Scoped `file_paths.xml` by removing root and external storage access (CWE-732).
+  - Removed cleartext `Authorization: Bearer` token over loopback HTTP (CWE-319).
+  - Eliminated cleartext cognitive database export to public storage (CWE-312).
+  - Aligned capability manifest paths with `capabilities.json` (CWE-1188).
+  - Added thread-safe mutex guards to model registry and cloud providers (CWE-362).
+  - Migrated legacy `PreferenceManager` APIs to secure preferences (CWE-676).
+  - Enforced memory dimension bounds (`dim <= 1024`) and byte alignment validation (CWE-400).
+
+## [3.0.0] - 2026-07-28
 
 ### Added
 - **Production-Grade SHM AI Review Pipeline**: Export SHM analysis metrics in structured formats (Engineering JSON, Human Report, Developer Debug Logs).
