@@ -1,4 +1,5 @@
 #include "long_term_memory.h"
+#include "reasoning/policy_router.hpp"
 #include <cmath>
 #include <ctime>
 #include <vector>
@@ -87,7 +88,7 @@ bool LongTermMemory::initSchema() {
         "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);",
         "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, tags TEXT, created_at INTEGER, updated_at INTEGER);",
         "CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, content, content='notes', content_rowid='id');",
-        "CREATE TABLE IF NOT EXISTS facts (id INTEGER PRIMARY KEY AUTOINCREMENT, entity TEXT, attribute TEXT, value TEXT, source_type INTEGER DEFAULT 0, confidence REAL DEFAULT 1.0, last_verified_at INTEGER, created_at INTEGER, updated_at INTEGER);",
+        "CREATE TABLE IF NOT EXISTS facts (id INTEGER PRIMARY KEY AUTOINCREMENT, entity TEXT, attribute TEXT, value TEXT, source_type INTEGER DEFAULT 0, confidence REAL DEFAULT 1.0, surprise_score REAL DEFAULT 0.0, last_verified_at INTEGER, created_at INTEGER, updated_at INTEGER);",
         "CREATE INDEX IF NOT EXISTS idx_facts_lookup ON facts(entity, attribute);",
         "CREATE TABLE IF NOT EXISTS vault (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, encrypted_blob TEXT, created_at INTEGER);",
         "CREATE TABLE IF NOT EXISTS episodes (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, intent TEXT, goal_id TEXT, node_id TEXT, summary TEXT, payload_json TEXT, outcome_enum INTEGER, latency_ms INTEGER, confidence_before REAL, confidence_after REAL);",
@@ -112,6 +113,10 @@ bool LongTermMemory::initSchema() {
     if (!runMigrations(schema_version) || !executeStatements(statements) || !setSchemaVersion(kCurrentSchemaVersion)) {
         sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
         return false;
+    }
+
+    if (!tableHasColumn(m_db, "facts", "surprise_score")) {
+        sqlite3_exec(m_db, "ALTER TABLE facts ADD COLUMN surprise_score REAL DEFAULT 0.0;", nullptr, nullptr, nullptr);
     }
 
     std::vector<const char*> fts_statements = {
@@ -239,8 +244,32 @@ bool LongTermMemory::storeNote(const std::string& title, const std::string& cont
 bool LongTermMemory::storeFact(const std::string& entity, const std::string& attr, const std::string& value, SourceType source, float confidence) {
     if (!m_db || m_read_only.load()) { LOGE(TAG, "storeFact failed: DB is null or ReadOnly."); return false; }
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = "INSERT INTO facts (entity, attribute, value, source_type, confidence, last_verified_at, created_at, updated_at) "
-                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
+
+    // Phase 3 Active Inference: Compute write-time surprise score (prediction error against existing belief)
+    float surprise_score = std::clamp(0.25f * confidence, 0.0f, 1.0f);
+    {
+        const char* check_sql = "SELECT value, confidence FROM facts WHERE entity = ? AND attribute = ? ORDER BY updated_at DESC LIMIT 1;";
+        sqlite3_stmt* check_stmt = nullptr;
+        if (sqlite3_prepare_v2(m_db, check_sql, -1, &check_stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(check_stmt, 1, entity.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(check_stmt, 2, attr.c_str(), -1, SQLITE_STATIC);
+            if (sqlite3_step(check_stmt) == SQLITE_ROW) {
+                std::string existing_val = columnText(check_stmt, 0);
+                float existing_conf = static_cast<float>(sqlite3_column_double(check_stmt, 1));
+                if (existing_val == value) {
+                    // Reinforces prior belief -> low surprise
+                    surprise_score = 0.05f;
+                } else {
+                    // Contradicts prior belief -> high epistemic surprise proportional to confidence
+                    surprise_score = std::clamp(0.55f + 0.25f * confidence + 0.20f * existing_conf, 0.0f, 1.0f);
+                }
+            }
+            sqlite3_finalize(check_stmt);
+        }
+    }
+
+    const char* sql = "INSERT INTO facts (entity, attribute, value, source_type, confidence, surprise_score, last_verified_at, created_at, updated_at) "
+                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
     uint64_t now = std::time(nullptr);
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -252,13 +281,53 @@ bool LongTermMemory::storeFact(const std::string& entity, const std::string& att
     sqlite3_bind_text(stmt, 3, value.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 4, static_cast<int>(source));
     sqlite3_bind_double(stmt, 5, confidence);
-    sqlite3_bind_int64(stmt, 6, now);
+    sqlite3_bind_double(stmt, 6, surprise_score);
     sqlite3_bind_int64(stmt, 7, now);
     sqlite3_bind_int64(stmt, 8, now);
+    sqlite3_bind_int64(stmt, 9, now);
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     if (!success) { LOGE(TAG, "storeFact step failed: %s", sqlite3_errmsg(m_db)); }
     sqlite3_finalize(stmt);
     return success;
+}
+
+std::vector<LongTermMemory::SurprisingFact> LongTermMemory::getTopSurprisingFacts(int limit, float min_surprise) {
+    if (!m_db || limit <= 0) return {};
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "SELECT entity, attribute, value, confidence, surprise_score, updated_at "
+                      "FROM facts WHERE surprise_score >= ? "
+                      "ORDER BY surprise_score DESC, updated_at DESC LIMIT ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return {};
+    sqlite3_bind_double(stmt, 1, min_surprise);
+    sqlite3_bind_int(stmt, 2, limit);
+    std::vector<SurprisingFact> results;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        SurprisingFact sf;
+        sf.entity = columnText(stmt, 0);
+        sf.attribute = columnText(stmt, 1);
+        sf.value = columnText(stmt, 2);
+        sf.confidence = static_cast<float>(sqlite3_column_double(stmt, 3));
+        sf.surprise_score = static_cast<float>(sqlite3_column_double(stmt, 4));
+        results.push_back(std::move(sf));
+    }
+    sqlite3_finalize(stmt);
+    return results;
+}
+
+bool LongTermMemory::resolveFactSurprise(const std::string& entity, const std::string& attr, float new_surprise) {
+    if (!m_db || m_read_only.load()) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "UPDATE facts SET surprise_score = ?, updated_at = ? WHERE entity = ? AND attribute = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_double(stmt, 1, std::clamp(new_surprise, 0.0f, 1.0f));
+    sqlite3_bind_int64(stmt, 2, std::time(nullptr));
+    sqlite3_bind_text(stmt, 3, entity.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 4, attr.c_str(), -1, SQLITE_STATIC);
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+    return ok;
 }
 
 bool LongTermMemory::storeVault(const std::string& title, const std::string& encrypted_blob) {
@@ -1262,6 +1331,46 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::hybridSearch(
         if (static_cast<int>(results.size()) >= top_k) break;
     }
     return results;
+}
+
+LongTermMemory::LexicalFreeEnergyResult LongTermMemory::computeLexicalFreeEnergy(
+    const std::string& query_text,
+    const std::string& doc_path_filter,
+    int top_k,
+    float temperature,
+    float theta_min,
+    float entropy_max) {
+    LexicalFreeEnergyResult out;
+    if (!m_db || query_text.empty() || top_k <= 0) {
+        out.should_wakeup_embedding = true;
+        out.normalized_entropy = 1.0f;
+        out.expected_free_energy_lexical = 2.5f;
+        return out;
+    }
+
+    auto matches = hybridSearch(query_text, {}, doc_path_filter, top_k, "");
+    std::vector<float> bm25_scores;
+    bm25_scores.reserve(matches.size());
+    for (const auto& m : matches) {
+        float score = std::abs(m.fts_bm25_score);
+        if (score < 1e-6f && m.lexical_hits > 0) {
+            score = static_cast<float>(m.lexical_hits) * 0.75f;
+        }
+        if (score > 0.0f) {
+            bm25_scores.push_back(score);
+        }
+    }
+
+    auto decision = Ronin::Kernel::Reasoning::ExpectedFreeEnergyRouter::evaluateRagWakeup(
+        bm25_scores, temperature, theta_min, entropy_max);
+
+    out.should_wakeup_embedding = decision.should_wakeup_embedding;
+    out.top_bm25_magnitude = decision.top_bm25_magnitude;
+    out.normalized_entropy = decision.normalized_entropy;
+    out.expected_free_energy_lexical = decision.expected_free_energy_lexical;
+    out.expected_free_energy_semantic = decision.expected_free_energy_semantic;
+    out.top_matches = std::move(matches);
+    return out;
 }
 
 } // namespace Ronin::Kernel::Memory

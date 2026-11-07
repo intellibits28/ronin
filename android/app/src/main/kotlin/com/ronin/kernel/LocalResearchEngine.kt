@@ -748,11 +748,50 @@ object LocalResearchEngine {
     }.trim()
 
     /**
+     * Phase 2 Active Inference: Multi-Hop Information Foraging Evaluator.
+     * Uses quadratic hop cost C_hop(k) = c0 * k^2 (maxHops = 2) and diminishing-returns early-stop (Delta F < epsilon).
+     */
+    data class ResearchHopDecision(
+        val shouldHop: Boolean,
+        val currentFreeEnergy: Float,
+        val hopCost: Float,
+        val deltaF: Float
+    )
+
+    fun evaluateResearchHopEFE(
+        coverageRatio: Float,
+        contradictionRatio: Float,
+        currentHop: Int,
+        prevFreeEnergy: Float = 1.0f,
+        maxHops: Int = 2,
+        c0: Float = 0.18f,
+        epsilon: Float = 0.08f
+    ): ResearchHopDecision {
+        val cov = coverageRatio.coerceIn(0.0f, 1.0f)
+        val contra = contradictionRatio.coerceIn(0.0f, 1.0f)
+        val fCurrent = (0.70f * (1.0f - cov) + 0.30f * contra).coerceIn(0.0f, 1.0f)
+        val nextK = (currentHop + 1).toFloat()
+        val hopCost = c0 * nextK * nextK
+        val deltaF = prevFreeEnergy - fCurrent
+
+        if (currentHop >= maxHops) {
+            return ResearchHopDecision(false, fCurrent, hopCost, deltaF)
+        }
+        if (currentHop >= 1 && deltaF < epsilon) {
+            return ResearchHopDecision(false, fCurrent, hopCost, deltaF)
+        }
+        val expectedGain = 0.55f * fCurrent
+        val shouldHop = (fCurrent > 0.35f) && (expectedGain > hopCost)
+        return ResearchHopDecision(shouldHop, fCurrent, hopCost, deltaF)
+    }
+
+    /**
      * Full end-to-end Sovereign Local Research Pipeline:
      * 1. DuckDuckGo Lite POST search (Top 3 HTTPS sources, walled-garden filtered)
      * 2. SSRF-guarded & Bounded HTML distillation
-     * 3. Batch-First On-Demand EmbeddingGemma 2 chunk selection (single model swap)
-     * 4. Isolated Gemma 4 E2B synthesis + Cloud Fallback + automatic LTM note persistence
+     * 3. Phase 2 Active Inference Multi-Hop Foraging check (quadratic hop cost + diminishing returns early-stop)
+     * 4. Batch-First On-Demand EmbeddingGemma 2 chunk selection (single model swap)
+     * 5. Isolated Gemma 4 E2B synthesis + Cloud Fallback + automatic LTM note persistence
      */
     suspend fun runResearchPipeline(
         context: Context,
@@ -779,6 +818,38 @@ object LocalResearchEngine {
         val hydratedSources = rawSources.map { src ->
             val content = fetchAndDistillPage(context, src.url)
             src.copy(distilledContent = content.ifBlank { src.snippet })
+        }.toMutableList()
+
+        // Phase 2 Active Inference: Evaluate Hop-1 lexical coverage before embedding
+        val queryTokens = cleanSearchQuery(query).lowercase().split(Regex("\\s+")).filter { it.length >= 2 }
+        val totalHydratedChars = hydratedSources.sumOf { it.distilledContent.length }
+        val tokenCoverage = if (queryTokens.isEmpty()) 1.0f else {
+            val matchedTokens = queryTokens.count { tok ->
+                hydratedSources.any { src -> src.distilledContent.lowercase().contains(tok) }
+            }
+            (matchedTokens.toFloat() / queryTokens.size.toFloat()) * (totalHydratedChars.coerceAtMost(1800).toFloat() / 1800.0f)
+        }
+        val hopDecision = evaluateResearchHopEFE(
+            coverageRatio = tokenCoverage,
+            contradictionRatio = 0.0f,
+            currentHop = 1,
+            prevFreeEnergy = 1.0f
+        )
+        if (hopDecision.shouldHop && hydratedSources.size < MAX_SOURCES + 2) {
+            onProgress?.invoke("[RESEARCH: ACTIVE INFERENCE HOP #2 (F=${"%.2f".format(hopDecision.currentFreeEnergy)})...]")
+            val refinedQuery = "${cleanSearchQuery(query)} overview facts"
+            val hop2Sources = searchWeb(refinedQuery, maxResults = 2)
+            for (h2 in hop2Sources) {
+                if (hydratedSources.none { it.url == h2.url }) {
+                    val content = fetchAndDistillPage(context, h2.url)
+                    hydratedSources.add(
+                        h2.copy(
+                            index = hydratedSources.size + 1,
+                            distilledContent = content.ifBlank { h2.snippet }
+                        )
+                    )
+                }
+            }
         }
 
         // Collect all chunks across all sources for a SINGLE Batch Embedding pass

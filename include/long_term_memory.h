@@ -126,6 +126,37 @@ public:
     std::vector<HybridSearchMatch> searchEmbeddings(const std::vector<float>& query_embedding, const std::string& doc_path_filter = "", int top_k = 5, const std::string& model_id = "");
     std::vector<HybridSearchMatch> hybridSearch(const std::string& query_text, const std::vector<float>& query_embedding, const std::string& doc_path_filter = "", int top_k = 5, const std::string& model_id = "");
 
+    // Active Inference Phase 1: Dual-Gate BM25 Entropy for Smart RAG Wakeup (/docsearch)
+    struct LexicalFreeEnergyResult {
+        float top_bm25_magnitude = 0.0f;
+        float normalized_entropy = 1.0f;
+        float expected_free_energy_lexical = 2.5f;
+        float expected_free_energy_semantic = 0.45f;
+        bool should_wakeup_embedding = true;
+        std::vector<HybridSearchMatch> top_matches;
+    };
+
+    LexicalFreeEnergyResult computeLexicalFreeEnergy(
+        const std::string& query_text,
+        const std::string& doc_path_filter = "",
+        int top_k = 5,
+        float temperature = 1.0f,
+        float theta_min = 0.5f,
+        float entropy_max = 0.35f
+    );
+
+    // Active Inference Phase 3: Surprise-Driven Memory Consolidation (/reflect)
+    struct SurprisingFact {
+        std::string entity;
+        std::string attribute;
+        std::string value;
+        float surprise_score = 0.0f;
+        float confidence = 1.0f;
+    };
+
+    std::vector<SurprisingFact> getTopSurprisingFacts(int limit = 5, float min_surprise = 0.5f);
+    bool resolveFactSurprise(const std::string& entity, const std::string& attr, float new_surprise = 0.0f);
+
     // Lifecycle Management
     void applyDecay(uint64_t current_timestamp);
     int runMaintenance(bool is_charging);

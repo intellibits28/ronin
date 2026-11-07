@@ -354,10 +354,21 @@ JNIEXPORT void JNICALL native_reportSemanticFailure(JNIEnv *env, jobject thiz, j
 }
 
 JNIEXPORT void JNICALL native_runNightlyReflection(JNIEnv *env, jobject thiz) {
-    LOGI("RoninJNI", ">>> INITIATING NIGHTLY REFLECTION CYCLE [Phase 2] <<<");
+    LOGI("RoninJNI", ">>> INITIATING NIGHTLY REFLECTION CYCLE [Phase 2 & 3 Active Inference] <<<");
     HardwareBridge::pushMessage("[REFLECTION] Starting Behavioral Reflection analysis on recent activity...");
     if (runtimeContext().graph_executor) {
         runtimeContext().graph_executor->getReflectionEngine().reflectOnRecentTasks();
+    }
+    // Phase 3 Active Inference: Surprise-Driven Epistemic Consolidation when device temp < 38.0C
+    float currentTemp = HardwareBridge::getDeviceTemperature();
+    if (runtimeContext().ltm && currentTemp < 38.0f) {
+        auto surprisingFacts = runtimeContext().ltm->getTopSurprisingFacts(5, 0.35f);
+        if (!surprisingFacts.empty()) {
+            HardwareBridge::pushMessage("[REFLECTION: Reconciling " + std::to_string(surprisingFacts.size()) + " high-surprise memory facts (T=" + std::to_string(static_cast<int>(currentTemp)) + "C)...]");
+            for (const auto& sf : surprisingFacts) {
+                runtimeContext().ltm->resolveFactSurprise(sf.entity, sf.attribute, sf.surprise_score * 0.35f);
+            }
+        }
     }
 }
 

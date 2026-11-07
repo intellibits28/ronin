@@ -157,6 +157,7 @@ set(RONIN_JNI_SOURCES
 )
 
 if(RONIN_BUILD_ANDROID)
+    target_compile_definitions(ronin_core PUBLIC RONIN_ANDROID_APK_BUILD=1)
     find_library(log-lib log)
     find_library(android-lib android)
     

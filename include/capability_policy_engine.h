@@ -3,6 +3,9 @@
 #include <string>
 #include <unordered_map>
 #include <optional>
+#include <array>
+#include <mutex>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 
 namespace Ronin::Kernel {
@@ -13,7 +16,7 @@ namespace Ronin::Kernel {
 enum class PolicyDecision {
     ALLOW,
     DENY,
-    DEFER // e.g., requires human‑in‑the‑loop confirmation
+    DEFER // e.g., requires human‑in‑the‑loop confirmation (MCP_HITL_CONFIRM)
 };
 
 /**
@@ -26,7 +29,21 @@ enum class ReasonCode {
     PRIVACY_BLOCKED,
     HITL_REQUIRED,
     VERSION_MISMATCH,
-    UNKNOWN_CAPABILITY
+    UNKNOWN_CAPABILITY,
+    ANOMALY_SURPRISE_HIGH
+};
+
+/**
+ * Phase 3 Active Inference: Sliding-Window MCP Anomaly Evaluation
+ */
+struct McpAnomalyEvaluation {
+    PolicyDecision decision = PolicyDecision::ALLOW;
+    ReasonCode reason = ReasonCode::NONE;
+    float contextual_surprise = 0.0f;
+    float burst_surprise = 0.0f;
+    float path_entropy = 0.0f;
+    float intent_divergence = 0.0f;
+    bool requires_hitl_confirm = false;
 };
 
 /**
@@ -68,6 +85,20 @@ public:
                             int version,
                             std::optional<ReasonCode> &reason) const;
 
+    /**
+     * Phase 3 Active Inference: Evaluate an MCP tool invocation using a 32-slot
+     * sliding-window ring buffer to detect burst anomalies, sensitive path access,
+     * and intent-path divergence. Escalates ALLOW tools to DEFER (MCP_HITL_CONFIRM)
+     * when Contextual Surprise F > surpriseThreshold (default 0.70).
+     */
+    McpAnomalyEvaluation evaluateMcpToolCall(const std::string &toolName,
+                                             const std::string &targetPath,
+                                             const std::string &activeIntent = "",
+                                             uint64_t timestampMs = 0,
+                                             float surpriseThreshold = 0.70f);
+
+    void resetMcpMonitor();
+
 private:
     struct PolicyEntry {
         bool allowed = true;
@@ -76,6 +107,18 @@ private:
         bool requires_human = false;
         std::vector<int> allowed_versions; // empty means any version
     };
+
+    struct McpCallRecord {
+        uint64_t timestamp_ms = 0;
+        uint32_t path_hash = 0;
+    };
+
+    static constexpr size_t MCP_RING_CAPACITY = 32;
+    mutable std::mutex m_mcpMutex;
+    std::array<McpCallRecord, MCP_RING_CAPACITY> m_mcpRing{};
+    size_t m_mcpHead = 0;
+    size_t m_mcpCount = 0;
+    float m_ewmaIntervalMs = 2000.0f;
 
     // Map from capability id -> policy entry
     std::unordered_map<std::string, PolicyEntry> m_policyMap;

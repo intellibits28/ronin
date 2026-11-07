@@ -2,11 +2,49 @@
 
 #include "reasoning/active_inference.hpp"
 #include <array>
+#include <vector>
 #include <string>
 #include <string_view>
 #include <cmath>
 
 namespace Ronin::Kernel::Reasoning {
+
+/**
+ * Phase 1: Dual-Gate BM25 Entropy Evaluation for Smart RAG Wakeup (/docsearch)
+ */
+struct RagWakeupDecision {
+    PolicyPrimitive policy{PolicyPrimitive::INSPECT_DOC};
+    float top_bm25_magnitude{0.0f};
+    float normalized_entropy{1.0f};
+    float expected_free_energy_lexical{0.0f};
+    float expected_free_energy_semantic{0.0f};
+    bool should_wakeup_embedding{true};
+};
+
+/**
+ * Phase 2: Privacy-Weighted Brain Routing & 8-Token Speculative Early-Exit
+ */
+struct BrainRouteDecision {
+    PolicyPrimitive policy{PolicyPrimitive::EXEC_TOOL};
+    float prior_epistemic_uncertainty{0.0f};
+    float probe_entropy{0.0f};
+    float local_efe{0.0f};
+    float cloud_efe{0.0f};
+    bool escalate_to_cloud{false};
+    bool privacy_blocked{false};
+};
+
+/**
+ * Phase 2: Multi-Hop Epistemic Foraging Loop (/research) with Quadratic Hop Cost
+ */
+struct ResearchHopDecision {
+    PolicyPrimitive policy{PolicyPrimitive::IDLE};
+    uint32_t current_hop{0};
+    float residual_free_energy{0.0f};
+    float delta_free_energy{0.0f};
+    float hop_pragmatic_cost{0.0f};
+    bool should_continue_foraging{false};
+};
 
 /**
  * Slot extraction metadata for computing Epistemic Slot Entropy H_slot
@@ -82,6 +120,47 @@ public:
      * Helper to compute slot entropy from user query directly using NLP slot extractors
      */
     static SlotEntropyContext analyzeQuery(const std::string& query, const std::string& route_name, float route_confidence);
+
+    /**
+     * Phase 1: Evaluates Dual-Gate BM25 Entropy for /docsearch Smart EmbeddingGemma 2 Wakeup.
+     * - Temperature-scaled Softmax over top-K |bm25| scores
+     * - Normalized Shannon Entropy H_hat in [0, 1]
+     * - Selects LEXICAL_ONLY iff (|s_1| > theta_min && H_hat < entropy_max), else INSPECT_DOC.
+     */
+    static RagWakeupDecision evaluateRagWakeup(
+        const std::vector<float>& bm25_scores,
+        float temperature = 1.0f,
+        float theta_min = 0.5f,
+        float entropy_max = 0.35f,
+        float resource_index = 1.0f
+    );
+
+    /**
+     * Phase 2: Evaluates Local (Gemma 4 E2B) vs Cloud Escalation using:
+     * - Pre-Inference Fast Prior Uncertainty H_prior (token length, reasoning keywords)
+     * - Speculative 8-Token Probe Entropy H_probe
+     * - Privacy Cost Injection (pii_risk_flag > 0 blocks cloud escalation via +100.0 cost)
+     */
+    static BrainRouteDecision evaluateBrainRoute(
+        const std::string& query,
+        float resource_index = 1.0f,
+        float pii_risk_flag = 0.0f,
+        float early_probe_entropy = 0.0f
+    );
+
+    /**
+     * Phase 2: Evaluates Multi-Hop Research Foraging (/research) with:
+     * - Quadratic Hop Cost C_hop(k) = c0 * k^2
+     * - Diminishing Returns Early-Stop: Delta F = F_{k-1} - F_k < epsilon
+     */
+    static ResearchHopDecision evaluateResearchHop(
+        uint32_t current_hop,
+        float coverage_ratio,
+        float prev_free_energy = 1.0f,
+        float c0 = 0.25f,
+        uint32_t max_hops = 2,
+        float min_delta_f = 0.12f
+    );
 
     static constexpr float THRESHOLD_EPISTEMIC = 0.45f;
     static constexpr size_t POLICY_COUNT = 6;

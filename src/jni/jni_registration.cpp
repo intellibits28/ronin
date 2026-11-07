@@ -56,7 +56,8 @@ JNINativeMethod g_methods[] = {
     {"storeDocumentChunksAtomicNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[I[Ljava/lang/String;[FI)Z", (void*)native_storeDocumentChunksAtomic},
     {"isDocumentIndexedNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void*)native_isDocumentIndexed},
     {"hybridSearchNative", "(Ljava/lang/String;[FLjava/lang/String;I)[Ljava/lang/String;", (void*)native_hybridSearch},
-    {"hybridSearchWithModelNative", "(Ljava/lang/String;[FLjava/lang/String;ILjava/lang/String;)[Ljava/lang/String;", (void*)native_hybridSearchWithModel}
+    {"hybridSearchWithModelNative", "(Ljava/lang/String;[FLjava/lang/String;ILjava/lang/String;)[Ljava/lang/String;", (void*)native_hybridSearchWithModel},
+    {"evaluateRagWakeupNative", "(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;", (void*)native_evaluateRagWakeup}
 };
 
 JNINativeMethod g_worker_methods[] = {

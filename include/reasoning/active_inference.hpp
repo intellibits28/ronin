@@ -39,7 +39,11 @@ enum class PolicyPrimitive : uint8_t {
     CLARIFY_USER = 2,
     INSPECT_DOC = 3,
     EXEC_TOOL = 4,
-    SELF_HEAL = 5
+    SELF_HEAL = 5,
+    LEXICAL_ONLY = 6,
+    RESEARCH_HOP = 7,
+    ESCALATE_CLOUD = 8,
+    MCP_HITL_CONFIRM = 9
 };
 
 /**

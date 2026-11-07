@@ -25,8 +25,167 @@ const char* ExpectedFreeEnergyRouter::getPolicyName(PolicyPrimitive policy) {
         case PolicyPrimitive::INSPECT_DOC: return "INSPECT_DOC";
         case PolicyPrimitive::EXEC_TOOL: return "EXEC_TOOL";
         case PolicyPrimitive::SELF_HEAL: return "SELF_HEAL";
+        case PolicyPrimitive::LEXICAL_ONLY: return "LEXICAL_ONLY";
+        case PolicyPrimitive::RESEARCH_HOP: return "RESEARCH_HOP";
+        case PolicyPrimitive::ESCALATE_CLOUD: return "ESCALATE_CLOUD";
+        case PolicyPrimitive::MCP_HITL_CONFIRM: return "MCP_HITL_CONFIRM";
         default: return "UNKNOWN";
     }
+}
+
+RagWakeupDecision ExpectedFreeEnergyRouter::evaluateRagWakeup(
+    const std::vector<float>& bm25_scores,
+    float temperature,
+    float theta_min,
+    float entropy_max,
+    float resource_index
+) {
+    RagWakeupDecision decision;
+    float tau = std::max(0.05f, temperature);
+    float res = std::clamp(resource_index, 0.0f, 1.0f);
+
+    if (bm25_scores.empty()) {
+        decision.top_bm25_magnitude = 0.0f;
+        decision.normalized_entropy = 1.0f;
+        decision.expected_free_energy_lexical = 2.5f;
+        decision.expected_free_energy_semantic = 0.4f + (1.0f - res) * 0.5f;
+        decision.should_wakeup_embedding = true;
+        decision.policy = PolicyPrimitive::INSPECT_DOC;
+        return decision;
+    }
+
+    size_t k = std::min<size_t>(bm25_scores.size(), 5);
+    std::vector<float> mags(k);
+    float max_mag = 0.0f;
+    for (size_t i = 0; i < k; ++i) {
+        mags[i] = std::abs(bm25_scores[i]);
+        if (mags[i] > max_mag) max_mag = mags[i];
+    }
+    decision.top_bm25_magnitude = max_mag;
+
+    if (k == 1) {
+        // Single result edge case: entropy is 0, gated purely by minimum score threshold theta_min
+        decision.normalized_entropy = 0.0f;
+        bool pass_gate = (max_mag > theta_min);
+        decision.should_wakeup_embedding = !pass_gate;
+        decision.policy = pass_gate ? PolicyPrimitive::LEXICAL_ONLY : PolicyPrimitive::INSPECT_DOC;
+        decision.expected_free_energy_lexical = pass_gate ? 0.1f : 1.8f;
+        decision.expected_free_energy_semantic = 0.5f + (1.0f - res) * 0.5f;
+        return decision;
+    }
+
+    // Temperature-scaled Softmax: p_i = exp(|s_i| / tau) / sum_j exp(|s_j| / tau)
+    std::vector<float> probs(k);
+    float sum_exp = 0.0f;
+    for (size_t i = 0; i < k; ++i) {
+        probs[i] = std::exp((mags[i] - max_mag) / tau);
+        sum_exp += probs[i];
+    }
+    float inv_sum = (sum_exp > 1e-9f) ? (1.0f / sum_exp) : (1.0f / static_cast<float>(k));
+    float shannon_h = 0.0f;
+    for (size_t i = 0; i < k; ++i) {
+        probs[i] *= inv_sum;
+        if (probs[i] > 1e-9f) {
+            shannon_h -= probs[i] * std::log(probs[i]);
+        }
+    }
+
+    float max_h = std::log(static_cast<float>(k));
+    float norm_h = (max_h > 1e-6f) ? std::clamp(shannon_h / max_h, 0.0f, 1.0f) : 1.0f;
+    decision.normalized_entropy = norm_h;
+
+    // Dual-Gate Condition: score_1 > theta_min AND H_hat < entropy_max
+    bool lexical_sufficient = (max_mag > theta_min) && (norm_h < entropy_max);
+    decision.expected_free_energy_lexical = norm_h + ((max_mag <= theta_min) ? 1.2f : 0.0f);
+    decision.expected_free_energy_semantic = 0.45f + (1.0f - res) * 0.4f;
+    decision.should_wakeup_embedding = !lexical_sufficient;
+    decision.policy = lexical_sufficient ? PolicyPrimitive::LEXICAL_ONLY : PolicyPrimitive::INSPECT_DOC;
+    return decision;
+}
+
+BrainRouteDecision ExpectedFreeEnergyRouter::evaluateBrainRoute(
+    const std::string& query,
+    float resource_index,
+    float pii_risk_flag,
+    float early_probe_entropy
+) {
+    BrainRouteDecision out;
+    out.probe_entropy = std::clamp(early_probe_entropy, 0.0f, 1.0f);
+    out.privacy_blocked = (pii_risk_flag > 0.0f);
+
+    // 1. Pre-Inference Fast Estimation of Prior Epistemic Uncertainty H_prior
+    float len_factor = std::clamp(static_cast<float>(query.size()) / 400.0f, 0.0f, 0.45f);
+    std::string lower_q = query;
+    std::transform(lower_q.begin(), lower_q.end(), lower_q.begin(), ::tolower);
+
+    int reasoning_hits = 0;
+    static constexpr const char* kComplexKeywords[] = {
+        "analyze", "compare", "architecture", "prove", "optimize", " theorem",
+        "synthesis", "differential", "quantum", "သုံးသပ်", "နှိုင်းယှဉ်", "ရှင်းပြ", "တွက်ချက်"
+    };
+    for (const char* kw : kComplexKeywords) {
+        if (lower_q.find(kw) != std::string::npos) {
+            reasoning_hits++;
+        }
+    }
+    float kw_factor = std::min(0.45f, static_cast<float>(reasoning_hits) * 0.15f);
+    out.prior_epistemic_uncertainty = std::clamp(len_factor + kw_factor, 0.0f, 1.0f);
+
+    // Combine prior uncertainty with 8-token speculative probe entropy
+    float combined_uncertainty = std::max(out.prior_epistemic_uncertainty, out.probe_entropy);
+
+    // Local EFE: lower pragmatic cost (on-device, private), higher epistemic residual on complex queries
+    float res = std::clamp(resource_index, 0.1f, 1.0f);
+    out.local_efe = (1.0f - res) * 0.4f + combined_uncertainty * 1.2f;
+
+    // Cloud EFE: lower epistemic residual, but incurs network + privacy pragmatic cost
+    float privacy_cost = out.privacy_blocked ? 100.0f : 0.0f;
+    out.cloud_efe = 0.55f + privacy_cost + (1.0f - combined_uncertainty) * 0.5f;
+
+    if (!out.privacy_blocked && out.cloud_efe < out.local_efe && combined_uncertainty >= 0.55f) {
+        out.escalate_to_cloud = true;
+        out.policy = PolicyPrimitive::ESCALATE_CLOUD;
+    } else {
+        out.escalate_to_cloud = false;
+        out.policy = PolicyPrimitive::EXEC_TOOL;
+    }
+    return out;
+}
+
+ResearchHopDecision ExpectedFreeEnergyRouter::evaluateResearchHop(
+    uint32_t current_hop,
+    float coverage_ratio,
+    float prev_free_energy,
+    float c0,
+    uint32_t max_hops,
+    float min_delta_f
+) {
+    ResearchHopDecision out;
+    out.current_hop = current_hop;
+    float cov = std::clamp(coverage_ratio, 0.0f, 1.0f);
+    out.residual_free_energy = 1.0f - cov;
+    out.delta_free_energy = std::max(0.0f, prev_free_energy - out.residual_free_energy);
+
+    uint32_t next_hop = current_hop + 1;
+    out.hop_pragmatic_cost = c0 * static_cast<float>(next_hop * next_hop);
+
+    // Early-stop conditions:
+    // 1. Reached max_hops
+    // 2. Residual Free Energy is already low (< 0.30)
+    // 3. Diminishing returns on hop >= 1 (Delta F < min_delta_f)
+    // 4. Quadratic hop cost exceeds epistemic gain
+    bool diminishing_returns = (current_hop >= 1) && (out.delta_free_energy < min_delta_f);
+    bool sufficient_coverage = (out.residual_free_energy < 0.30f);
+    bool cost_exceeds_gain = (out.hop_pragmatic_cost > out.residual_free_energy);
+
+    if (current_hop >= max_hops || sufficient_coverage || diminishing_returns || cost_exceeds_gain) {
+        out.should_continue_foraging = false;
+        out.policy = PolicyPrimitive::IDLE;
+    } else {
+        out.should_continue_foraging = true;
+        out.policy = PolicyPrimitive::RESEARCH_HOP;
+    }
+    return out;
 }
 
 SlotEntropyContext ExpectedFreeEnergyRouter::analyzeQuery(
@@ -224,6 +383,14 @@ PolicyDecision ExpectedFreeEnergyRouter::evaluate(
                     float over_heal = current_state.resource_index - 0.60f;
                     pragmatic_penalty += precisions[1] * (over_heal * over_heal) + 2.0f;
                 }
+                break;
+            }
+            default: {
+                expected_obs[0] = current_state.shm_freq_hz;
+                expected_obs[1] = current_state.resource_index;
+                expected_obs[2] = current_state.intent_certainty;
+                expected_obs[3] = current_state.env_disturbance;
+                pragmatic_penalty += 2.0f;
                 break;
             }
         }

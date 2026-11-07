@@ -372,6 +372,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun isDocumentIndexedNative(docPath: String, docHash: String, modelId: String): Boolean
     private external fun hybridSearchNative(queryText: String, queryEmbedding: FloatArray, docPathFilter: String, topK: Int): Array<String>
     private external fun hybridSearchWithModelNative(queryText: String, queryEmbedding: FloatArray, docPathFilter: String, topK: Int, modelId: String): Array<String>
+    private external fun evaluateRagWakeupNative(queryText: String, docPathFilter: String, topK: Int): String
 
     enum class EmbeddingTier(val modelId: String, val fileName: String, val sizeMb: Int) {
         TIER_270M("embeddinggemma-2-270m", "embeddinggemma-2-270m.litertlm", 165),
@@ -531,6 +532,66 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     fun hybridSearchSafe(queryText: String, queryEmbedding: FloatArray, docPathFilter: String = "", topK: Int = 5): List<JSONObject> {
         return hybridSearchWithModelSafe(queryText, queryEmbedding, docPathFilter, topK, "")
+    }
+
+    /**
+     * Phase 1 Active Inference: Evaluates Dual-Gate BM25 Entropy over SQLite FTS5 lexical results
+     * to decide whether waking up EmbeddingGemma 2 is epistemically necessary.
+     */
+    fun evaluateRagWakeupSafe(queryText: String, docPathFilter: String = "", topK: Int = 5): JSONObject? {
+        if (!isLibLoaded) return null
+        return try {
+            val raw = evaluateRagWakeupNative(queryText, docPathFilter, topK)
+            if (raw.isNotBlank()) JSONObject(raw) else null
+        } catch (e: Exception) {
+            Log.e(TAG, "evaluateRagWakeupSafe failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Phase 2 Active Inference: Privacy-Weighted Brain Router EFE Evaluator.
+     * Injects +100.0 pragmatic cost when PrivacyShield detects PII risk, strictly blocking cloud escalation.
+     */
+    data class BrainRouteEFE(
+        val escalateToCloud: Boolean,
+        val localFreeEnergy: Float,
+        val cloudFreeEnergy: Float,
+        val piiBlocked: Boolean
+    )
+
+    fun evaluateBrainRouteEFE(
+        prompt: String,
+        hasPiiRisk: Boolean,
+        probeUncertainty: Float = 0.0f,
+        thermalThrottle: Float = 0.0f
+    ): BrainRouteEFE {
+        val tokenComplexity = (prompt.length / 800.0f).coerceIn(0.0f, 1.0f)
+        val hasReasoningCue = prompt.contains("code", ignoreCase = true) ||
+            prompt.contains("analyze", ignoreCase = true) ||
+            prompt.contains("architecture", ignoreCase = true) ||
+            prompt.contains("သုံးသပ်", ignoreCase = true)
+        val priorH = (0.35f * tokenComplexity + if (hasReasoningCue) 0.35f else 0.10f).coerceIn(0.0f, 1.0f)
+        val effectiveH = if (probeUncertainty > 0.0f) {
+            (0.45f * priorH + 0.55f * probeUncertainty).coerceIn(0.0f, 1.0f)
+        } else {
+            priorH
+        }
+
+        val cLocal = 0.12f + 0.35f * thermalThrottle.coerceIn(0.0f, 1.0f)
+        val gLocal = cLocal + 0.85f * effectiveH
+
+        val privacyPenalty = if (hasPiiRisk) 100.0f else 0.0f
+        val cCloud = 0.48f + privacyPenalty
+        val gCloud = cCloud + 0.12f * effectiveH
+
+        val escalate = !hasPiiRisk && (gCloud < gLocal)
+        return BrainRouteEFE(
+            escalateToCloud = escalate,
+            localFreeEnergy = gLocal,
+            cloudFreeEnergy = gCloud,
+            piiBlocked = hasPiiRisk
+        )
     }
 
     fun submitCapabilityResponseSafe(requestId: String, success: Boolean, payload: String) {

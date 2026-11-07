@@ -141,16 +141,104 @@ object McpClientManager {
         DENY
     }
 
-    fun classifyToolRisk(toolName: String, args: JSONObject = JSONObject()): ToolRiskLevel {
+    // Phase 3 Active Inference: 32-slot sliding-window ring buffer for MCP Anomaly Detection
+    private const val MCP_RING_CAPACITY = 32
+    private val mcpRingTimestamps = LongArray(MCP_RING_CAPACITY)
+    private var mcpRingHead = 0
+    private var mcpRingCount = 0
+    private var mcpEwmaIntervalMs = 2000.0f
+    private val mcpRingLock = Any()
+
+    @Synchronized
+    fun resetAnomalyMonitor() {
+        synchronized(mcpRingLock) {
+            mcpRingTimestamps.fill(0L)
+            mcpRingHead = 0
+            mcpRingCount = 0
+            mcpEwmaIntervalMs = 2000.0f
+        }
+    }
+
+    /**
+     * Phase 3 Active Inference: Computes Contextual Surprise F_mcp in [0, 1] from:
+     * 1. Short-window Burst Rate Surprise (calls within 2000ms vs EWMA interval)
+     * 2. Path Entropy / Sensitivity (`..`, `.ssh`, `.env`, `/sdcard/dcim`, `ronin_cognitive`)
+     */
+    fun evaluateContextualSurprise(
+        toolName: String,
+        args: JSONObject = JSONObject(),
+        nowMs: Long = System.currentTimeMillis()
+    ): Float {
+        var burstSurprise = 0.0f
+        synchronized(mcpRingLock) {
+            if (mcpRingCount > 0) {
+                val prevIdx = (mcpRingHead + MCP_RING_CAPACITY - 1) % MCP_RING_CAPACITY
+                val prevTs = mcpRingTimestamps[prevIdx]
+                val deltaMs = (nowMs - prevTs).coerceAtLeast(0L)
+
+                var recentCalls = 0
+                for (i in 0 until mcpRingCount) {
+                    val idx = (mcpRingHead + MCP_RING_CAPACITY - 1 - i) % MCP_RING_CAPACITY
+                    val ts = mcpRingTimestamps[idx]
+                    if (nowMs >= ts && (nowMs - ts) <= 1000L) {
+                        recentCalls++
+                    }
+                }
+                val expectedInterval = mcpEwmaIntervalMs.coerceAtLeast(100.0f)
+                val instantRatio = expectedInterval / deltaMs.coerceAtLeast(10L).toFloat()
+                val burstRatio = if (recentCalls >= 6) (recentCalls.toFloat() / 6.0f).coerceIn(0.0f, 1.0f) else 0.0f
+                burstSurprise = if (recentCalls >= 6) {
+                    (0.45f * kotlin.math.tanh((instantRatio - 1.5f) * 0.5f) + 0.55f * burstRatio).coerceIn(0.0f, 1.0f)
+                } else 0.0f
+                mcpEwmaIntervalMs = 0.75f * mcpEwmaIntervalMs + 0.25f * deltaMs.coerceAtMost(5000L).toFloat()
+            }
+            mcpRingTimestamps[mcpRingHead] = nowMs
+            mcpRingHead = (mcpRingHead + 1) % MCP_RING_CAPACITY
+            if (mcpRingCount < MCP_RING_CAPACITY) mcpRingCount++
+        }
+
+        val targetPath = (args.optString("path", "") + " " + args.optString("file", "") + " " + args.optString("directory", "")).lowercase()
+        var pathEntropy = 0.0f
+        if (targetPath.contains("..")) pathEntropy += 0.65f
+        if (targetPath.contains(".ssh") || targetPath.contains(".env") ||
+            targetPath.contains("id_rsa") || targetPath.contains("ronin_cognitive")
+        ) {
+            pathEntropy += 0.75f
+        }
+        if (targetPath.contains("/sdcard/dcim") || targetPath.contains("/sdcard/whatsapp") ||
+            targetPath.contains("/data/data/") || targetPath.contains("/proc/")
+        ) {
+            pathEntropy += 0.55f
+        }
+        pathEntropy = pathEntropy.coerceIn(0.0f, 1.0f)
+
+        val combined = (0.45f * burstSurprise + 0.45f * pathEntropy).coerceIn(0.0f, 1.0f)
+        return maxOf(combined, pathEntropy * 0.95f, burstSurprise * 0.90f).coerceIn(0.0f, 1.0f)
+    }
+
+    fun classifyToolRisk(
+        toolName: String,
+        args: JSONObject = JSONObject(),
+        nowMs: Long = System.currentTimeMillis()
+    ): ToolRiskLevel {
         val lower = toolName.lowercase().trim()
         if (lower == "run_bash" || lower == "execute_command" || lower == "shell" || lower == "exec") {
             return ToolRiskLevel.DENY
         }
-        return when (lower) {
+        val baseRisk = when (lower) {
             "get_device_info", "list_files", "read_file", "git_status", "git_diff" -> ToolRiskLevel.ALLOW
             "git_commit", "git_push", "delete_file", "install_package" -> ToolRiskLevel.CONFIRM
             else -> ToolRiskLevel.CONFIRM
         }
+        // Phase 3 Active Inference: Escalate ALLOW tools to CONFIRM (MCP_HITL_CONFIRM) when Contextual Surprise F > 0.70
+        if (baseRisk == ToolRiskLevel.ALLOW) {
+            val surprise = evaluateContextualSurprise(lower, args, nowMs)
+            if (surprise > 0.70f) {
+                Log.w(TAG, "Active Inference MCP Gate: Escalating '$lower' to CONFIRM (F=${"%.2f".format(surprise)} > 0.70)")
+                return ToolRiskLevel.CONFIRM
+            }
+        }
+        return baseRisk
     }
 
     /**

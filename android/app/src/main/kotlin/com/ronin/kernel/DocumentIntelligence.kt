@@ -720,34 +720,64 @@ object DocumentIntelligence {
 
             if (hasNeuralModel && nativeEngine != null && nativeEngine.isNativeLibraryLoaded()) {
                 val docHash = computeFileSha256(file)
-
-                // Atomic re-indexing check: only generate and index embeddings if document hash changed
                 val alreadyIndexed = nativeEngine.isDocumentIndexedSafe(file.absolutePath, docHash, modelId)
-                if (!alreadyIndexed) {
-                    val chunkVectors = nativeEngine.generateEmbeddingsSubBatched(chunks, embModelPath)
-                    if (chunkVectors.size == chunks.size) {
-                        val chunksWithIndex = chunks.mapIndexed { idx, txt -> idx to txt }
-                        nativeEngine.storeDocumentChunksAtomicSafe(file.absolutePath, docHash, modelId, chunksWithIndex, chunkVectors)
+
+                // Phase 1 Active Inference: Dual-Gate BM25 Entropy Smart RAG Wakeup
+                // If the document is already indexed in FTS5 and lexical search has high peak relevance
+                // and low normalized Shannon entropy (H_hat < 0.35), select LEXICAL_ONLY and skip waking up EmbeddingGemma 2!
+                val wakeupEval = if (alreadyIndexed) {
+                    nativeEngine.evaluateRagWakeupSafe(query, file.absolutePath, topK = 5)
+                } else null
+                val shouldWakeupEmbedding = wakeupEval?.optBoolean("should_wakeup_embedding", true) ?: true
+
+                if (!shouldWakeupEmbedding && wakeupEval != null) {
+                    val normH = wakeupEval.optDouble("normalized_entropy", 0.0)
+                    val topMatchesArr = wakeupEval.optJSONArray("top_matches")
+                    if (topMatchesArr != null) {
+                        for (i in 0 until topMatchesArr.length()) {
+                            val j = topMatchesArr.optJSONObject(i) ?: continue
+                            val cIdx = j.optInt("chunk_index", 0)
+                            val cText = j.optString("chunk_text", "").trim()
+                            val score = j.optDouble("rrf_score", 0.0)
+                            if (cText.isNotEmpty() && combinedMatches.none { it.snippet.contains(cText.take(60)) || cText.contains(it.lineContent) }) {
+                                combinedMatches.add(
+                                    SearchMatch(
+                                        lineNumber = cIdx + 1,
+                                        lineContent = "[LEXICAL_ONLY Chunk #${cIdx + 1} • H=${"%.2f".format(normH)} • RRF ${"%.3f".format(score)}]",
+                                        snippet = cText.take(360)
+                                    )
+                                )
+                            }
+                        }
                     }
-                }
+                } else {
+                    // Atomic re-indexing check: only generate and index embeddings if document hash changed
+                    if (!alreadyIndexed) {
+                        val chunkVectors = nativeEngine.generateEmbeddingsSubBatched(chunks, embModelPath)
+                        if (chunkVectors.size == chunks.size) {
+                            val chunksWithIndex = chunks.mapIndexed { idx, txt -> idx to txt }
+                            nativeEngine.storeDocumentChunksAtomicSafe(file.absolutePath, docHash, modelId, chunksWithIndex, chunkVectors)
+                        }
+                    }
 
-                // Query vector extraction
-                val queryVecList = nativeEngine.generateEmbeddingsSubBatched(listOf(query), embModelPath)
-                val queryVec = if (queryVecList.isNotEmpty()) queryVecList[0] else FloatArray(0)
+                    // Query vector extraction (INSPECT_DOC policy)
+                    val queryVecList = nativeEngine.generateEmbeddingsSubBatched(listOf(query), embModelPath)
+                    val queryVec = if (queryVecList.isNotEmpty()) queryVecList[0] else FloatArray(0)
 
-                val hybridJsonList = nativeEngine.hybridSearchWithModelSafe(query, queryVec, file.absolutePath, topK = 4, modelId = modelId)
-                for (j in hybridJsonList) {
-                    val cIdx = j.optInt("chunk_index", 0)
-                    val cText = j.optString("chunk_text", "").trim()
-                    val score = j.optDouble("rrf_score", 0.0)
-                    if (cText.isNotEmpty() && combinedMatches.none { it.snippet.contains(cText.take(60)) || cText.contains(it.lineContent) }) {
-                        combinedMatches.add(
-                            SearchMatch(
-                                lineNumber = cIdx + 1,
-                                lineContent = "[RAG Chunk #${cIdx + 1} • RRF ${"%.3f".format(score)}]",
-                                snippet = cText.take(360)
+                    val hybridJsonList = nativeEngine.hybridSearchWithModelSafe(query, queryVec, file.absolutePath, topK = 4, modelId = modelId)
+                    for (j in hybridJsonList) {
+                        val cIdx = j.optInt("chunk_index", 0)
+                        val cText = j.optString("chunk_text", "").trim()
+                        val score = j.optDouble("rrf_score", 0.0)
+                        if (cText.isNotEmpty() && combinedMatches.none { it.snippet.contains(cText.take(60)) || cText.contains(it.lineContent) }) {
+                            combinedMatches.add(
+                                SearchMatch(
+                                    lineNumber = cIdx + 1,
+                                    lineContent = "[RAG Chunk #${cIdx + 1} • RRF ${"%.3f".format(score)}]",
+                                    snippet = cText.take(360)
+                                )
                             )
-                        )
+                        }
                     }
                 }
             } else if (nativeEngine != null && nativeEngine.isNativeLibraryLoaded()) {

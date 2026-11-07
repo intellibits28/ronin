@@ -4,9 +4,24 @@
 #include <string>
 #include <mutex>
 #include <shared_mutex>
+#include <cmath>
+#include <algorithm>
 #include "third_party/pffft/pffft.h"
 
 namespace Ronin::Kernel::DSP {
+
+/**
+ * Phase 4 Active Inference: Lock-Free Precision-Weighted Audio Kalman Filter
+ * Executes inline on the real-time audio/DSP thread with zero heap allocations
+ * and zero mutex contention against ExpectedFreeEnergyRouter.
+ */
+struct AudioKalmanUpdate {
+    float posterior_freq_hz = 0.0f;
+    float posterior_precision = 1.0f;
+    float sensory_precision = 1.0f;
+    float kalman_gain = 0.5f;
+    float prediction_error = 0.0f;
+};
 
 struct SensorAnalysis {
     float resonance_freq_hz = 0.0f;
@@ -46,6 +61,33 @@ public:
 
     void pushSamples(const std::vector<float>& x, const std::vector<float>& y, const std::vector<float>& z);
     std::string getAnalysisJson(const std::string& sensor_type);
+
+    /**
+     * Phase 4 Active Inference: Lock-free inline precision-weighted Kalman update.
+     * Pi_audio = exp(-beta * max(0, noise_rms))
+     * K_t = Pi_audio / (Pi_audio + Pi_prior)
+     */
+    static inline AudioKalmanUpdate computeAudioKalmanPrecision(
+        float freq_obs_hz,
+        float prior_freq_hz,
+        float prior_precision,
+        float noise_rms,
+        float beta = 5.0f) noexcept {
+        AudioKalmanUpdate out;
+        const float safe_noise = std::max(0.0f, noise_rms);
+        const float safe_prior_pi = std::max(1e-4f, prior_precision);
+        const float pi_audio = std::exp(-beta * safe_noise);
+        const float k_gain = pi_audio / (pi_audio + safe_prior_pi);
+        const float pred_err = freq_obs_hz - prior_freq_hz;
+
+        out.sensory_precision = pi_audio;
+        out.kalman_gain = k_gain;
+        out.prediction_error = pred_err;
+        out.posterior_freq_hz = prior_freq_hz + k_gain * pred_err;
+        // Bound posterior precision to avoid precision saturation over long streams
+        out.posterior_precision = std::clamp(safe_prior_pi + pi_audio * 0.25f, 1e-3f, 10.0f);
+        return out;
+    }
 
 private:
     int m_n_samples;

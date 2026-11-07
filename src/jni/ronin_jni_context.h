@@ -123,5 +123,6 @@ JNIEXPORT jboolean JNICALL native_storeDocumentChunksAtomic(JNIEnv* env, jobject
 JNIEXPORT jboolean JNICALL native_storeDocumentEmbedding(JNIEnv* env, jobject thiz, jstring docPath, jint chunkIndex, jstring chunkText, jfloatArray embedding);
 JNIEXPORT jobjectArray JNICALL native_hybridSearch(JNIEnv* env, jobject thiz, jstring queryText, jfloatArray queryEmbedding, jstring docPathFilter, jint topK);
 JNIEXPORT jobjectArray JNICALL native_hybridSearchWithModel(JNIEnv* env, jobject thiz, jstring queryText, jfloatArray queryEmbedding, jstring docPathFilter, jint topK, jstring modelId);
+JNIEXPORT jstring JNICALL native_evaluateRagWakeup(JNIEnv* env, jobject thiz, jstring queryText, jstring docPathFilter, jint topK);
 
 }

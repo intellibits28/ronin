@@ -287,4 +287,35 @@ JNIEXPORT jobjectArray JNICALL native_hybridSearch(JNIEnv* env, jobject thiz, js
     return native_hybridSearchWithModel(env, thiz, queryText, queryEmbedding, docPathFilter, topK, nullptr);
 }
 
+JNIEXPORT jstring JNICALL native_evaluateRagWakeup(JNIEnv* env, jobject thiz, jstring queryText, jstring docPathFilter, jint topK) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return env->NewStringUTF("{}");
+
+    auto res = runtime.ltm->computeLexicalFreeEnergy(
+        ConvertJStringToString(env, queryText),
+        ConvertJStringToString(env, docPathFilter),
+        static_cast<int>(topK)
+    );
+
+    nlohmann::json j;
+    j["should_wakeup_embedding"] = res.should_wakeup_embedding;
+    j["top_bm25_magnitude"] = res.top_bm25_magnitude;
+    j["normalized_entropy"] = res.normalized_entropy;
+    j["expected_free_energy_lexical"] = res.expected_free_energy_lexical;
+    j["expected_free_energy_semantic"] = res.expected_free_energy_semantic;
+    nlohmann::json matchesArr = nlohmann::json::array();
+    for (const auto& m : res.top_matches) {
+        nlohmann::json mj;
+        mj["doc_path"] = m.doc_path;
+        mj["chunk_index"] = m.chunk_index;
+        mj["chunk_text"] = m.chunk_text;
+        mj["rrf_score"] = m.rrf_score;
+        mj["fts_bm25_score"] = m.fts_bm25_score;
+        mj["lexical_hits"] = m.lexical_hits;
+        matchesArr.push_back(std::move(mj));
+    }
+    j["top_matches"] = std::move(matchesArr);
+    return env->NewStringUTF(j.dump().c_str());
+}
+
 } // extern "C"

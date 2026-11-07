@@ -437,5 +437,65 @@ class RoninV51UpgradeTest {
         assertTrue("Distilled Myanmar text (${distilledMyanmar.length} chars) must not exceed 1800", distilledMyanmar.length <= 1800)
         assertTrue(distilledMyanmar.isNotBlank())
     }
+
+    @Test
+    fun `test active inference multi-hop research foraging and mcp anomaly gate escalation`() {
+        // 1. Multi-Hop Research Foraging: low coverage at hop 0 -> shouldHop = true
+        val hop0 = LocalResearchEngine.evaluateResearchHopEFE(
+            coverageRatio = 0.05f,
+            contradictionRatio = 0.20f,
+            currentHop = 0,
+            prevFreeEnergy = 1.0f,
+            maxHops = 2
+        )
+        assertTrue("Hop 0 with low coverage should continue foraging", hop0.shouldHop)
+
+        // Diminishing returns early-stop: Delta F < epsilon (0.08) -> shouldHop = false
+        val earlyStop = LocalResearchEngine.evaluateResearchHopEFE(
+            coverageRatio = 0.20f,
+            contradictionRatio = 0.20f,
+            currentHop = 1,
+            prevFreeEnergy = 0.64f,
+            maxHops = 2
+        )
+        assertFalse("Diminishing returns (Delta F < 0.08) must stop foraging", earlyStop.shouldHop)
+
+        // Hard hop cap: currentHop >= maxHops (2) -> shouldHop = false
+        val maxHopStop = LocalResearchEngine.evaluateResearchHopEFE(
+            coverageRatio = 0.0f,
+            contradictionRatio = 1.0f,
+            currentHop = 2,
+            prevFreeEnergy = 1.0f,
+            maxHops = 2
+        )
+        assertFalse("Hard hop cap (k=2) must stop foraging", maxHopStop.shouldHop)
+
+        // 2. MCP Sliding-Window Anomaly Gate:
+        McpClientManager.resetAnomalyMonitor()
+        // Benign read_file -> ALLOW
+        val benignArgs = org.json.JSONObject().put("path", "/workspace/docs/README.md")
+        assertEquals(
+            McpClientManager.ToolRiskLevel.ALLOW,
+            McpClientManager.classifyToolRisk("read_file", benignArgs, nowMs = 1000L)
+        )
+
+        // Sensitive path traversal (../.ssh/id_rsa) -> escalated from ALLOW to CONFIRM
+        val sensitiveArgs = org.json.JSONObject().put("path", "../../.ssh/id_rsa")
+        assertEquals(
+            McpClientManager.ToolRiskLevel.CONFIRM,
+            McpClientManager.classifyToolRisk("read_file", sensitiveArgs, nowMs = 5000L)
+        )
+
+        // High-rate burst attack (7 rapid calls within 150ms) -> escalated from ALLOW to CONFIRM
+        McpClientManager.resetAnomalyMonitor()
+        for (i in 0 until 6) {
+            McpClientManager.classifyToolRisk("list_files", benignArgs, nowMs = 10_000L + i * 20L)
+        }
+        assertEquals(
+            McpClientManager.ToolRiskLevel.CONFIRM,
+            McpClientManager.classifyToolRisk("list_files", benignArgs, nowMs = 10_140L)
+        )
+        McpClientManager.resetAnomalyMonitor()
+    }
 }
 
