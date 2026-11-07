@@ -40,7 +40,7 @@ Key Android classes:
 - `MainActivity.kt`: Compose UI, Developer HUD with live FEP telemetry, attachment pickers, and high-level interaction surface.
 - `NativeEngine.kt`: JNI facade, service binding, cloud inference, capability callbacks, memory APIs, and native lifecycle.
 - `InferenceService.kt`: foreground service running in `:inference_core`; owns LiteRT-LM engine/conversation lifecycle.
-- `OcrEngine.kt`: On-device text recognition utilizing Google ML Kit with bilingual Myanmar Unicode and Latin support.
+- `OcrEngine.kt`: On-device text recognition utilizing Tesseract 5.x (`tesseract4android`) with bilingual Myanmar Unicode (`mya.traineddata`) and Latin (`eng.traineddata`) support.
 - `DocumentIntelligence.kt`: Plain text, markdown, and PDF document reader with sliding-window chunker and in-document search.
 - `PrivacyShield.kt`: Real-time on-device regex and token PII redactor (Myanmar NRC, phone, email, bank accounts).
 - `PrivacyVault.kt`: AES-GCM-256 encrypted sandbox storage for private documents.

@@ -95,7 +95,7 @@ Ronin features an integrated on-device personal document intelligence and Hybrid
 - **Interactive `FileResultCard`**:
   - Dispatches `FileProvider` intents for viewing and `ACTION_SEND` ShareSheet intents for email/app sharing.
   - Features one-tap clipboard path copy and on-device Gemma 4 sliding-window document summarization.
-  - Native Google ML Kit OCR engine extracting bilingual Myanmar Unicode and English text.
+  - Native Tesseract 5.x OCR engine (`tesseract4android` with `mya.traineddata` and `eng.traineddata`) extracting bilingual Myanmar Unicode and English text.
 - **Hybrid RRF Vector Store (`document_embeddings`)**:
   - Supports 3 model tiers (`EmbeddingGemma-2-270M`, `440M`, `740M`) with multi-model coexistence (`UNIQUE(doc_path, model_id, chunk_index)`).
   - External-content SQLite FTS5 synchronization triggers (`document_embeddings_ai`, `document_embeddings_ad`, `document_embeddings_au`).

@@ -92,7 +92,7 @@ flowchart LR
 | `android/app/src/main/kotlin/com/ronin/kernel/RoninUIComponents.kt` | Tactical Brutalist UI cards (`8.dp`), Myanmar-safe typography, `ResearchResultCard`, `FileResultCard`, and dismissible command overlay. |
 | `android/app/src/main/kotlin/com/ronin/kernel/LocalResearchEngine.kt` | DuckDuckGo Lite POST client, 256 KB stream cap, SSRF multi-hop DNS-pinning, and local citation synthesis. |
 | `android/app/src/main/kotlin/com/ronin/kernel/McpClientManager.kt`, `scripts/termux_mcp_server.py` | Authenticated Termux MCP client and server with HMAC-SHA256, timestamp, and 16-byte Nonce LRU anti-replay. |
-| `android/app/src/main/kotlin/com/ronin/kernel/DocumentIntelligence.kt`, `OcrEngine.kt`, `PrivacyShield.kt`, `PrivacyVault.kt` | Document chunking, 16-chunk IPC sub-batching, ML Kit bilingual OCR, PII redaction, and AES-256-GCM encryption. |
+| `android/app/src/main/kotlin/com/ronin/kernel/DocumentIntelligence.kt`, `OcrEngine.kt`, `PrivacyShield.kt`, `PrivacyVault.kt` | Document chunking, 16-chunk IPC sub-batching, Tesseract 5.x bilingual OCR, PII redaction, and AES-256-GCM encryption. |
 
 ---
 

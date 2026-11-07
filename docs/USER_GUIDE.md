@@ -191,7 +191,7 @@ Ronin သည် ဖုန်းတွင်းရှိ စာရွက်စာ
 Chat Input Bar ဘေးရှိ **📎 (Clip Icon)** ခလုတ်ကို နှိပ်လိုက်ပါက အောက်ပါ ရွေးချယ်စရာ ၂ ခု ပေါ်လာပါမည်-
 1. **🖼️ Gallery / Photos (OCR)**:
    - Android System Photo Picker (`PickVisualMedia`) ကို အသုံးပြုထားသဖြင့် `READ_MEDIA_IMAGES` သို့မဟုတ် Storage Permission ပေးစရာ မလိုဘဲ System Gallery မှ ဓာတ်ပုံများကို လုံခြုံစွာ ရွေးချယ်နိုင်ပါသည်။
-   - ဘောက်ချာ၊ ပြေစာ၊ မှတ်ပုံတင်၊ ဆိုင်းဘုတ် သို့မဟုတ် စာရွက်စာတမ်း ဓာတ်ပုံများကို ရွေးချယ်လိုက်သည်နှင့် Google ML Kit နှင့် အဆင့်မြင့် စာဖတ်အင်ဂျင်တို့ဖြင့် မြန်မာစာ (Unicode) နှင့် အင်္ဂလိပ်စာသားများကို အလိုအလျောက် စက္ကန့်ပိုင်းအတွင်း ဖတ်ရှုထုတ်ယူ (OCR) ပေးပါမည်။
+   - ဘောက်ချာ၊ ပြေစာ၊ မှတ်ပုံတင်၊ ဆိုင်းဘုတ် သို့မဟုတ် စာရွက်စာတမ်း ဓာတ်ပုံများကို ရွေးချယ်လိုက်သည်နှင့် **Tesseract 5.x OCR Engine (`tesseract4android` / `mya.traineddata` + `eng.traineddata`)** ဖြင့် မြန်မာစာ (Unicode) နှင့် အင်္ဂလိပ်စာသားများကို အလိုအလျောက် စက္ကန့်ပိုင်းအတွင်း ဖတ်ရှုထုတ်ယူ (OCR) ပေးပါမည်။
 2. **📁 Browse Documents**:
    - Android Storage Access Framework (`OpenDocument`) ဖြင့် ဖုန်း၏ Internal Storage, SD Card, Download Folder သို့မဟုတ် Google Drive ထဲရှိ PDF, Markdown, Text, Code (`.pdf`, `.md`, `.txt`, `.json`, `.py`, `.doc`) စသည့် ဖိုင်များကို စိတ်ကြိုက် ရှာဖွေရွေးချယ်နိုင်ပါသည်။
 
