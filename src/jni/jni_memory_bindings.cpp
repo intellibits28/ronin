@@ -8,6 +8,7 @@
 
 using Ronin::Kernel::JNI::ConvertJStringToString;
 using Ronin::Kernel::JNI::runtimeContext;
+using Ronin::Kernel::Memory::LongTermMemory;
 
 namespace {
 
