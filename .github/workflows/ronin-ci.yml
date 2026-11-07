@@ -96,7 +96,7 @@ jobs:
       - name: Build Android JNI & APK (arm64-v8a)
         run: |
           cd android
-          ./gradlew assembleDebug -PversionCode=${{ github.run_number }} -PversionName=5.0.${{ github.run_number }}
+          gradle assembleDebug -PversionCode=${{ github.run_number }} -PversionName=5.0.${{ github.run_number }}
 
       - name: Extract Native Library (.so)
         run: |
