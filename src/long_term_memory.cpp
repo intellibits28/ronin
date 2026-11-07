@@ -98,7 +98,7 @@ bool LongTermMemory::initSchema() {
         "CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, details TEXT, timestamp INTEGER);",
         "CREATE TABLE IF NOT EXISTS failures (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, failure_type INTEGER, timestamp INTEGER, retry_count INTEGER, resolution TEXT);",
         "CREATE TABLE IF NOT EXISTS perception_history (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, state_type TEXT, state_value TEXT);",
-        "CREATE TABLE IF NOT EXISTS document_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_path TEXT NOT NULL, doc_hash TEXT NOT NULL DEFAULT '', chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, embedding_blob BLOB NOT NULL, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-270m', dimension INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(doc_path, chunk_index) ON CONFLICT REPLACE);",
+        "CREATE TABLE IF NOT EXISTS document_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_path TEXT NOT NULL, doc_hash TEXT NOT NULL DEFAULT '', chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, embedding_blob BLOB NOT NULL, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-270m', dimension INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(doc_path, model_id, chunk_index) ON CONFLICT REPLACE);",
         "CREATE INDEX IF NOT EXISTS idx_doc_path_model ON document_embeddings(doc_path, model_id);",
         "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks_fts USING fts5(chunk_text, content='document_embeddings', content_rowid='id');"
     };
@@ -121,9 +121,12 @@ bool LongTermMemory::initSchema() {
         "CREATE TRIGGER IF NOT EXISTS episodes_ai AFTER INSERT ON episodes BEGIN INSERT INTO episodes_fts(rowid, summary) VALUES (new.id, new.summary); END;",
         "CREATE TRIGGER IF NOT EXISTS episodes_ad AFTER DELETE ON episodes BEGIN INSERT INTO episodes_fts(episodes_fts, rowid, summary) VALUES ('delete', old.id, old.summary); END;",
         "CREATE TRIGGER IF NOT EXISTS episodes_au AFTER UPDATE ON episodes BEGIN INSERT INTO episodes_fts(episodes_fts, rowid, summary) VALUES ('delete', old.id, old.summary); INSERT INTO episodes_fts(rowid, summary) VALUES (new.id, new.summary); END;",
-        "CREATE TRIGGER IF NOT EXISTS doc_chunks_ai AFTER INSERT ON document_embeddings BEGIN INSERT INTO document_chunks_fts(rowid, chunk_text) VALUES (new.id, new.chunk_text); END;",
-        "CREATE TRIGGER IF NOT EXISTS doc_chunks_ad AFTER DELETE ON document_embeddings BEGIN INSERT INTO document_chunks_fts(document_chunks_fts, rowid, chunk_text) VALUES ('delete', old.id, old.chunk_text); END;",
-        "CREATE TRIGGER IF NOT EXISTS doc_chunks_au AFTER UPDATE ON document_embeddings BEGIN INSERT INTO document_chunks_fts(document_chunks_fts, rowid, chunk_text) VALUES ('delete', old.id, old.chunk_text); INSERT INTO document_chunks_fts(rowid, chunk_text) VALUES (new.id, new.chunk_text); END;",
+        "DROP TRIGGER IF EXISTS doc_chunks_ai;",
+        "DROP TRIGGER IF EXISTS doc_chunks_ad;",
+        "DROP TRIGGER IF EXISTS doc_chunks_au;",
+        "CREATE TRIGGER IF NOT EXISTS document_embeddings_ai AFTER INSERT ON document_embeddings BEGIN INSERT INTO document_chunks_fts(rowid, chunk_text) VALUES (new.id, new.chunk_text); END;",
+        "CREATE TRIGGER IF NOT EXISTS document_embeddings_ad AFTER DELETE ON document_embeddings BEGIN INSERT INTO document_chunks_fts(document_chunks_fts, rowid, chunk_text) VALUES ('delete', old.id, old.chunk_text); END;",
+        "CREATE TRIGGER IF NOT EXISTS document_embeddings_au AFTER UPDATE ON document_embeddings BEGIN INSERT INTO document_chunks_fts(document_chunks_fts, rowid, chunk_text) VALUES ('delete', old.id, old.chunk_text); INSERT INTO document_chunks_fts(rowid, chunk_text) VALUES (new.id, new.chunk_text); END;",
         "INSERT INTO notes_fts(notes_fts) VALUES('rebuild');",
         "INSERT INTO episodes_fts(episodes_fts) VALUES('rebuild');",
         "INSERT INTO document_chunks_fts(document_chunks_fts) VALUES('rebuild');"
@@ -1021,7 +1024,7 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::searchEmbeddings(
         int dim = sqlite3_column_int(stmt, 4);
         int blob_bytes = sqlite3_column_bytes(stmt, 3);
         const void* blob_ptr = sqlite3_column_blob(stmt, 3);
-        if (!blob_ptr || dim <= 0 || static_cast<size_t>(dim) != q_dim || blob_bytes < static_cast<int>(q_dim * sizeof(float))) {
+        if (!blob_ptr || dim <= 0 || static_cast<size_t>(dim) != q_dim || blob_bytes != static_cast<int>(dim * sizeof(float))) {
             continue;
         }
 
@@ -1171,7 +1174,7 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::hybridSearch(
         int dim = sqlite3_column_int(stmt, 5);
         int blob_bytes = sqlite3_column_bytes(stmt, 4);
         const void* blob_ptr = sqlite3_column_blob(stmt, 4);
-        if (q_dim > 0 && blob_ptr && static_cast<size_t>(dim) == q_dim && blob_bytes >= static_cast<int>(q_dim * sizeof(float))) {
+        if (q_dim > 0 && blob_ptr && dim > 0 && static_cast<size_t>(dim) == q_dim && blob_bytes == static_cast<int>(dim * sizeof(float))) {
             const float* row_ptr = nullptr;
             if (q_dim <= 1024) {
                 std::memcpy(row_aligned, blob_ptr, q_dim * sizeof(float));
@@ -1252,10 +1255,11 @@ std::vector<LongTermMemory::HybridSearchMatch> LongTermMemory::hybridSearch(
     });
 
     std::vector<HybridSearchMatch> results;
-    int limit = std::min(top_k, static_cast<int>(candidates.size()));
-    results.reserve(limit);
-    for (int i = 0; i < limit; ++i) {
-        results.push_back(std::move(candidates[i].match));
+    results.reserve(std::min(top_k, static_cast<int>(candidates.size())));
+    for (auto& c : candidates) {
+        if (c.match.rrf_score <= 0.0f) continue;
+        results.push_back(std::move(c.match));
+        if (static_cast<int>(results.size()) >= top_k) break;
     }
     return results;
 }

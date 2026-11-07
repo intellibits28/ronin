@@ -1122,8 +1122,8 @@ static void rffti1_ps(int n, float *wa, int *ifac)
       for (ii = 3; ii <= ido; ii += 2) {
         i += 2;
         fi += 1;
-        wa[i - 2] = cos((double)fi * argld);
-        wa[i - 1] = sin((double)fi * argld);
+        wa[i - 2] = (float)cos((double)fi * (double)argld);
+        wa[i - 1] = (float)sin((double)fi * (double)argld);
       }
       is += ido;
     }
@@ -1157,8 +1157,8 @@ void cffti1_ps(int n, float *wa, int *ifac)
       for (ii = 4; ii <= idot; ii += 2) {
         i += 2;
         fi += 1;
-        wa[i-1] = cos((double)fi * argld);
-        wa[i] = sin((double)fi * argld);
+        wa[i-1] = (float)cos((double)fi * (double)argld);
+        wa[i] = (float)sin((double)fi * (double)argld);
       }
       if (ip > 5) {
         wa[i1-1] = wa[i-1];
@@ -1250,9 +1250,9 @@ PFFFT_Setup *pffft_new_setup(int N, pffft_transform_t transform) {
   s->transform = transform;
   /* nb of complex simd vectors */
   s->Ncvec = (transform == PFFFT_REAL ? N/2 : N)/SIMD_SZ;
-  s->data = (v4sf*)pffft_aligned_malloc(2*s->Ncvec * sizeof(v4sf));
+  s->data = (v4sf*)pffft_aligned_malloc((size_t)2 * (size_t)s->Ncvec * sizeof(v4sf));
   s->e = (float*)s->data;
-  s->twiddle = (float*)(s->data + (2*s->Ncvec*(SIMD_SZ-1))/SIMD_SZ);
+  s->twiddle = (float*)(s->data + ((size_t)2 * (size_t)s->Ncvec * (size_t)(SIMD_SZ-1)) / (size_t)SIMD_SZ);
 
   for (k=0; k < s->Ncvec; ++k) {
     int i = k/SIMD_SZ;

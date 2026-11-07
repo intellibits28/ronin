@@ -20,6 +20,7 @@ import android.provider.Settings
 import android.util.Log
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -2304,11 +2305,24 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 BootstrapWizard(chatViewModel, brainPicker)
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
+                    BackHandler(enabled = chatViewModel.showCommandSuggestions) {
+                        chatViewModel.showCommandSuggestions = false
+                    }
                     SystemStatusCard(chatViewModel)
                     ReasoningConsole(chatViewModel)
                     DeveloperHud(chatViewModel)
 
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                chatViewModel.showCommandSuggestions = false
+                            }
+                    ) {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp),
                             reverseLayout = true
@@ -3111,7 +3125,8 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         },
                         onSuggestionClick = { s -> currentInput = s; chatViewModel.showCommandSuggestions = false },
                         showCommandSuggestions = chatViewModel.showCommandSuggestions,
-                        onAttachClick = { showAttachmentPicker = true }
+                        onAttachClick = { showAttachmentPicker = true },
+                        onDismissSuggestions = { chatViewModel.showCommandSuggestions = false }
                     )
                 }
             }

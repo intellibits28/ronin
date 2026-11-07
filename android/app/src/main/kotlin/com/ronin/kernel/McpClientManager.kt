@@ -110,27 +110,83 @@ object McpClientManager {
     }
 
     /**
-     * Computes `HMAC_SHA256(secret, "$timestamp.$rawJsonBody")` as lowercase hex.
+     * Generates a cryptographically random 16-byte (32 hex chars) nonce.
+     */
+    fun generateNonce(): String {
+        val bytes = ByteArray(16)
+        SecureRandom().nextBytes(bytes)
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Bounded LRU cache of recently seen nonces within the replay window to prevent replay attacks.
+     */
+    private val seenNonces = java.util.Collections.synchronizedMap(
+        object : java.util.LinkedHashMap<String, Long>(100, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean {
+                return size > 500
+            }
+        }
+    )
+
+    /**
+     * Capability Execution Policy: Classifies MCP tools by risk level.
+     * - ALLOW: Read-only observation (get_device_info, list_files, read_file, git_status, git_diff)
+     * - CONFIRM: State mutation (git_commit, git_push, delete_file, install_package) -> Requires HITL approval
+     * - DENY: Dangerous unconstrained operations (raw shell execution, arbitrary bash)
+     */
+    enum class ToolRiskLevel {
+        ALLOW,
+        CONFIRM,
+        DENY
+    }
+
+    fun classifyToolRisk(toolName: String, args: JSONObject = JSONObject()): ToolRiskLevel {
+        val lower = toolName.lowercase().trim()
+        if (lower == "run_bash" || lower == "execute_command" || lower == "shell" || lower == "exec") {
+            return ToolRiskLevel.DENY
+        }
+        return when (lower) {
+            "get_device_info", "list_files", "read_file", "git_status", "git_diff" -> ToolRiskLevel.ALLOW
+            "git_commit", "git_push", "delete_file", "install_package" -> ToolRiskLevel.CONFIRM
+            else -> ToolRiskLevel.CONFIRM
+        }
+    }
+
+    /**
+     * Computes `HMAC_SHA256(secret, "$timestamp.$nonce.$rawJsonBody")` as lowercase hex.
      */
     internal fun computeHmacSignature(
         secret: String,
         timestampEpochSec: Long,
+        nonce: String,
         rawJsonBody: String
     ): String {
         val mac = Mac.getInstance("HmacSHA256")
         val keySpec = SecretKeySpec(secret.toByteArray(StandardCharsets.UTF_8), "HmacSHA256")
         mac.init(keySpec)
-        val payload = "$timestampEpochSec.$rawJsonBody".toByteArray(StandardCharsets.UTF_8)
+        val payload = if (nonce.isNotEmpty()) {
+            "$timestampEpochSec.$nonce.$rawJsonBody".toByteArray(StandardCharsets.UTF_8)
+        } else {
+            "$timestampEpochSec.$rawJsonBody".toByteArray(StandardCharsets.UTF_8)
+        }
         val digest = mac.doFinal(payload)
         return digest.joinToString("") { "%02x".format(it) }
     }
 
+    internal fun computeHmacSignature(
+        secret: String,
+        timestampEpochSec: Long,
+        rawJsonBody: String
+    ): String = computeHmacSignature(secret, timestampEpochSec, "", rawJsonBody)
+
     /**
-     * Verifies both the ±30s timestamp replay window and constant-time HMAC-SHA256 signature.
+     * Verifies the ±30s timestamp replay window, unique nonce, and constant-time HMAC-SHA256 signature.
      */
     internal fun verifyRequestSignature(
         secret: String,
         timestampEpochSec: Long,
+        nonce: String,
         rawJsonBody: String,
         providedSignatureHex: String,
         nowEpochSec: Long = System.currentTimeMillis() / 1000L,
@@ -139,7 +195,20 @@ object McpClientManager {
         if (secret.isBlank() || providedSignatureHex.isBlank()) return false
         if (abs(nowEpochSec - timestampEpochSec) > windowSec) return false
 
-        val expected = computeHmacSignature(secret, timestampEpochSec, rawJsonBody)
+        // Nonce replay check: ensure nonce is non-empty, hex-safe, and not replayed
+        if (nonce.isNotBlank()) {
+            if (nonce.length < 16 || !nonce.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
+                return false
+            }
+            synchronized(seenNonces) {
+                if (seenNonces.containsKey(nonce)) {
+                    return false // Replay attack detected
+                }
+                seenNonces[nonce] = nowEpochSec
+            }
+        }
+
+        val expected = computeHmacSignature(secret, timestampEpochSec, nonce, rawJsonBody)
         val lowerProvided = providedSignatureHex.lowercase()
         if (expected.length != lowerProvided.length) return false
 
@@ -149,6 +218,15 @@ object McpClientManager {
         }
         return diff == 0
     }
+
+    internal fun verifyRequestSignature(
+        secret: String,
+        timestampEpochSec: Long,
+        rawJsonBody: String,
+        providedSignatureHex: String,
+        nowEpochSec: Long = System.currentTimeMillis() / 1000L,
+        windowSec: Long = REPLAY_WINDOW_SECONDS
+    ): Boolean = verifyRequestSignature(secret, timestampEpochSec, "", rawJsonBody, providedSignatureHex, nowEpochSec, windowSec)
 
     /**
      * Builds a JSON-RPC 2.0 request envelope.
@@ -219,22 +297,6 @@ object McpClientManager {
             return@withContext McpCallResult(false, toolName, "Tool name cannot be empty.", isError = true)
         }
 
-        val approved = try {
-            hitlApprover(cleanTool, argumentsJson)
-        } catch (e: Exception) {
-            Log.e(TAG, "HITL approval failed", e)
-            false
-        }
-
-        if (!approved) {
-            return@withContext McpCallResult(
-                success = false,
-                toolName = cleanTool,
-                output = "MCP tool execution aborted by Human-In-The-Loop (HITL) security gate.",
-                isError = true
-            )
-        }
-
         val parsedArgs = try {
             if (argumentsJson.isBlank()) JSONObject() else JSONObject(argumentsJson)
         } catch (e: Exception) {
@@ -244,6 +306,34 @@ object McpClientManager {
                 output = "Invalid JSON arguments: ${e.message}",
                 isError = true
             )
+        }
+
+        val risk = classifyToolRisk(cleanTool, parsedArgs)
+        if (risk == ToolRiskLevel.DENY) {
+            return@withContext McpCallResult(
+                success = false,
+                toolName = cleanTool,
+                output = "Security Policy Violation: Tool '$cleanTool' (unconstrained raw shell execution) is permanently DENIED by policy.",
+                isError = true
+            )
+        }
+
+        if (risk == ToolRiskLevel.CONFIRM) {
+            val approved = try {
+                hitlApprover(cleanTool, argumentsJson)
+            } catch (e: Exception) {
+                Log.e(TAG, "HITL approval failed", e)
+                false
+            }
+
+            if (!approved) {
+                return@withContext McpCallResult(
+                    success = false,
+                    toolName = cleanTool,
+                    output = "MCP tool execution aborted by Human-In-The-Loop (HITL) security gate.",
+                    isError = true
+                )
+            }
         }
 
         val params = JSONObject().apply {
@@ -300,7 +390,8 @@ object McpClientManager {
         val secret = getOrCreateSharedSecret(context)
         val rawBody = buildJsonRpcRequest(method, params)
         val timestamp = System.currentTimeMillis() / 1000L
-        val signature = computeHmacSignature(secret, timestamp, rawBody)
+        val nonce = generateNonce()
+        val signature = computeHmacSignature(secret, timestamp, nonce, rawBody)
 
         var conn: HttpURLConnection? = null
         return try {
@@ -311,9 +402,11 @@ object McpClientManager {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
-                // Mitigate RONIN-SEC-03: Do not send raw secret in cleartext over shared loopback port.
-                // Request authenticity and integrity are verified exclusively via HMAC-SHA256 signature + timestamp.
+                // Mitigate RONIN-SEC-03 & Replay attacks:
+                // Secret is never sent in cleartext. Authenticity, freshness, and uniqueness
+                // are guaranteed via HMAC-SHA256 signature + timestamp (±30s) + 16-byte cryptographically random nonce.
                 setRequestProperty("X-Ronin-Timestamp", timestamp.toString())
+                setRequestProperty("X-Ronin-Nonce", nonce)
                 setRequestProperty("X-Ronin-Signature", signature)
             }
 

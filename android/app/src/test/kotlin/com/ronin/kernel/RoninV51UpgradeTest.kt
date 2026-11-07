@@ -259,6 +259,47 @@ class RoninV51UpgradeTest {
         assertTrue(McpClientManager.isLoopbackEndpoint("http://127.0.0.1:8765/mcp"))
         assertTrue(McpClientManager.isLoopbackEndpoint("http://localhost:8765/mcp"))
         assertFalse(McpClientManager.isLoopbackEndpoint("http://192.168.1.50:8765/mcp"))
+
+        // Nonce-based replay protection test
+        val nonce = McpClientManager.generateNonce()
+        assertEquals(32, nonce.length)
+        val sigNonce = McpClientManager.computeHmacSignature(secret, timestamp, nonce, body)
+        assertTrue(
+            McpClientManager.verifyRequestSignature(
+                secret = secret,
+                timestampEpochSec = timestamp,
+                nonce = nonce,
+                rawJsonBody = body,
+                providedSignatureHex = sigNonce,
+                nowEpochSec = timestamp + 10L
+            )
+        )
+        // Replaying the exact same nonce should fail immediately
+        assertFalse(
+            "Replayed nonce must be rejected",
+            McpClientManager.verifyRequestSignature(
+                secret = secret,
+                timestampEpochSec = timestamp,
+                nonce = nonce,
+                rawJsonBody = body,
+                providedSignatureHex = sigNonce,
+                nowEpochSec = timestamp + 11L
+            )
+        )
+
+        // Capability Execution Policy
+        assertEquals(McpClientManager.ToolRiskLevel.ALLOW, McpClientManager.classifyToolRisk("get_device_info"))
+        assertEquals(McpClientManager.ToolRiskLevel.ALLOW, McpClientManager.classifyToolRisk("list_files"))
+        assertEquals(McpClientManager.ToolRiskLevel.ALLOW, McpClientManager.classifyToolRisk("read_file"))
+        assertEquals(McpClientManager.ToolRiskLevel.ALLOW, McpClientManager.classifyToolRisk("git_status"))
+        assertEquals(McpClientManager.ToolRiskLevel.ALLOW, McpClientManager.classifyToolRisk("git_diff"))
+        assertEquals(McpClientManager.ToolRiskLevel.CONFIRM, McpClientManager.classifyToolRisk("git_commit"))
+        assertEquals(McpClientManager.ToolRiskLevel.CONFIRM, McpClientManager.classifyToolRisk("git_push"))
+        assertEquals(McpClientManager.ToolRiskLevel.CONFIRM, McpClientManager.classifyToolRisk("delete_file"))
+        assertEquals(McpClientManager.ToolRiskLevel.CONFIRM, McpClientManager.classifyToolRisk("install_package"))
+        assertEquals(McpClientManager.ToolRiskLevel.DENY, McpClientManager.classifyToolRisk("run_bash"))
+        assertEquals(McpClientManager.ToolRiskLevel.DENY, McpClientManager.classifyToolRisk("shell"))
+        assertEquals(McpClientManager.ToolRiskLevel.DENY, McpClientManager.classifyToolRisk("exec"))
     }
 
     @Test

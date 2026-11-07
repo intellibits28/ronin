@@ -229,3 +229,76 @@ TEST(LongTermMemoryVectorHybrid, ModelIdIsolationAndCleanFtsFallback) {
     EXPECT_GT(fts_fallback_results[0].rrf_score, 0.0f);
 }
 
+TEST(LongTermMemoryVectorHybrid, MultiModelCoexistenceOnSamePath) {
+    LongTermMemory ltm(":memory:");
+    const std::string shared_path = "/docs/shared_spec.md";
+    const std::string model_270m = "embeddinggemma-2-270m";
+    const std::string model_440m = "embeddinggemma-2-440m";
+
+    std::vector<float> vec_270 = {1.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<float> vec_440 = {0.0f, 1.0f, 0.0f, 0.0f};
+
+    // Index chunk 0 with model_270m, and chunk 0 with model_440m on the EXACT SAME PATH
+    ASSERT_TRUE(ltm.storeDocumentEmbedding(shared_path, "hash_v1", 0, "Quantum qubit entanglement protocol", vec_270, model_270m));
+    ASSERT_TRUE(ltm.storeDocumentEmbedding(shared_path, "hash_v1", 0, "Photovoltaic solar cell semiconductor", vec_440, model_440m));
+
+    // Both should coexist under UNIQUE(doc_path, model_id, chunk_index)
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), ("SELECT COUNT(*) FROM document_embeddings WHERE doc_path='" + shared_path + "';").c_str()), 2);
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), ("SELECT COUNT(*) FROM document_embeddings WHERE doc_path='" + shared_path + "' AND model_id='" + model_270m + "';").c_str()), 1);
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), ("SELECT COUNT(*) FROM document_embeddings WHERE doc_path='" + shared_path + "' AND model_id='" + model_440m + "';").c_str()), 1);
+
+    auto res_270 = ltm.searchEmbeddings(vec_270, shared_path, 5, model_270m);
+    ASSERT_EQ(res_270.size(), 1u);
+    EXPECT_EQ(res_270[0].model_id, model_270m);
+
+    auto res_440 = ltm.searchEmbeddings(vec_440, shared_path, 5, model_440m);
+    ASSERT_EQ(res_440.size(), 1u);
+    EXPECT_EQ(res_440[0].model_id, model_440m);
+}
+
+TEST(LongTermMemoryVectorHybrid, DocumentChunksFtsSyncOnReindex) {
+    LongTermMemory ltm(":memory:");
+    const std::string doc_path = "/docs/research_paper.md";
+    const std::string model_id = "embeddinggemma-2-270m";
+
+    // 1. Initial indexing with unique keyword 'superconducting'
+    std::vector<LongTermMemory::DocumentChunk> chunks_v1;
+    LongTermMemory::DocumentChunk c1;
+    c1.index = 0;
+    c1.text = "The superconducting quantum qubit processor achieves high coherence times.";
+    c1.embedding = {1.0f, 0.5f, 0.0f, 0.0f};
+    chunks_v1.push_back(c1);
+
+    ASSERT_TRUE(ltm.storeDocumentChunksAtomic(doc_path, "hash_initial", model_id, chunks_v1));
+
+    // FTS match for 'superconducting' must return 1 hit
+    std::vector<float> empty_vec;
+    auto initial_search = ltm.hybridSearch("superconducting", empty_vec, doc_path, 5, model_id);
+    ASSERT_EQ(initial_search.size(), 1u);
+    EXPECT_EQ(initial_search[0].chunk_index, 0);
+
+    // 2. Re-index document with completely revised text having 'photovoltaic' (no 'superconducting')
+    std::vector<LongTermMemory::DocumentChunk> chunks_v2;
+    LongTermMemory::DocumentChunk c2;
+    c2.index = 0;
+    c2.text = "The photovoltaic perovskite solar array demonstrates high conversion efficiency.";
+    c2.embedding = {0.0f, 0.0f, 1.0f, 0.5f};
+    chunks_v2.push_back(c2);
+
+    ASSERT_TRUE(ltm.storeDocumentChunksAtomic(doc_path, "hash_revised", model_id, chunks_v2));
+
+    // 3. Verify old keyword 'superconducting' is PURGED from FTS (0 hits)
+    auto purged_search = ltm.hybridSearch("superconducting", empty_vec, doc_path, 5, model_id);
+    EXPECT_TRUE(purged_search.empty());
+
+    // 4. Verify new keyword 'photovoltaic' is successfully indexed in FTS (1 hit)
+    auto new_search = ltm.hybridSearch("photovoltaic", empty_vec, doc_path, 5, model_id);
+    ASSERT_EQ(new_search.size(), 1u);
+    EXPECT_EQ(new_search[0].chunk_index, 0);
+
+    // 5. Verify SQLite integrity and FTS5 integrity
+    execSql(ltm.getDatabase(), "PRAGMA integrity_check;");
+    execSql(ltm.getDatabase(), "INSERT INTO document_chunks_fts(document_chunks_fts) VALUES('integrity-check');");
+}
+
+

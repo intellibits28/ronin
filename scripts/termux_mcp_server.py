@@ -1,27 +1,47 @@
 #!/usr/bin/env python3
 """
-Ronin Kernel - Reference Termux MCP Server Implementation.
-Exposes safe Termux tools via JSON-RPC 2.0 with HMAC-SHA256 signature verification.
+Ronin Kernel - Hardened Termux MCP Server Implementation.
+Exposes safe Termux tools via JSON-RPC 2.0 with HMAC-SHA256 signature verification,
+nonce-based replay protection, and capability-isolated tool dispatch.
 """
 
 import http.server
 import json
 import subprocess
 import os
-import shlex
 import hmac
 import hashlib
 import time
+from collections import OrderedDict
 
 PORT = 8765
 SHARED_SECRET = os.environ.get("RONIN_MCP_SECRET", "").strip()
 
-# Allowlist of safe shell commands to prevent command-line injection (CWE-78)
-ALLOWED_COMMANDS = {
-    "uname", "uptime", "whoami", "date", "pwd", "df", "free", "ps", "top",
-    "cat", "ls", "echo", "head", "tail", "wc", "id", "which", "printenv",
-    "python", "python3", "git", "ping", "curl", "grep", "find"
-}
+# Bounded LRU cache for replay prevention: stores {nonce: timestamp_sec}
+SEEN_NONCES = OrderedDict()
+MAX_SEEN_NONCES = 1000
+REPLAY_WINDOW_SEC = 30
+
+def check_and_record_nonce(nonce: str, now: int) -> bool:
+    """Verifies that the nonce has not been seen before within the replay window."""
+    if not nonce:
+        return True
+    
+    # Purge expired nonces
+    while SEEN_NONCES:
+        old_nonce, old_time = next(iter(SEEN_NONCES.items()))
+        if now - old_time > REPLAY_WINDOW_SEC * 2:
+            SEEN_NONCES.pop(old_nonce)
+        else:
+            break
+
+    if nonce in SEEN_NONCES:
+        return False # Replay attack detected
+
+    SEEN_NONCES[nonce] = now
+    if len(SEEN_NONCES) > MAX_SEEN_NONCES:
+        SEEN_NONCES.popitem(last=False)
+    return True
 
 class McpRequestHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -39,23 +59,40 @@ class McpRequestHandler(http.server.BaseHTTPRequestHandler):
         content_len = int(self.headers.get("Content-Length", 0))
         raw_body = self.rfile.read(content_len).decode("utf-8")
 
-        # Security Verification (HMAC-SHA256 & Replay Window)
+        # Security Verification (HMAC-SHA256, Replay Window & Nonce Cache)
         timestamp_str = self.headers.get("X-Ronin-Timestamp", "")
-        signature = self.headers.get("X-Ronin-Signature", "")
+        nonce = self.headers.get("X-Ronin-Nonce", "").strip()
+        signature = self.headers.get("X-Ronin-Signature", "").strip()
 
         if SHARED_SECRET:
             try:
                 req_time = int(timestamp_str) if timestamp_str else 0
                 now = int(time.time())
-                if abs(now - req_time) > 60:
+                if abs(now - req_time) > REPLAY_WINDOW_SEC:
                     self.send_error(401, f"Timestamp replay window expired (clock drift: {abs(now - req_time)}s)")
                     return
-                expected_sig = hmac.new(
+
+                if nonce and not check_and_record_nonce(nonce, now):
+                    self.send_error(401, "Replay attack detected: duplicate request nonce")
+                    return
+
+                # Support both nonce-authenticated and legacy payload formats
+                expected_sig_with_nonce = hmac.new(
+                    SHARED_SECRET.encode("utf-8"),
+                    f"{req_time}.{nonce}.{raw_body}".encode("utf-8"),
+                    hashlib.sha256
+                ).hexdigest()
+                expected_sig_legacy = hmac.new(
                     SHARED_SECRET.encode("utf-8"),
                     f"{req_time}.{raw_body}".encode("utf-8"),
                     hashlib.sha256
                 ).hexdigest()
-                if not hmac.compare_digest(expected_sig.lower(), signature.lower()):
+
+                valid = (
+                    hmac.compare_digest(expected_sig_with_nonce.lower(), signature.lower()) or
+                    hmac.compare_digest(expected_sig_legacy.lower(), signature.lower())
+                )
+                if not valid:
                     self.send_error(401, "Invalid HMAC signature")
                     return
             except Exception as e:
@@ -78,25 +115,14 @@ class McpRequestHandler(http.server.BaseHTTPRequestHandler):
         if method == "initialize":
             res["result"] = {
                 "protocolVersion": "2024-11-05",
-                "serverInfo": {"name": "termux-mcp", "version": "1.0"},
+                "serverInfo": {"name": "termux-mcp", "version": "1.1"},
                 "capabilities": {"tools": {}}
             }
 
-        # 2. List Available Tools
+        # 2. List Available Tools (Strict Capability Execution Policy)
         elif method == "tools/list":
             res["result"] = {
                 "tools": [
-                    {
-                        "name": "run_bash",
-                        "description": "Execute an allowed shell command in Termux environment",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "command": {"type": "string", "description": "Command line to execute"}
-                            },
-                            "required": ["command"]
-                        }
-                    },
                     {
                         "name": "get_device_info",
                         "description": "Show Termux Linux kernel, architecture and system uptime",
@@ -108,52 +134,53 @@ class McpRequestHandler(http.server.BaseHTTPRequestHandler):
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "path": {"type": "string", "description": "Directory path"}
+                                "path": {"type": "string", "description": "Directory path within user home"}
+                            }
+                        }
+                    },
+                    {
+                        "name": "read_file",
+                        "description": "Read text file contents safely within Termux home (max 128KB)",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "File path within user home"}
+                            },
+                            "required": ["path"]
+                        }
+                    },
+                    {
+                        "name": "git_status",
+                        "description": "Show git repository status in Termux home or project path",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "Repository path"}
+                            }
+                        }
+                    },
+                    {
+                        "name": "git_diff",
+                        "description": "Show git repository diff in Termux home or project path",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "Repository path"}
                             }
                         }
                     }
                 ]
             }
 
-        # 3. Call Tool (Executed only after Ronin HITL approval)
+        # 3. Call Tool (Capability-isolated dispatch, no unconstrained shell execution)
         elif method == "tools/call":
             tool_name = params.get("name")
             args = params.get("arguments", {})
 
-            if tool_name == "run_bash":
-                cmd_str = args.get("command", "").strip()
-                if not cmd_str:
-                    res["result"] = {"content": [{"type": "text", "text": "No command provided"}], "isError": True}
-                else:
-                    try:
-                        # Safely parse into argument vector to prevent shell injection (CWE-78)
-                        cmd_tokens = shlex.split(cmd_str)
-                        base_cmd = os.path.basename(cmd_tokens[0]) if cmd_tokens else ""
-                        if base_cmd not in ALLOWED_COMMANDS:
-                            res["result"] = {
-                                "content": [{"type": "text", "text": f"Command '{base_cmd}' is not in the allowed commands list for security."}],
-                                "isError": True
-                            }
-                        else:
-                            proc = subprocess.run(
-                                cmd_tokens,
-                                shell=False,
-                                capture_output=True,
-                                text=True,
-                                timeout=30
-                            )
-                            output = proc.stdout if proc.returncode == 0 else (proc.stdout + "\n" + proc.stderr).strip()
-                            res["result"] = {
-                                "content": [{"type": "text", "text": output.strip() if output.strip() else "(command executed with no output)"}],
-                                "isError": proc.returncode != 0
-                            }
-                    except Exception as e:
-                        res["result"] = {"content": [{"type": "text", "text": f"Execution error: {str(e)}"}], "isError": True}
-
-            elif tool_name == "get_device_info":
-                uname = subprocess.run(["uname", "-a"], capture_output=True, text=True).stdout.strip()
-                uptime = subprocess.run(["uptime"], capture_output=True, text=True).stdout.strip()
-                whoami = subprocess.run(["whoami"], capture_output=True, text=True).stdout.strip()
+            if tool_name == "get_device_info":
+                uname = subprocess.run(["uname", "-a"], capture_output=True, text=True, timeout=5).stdout.strip()
+                uptime = subprocess.run(["uptime"], capture_output=True, text=True, timeout=5).stdout.strip()
+                whoami = subprocess.run(["whoami"], capture_output=True, text=True, timeout=5).stdout.strip()
                 info_text = f"User: {whoami}\nSystem: {uname}\nUptime: {uptime}"
                 res["result"] = {"content": [{"type": "text", "text": info_text}], "isError": False}
 
@@ -162,7 +189,7 @@ class McpRequestHandler(http.server.BaseHTTPRequestHandler):
                 base_dir = os.path.realpath(os.path.expanduser("~"))
                 target_dir = os.path.realpath(os.path.expanduser(raw_path)) if raw_path else base_dir
 
-                # Enforce directory confinement to prevent path injection (CWE-22)
+                # Enforce directory confinement to prevent path traversal (CWE-22)
                 if not target_dir.startswith(base_dir):
                     res["result"] = {
                         "content": [{"type": "text", "text": f"Access denied: path '{raw_path}' is outside home directory"}],
@@ -175,8 +202,49 @@ class McpRequestHandler(http.server.BaseHTTPRequestHandler):
                     except Exception as e:
                         res["result"] = {"content": [{"type": "text", "text": f"Error: {str(e)}"}], "isError": True}
 
+            elif tool_name == "read_file":
+                raw_path = args.get("path", "")
+                if not raw_path:
+                    res["result"] = {"content": [{"type": "text", "text": "Error: 'path' argument is required"}], "isError": True}
+                else:
+                    base_dir = os.path.realpath(os.path.expanduser("~"))
+                    target_file = os.path.realpath(os.path.expanduser(raw_path))
+                    if not target_file.startswith(base_dir):
+                        res["result"] = {
+                            "content": [{"type": "text", "text": f"Access denied: path '{raw_path}' is outside home directory"}],
+                            "isError": True
+                        }
+                    elif not os.path.isfile(target_file):
+                        res["result"] = {"content": [{"type": "text", "text": f"File not found: {raw_path}"}], "isError": True}
+                    else:
+                        try:
+                            # 128 KB read limit
+                            with open(target_file, "r", encoding="utf-8", errors="replace") as f:
+                                content = f.read(128 * 1024)
+                            res["result"] = {"content": [{"type": "text", "text": content}], "isError": False}
+                        except Exception as e:
+                            res["result"] = {"content": [{"type": "text", "text": f"Error reading file: {str(e)}"}], "isError": True}
+
+            elif tool_name in ("git_status", "git_diff"):
+                raw_path = args.get("path", "")
+                base_dir = os.path.realpath(os.path.expanduser("~"))
+                target_dir = os.path.realpath(os.path.expanduser(raw_path)) if raw_path else base_dir
+                if not target_dir.startswith(base_dir) or not os.path.isdir(target_dir):
+                    res["result"] = {"content": [{"type": "text", "text": "Invalid repository directory"}], "isError": True}
+                else:
+                    git_cmd = ["git", "status", "--short"] if tool_name == "git_status" else ["git", "diff", "--stat"]
+                    try:
+                        proc = subprocess.run(git_cmd, cwd=target_dir, capture_output=True, text=True, timeout=15)
+                        output = proc.stdout if proc.returncode == 0 else (proc.stdout + "\n" + proc.stderr).strip()
+                        res["result"] = {
+                            "content": [{"type": "text", "text": output.strip() if output.strip() else "(clean working tree)"}],
+                            "isError": proc.returncode != 0
+                        }
+                    except Exception as e:
+                        res["result"] = {"content": [{"type": "text", "text": f"Git error: {str(e)}"}], "isError": True}
+
             else:
-                res["error"] = {"code": -32601, "message": f"Tool '{tool_name}' not found"}
+                res["error"] = {"code": -32601, "message": f"Tool '{tool_name}' not found or execution is restricted by policy."}
 
         else:
             res["error"] = {"code": -32601, "message": f"Method '{method}' not found"}
@@ -195,8 +263,7 @@ def main():
     print("=" * 60)
     print(f"🚀 Ronin Termux MCP Server starting on http://127.0.0.1:{PORT}/mcp")
     if SHARED_SECRET:
-        # Avoid cleartext logging of sensitive secret (CWE-532)
-        print("🔐 Security: HMAC-SHA256 Auth ACTIVE")
+        print("🔐 Security: HMAC-SHA256 Auth + Nonce Replay Guard ACTIVE")
     else:
         print("⚠️  Security Warning: RONIN_MCP_SECRET is not set in environment.")
         print("    Run: export RONIN_MCP_SECRET=\"<token from /mcp token>\"")

@@ -249,6 +249,12 @@ object LocalResearchEngine {
                 response.close()
                 throw IOException("SSRF Guard: Blocked insecure or non-HTTPS redirect to '$location'")
             }
+            val resolvedHost = resolvedUrl.host
+            val addrs = ssrfSafeDns.lookup(resolvedHost)
+            if (addrs.isEmpty()) {
+                response.close()
+                throw IOException("SSRF Guard: Redirect host '$resolvedHost' resolved to no safe public IP")
+            }
         }
         response
     }
@@ -866,5 +872,46 @@ object LocalResearchEngine {
             durationMs = System.currentTimeMillis() - startMs,
             success = true
         )
+    }
+
+    /**
+     * Explicit User Action: Saves a research report into Privacy Vault with provenance metadata.
+     * Research findings are NEVER auto-saved as trusted facts to prevent Indirect Prompt Injection
+     * from polluting core agent knowledge.
+     */
+    fun saveResearchReportToVault(
+        context: Context,
+        nativeEngine: NativeEngine,
+        report: ResearchReport
+    ): Boolean {
+        return try {
+            val payload = JSONObject().apply {
+                put("source_type", "web_research")
+                put("query", report.query)
+                put("timestamp", System.currentTimeMillis())
+                put("synthesis", report.synthesisMarkdown)
+                val srcArr = JSONArray()
+                report.sources.forEach { s ->
+                    srcArr.put(JSONObject().apply {
+                        put("index", s.index)
+                        put("title", s.title)
+                        put("url", s.url)
+                        put("domain", s.domain)
+                    })
+                }
+                put("sources", srcArr)
+            }.toString()
+
+            val title = "Research: ${report.query.take(60)}"
+            val encrypted = nativeEngine.encryptSecret(payload)
+            if (encrypted.isNotEmpty()) {
+                nativeEngine.storeVault(title, encrypted)
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save research report to vault: ${e.message}")
+            false
+        }
     }
 }

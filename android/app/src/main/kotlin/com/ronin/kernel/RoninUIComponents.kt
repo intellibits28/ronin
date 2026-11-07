@@ -828,6 +828,49 @@ fun ResearchResultCard(
                     }
                 }
 
+                var savedToVault by remember { mutableStateOf(false) }
+                Surface(
+                    color = if (savedToVault) RoninThemeTokens.SurfaceLight else RoninThemeTokens.PrimaryEmeraldDim,
+                    shape = RoninThemeTokens.RadiusSm,
+                    border = BorderStroke(1.dp, if (savedToVault) RoninThemeTokens.Border else RoninThemeTokens.PrimaryEmerald.copy(alpha = 0.4f)),
+                    modifier = Modifier.clickable {
+                        if (!savedToVault) {
+                            val report = LocalResearchEngine.ResearchReport(
+                                query = queryLine,
+                                synthesisMarkdown = synthesisBody,
+                                sources = sourcePairs.mapIndexed { idx, (title, url) ->
+                                    LocalResearchEngine.WebSource(
+                                        index = idx + 1,
+                                        title = title,
+                                        url = url,
+                                        domain = try { java.net.URI(url).host ?: "web" } catch (_: Exception) { "web" },
+                                        snippet = ""
+                                    )
+                                },
+                                durationMs = timeMsLine.toLongOrNull() ?: 0L
+                            )
+                            val act = context.findActivity() as? MainActivity
+                            val engine = act?.nativeEngine ?: NativeEngine(context)
+                            val ok = LocalResearchEngine.saveResearchReportToVault(context, engine, report)
+                            if (ok) {
+                                savedToVault = true
+                                Toast.makeText(context, "Encrypted & saved to Vault with provenance", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Failed to save to Vault", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Lock, contentDescription = "Vault", tint = if (savedToVault) RoninThemeTokens.TextSecondary else RoninThemeTokens.PrimaryEmerald, modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (savedToVault) "SAVED TO VAULT" else "SAVE TO VAULT", color = if (savedToVault) RoninThemeTokens.TextSecondary else RoninThemeTokens.PrimaryEmerald, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    }
+                }
+
                 if (cachePathLine.isNotEmpty() && File(cachePathLine).exists()) {
                     Surface(
                         color = RoninThemeTokens.SurfaceLight,
@@ -1103,7 +1146,8 @@ fun InputBar(
     onSendOrStop: () -> Unit,
     onSuggestionClick: (String) -> Unit,
     showCommandSuggestions: Boolean,
-    onAttachClick: (() -> Unit)? = null
+    onAttachClick: (() -> Unit)? = null,
+    onDismissSuggestions: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         if (showCommandSuggestions && currentInput.startsWith("/") && !currentInput.contains(" ") && currentInput.isNotBlank()) {
@@ -1116,31 +1160,58 @@ fun InputBar(
                     elevation = 8.dp,
                     modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(0.92f)
                 ) {
-                    LazyColumn(modifier = Modifier.heightIn(max = 220.dp)) {
-                        items(suggestions) { cmdItem ->
-                            TextButton(
-                                onClick = { onSuggestionClick("${cmdItem.command} ") },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "COMMAND SUGGESTIONS",
+                                style = RoninThemeTokens.WhisperLabelStyle.copy(color = Color(0xFF64B5F6))
+                            )
+                            IconButton(
+                                onClick = { onDismissSuggestions?.invoke() },
+                                modifier = Modifier.size(24.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close suggestions",
+                                    tint = Color.LightGray,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        Divider(color = Color(0xFF333852), thickness = 0.5.dp)
+                        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                            items(suggestions) { cmdItem ->
+                                TextButton(
+                                    onClick = {
+                                        onSuggestionClick("${cmdItem.command} ")
+                                        onDismissSuggestions?.invoke()
+                                    },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
                                 ) {
-                                    Text(
-                                        cmdItem.command,
-                                        color = Color(0xFF64B5F6),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        cmdItem.description,
-                                        color = Color.LightGray,
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            cmdItem.command,
+                                            color = Color(0xFF64B5F6),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            cmdItem.description,
+                                            color = Color.LightGray,
+                                            fontSize = 11.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                         }
