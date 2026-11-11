@@ -64,6 +64,10 @@ data class ShmSession(
                 put("detrending", dspResult.detrending)
                 put("filtering", dspResult.filtering)
                 put("windowFunction", dspResult.windowFunction)
+                put("welch_segments_gated", dspResult.welchSegmentsGated)
+                put("hv_ratio", dspResult.hvRatio.toDouble())
+                put("is_horizontal_sway", dspResult.isHorizontalSway)
+                put("gravity_variance", dspResult.gravityVariance.toDouble())
                 put("fftResult", JSONArray(dspResult.fftResult))
                 put("psdResult", JSONArray(dspResult.psdResult))
                 put("top_candidates", JSONArray().apply {
@@ -72,6 +76,8 @@ data class ShmSession(
                             put("frequency_hz", c.frequencyHz.toDouble())
                             put("psd_db", c.psdValue.toDouble())
                             put("is_anomaly", c.isAnomaly)
+                            put("hv_ratio", c.hvRatio.toDouble())
+                            put("is_horizontal_sway", c.isHorizontalSway)
                         })
                     }
                 })
@@ -82,11 +88,26 @@ data class ShmSession(
                 put("noiseFloorDb", features.noiseFloorDb.toDouble())
                 put("vibrationEnergy", features.vibrationEnergy.toDouble())
                 put("confidence", features.confidence)
+                put("baselineStdDevHz", features.baselineStdDevHz.toDouble())
+                put("consecutiveAnomalies", features.consecutiveAnomalies)
+                put("baselineAnomalyBlocked", features.baselineAnomalyBlocked)
+                put("buildingFloors", features.buildingFloors)
             })
             put("decision", JSONObject().apply {
                 put("status", decision.status)
                 put("healthIndex", decision.healthIndex)
                 put("riskLevel", decision.riskLevel)
+                put("qualityCategory", decision.qualityCategory)
+                put("qualityScorePct", decision.qualityScorePct)
+                put("qualityReport", JSONObject().apply {
+                    put("totalScorePct", decision.qualityReport.totalScorePct)
+                    put("sensorStabilityScore", decision.qualityReport.sensorStabilityScore)
+                    put("noiseLevelScore", decision.qualityReport.noiseLevelScore)
+                    put("couplingQualityScore", decision.qualityReport.couplingQualityScore)
+                    put("frequencyStabilityScore", decision.qualityReport.frequencyStabilityScore)
+                    put("qualityCategory", decision.qualityReport.qualityCategory)
+                    put("diagnosticsExplanation", decision.qualityReport.diagnosticsExplanation)
+                })
             })
             put("reasoningTrace", JSONObject().apply {
                 val stagesArray = JSONArray()
@@ -127,10 +148,23 @@ data class ShmSession(
                     candList.add(SpectralPeak(
                         frequencyHz = c.optDouble("frequency_hz", 0.0).toFloat(),
                         psdValue = c.optDouble("psd_db", 0.0).toFloat(),
-                        isAnomaly = c.optBoolean("is_anomaly", false)
+                        isAnomaly = c.optBoolean("is_anomaly", false),
+                        hvRatio = c.optDouble("hv_ratio", 1.0).toFloat(),
+                        isHorizontalSway = c.optBoolean("is_horizontal_sway", false)
                     ))
                 }
             }
+
+            val qObj = dec.optJSONObject("qualityReport") ?: root.optJSONObject("quality_report") ?: JSONObject()
+            val qualityRep = ShmQualityReport(
+                totalScorePct = qObj.optInt("totalScorePct", qObj.optInt("total_score_pct", 100)),
+                sensorStabilityScore = qObj.optInt("sensorStabilityScore", qObj.optInt("sensor_stability_score", 30)),
+                noiseLevelScore = qObj.optInt("noiseLevelScore", qObj.optInt("noise_level_score", 25)),
+                couplingQualityScore = qObj.optInt("couplingQualityScore", qObj.optInt("coupling_quality_score", 25)),
+                frequencyStabilityScore = qObj.optInt("frequencyStabilityScore", qObj.optInt("frequency_stability_score", 20)),
+                qualityCategory = qObj.optString("qualityCategory", qObj.optString("quality_category", "RESEARCH_GRADE")),
+                diagnosticsExplanation = qObj.optString("diagnosticsExplanation", qObj.optString("diagnostics_explanation", ""))
+            )
 
             return ShmSession(
                 sessionId = root.optString("sessionId", "ronin_shm_${System.currentTimeMillis()}"),
@@ -158,19 +192,30 @@ data class ShmSession(
                     windowFunction = dsp.optString("windowFunction", "Hann / Welch PSD (win=1024, sub=512, step=256, nfft=2048)"),
                     fftResult = fftList,
                     psdResult = psdList,
-                    topCandidates = candList
+                    topCandidates = candList,
+                    welchSegmentsGated = dsp.optInt("welch_segments_gated", root.optInt("welch_segments_gated", 0)),
+                    hvRatio = dsp.optDouble("hv_ratio", root.optDouble("hv_ratio", 1.0)).toFloat(),
+                    isHorizontalSway = dsp.optBoolean("is_horizontal_sway", root.optBoolean("is_horizontal_sway", false)),
+                    gravityVariance = dsp.optDouble("gravity_variance", root.optDouble("gravity_variance", 0.0)).toFloat()
                 ),
                 features = ShmFeatures(
-                    baselineF0Hz = feat.optDouble("baselineF0Hz", 1.79).toFloat(),
-                    filteredF0Hz = feat.optDouble("filteredF0Hz", 1.79).toFloat(),
-                    noiseFloorDb = feat.optDouble("noiseFloorDb", -54.0).toFloat(),
+                    baselineF0Hz = feat.optDouble("baselineF0Hz", root.optDouble("baseline_f0_hz", 1.79)).toFloat(),
+                    filteredF0Hz = feat.optDouble("filteredF0Hz", root.optDouble("filtered_resonance_freq_hz", 1.79)).toFloat(),
+                    noiseFloorDb = feat.optDouble("noiseFloorDb", root.optDouble("noise_floor_db", -54.0)).toFloat(),
                     vibrationEnergy = feat.optDouble("vibrationEnergy", 0.0142).toFloat(),
-                    confidence = feat.optString("confidence", "High")
+                    confidence = feat.optString("confidence", "High"),
+                    baselineStdDevHz = feat.optDouble("baselineStdDevHz", root.optDouble("baseline_std_dev_hz", 0.0)).toFloat(),
+                    consecutiveAnomalies = feat.optInt("consecutiveAnomalies", root.optInt("consecutive_anomalies", 0)),
+                    baselineAnomalyBlocked = feat.optBoolean("baselineAnomalyBlocked", root.optBoolean("baseline_anomaly_blocked", false)),
+                    buildingFloors = feat.optInt("buildingFloors", root.optInt("building_floors", 0))
                 ),
                 decision = ShmDecision(
                     status = dec.optString("status", "HEALTHY"),
-                    healthIndex = dec.optString("healthIndex", "98.5%"),
-                    riskLevel = dec.optString("riskLevel", "LOW")
+                    healthIndex = dec.optString("healthIndex", root.optString("health_index_pct", "98.5%")),
+                    riskLevel = dec.optString("riskLevel", root.optString("risk_level", "LOW")),
+                    qualityCategory = qualityRep.qualityCategory,
+                    qualityScorePct = qualityRep.totalScorePct,
+                    qualityReport = qualityRep
                 ),
                 reasoningTrace = ShmReasoningTrace(
                     processingStages = stagesList
@@ -333,17 +378,24 @@ data class ShmSession(
         sb.append(" - Detrending: ${dspResult.detrending}\n")
         sb.append(" - Filtering: ${dspResult.filtering}\n")
         sb.append(" - Window/Welch Configuration: ${dspResult.windowFunction}\n")
+        sb.append(" - Impulse Gated Segments: ${dspResult.welchSegmentsGated}\n")
+        sb.append(" - Nakamura H/V Ratio: ${"%.2f".format(dspResult.hvRatio)} (Superstructure Sway: ${dspResult.isHorizontalSway})\n")
+        sb.append(" - Gravity Variance (Stillness): ${"%.6f".format(dspResult.gravityVariance)}\n")
         sb.append(" - FFT Result Vector Size: ${dspResult.fftResult.size}\n")
         sb.append(" - PSD Vector Size: ${dspResult.psdResult.size}\n\n")
 
         sb.append("[EXTRACTED MODAL FEATURES]\n")
-        sb.append(" - Baseline f0: ${features.baselineF0Hz} Hz\n")
+        sb.append(" - Baseline f0: ${features.baselineF0Hz} Hz (±${features.baselineStdDevHz} Hz)\n")
         sb.append(" - Filtered f0: ${features.filteredF0Hz} Hz\n")
         sb.append(" - Noise Floor: ${features.noiseFloorDb} dB\n")
         sb.append(" - Total Vibration Energy: ${features.vibrationEnergy}\n")
-        sb.append(" - Modal Confidence Score: ${features.confidence}\n\n")
+        sb.append(" - Modal Confidence Score: ${features.confidence}\n")
+        sb.append(" - Building Floors Prior: ${features.buildingFloors}\n")
+        sb.append(" - Baseline Anomaly Blocked: ${features.baselineAnomalyBlocked} (Streak: ${features.consecutiveAnomalies})\n\n")
 
-        sb.append("[DECISION ENGINE OUTPUT]\n")
+        sb.append("[DECISION ENGINE & QUALITY GATE OUTPUT]\n")
+        sb.append(" - Quality Score: ${decision.qualityScorePct}% (${decision.qualityCategory})\n")
+        sb.append(" - Diagnostics: ${decision.qualityReport.diagnosticsExplanation}\n")
         sb.append(" - Structural Health Status: ${decision.status}\n")
         sb.append(" - Health Index: ${decision.healthIndex}\n")
         sb.append(" - Assessed Risk Level: ${decision.riskLevel}\n\n")
@@ -378,13 +430,27 @@ data class SensorMetadata(
     val axis: String = "Z (Vertical Normal)"
 )
 
+data class ShmQualityReport(
+    val totalScorePct: Int = 100,
+    val sensorStabilityScore: Int = 30,
+    val noiseLevelScore: Int = 25,
+    val couplingQualityScore: Int = 25,
+    val frequencyStabilityScore: Int = 20,
+    val qualityCategory: String = "RESEARCH_GRADE",
+    val diagnosticsExplanation: String = ""
+)
+
 data class DspResult(
     val detrending: Boolean = true,
     val filtering: Boolean = true,
     val windowFunction: String = "Hann / Welch PSD (win=1024, sub=512, step=256, nfft=2048)",
     val fftResult: List<Float> = emptyList(),
     val psdResult: List<Float> = emptyList(),
-    val topCandidates: List<SpectralPeak> = emptyList()
+    val topCandidates: List<SpectralPeak> = emptyList(),
+    val welchSegmentsGated: Int = 0,
+    val hvRatio: Float = 1.0f,
+    val isHorizontalSway: Boolean = false,
+    val gravityVariance: Float = 0.0f
 )
 
 data class ShmFeatures(
@@ -392,13 +458,20 @@ data class ShmFeatures(
     val filteredF0Hz: Float = 1.79f,
     val noiseFloorDb: Float = -54.0f,
     val vibrationEnergy: Float = 0.0142f,
-    val confidence: String = "High (CV < 0.2%)"
+    val confidence: String = "High (CV < 0.2%)",
+    val baselineStdDevHz: Float = 0.0f,
+    val consecutiveAnomalies: Int = 0,
+    val baselineAnomalyBlocked: Boolean = false,
+    val buildingFloors: Int = 0
 )
 
 data class ShmDecision(
     val status: String = "HEALTHY",
     val healthIndex: String = "98.5%",
-    val riskLevel: String = "LOW"
+    val riskLevel: String = "LOW",
+    val qualityCategory: String = "RESEARCH_GRADE",
+    val qualityScorePct: Int = 100,
+    val qualityReport: ShmQualityReport = ShmQualityReport()
 )
 
 data class ShmReasoningTrace(

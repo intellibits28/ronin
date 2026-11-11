@@ -6,12 +6,12 @@ Welcome to the definitive technical reference for the Ronin Kernel. This manual 
 
 * **[Ronin User Guide & Manual (အသုံးပြုသူ လမ်းညွှန်)](USER_GUIDE.md)**
   * Comprehensive bilingual (English/Myanmar) end-user instructions covering APK download ([Latest Release](https://github.com/intellibits28/ronin/releases/latest)), On-Device model setup (`Gemma 4` & `EmbeddingGemma 2`), Hybrid RRF RAG (`/docsearch`), Local Research (`/research`), Termux MCP Bridge (`/mcp`), SHM vibration monitoring, Privacy Shield, and `.roninvault` encrypted backup/restore.
-* **[Ronin v5.1.1 Release Notes](../RELEASE_NOTES_v5.1.1.md)** & **[Changelog](../CHANGELOG.md)**
-  * Complete executive summary of the v5.1.1 Sovereign Tactical Upgrade, database schema v3 details, and Sprint 0 / CodeQL security remediations.
+* **[Ronin v5.1.3 Release Notes](../RELEASE_NOTES_v5.1.3.md)**, **[Ronin v5.1.1 Release Notes](../RELEASE_NOTES_v5.1.1.md)** & **[Changelog](../CHANGELOG.md)**
+  * Complete executive summaries of the v5.1.3 Research-Grade SHM & Quality Gate Upgrade and v5.1.1 Sovereign Tactical Upgrade.
 * **[Current Architecture Specification](ARCHITECTURE_CURRENT.md)**
   * Process model, `KernelRuntimeContext`, Active Inference Kernel (RAIK), Hybrid RRF Vector Store, Local Research Engine, Termux MCP Bridge, Privacy Shield, LiteRT-LM SDK, AIDL IPC, and security governance.
-* **[SHM Pipeline v3 Architecture](SHM_PIPELINE_V3_ARCHITECTURE.md)**
-  * Zero-padded Welch PSD, Modal Validation Engine v3, and Kalman NIS filter.
+* **[SHM Pipeline v3.5 Architecture](SHM_PIPELINE_V3_ARCHITECTURE.md)**
+  * Research-Grade 64-bit biquad filtering, Median+3*MAD Welch segment impulse gating, Nakamura H/V spectral ratio, 4-factor Quality Gate, and Anomaly-First baseline protection.
 * **[Documentation Archive (Historical Proposals & Phase Plans)](archive/README.md)**
   * Historical v1.0 - v2.0 design roadmaps and drafts preserved for reference.
 

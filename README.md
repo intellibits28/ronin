@@ -1,4 +1,4 @@
-# Ronin Kernel (v5.1.1 — Sovereign Tactical Upgrade)
+# Ronin Kernel (v5.1.3 — Research-Grade SHM & Sovereign Tactical Upgrade)
 
 [![Ronin Kernel Build & Test](https://github.com/intellibits28/ronin/actions/workflows/build.yml/badge.svg)](https://github.com/intellibits28/ronin/actions/workflows/build.yml)
 [![Ronin Isolated Inference CI](https://github.com/intellibits28/ronin/actions/workflows/ronin-ci.yml/badge.svg)](https://github.com/intellibits28/ronin/actions/workflows/ronin-ci.yml)
@@ -6,7 +6,7 @@
 
 > **📥 Download Latest Android APK / နောက်ဆုံးထွက် APK ဒေါင်းလုဒ်ရယူရန်:**  
 > 👉 **[Download from GitHub Latest Release (`https://github.com/intellibits28/ronin/releases/latest`)](https://github.com/intellibits28/ronin/releases/latest)**  
-> 📖 **[User Guide & Manual (အသုံးပြုသူ လမ်းညွှန် - English / မြန်မာ)](docs/USER_GUIDE.md)** • **[v5.1.1 Release Notes](RELEASE_NOTES_v5.1.1.md)** • **[Changelog](CHANGELOG.md)**
+> 📖 **[User Guide & Manual (အသုံးပြုသူ လမ်းညွှန် - English / မြန်မာ)](docs/USER_GUIDE.md)** • **[v5.1.3 Release Notes](RELEASE_NOTES_v5.1.3.md)** • **[v5.1.1 Release Notes](RELEASE_NOTES_v5.1.1.md)** • **[Changelog](CHANGELOG.md)**
 
 ---
 
@@ -28,7 +28,7 @@
 | **📚 Hybrid RRF Document RAG (`/docsearch`)** | 3 configurable `EmbeddingGemma 2` tiers (`270M`, `440M`, `740M`), SQLite FTS5 BM25 + 768D SIMD Cosine Similarity fused via Reciprocal Rank Fusion ($k=60$), with `MyanmarSegmenter` fallback. | စာအုပ်နှင့် PDF စာတမ်းကြီးများကို `EmbeddingGemma 2` (Semantic) နှင့် SQLite FTS5 (Lexical) ပေါင်းစပ်ထားသော Hybrid RRF စနစ်ဖြင့် အပိုဒ်လိုက် တိကျစွာ ရှာဖွေပေးခြင်း။ |
 | **🔎 Privacy-Aware Local Research (`/research`)** | Queries DuckDuckGo Lite via HTTP `POST` (256 KB stream cap, SSRF DNS-pinning) and synthesizes locally via **Gemma 4 E2B** with `[1][2][3]` citations & **"SAVE TO VAULT"**. | ပြင်ပ Paid API မလိုဘဲ DuckDuckGo Lite မှ ရှာဖွေကာ ဖုန်းတွင်းရှိ Gemma 4 ဖြင့် 100% Local အနှစ်ချုပ်ထုတ်ပေးပြီး Source Citations `[1][2]` များဖြင့် ပြသပေးခြင်း။ |
 | **🔌 Hardened Termux MCP Bridge (`/mcp`)** | Loopback `127.0.0.1:8765` bridge secured with HMAC-SHA256, `±30s` timestamp window, 16-byte Nonce LRU anti-replay cache, and strict Capability Policy (`ALLOW`/`CONFIRM`/`DENY`). | Termux ရှိ Developer Tools များနှင့် HMAC-SHA256 + Nonce Anti-Replay စနစ်ဖြင့် လုံခြုံစွာ ချိတ်ဆက်ပြီး ဖိုင်စစ်ဆေးခြင်းနှင့် Git လုပ်ငန်းများ ဆောင်ရွက်နိုင်ခြင်း။ |
-| **🏗️ Structural Health Monitoring (SHM v3)** | 100Hz 3-axis accelerometer ingestion, 2048-pt Welch FFT (`pffft`), Modal Validation Engine v3 (<0.05Hz resolution), Kalman NIS tracking, and AI structural review. | ဖုန်း၏ Accelerometer အာရုံခံကိရိယာနှင့် 2048-pt Welch FFT တို့ဖြင့် အဆောက်အအုံ၊ တံတားနှင့် စက်ပစ္စည်းများ၏ တုန်ခါမှုကြိမ်နှုန်း ($F_0$) ကို တိကျစွာ တိုင်းတာစစ်ဆေးပေးခြင်း။ |
+| **🏗️ Structural Health Monitoring (SHM v3.5)** | 100Hz 3-axis accelerometer ingestion, 64-bit IEEE 754 biquad filter, Median+3*MAD Welch segment impulse gating, Nakamura H/V spectral ratio sway validation, 4-factor Quality Gate (`RESEARCH_GRADE` to `UNRELIABLE`), Anomaly-First baseline protection, Eurocode 8/ASCE 7 building priors, and AI structural review. | 64-bit Biquad Filter နှင့် Median+3*MAD Impulse Gating ဖြင့် ခြေသံ/ဆူညံသံများကို ဖယ်ရှားကာ Nakamura H/V Spectral Ratio ဖြင့် အဆောက်အအုံ ယိမ်းခါမှု (Sway) နှင့် ကြမ်းခင်းတုန်ခါမှု (Bounce) ကို ခွဲခြားပြီး 4-Factor Research-Grade Quality Gate စနစ်ဖြင့် အင်ဂျင်နီယာအဆင့် တိကျစွာ တိုင်းတာစစ်ဆေးပေးခြင်း။ |
 | **🧠 Active Inference Kernel (RAIK v2)** | Unified Free Energy Principle ($0.81\ \mu\text{s}$ hot-loop) across **SHM Gaze Gating**, **Dual-Gate BM25 Smart RAG Wakeup**, **Privacy-Weighted Brain Routing**, **Multi-Hop Research Foraging**, **32-Slot MCP Anomaly Gate**, **Surprise-Driven Reflection**, and **Lock-Free Audio Kalman DSP**. | Free Energy Principle (FEP) ဖြင့် SHM အာရုံခံကြိမ်နှုန်းသာမက `/docsearch`, Brain Router, `/research`, `/mcp`, `/reflect` နှင့် Audio DSP တို့ကိုပါ သင်္ချာမော်ဒယ်တစ်ခုတည်းဖြင့် ထိန်းကျောင်းပေးခြင်း။ |
 | **🛡️ Privacy Shield & `.roninvault` Backup** | On-device PII redaction (Myanmar NRC, phone, email, bank cards) and atomic WAL-checkpointed SQLite backups encrypted with **AES-256-GCM** via Android SAF. | မြန်မာမှတ်ပုံတင် (NRC)၊ ဖုန်းနံပါတ်နှင့် ဘဏ်ကတ်များကို အလိုအလျောက် ဖုံးကွယ်ပေးခြင်းနှင့် မှတ်ဉာဏ် Database ကို AES-256-GCM ဖြင့် ကုဒ်ဝှက်၍ `.roninvault` အဖြစ် သိမ်းဆည်းခြင်း။ |
 | **🔐 Multi-Centroid Semantic Router & Vault Safety** | Cascaded intent classification across 12 intents with 3-register sub-clusters (`EN`, `MM`, `MIX`), L2 re-normalization, top-2 margin ambiguity guard ($S_1 - S_2 \ge 0.04$), non-destructive stateful updates (`PendingSlotState`), and zero-credential regex redaction (`[REDACTED_SECRET]`). | ဘာသာစကားအလိုက် Sub-Centroid စနစ်ဖြင့် မြန်မာ/အင်္ဂလိပ် မေးခွန်းများကို တိကျစွာ ခွဲခြားခြင်း၊ မပြည့်စုံသော update တွင် Vault entry မပျက်စီးစေဘဲ စကားပြောဖြည့်စွက်နိုင်ခြင်းနှင့် API Key များကို DevHUD/Logs များတွင် အလိုအလျောက် ဖုံးကွယ်ပေးခြင်း။ |
@@ -99,7 +99,7 @@ flowchart LR
 
 ## 🛠️ Build & Test | တည်ဆောက်ခြင်းနှင့် စမ်းသပ်စစ်ဆေးခြင်း
 
-### Host Native Build & C++ Tests (18/18 Suites)
+### Host Native Build & C++ Tests (19/19 Suites)
 ```bash
 cmake -S . -B build_host -DCMAKE_BUILD_TYPE=Debug
 cmake --build build_host -j2
@@ -118,12 +118,13 @@ gradle assembleDebug
 ## 📚 Documentation Index | စာရွက်စာတမ်း လမ်းညွှန်များ
 
 * **[`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)**: Complete Bilingual User Guide & Operations Manual (အသုံးပြုသူ လမ်းညွှန် အပြည့်အစုံ).
+* **[`RELEASE_NOTES_v5.1.3.md`](RELEASE_NOTES_v5.1.3.md)**: Executive Release Notes for Ronin v5.1.3 Research-Grade SHM & Quality Gate Upgrade.
 * **[`RELEASE_NOTES_v5.1.1.md`](RELEASE_NOTES_v5.1.1.md)**: Executive Release Notes for Ronin v5.1.1 Sovereign Tactical Upgrade.
 * **[`CHANGELOG.md`](CHANGELOG.md)**: Chronological version history and release changelog.
 * **[`docs/MANUAL_INDEX.md`](docs/MANUAL_INDEX.md)**: Master documentation index and deep-dive technical links.
 * **[`docs/ARCHITECTURE_CURRENT.md`](docs/ARCHITECTURE_CURRENT.md)**: Production runtime architecture, RAIK math, Hybrid RAG, and security model.
 * **[`docs/TECHNICAL_SPECS.md`](docs/TECHNICAL_SPECS.md)**: Native core, Android layer, SQLite v3 schemas, and CI specifications.
-* **[`docs/SHM_PIPELINE_V3_ARCHITECTURE.md`](docs/SHM_PIPELINE_V3_ARCHITECTURE.md)**: Modal Validation Engine v3, Welch PSD, and SHM AI Review Pipeline.
+* **[`docs/SHM_PIPELINE_V3_ARCHITECTURE.md`](docs/SHM_PIPELINE_V3_ARCHITECTURE.md)**: Research-Grade DSP v3.5, Welch PSD, Nakamura H/V ratio, Quality Gate, and SHM AI Review.
 * **[`docs/08_SECURITY.md`](docs/08_SECURITY.md)**: Security governance, PII redaction, and vulnerability remediation notes.
 
 ---

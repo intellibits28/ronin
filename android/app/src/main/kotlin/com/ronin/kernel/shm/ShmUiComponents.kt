@@ -244,9 +244,28 @@ fun ShmDetailScreen(session: ShmSession, onDismiss: () -> Unit) {
 
                 LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     item { DetailSectionCard("Decision Engine Assessment") {
+                        val qualityBadgeColor = when (session.decision.qualityCategory) {
+                            "RESEARCH_GRADE" -> Color(0xFF66BB6A)
+                            "GOOD" -> Color(0xFF80DEEA)
+                            "FAIR" -> Color(0xFFFFB74D)
+                            else -> Color(0xFFEF5350)
+                        }
+                        DetailItemRow("Quality Grade", "${session.decision.qualityCategory} (${session.decision.qualityScorePct}%)", qualityBadgeColor)
                         DetailItemRow("Status", session.decision.status, Color(0xFF66BB6A))
                         DetailItemRow("Health Index", session.decision.healthIndex, Color(0xFF80DEEA))
                         DetailItemRow("Risk Level", session.decision.riskLevel, Color.White)
+                    } }
+
+                    item { DetailSectionCard("Nakamura H/V & Structural Physics") {
+                        DetailItemRow("H/V Spectral Ratio", "${"%.2f".format(session.dspResult.hvRatio)} (${if (session.dspResult.isHorizontalSway) "Superstructure Sway" else "Floor / Local"})")
+                        DetailItemRow("Gated Shock Segments", "${session.dspResult.welchSegmentsGated}")
+                        DetailItemRow("Coupling Stillness (σ²)", "${"%.6f".format(session.dspResult.gravityVariance)}")
+                        if (session.features.buildingFloors > 0) {
+                            DetailItemRow("Building Floors", "${session.features.buildingFloors} floors (Prior f₀: ${"%.2f".format(10.0f / session.features.buildingFloors)} Hz)")
+                        }
+                        if (session.features.baselineAnomalyBlocked) {
+                            DetailItemRow("Baseline Protection", "Contamination Blocked (${session.features.consecutiveAnomalies} alerts)", Color(0xFFEF5350))
+                        }
                     } }
 
                     item {
@@ -578,7 +597,9 @@ private fun ReviewSectionCard(title: String, items: List<String>, titleColor: Co
 data class SpectralPeak(
     val frequencyHz: Float,
     val psdValue: Float,
-    val isAnomaly: Boolean = false
+    val isAnomaly: Boolean = false,
+    val hvRatio: Float = 1.0f,
+    val isHorizontalSway: Boolean = false
 )
 
 fun ShmSession.extractSpectralPeaks(): List<SpectralPeak> {

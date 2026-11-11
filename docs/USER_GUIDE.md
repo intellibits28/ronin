@@ -99,22 +99,24 @@ Ronin သည် ဒေသတွင်း On-device Model သို့မဟု�
 
 ---
 
-## ၅။ အဆောက်အအုံကြံ့ခိုင်မှု တိုင်းတာခြင်း (Structural Health Monitoring - SHM)
+## ၅။ အဆောက်အအုံကြံ့ခိုင်မှု တိုင်းတာခြင်း (Structural Health Monitoring - SHM v3.5)
 
-Ronin တွင် ကမ္ဘာ့အဆင့်မီ တုန်ခါမှုဆိုင်ရာ အချက်ပြတွက်ချက်မှု (Modal Validation Engine v3 & Welch FFT) ပါဝင်ပါသည်။
+Ronin တွင် ကမ္ဘာ့အဆင့်မီ Research-Grade တုန်ခါမှုဆိုင်ရာ အချက်ပြတွက်ချက်မှု (64-bit IEEE 754 Biquad Filter, Median+3*MAD Welch Impulse Gating, Nakamura H/V Spectral Ratio, 4-Factor Quality Gate & Anomaly-First Baseline Protection) ပါဝင်ပါသည်။
 
 ### မည်သို့ တိုင်းတာရမည်နည်း?
 1. ဖုန်းကို တုန်ခါမှုတိုင်းတာလိုသော ကြမ်းပြင်၊ စားပွဲ၊ တိုင် သို့မဟုတ် စက်ယန္တရားမျက်နှာပြင်ပေါ်တွင် လှုပ်ရှားမှုမရှိအောင် ငြိမ်သက်စွာ ချထားပါ။
 2. စကားပြောဆိုမှုတွင် အောက်ပါအတိုင်း မေးမြန်း/ခိုင်းစေပါ-
-   - `"တုန်ခါမှု စစ်ဆေးပေးပါ"`
+   - `"တုန်ခါမှု စစ်ဆေးပေးပါ"` သို့မဟုတ် `"တိုက်ကြံ့ခိုင်မှု စစ်မယ် ၄ ထပ်တိုက်"`
    - `"အဆောက်အအုံ ကြံ့ခိုင်မှု စစ်ပေးပါ"`
    - `"Check structural vibration"`
-3. Ronin သည် Accelerometer မှ အချက်အလက်များကို 100Hz ဖြင့် နမူနာ 1024 ခု (၁၀.၂ စက္ကန့်စာ) တိုင်းတာပြီး High-Pass Filter ဖြင့် မြေဆွဲအား (Gravity DC) ကို ဖယ်ရှားကာ Fast Fourier Transform (FFT) တွက်ချက်ပါမည်။
+3. Ronin သည် Accelerometer မှ အချက်အလက်များကို 100Hz ဖြင့် နမူနာ 1024 ခု (၁၀.၂ စက္ကန့်စာ) တိုင်းတာပြီး 64-bit High-Pass Biquad Filter ဖြင့် မြေဆွဲအား (Gravity DC) ကို အပြတ်ဖယ်ရှားကာ Fast Fourier Transform (FFT) တွက်ချက်ပါမည်။ လမ်းလျှောက်သံ သို့မဟုတ် တံခါးပိတ်သံကဲ့သို့ ရုတ်တရက် အသံ/တုန်ခါမှုများကို **Median + 3*MAD Segment Gating** ဖြင့် အလိုအလျောက် ပယ်ဖျက်ပေးပါသည်။
 4. **ရလဒ်များတွင် အောက်ပါတို့ကို တွေ့ရပါမည်**:
+   - **Quality Gate Badge**: တိုင်းတာမှု၏ ခိုင်မာမှုအဆင့် (`RESEARCH_GRADE` $\ge 85$, `GOOD` $\ge 70$, `FAIR` $\ge 50$, `UNRELIABLE` $< 50$)။
    - **Dominant Resonance Frequency (Hz)**: အဓိက တုန်ခါကြိမ်နှုန်း (ဥပမာ - 4.5 Hz သို့မဟုတ် 12.8 Hz)။
+   - **Nakamura H/V Spectral Ratio**: အဆောက်အအုံ ယိမ်းခါမှု (Horizontal Sway, H/V $\ge 2.0$) နှင့် ကြမ်းခင်းတုန်ခါမှု (Floor Bounce, H/V $< 0.8$) ခွဲခြားမှု။
    - **Quality Factor (Q)** & **SNR (dB)**: လှိုင်း၏ သန့်စင်မှုနှင့် ပြတ်သားမှု။
-   - **Modal Confidence Score**: တုန်ခါမှု အချက်အလက် ခိုင်မာမှု ရာခိုင်နှုန်း။
-   - **Multi-Axis Coherence**: X, Y, Z မျက်နှာပြင် ၃ ခုစလုံးတွင် တွေ့ရှိရမှု။
+   - **Coupling Stillness ($\sigma_g^2$)**: မျက်နှာပြင်ပေါ်တွင် ဖုန်းငြိမ်သက်စွာ ရှိနေမှု အခြေအနေ (EMA Gravity Variance $\le 0.002$)။
+   - **Baseline Variance ($\sigma_{\text{baseline}}^2$)**: သမိုင်းဝင် တည်ငြိမ်မှုနှုန်း (Welford Running Variance)။ အကယ်၍ ပျက်စီးမှု/မူမမှန်မှု ($> 5\%$) ဖြစ်ပေါ်ပါက Baseline ကို မညစ်ညမ်းစေရန် Anomaly Protection Gate က အလိုအလျောက် ပိတ်ဆို့ကာကွယ်ပေးပါသည်။
 5. **Export ပြုလုပ်ခြင်း**:
    - ရလဒ်အောက်ခြေရှိ **"Export JSON"** သို့မဟုတ် **"Export Report"** ကို နှိပ်၍ အင်ဂျင်နီယာအစီရင်ခံစာအဖြစ် ထုတ်ယူနိုင်ပါသည်။
 

@@ -199,8 +199,10 @@ class ChatViewModel : ViewModel() {
                             val obj = cands.optJSONObject(i) ?: continue
                             val cFreq = obj.optDouble("frequency_hz", 0.0).toFloat()
                             val cPsd = obj.optDouble("psd_db", 0.0).toFloat()
+                            val cHv = obj.optDouble("hv_ratio", 1.0).toFloat()
+                            val cSway = obj.optBoolean("is_horizontal_sway", false)
                             if (cFreq > 0) {
-                                list.add(com.ronin.kernel.shm.SpectralPeak(cFreq, cPsd, isAnomaly = cFreq > 30.0f || cPsd > 0.8f))
+                                list.add(com.ronin.kernel.shm.SpectralPeak(cFreq, cPsd, isAnomaly = cFreq > 30.0f || cPsd > 0.8f, hvRatio = cHv, isHorizontalSway = cSway))
                             }
                         }
                         if (list.isNotEmpty()) {

@@ -171,9 +171,9 @@ TEST(SemanticRouterBenchmarkTest, ComprehensiveRoutingAccuracy) {
         {"နှိုးစက် ပေးပါ", "SET_ALARM"},
 
         // Vault
-        {"save password to vault", "VAULT_MEMORY"},
-        {"မှတ်ထားပေးပါ", "VAULT_MEMORY"},
-        {"လျှို့ဝှက်ချက် သိမ်းထား", "VAULT_MEMORY"},
+        {"save password to vault", "VAULT_SAVE"},
+        {"မှတ်ထားပေးပါ", "VAULT_SAVE"},
+        {"လျှို့ဝှက်ချက် သိမ်းထား", "VAULT_SAVE"},
 
         // General Chat
         {"hello ronin", "CHAT_QUERY"},

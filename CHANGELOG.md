@@ -5,6 +5,20 @@ All notable changes to the Ronin Kernel project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.3] - 2026-11-11
+
+### Added
+- **Research-Grade SHM DSP Architecture**:
+  - **64-bit IEEE 754 Precision (`double`) Filter Pipeline**: Migrated `HighPassBiquad` filter coefficients ($b_0, b_1, b_2, a_1, a_2$) and state delay registers ($z_1, z_2$) from 32-bit `float` to 64-bit `double` precision, eliminating quantization limit cycles, truncation noise, and pole instability near the unit circle ($z \approx 0.9968 \pm j0.0022$) for ultra-low frequency structural monitoring down to $0.05\text{ Hz}$.
+  - **Median + 3*MAD Non-Stationary Impulse Segment Gating**: 2-pass Welch sub-window segment rejection detecting and skipping localized impulse noise (footsteps, door slams, dropped objects) without corrupting the ambient vibration noise floor or aborting resonance analysis.
+  - **Nakamura Horizontal-to-Vertical (H/V) Spectral Ratio Validation**: Native evaluation of directional spectral energy ratio ($\text{H/V} = \frac{S_{xx} + S_{yy}}{2 \cdot S_{zz}}$) for all candidate peaks, granting $+10\%$ score bonus for validated horizontal superstructure sway ($\text{H/V} \ge 2.0$) and applying $-15\%$ penalty for localized floor slab bounce ($\text{H/V} < 0.8$ with $Z$-dominance).
+  - **4-Factor Research-Grade Quality Gate (`ShmQualityReport`)**: Composite 100-point physical quality scoring fusing Sensor Stability ($30\%$), Noise Margin ($25\%$), Coupling Stillness Quality ($25\%$), and Frequency Stability ($20\%$), classifying measurements into `RESEARCH_GRADE` ($\ge 85$), `GOOD` ($\ge 70$), `FAIR` ($\ge 50$), and `UNRELIABLE` ($< 50$).
+  - **Stationary Coupling Stillness via EMA Gravity Variance**: Low-pass Exponential Moving Average ($\alpha = 0.02$) gravity vector tracking to verify physical stillness and surface contact ($\sigma_g^2 \le 0.002$) vs handheld motion/tremor.
+  - **Anomaly-First Baseline Protection Gate**: Automatic lockout gate preventing degraded or damaged structural readings ($|\Delta f_0\%| > 5.0\%$ or $z > 2.0\sigma$) from contaminating healthy historical statistics, with incremental online Welford running mean and standard deviation updates for healthy readings.
+  - **Eurocode 8 / ASCE 7 Empirical Building Code Prior**: Dynamic building fundamental frequency prior ($f_{\text{expected}} = \frac{10.0\text{ Hz}}{N_{\text{floors}}}$) configured via command JSON (`building_floors` / `floors`).
+  - **Android UI & Export Integration**: Live Quality Gate badge rendering in `ShmUiComponents.kt`, H/V sway metrics in `ShmSessionDetailDialog`, and full JSON serialization/deserialization across `ShmSession.kt`, `MainActivity.kt`, and developer debug logs.
+  - **Host Regression Test Suite**: Added 5 dedicated validation tests in `tests/shm_pipeline_test.cpp` verifying impulse gating, H/V sway discrimination, quality scoring, anomaly protection, and building floor priors (14/14 tests passing).
+
 ## [5.1.2] - 2026-11-11
 
 ### Added

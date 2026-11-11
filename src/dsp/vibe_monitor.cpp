@@ -15,38 +15,39 @@ namespace Ronin::Kernel::DSP {
 
 HighPassBiquad::HighPassBiquad() {
     reset();
-    b0 = 1.0f; b1 = 0.0f; b2 = 0.0f; a1 = 0.0f; a2 = 0.0f;
+    b0 = 1.0; b1 = 0.0; b2 = 0.0; a1 = 0.0; a2 = 0.0;
 }
 
 void HighPassBiquad::configure(float sample_rate_hz, float cutoff_hz) {
-    // SHM: Clamp cutoff to safe range for low-frequency structural monitoring
+    // SHM: Clamp cutoff to safe range for low-frequency structural monitoring (64-bit IEEE 754 precision)
     float safe_cutoff = std::max(0.05f, std::min(cutoff_hz, sample_rate_hz * 0.45f));
     if (sample_rate_hz <= 0.0f || safe_cutoff <= 0.0f) {
-        b0 = 1.0f; b1 = 0.0f; b2 = 0.0f; a1 = 0.0f; a2 = 0.0f;
+        b0 = 1.0; b1 = 0.0; b2 = 0.0; a1 = 0.0; a2 = 0.0;
         return;
     }
-    float w0 = 2.0f * (float)M_PI * safe_cutoff / sample_rate_hz;
-    float cos_w0 = std::cos(w0);
-    float alpha = std::sin(w0) / std::sqrt(2.0f);
+    double w0 = 2.0 * M_PI * static_cast<double>(safe_cutoff) / static_cast<double>(sample_rate_hz);
+    double cos_w0 = std::cos(w0);
+    double alpha = std::sin(w0) / std::sqrt(2.0);
 
-    float a0 = 1.0f + alpha;
-    b0 = ((1.0f + cos_w0) / 2.0f) / a0;
-    b1 = (-(1.0f + cos_w0)) / a0;
-    b2 = ((1.0f + cos_w0) / 2.0f) / a0;
-    a1 = (-2.0f * cos_w0) / a0;
-    a2 = (1.0f - alpha) / a0;
+    double a0 = 1.0 + alpha;
+    b0 = ((1.0 + cos_w0) / 2.0) / a0;
+    b1 = (-(1.0 + cos_w0)) / a0;
+    b2 = ((1.0 + cos_w0) / 2.0) / a0;
+    a1 = (-2.0 * cos_w0) / a0;
+    a2 = (1.0 - alpha) / a0;
 }
 
 float HighPassBiquad::process(float x) {
-    float y = b0 * x + b1 * z1 + b2 * z2 - a1 * z1 - a2 * z2;
+    double xd = static_cast<double>(x);
+    double y = b0 * xd + b1 * z1 + b2 * z2 - a1 * z1 - a2 * z2;
     z2 = z1;
     z1 = y;
-    return y;
+    return static_cast<float>(y);
 }
 
 void HighPassBiquad::reset() {
-    z1 = 0.0f;
-    z2 = 0.0f;
+    z1 = 0.0;
+    z2 = 0.0;
 }
 
 BandPassBiquad::BandPassBiquad() {
@@ -96,11 +97,44 @@ SamplerController::SamplerController() : m_current_state(KernelSensorState::IDLE
     m_baseline_samples = 0;
     m_baseline_timestamp_s = 0;
     m_baseline_confidence_pct = 96.8f;
+    m_welford_count = 0;
+    m_welford_mean_f0 = 0.0f;
+    m_welford_m2 = 0.0f;
+    m_consecutive_anomalies = 0;
+    m_baseline_anomaly_blocked = false;
+    m_building_floors = 0;
     for (size_t i = 0; i < TREND_CAPACITY; ++i) m_trend_ring[i] = 0.0f;
     m_trend_head = 0;
     m_trend_size = 0;
     m_post_impulse_settle_count = 0;
     transitionToState(KernelSensorState::IDLE);
+}
+
+void SamplerController::setBuildingFloors(uint32_t floors) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_building_floors = floors;
+    LOGI(TAG, "SHM: Building floors configured: %u (Empirical prior f0: %.2f Hz)", floors, (floors > 0 ? (10.0f / (float)floors) : 5.0f));
+}
+
+uint32_t SamplerController::getBuildingFloors() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_building_floors;
+}
+
+float SamplerController::getBaselineStdDev() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_welford_count < 2) return 0.0f;
+    return std::sqrt(std::max(0.0f, m_welford_m2 / static_cast<float>(m_welford_count - 1)));
+}
+
+uint32_t SamplerController::getConsecutiveAnomalies() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_consecutive_anomalies;
+}
+
+bool SamplerController::isBaselineAnomalyBlocked() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_baseline_anomaly_blocked;
 }
 
 void SamplerController::setTargetTuningFrequency(float target_hz) {
@@ -339,12 +373,41 @@ void SamplerController::captureBaseline(float f0) {
     m_baseline_confidence_pct = 96.8f;
     m_baseline_accumulating = false;
     m_baseline_candidates.clear();
+    m_welford_count = 5;
+    m_welford_mean_f0 = f0;
+    m_welford_m2 = 0.001f;
+    m_consecutive_anomalies = 0;
+    m_baseline_anomaly_blocked = false;
     LOGI(TAG, "SHM: Baseline f0 FORCE-SET: %.4f Hz (confidence: %.1f%%)", f0, m_baseline_confidence_pct);
 }
 
 bool SamplerController::accumulateBaselineCandidate(float f0) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_baseline_valid) return true;  // already locked
+    if (m_baseline_valid) {
+        // Phase 3: Anomaly-First Baseline Verification Gate
+        float shift_pct = (m_baseline_f0 > 0.0f) ? (std::abs(f0 - m_baseline_f0) / m_baseline_f0) * 100.0f : 0.0f;
+        float std_dev = (m_welford_count >= 2) ? std::sqrt(m_welford_m2 / static_cast<float>(m_welford_count - 1)) : 0.0f;
+        bool is_anomaly = (shift_pct > 5.0f) || (m_welford_count >= 10 && std_dev > 0.0f && std::abs(f0 - m_baseline_f0) > 2.0f * std_dev);
+        if (is_anomaly) {
+            m_consecutive_anomalies++;
+            m_baseline_anomaly_blocked = true;
+            LOGI(TAG, "SHM Anomaly-First Gate: Structural shift %.2f%% detected (f0=%.4f vs baseline=%.4f). Baseline update BLOCKED to prevent contamination.",
+                 shift_pct, f0, m_baseline_f0);
+            return false;
+        }
+
+        // Healthy measurement within ±5%: Update Welford running statistics incrementally
+        m_consecutive_anomalies = 0;
+        m_baseline_anomaly_blocked = false;
+        m_welford_count++;
+        float delta = f0 - m_welford_mean_f0;
+        m_welford_mean_f0 += delta / static_cast<float>(m_welford_count);
+        float delta2 = f0 - m_welford_mean_f0;
+        m_welford_m2 += delta * delta2;
+        m_baseline_f0 = m_welford_mean_f0;
+        m_baseline_samples = m_welford_count * 1024;
+        return true;
+    }
 
     // Reject physically implausible frequencies (< 0.5 Hz or > 50 Hz for structural SHM)
     if (f0 < 0.5f || f0 > 50.0f) {
@@ -416,6 +479,14 @@ bool SamplerController::accumulateBaselineCandidate(float f0) {
         m_baseline_confidence_pct = std::max(60.0f, std::min(99.0f, 99.0f - cv * 190.0f));
         m_baseline_accumulating = false;
         m_baseline_candidates.clear();
+
+        // Initialize online Welford statistics
+        m_welford_count = static_cast<uint32_t>(converged_count);
+        m_welford_mean_f0 = mean_converged;
+        m_welford_m2 = sq_sum;
+        m_consecutive_anomalies = 0;
+        m_baseline_anomaly_blocked = false;
+
         LOGI(TAG, "SHM: Baseline f0 LOCKED: %.4f Hz (samples: %u, confidence: %.1f%%, CV: %.4f, windows: %zu)",
              m_baseline_f0, m_baseline_samples, m_baseline_confidence_pct, cv, n);
         return true;
@@ -441,6 +512,11 @@ void SamplerController::resetBaseline() {
     m_trend_head = 0;
     m_trend_size = 0;
     m_post_impulse_settle_count = 0;
+    m_welford_count = 0;
+    m_welford_mean_f0 = 0.0f;
+    m_welford_m2 = 0.0f;
+    m_consecutive_anomalies = 0;
+    m_baseline_anomaly_blocked = false;
     m_persistence_tracker.reset();
 }
 
@@ -674,6 +750,28 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         }
     }
 
+    // EMA gravity tracking for stationary coupling quality check (alpha = 0.02 at 100 Hz -> ~0.3 Hz cutoff)
+    float gx = (in_size > 0 && !x.empty()) ? x[0] : mag[0];
+    float gy = (in_size > 0 && !y.empty()) ? y[0] : 0.0f;
+    float gz = (in_size > 0 && !z.empty()) ? z[0] : 0.0f;
+    float alpha_ema = 0.02f;
+    double grav_mag_sum = 0.0;
+    double grav_mag_sum_sq = 0.0;
+    for (uint32_t i = 0; i < win_size; ++i) {
+        size_t idx = (i < in_size) ? i : (in_size > 0 ? in_size - 1 : 0);
+        float sx = (in_size > 0) ? x[idx] : mag[i];
+        float sy = (in_size > 0) ? y[idx] : 0.0f;
+        float sz = (in_size > 0) ? z[idx] : 0.0f;
+        gx = alpha_ema * sx + (1.0f - alpha_ema) * gx;
+        gy = alpha_ema * sy + (1.0f - alpha_ema) * gy;
+        gz = alpha_ema * sz + (1.0f - alpha_ema) * gz;
+        double g_mag = std::sqrt(static_cast<double>(gx*gx + gy*gy + gz*gz));
+        grav_mag_sum += g_mag;
+        grav_mag_sum_sq += g_mag * g_mag;
+    }
+    double grav_mag_mean = grav_mag_sum / static_cast<double>(win_size);
+    float grav_var = static_cast<float>(std::max(0.0, (grav_mag_sum_sq / static_cast<double>(win_size)) - (grav_mag_mean * grav_mag_mean)));
+
     // 1. Mandatory DC & Linear Drift Removal: Linear Detrending
     float sum_raw = 0.0f;
     for (float val : mag) sum_raw += val;
@@ -748,6 +846,14 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
     res.structural_shift_detected = false;
     res.baseline_f0_hz = m_controller.getBaseline();
     res.shift_delta_hz = 0.0f;
+    res.gravity_variance = grav_var;
+    res.welch_segments_gated = 0;
+    res.hv_ratio = 1.0f;
+    res.is_horizontal_sway = false;
+    res.baseline_std_dev_hz = m_controller.getBaselineStdDev();
+    res.consecutive_anomalies = m_controller.getConsecutiveAnomalies();
+    res.baseline_anomaly_blocked = m_controller.isBaselineAnomalyBlocked();
+    res.building_floors = m_controller.getBuildingFloors();
 
     if (m_controller.getCurrentState() == KernelSensorState::IMPULSE_MODE) {
         ensurePffftSetup(win_size);
@@ -848,9 +954,10 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             res.welch_segments_used = 0;
             res.resolution_limit_hz = profile.sample_rate_hz / (float)sub_win;
 
-            // Lambda: Process a single axis through detrend + HP + zero-pad Welch FFT
+            // Lambda: Process a single axis through detrend + HP + zero-pad Welch FFT with Median + 3*MAD impulse gating
             auto processAxis = [&](const std::vector<float>& axis_raw, HighPassBiquad& hp_filt, ShmKalmanFilter& kalman_filt,
-                                   float& out_freq, float& out_psd_db, float& out_noise_db, std::vector<ShmPeakCandidate>& out_candidates) {
+                                   float& out_freq, float& out_psd_db, float& out_noise_db, std::vector<ShmPeakCandidate>& out_candidates,
+                                   std::vector<float>& out_avg_psd, uint32_t& out_gated_segments) {
                 // Fill scratch buffer with axis data
                 std::vector<float> axis_buf(win_size, 0.0f);
                 size_t axis_in_size = axis_raw.size();
@@ -878,17 +985,66 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                 // HP filter
                 for (float& v : axis_buf) v = hp_filt.process(v);
 
-                // Welch PSD with zero-padding
+                // Pass 1: Compute segment RMS for non-stationary impulse gating
+                struct SegMeta {
+                    uint32_t start;
+                    float rms;
+                };
+                std::vector<SegMeta> seg_list;
+                for (uint32_t seg_start = 0; seg_start + sub_win <= win_size; seg_start += step) {
+                    float sum_sq = 0.0f;
+                    for (uint32_t i = 0; i < sub_win; ++i) {
+                        float v = axis_buf[seg_start + i];
+                        sum_sq += v * v;
+                    }
+                    seg_list.push_back({seg_start, std::sqrt(sum_sq / (float)sub_win)});
+                }
+
+                // Compute median and MAD of segment RMS
+                float median_rms = 0.0f;
+                float mad_rms = 0.0f;
+                float rms_threshold = 1e6f;
+                if (!seg_list.empty()) {
+                    std::vector<float> rms_vals;
+                    for (const auto& s : seg_list) rms_vals.push_back(s.rms);
+                    std::sort(rms_vals.begin(), rms_vals.end());
+                    median_rms = rms_vals[rms_vals.size() / 2];
+
+                    std::vector<float> dev_vals;
+                    for (float r : rms_vals) dev_vals.push_back(std::abs(r - median_rms));
+                    std::sort(dev_vals.begin(), dev_vals.end());
+                    mad_rms = dev_vals[dev_vals.size() / 2];
+
+                    // Gate threshold: Median + 3 * 1.4826 * MAD (fallback to 1.35x median when MAD == 0 for small segment counts)
+                    rms_threshold = (mad_rms > 1e-4f) ? (median_rms + 3.0f * 1.4826f * mad_rms) : (median_rms * 1.35f);
+                }
+
+                // Pass 2: Welch PSD with zero-padding and segment gating
                 uint32_t num_segments = 0;
+                out_gated_segments = 0;
                 std::vector<float> avg_psd(padded_size / 2, 0.0f);
 
-                for (uint32_t seg_start = 0; seg_start + sub_win <= win_size; seg_start += step) {
+                // Safeguard: Check if all segments would be gated
+                bool all_gated = true;
+                for (const auto& s : seg_list) {
+                    if (s.rms <= rms_threshold) {
+                        all_gated = false;
+                        break;
+                    }
+                }
+
+                for (const auto& s : seg_list) {
+                    if (!all_gated && s.rms > rms_threshold) {
+                        out_gated_segments++;
+                        continue; // Reject non-stationary impulse shock segment
+                    }
+
                     // Zero out the padded buffer
                     std::memset(m_zeropad_buf, 0, padded_size * sizeof(float));
                     // Copy windowed segment into first sub_win samples
                     for (uint32_t i = 0; i < sub_win; ++i) {
                         float win = 0.5f * (1.0f - std::cos(2.0f * (float)M_PI * i / (sub_win - 1)));
-                        m_zeropad_buf[i] = axis_buf[seg_start + i] * win;
+                        m_zeropad_buf[i] = axis_buf[s.start + i] * win;
                     }
 
                     float* zp_output = (float*)pffft_aligned_malloc(padded_size * sizeof(float));
@@ -904,6 +1060,7 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                     num_segments++;
                 }
                 res.welch_segments_used = num_segments;
+                out_avg_psd = avg_psd;
 
                 // Find peak and noise floor
                 float ax_max_psd = -100.0f;
@@ -971,11 +1128,18 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                                 float bw_hz = (float)(right_bin - left_bin + 1) * profile.sample_rate_hz / (float)padded_size;
                                 cand.q_factor = std::min(60.0f, (bw_hz > 1e-4f) ? (cand.frequency_hz / bw_hz) : 10.0f);
 
-                                // Physical Prior Score (Correction 4: 10% minimum floor)
+                                // Physical Prior Score (Phase 3: Dynamic Building Code Prior from floors)
                                 float mu = 10.0f, sigma = 3.5f;
-                                StructureType st = m_controller.getStructureType();
-                                if (st == StructureType::RC_MULTI_STORY_2_TO_5) { mu = 5.0f; sigma = 2.0f; }
-                                else if (st == StructureType::TALL_BUILDING_HIGH_RISE) { mu = 1.2f; sigma = 0.8f; }
+                                uint32_t floors = m_controller.getBuildingFloors();
+                                if (floors > 0) {
+                                    // Eurocode 8 / ASCE 7: T ~ 0.1 * N => f0 ~ 10.0 / N
+                                    mu = 10.0f / static_cast<float>(floors);
+                                    sigma = std::max(0.35f, mu * 0.30f);
+                                } else {
+                                    StructureType st = m_controller.getStructureType();
+                                    if (st == StructureType::RC_MULTI_STORY_2_TO_5) { mu = 5.0f; sigma = 2.0f; }
+                                    else if (st == StructureType::TALL_BUILDING_HIGH_RISE) { mu = 1.2f; sigma = 0.8f; }
+                                }
                                 if (cand.frequency_hz < 0.5f || cand.frequency_hz > 25.0f) {
                                     cand.prior_score = 0.0f;
                                 } else {
@@ -1020,18 +1184,21 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             float freq_y = 0.0f, psd_y = -100.0f, nf_y = -75.0f;
             float freq_z = 0.0f, psd_z = -100.0f, nf_z = -75.0f;
             std::vector<ShmPeakCandidate> cand_x, cand_y, cand_z;
+            std::vector<float> avg_psd_x, avg_psd_y, avg_psd_z;
+            uint32_t gated_x = 0, gated_y = 0, gated_z = 0;
 
             if (in_size > 0) {
-                processAxis(x, m_hp_filter_x, m_kalman_x, freq_x, psd_x, nf_x, cand_x);
-                processAxis(y, m_hp_filter_y, m_kalman_y, freq_y, psd_y, nf_y, cand_y);
-                processAxis(z, m_hp_filter_z, m_kalman_z, freq_z, psd_z, nf_z, cand_z);
+                processAxis(x, m_hp_filter_x, m_kalman_x, freq_x, psd_x, nf_x, cand_x, avg_psd_x, gated_x);
+                processAxis(y, m_hp_filter_y, m_kalman_y, freq_y, psd_y, nf_y, cand_y, avg_psd_y, gated_y);
+                processAxis(z, m_hp_filter_z, m_kalman_z, freq_z, psd_z, nf_z, cand_z, avg_psd_z, gated_z);
             } else {
                 // Synthetic mode: use magnitude signal for all axes
                 std::vector<float> mag_copy = mag;
-                processAxis(mag_copy, m_hp_filter_x, m_kalman_x, freq_x, psd_x, nf_x, cand_x);
-                freq_y = freq_x; psd_y = psd_x; nf_y = nf_x; cand_y = cand_x;
-                freq_z = freq_x; psd_z = psd_x; nf_z = nf_x; cand_z = cand_x;
+                processAxis(mag_copy, m_hp_filter_x, m_kalman_x, freq_x, psd_x, nf_x, cand_x, avg_psd_x, gated_x);
+                freq_y = freq_x; psd_y = psd_x; nf_y = nf_x; cand_y = cand_x; avg_psd_y = avg_psd_x; gated_y = gated_x;
+                freq_z = freq_x; psd_z = psd_x; nf_z = nf_x; cand_z = cand_x; avg_psd_z = avg_psd_x; gated_z = gated_x;
             }
+            res.welch_segments_gated = std::max({gated_x, gated_y, gated_z});
 
             // Modal Validation Engine v3: Merge candidate pools across X, Y, Z and compute Axis Coherence
             std::vector<ShmPeakCandidate> merged_pool;
@@ -1061,6 +1228,25 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             addOrMerge(cand_x, 1);
             addOrMerge(cand_y, 2);
             addOrMerge(cand_z, 4);
+
+            // Phase 1: Nakamura Horizontal-to-Vertical (H/V) Spectral Ratio & Superstructure Sway
+            for (auto& mc : merged_pool) {
+                uint32_t k = mc.bin_index;
+                float psd_x_val = (k < avg_psd_x.size()) ? avg_psd_x[k] : 0.0f;
+                float psd_y_val = (k < avg_psd_y.size()) ? avg_psd_y[k] : 0.0f;
+                float psd_z_val = (k < avg_psd_z.size()) ? avg_psd_z[k] : 0.0f;
+                mc.hv_ratio = (psd_x_val + psd_y_val) / (2.0f * std::max(psd_z_val, 1e-12f));
+
+                if (mc.hv_ratio >= 2.0f) {
+                    mc.is_horizontal_sway = true;
+                    mc.stage1_score = std::min(100.0f, mc.stage1_score + 10.0f); // +10% bonus for superstructure sway
+                } else if (mc.hv_ratio < 0.8f && psd_z_val > (psd_x_val + psd_y_val)) {
+                    mc.is_horizontal_sway = false;
+                    mc.stage1_score = std::max(0.0f, mc.stage1_score - 15.0f); // -15% penalty for floor slab bounce
+                } else {
+                    mc.is_horizontal_sway = false;
+                }
+            }
 
             // Apply Axis Coherence Bonus (+5% stage1_score if present on multiple axes)
             for (auto& mc : merged_pool) {
@@ -1097,6 +1283,8 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
                 res.q_factor = merged_pool[0].q_factor;
                 res.modal_confidence_pct = merged_pool[0].stage2_score;
                 res.frequency_confidence_pct = std::min(100.0f, (float)merged_pool[0].persistence_streak * 20.0f);
+                res.hv_ratio = merged_pool[0].hv_ratio;
+                res.is_horizontal_sway = merged_pool[0].is_horizontal_sway;
             }
 
             // Consolidated Kalman frequency with NIS Gate & Outlier Hysteresis across the dominant mode
@@ -1210,15 +1398,97 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
         res.moving_std_dev = m_controller.calculateMovingStdDev();
         res.dynamic_threshold = m_controller.getDynamicThreshold();
 
-        // SHM: Multi-window baseline accumulation — feed f0 candidates after settling
-        if (!m_controller.isBaselineValid() && resonance_freq > 0.0f && m_filter_samples_processed >= SETTLING_SAMPLES) {
+        // Compute preliminary SNR for quality gating
+        float current_snr = max_psd - res.noise_floor_db;
+
+        // Phase 2: 4-Factor Research-Grade Quality Gate Evaluation
+        ShmQualityReport q_rep;
+
+        // 1. Sensor Stability (Max 30 pts)
+        if (profile.sample_rate_hz >= 90.0f && win_size >= 1024) {
+            q_rep.sensor_stability_score = 30;
+        } else if (profile.sample_rate_hz >= 50.0f && win_size >= 512) {
+            q_rep.sensor_stability_score = 22;
+        } else {
+            q_rep.sensor_stability_score = 15;
+        }
+        if (m_filter_samples_processed < SETTLING_SAMPLES) {
+            q_rep.sensor_stability_score = std::max(10, q_rep.sensor_stability_score - 10);
+        }
+
+        // 2. Noise Level (Max 25 pts)
+        if (current_snr >= 15.0f) {
+            q_rep.noise_level_score = 25;
+        } else if (current_snr >= 10.0f) {
+            q_rep.noise_level_score = 20;
+        } else if (current_snr >= 5.0f) {
+            q_rep.noise_level_score = 14;
+        } else {
+            q_rep.noise_level_score = 6;
+        }
+        if (res.welch_segments_gated > 0) {
+            int penalty = static_cast<int>(res.welch_segments_gated) * 3;
+            q_rep.noise_level_score = std::max(0, q_rep.noise_level_score - penalty);
+        }
+
+        // 3. Coupling Quality (Max 25 pts) from raw gravity vector variance
+        if (res.gravity_variance <= 0.002f) {
+            q_rep.coupling_quality_score = 25;
+        } else if (res.gravity_variance <= 0.008f) {
+            q_rep.coupling_quality_score = 20;
+        } else if (res.gravity_variance <= 0.025f) {
+            q_rep.coupling_quality_score = 12;
+        } else {
+            q_rep.coupling_quality_score = 4;
+        }
+
+        // 4. Frequency Stability (Max 20 pts)
+        uint32_t streak = res.top_candidates.empty() ? 0 : res.top_candidates[0].persistence_streak;
+        if (streak >= 4 && res.kalman_uncertainty_hz < 0.15f) {
+            q_rep.frequency_stability_score = 20;
+        } else if (streak >= 2 && res.kalman_uncertainty_hz < 0.30f) {
+            q_rep.frequency_stability_score = 15;
+        } else if (streak >= 1) {
+            q_rep.frequency_stability_score = 10;
+        } else {
+            q_rep.frequency_stability_score = 5;
+        }
+
+        q_rep.total_score_pct = q_rep.sensor_stability_score + q_rep.noise_level_score +
+                                q_rep.coupling_quality_score + q_rep.frequency_stability_score;
+
+        if (q_rep.total_score_pct >= 85) {
+            q_rep.quality_category = "RESEARCH_GRADE";
+        } else if (q_rep.total_score_pct >= 70) {
+            q_rep.quality_category = "GOOD";
+        } else if (q_rep.total_score_pct >= 50) {
+            q_rep.quality_category = "FAIR";
+        } else {
+            q_rep.quality_category = "UNRELIABLE";
+        }
+
+        char diag_buf[256];
+        snprintf(diag_buf, sizeof(diag_buf),
+                 "Quality: %s (%d%%) [Sensor: %d/30, Noise: %d/25, Coupling: %d/25, Freq: %d/20]",
+                 q_rep.quality_category.c_str(), q_rep.total_score_pct,
+                 q_rep.sensor_stability_score, q_rep.noise_level_score,
+                 q_rep.coupling_quality_score, q_rep.frequency_stability_score);
+        q_rep.diagnostics_explanation = diag_buf;
+
+        res.quality_report = q_rep;
+
+        // SHM: Multi-window baseline accumulation & Anomaly-First Protection Gate (Quality >= 50 Required)
+        if (resonance_freq > 0.0f && m_filter_samples_processed >= SETTLING_SAMPLES && res.quality_report.total_score_pct >= 50) {
             bool locked = m_controller.accumulateBaselineCandidate(resonance_freq);
-            if (locked) {
+            if (!m_controller.isBaselineValid() && locked) {
                 m_bayesian_scorer.reset();
                 m_bayesian_scorer.activate();
             }
         }
         res.baseline_f0_hz = m_controller.getBaseline();
+        res.baseline_std_dev_hz = m_controller.getBaselineStdDev();
+        res.consecutive_anomalies = m_controller.getConsecutiveAnomalies();
+        res.baseline_anomaly_blocked = m_controller.isBaselineAnomalyBlocked();
 
         // Fix #2 (revised): Auto-transition BEFORE evaluating the gate so this
         // call — not the next one — benefits from the settled state.
@@ -1331,6 +1601,9 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             res.baseline_timestamp_s = m_controller.getBaselineTimestamp();
             res.baseline_confidence_pct = m_controller.getBaselineConfidence();
             res.baseline_learning_state = m_controller.isBaselineValid() ? "STABLE" : "LEARNING";
+            res.baseline_std_dev_hz = m_controller.getBaselineStdDev();
+            res.consecutive_anomalies = m_controller.getConsecutiveAnomalies();
+            res.baseline_anomaly_blocked = m_controller.isBaselineAnomalyBlocked();
             m_controller.getF0TrendStats(res.trend_direction, res.trend_rate_hz_per_window, res.trend_persistent);
 
             if (res.selection_outlier_state == "HYSTERESIS_CONFIRMED_SHIFT") {
@@ -1495,6 +1768,18 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
             m_controller.setProfile(prof);
             LOGI(TAG, "SHM: Custom HP cutoff applied: %.2f Hz", custom_cutoff);
         }
+        // SHM: Building floors configuration for Eurocode/ASCE empirical prior
+        if (j.contains("building_floors")) {
+            m_controller.setBuildingFloors(j["building_floors"].get<uint32_t>());
+        } else if (j.contains("floors")) {
+            m_controller.setBuildingFloors(j["floors"].get<uint32_t>());
+        }
+        // SHM: Baseline reset command
+        if (j.contains("reset_baseline") && j["reset_baseline"].get<bool>()) {
+            m_controller.resetBaseline();
+            m_bayesian_scorer.reset();
+            LOGI(TAG, "SHM: Baseline reset requested via command JSON.");
+        }
     } catch (...) {
         if (command_json.find("RESONANCE") != std::string::npos || command_json.find("resonance") != std::string::npos) {
             if (m_controller.getCurrentState() == KernelSensorState::IDLE) {
@@ -1554,7 +1839,9 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
         jCandidates.push_back({
             {"frequency_hz", c.frequency_hz},
             {"psd_db", c.psd_db},
-            {"bin_index", c.bin_index}
+            {"bin_index", c.bin_index},
+            {"hv_ratio", c.hv_ratio},
+            {"is_horizontal_sway", c.is_horizontal_sway}
         });
     }
     jOut["top_candidates"] = jCandidates;
@@ -1569,6 +1856,27 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
     jOut["spectral_entropy"] = res.spectral_entropy;
     jOut["modal_confidence_pct"] = res.modal_confidence_pct;
     jOut["selection_reason"] = res.selection_reason;
+
+    // Phase 1 & 2 & 3: Quality Gate, Physics, and Gated Telemetry
+    jOut["welch_segments_gated"] = res.welch_segments_gated;
+    jOut["hv_ratio"] = res.hv_ratio;
+    jOut["is_horizontal_sway"] = res.is_horizontal_sway;
+    jOut["gravity_variance"] = res.gravity_variance;
+    jOut["baseline_std_dev_hz"] = res.baseline_std_dev_hz;
+    jOut["consecutive_anomalies"] = res.consecutive_anomalies;
+    jOut["baseline_anomaly_blocked"] = res.baseline_anomaly_blocked;
+    jOut["building_floors"] = res.building_floors;
+
+    nlohmann::json jQuality = {
+        {"total_score_pct", res.quality_report.total_score_pct},
+        {"sensor_stability_score", res.quality_report.sensor_stability_score},
+        {"noise_level_score", res.quality_report.noise_level_score},
+        {"coupling_quality_score", res.quality_report.coupling_quality_score},
+        {"frequency_stability_score", res.quality_report.frequency_stability_score},
+        {"quality_category", res.quality_report.quality_category},
+        {"diagnostics_explanation", res.quality_report.diagnostics_explanation}
+    };
+    jOut["quality_report"] = jQuality;
 
     // SHM Decision Engine v3: Structured Telemetry & Time-Series Objects
     nlohmann::json jSelection = {
@@ -1589,7 +1897,10 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
         {"samples", res.baseline_samples},
         {"last_updated_epoch_s", res.baseline_timestamp_s},
         {"confidence_pct", res.baseline_confidence_pct},
-        {"learning_state", res.baseline_learning_state}
+        {"learning_state", res.baseline_learning_state},
+        {"std_dev_hz", res.baseline_std_dev_hz},
+        {"consecutive_anomalies", res.consecutive_anomalies},
+        {"anomaly_blocked", res.baseline_anomaly_blocked}
     };
     jOut["baseline"] = jBaseline;
 
@@ -1617,6 +1928,8 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
             {"noise_floor_db", res.noise_floor_db},
             {"moving_mean_db", res.moving_mean},
             {"moving_std_dev_db", res.moving_std_dev},
+            {"gravity_variance", res.gravity_variance},
+            {"welch_segments_gated", res.welch_segments_gated},
             {"raw_dominant_freq_hz", res.resonance_freq_hz},
             {"raw_dominant_psd_db", res.psd_peak_db},
             {"raw_axis_freq_hz", {{"x", res.resonance_freq_hz_x}, {"y", res.resonance_freq_hz_y}, {"z", res.resonance_freq_hz_z}}},
@@ -1629,6 +1942,9 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
             {"kalman_uncertainty_hz", res.kalman_uncertainty_hz},
             {"baseline_f0_hz", res.baseline_f0_hz},
             {"shift_delta_hz", res.shift_delta_hz},
+            {"hv_ratio", res.hv_ratio},
+            {"is_horizontal_sway", res.is_horizontal_sway},
+            {"quality_report", jQuality},
             {"snr_db", res.snr_db},
             {"peak_prominence_db", res.peak_prominence_db},
             {"q_factor", res.q_factor},
@@ -1642,9 +1958,11 @@ std::string VibeMonitorEngine::executeCommandJson(const std::string& command_jso
         nlohmann::json layer3 = {
             {"health_index_pct", res.health_index_pct},
             {"risk_level", res.risk_level_str},
+            {"quality_category", res.quality_report.quality_category},
             {"health_components", jHealthComponents},
             {"structural_shift_detected", res.structural_shift_detected},
             {"anomaly_detected", res.anomaly_detected},
+            {"baseline_anomaly_blocked", res.baseline_anomaly_blocked},
             {"dynamic_threshold_db", res.dynamic_threshold},
             {"selection_reason", res.selection_reason},
             {"summary", res.summary}

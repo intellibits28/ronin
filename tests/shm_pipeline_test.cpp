@@ -308,3 +308,111 @@ TEST(ShmPipelineTest, CompoundSensorEmailPlanBypass) {
     EXPECT_EQ(plan_my.parameters["recipient_name"], "မသိမ့်");
 }
 
+TEST(ShmPipelineTest, Median3MadImpulseGatingRejectsTransientShocks) {
+    auto eng = makeSettledShmEngine(5.0f);
+
+    // Create a 5.0 Hz signal with baseline amplitude 1.2
+    auto sig = makeShmSignal(5.0f);
+    // Inject a non-stationary vibration swell in segment 0 (samples 0 to 250) with amplitude 3.0
+    for (size_t i = 0; i < 250; ++i) {
+        float t = static_cast<float>(i) / 100.0f;
+        sig[i] = 3.0f * std::sin(2.0f * static_cast<float>(M_PI) * 5.0f * t);
+    }
+
+    VibeMonitorResult res = eng->analyzePipeline(sig, sig, sig);
+    EXPECT_GE(res.welch_segments_gated, 1u);
+    // Despite the non-stationary swell in segment 0, 5.0 Hz fundamental peak is preserved
+    EXPECT_NEAR(res.resonance_freq_hz, 5.0f, 0.25f);
+}
+
+TEST(ShmPipelineTest, NakamuraHvRatioHorizontalSwayVsFloorBounce) {
+    auto eng_sway = makeSettledShmEngine(5.0f);
+
+    // Superstructure horizontal sway: high X and Y, low Z
+    auto sig_x = makeShmSignal(5.0f);
+    auto sig_y = makeShmSignal(5.0f);
+    std::vector<float> sig_z(1024, 0.05f); // weak vertical
+
+    VibeMonitorResult res_sway;
+    for (int i = 0; i < 3; ++i) {
+        res_sway = eng_sway->analyzePipeline(sig_x, sig_y, sig_z);
+    }
+    EXPECT_GE(res_sway.hv_ratio, 2.0f);
+    EXPECT_TRUE(res_sway.is_horizontal_sway);
+
+    // Floor slab bounce: low X and Y, high Z
+    auto eng_bounce = makeSettledShmEngine(5.0f);
+    std::vector<float> sig_x_low(1024, 0.05f);
+    std::vector<float> sig_y_low(1024, 0.05f);
+    auto sig_z_high = makeShmSignal(5.0f);
+
+    VibeMonitorResult res_bounce;
+    for (int i = 0; i < 3; ++i) {
+        res_bounce = eng_bounce->analyzePipeline(sig_x_low, sig_y_low, sig_z_high);
+    }
+    EXPECT_LT(res_bounce.hv_ratio, 0.8f);
+    EXPECT_FALSE(res_bounce.is_horizontal_sway);
+}
+
+TEST(ShmPipelineTest, ResearchGradeQualityReportClassification) {
+    auto eng = makeSettledShmEngine(5.0f);
+    auto sig = makeShmSignal(5.0f);
+
+    VibeMonitorResult res;
+    for (int i = 0; i < 5; ++i) {
+        res = eng->analyzePipeline(sig, sig, sig);
+    }
+
+    // Low noise, stationary coupling, steady 100Hz sampling
+    EXPECT_GE(res.quality_report.total_score_pct, 70);
+    EXPECT_TRUE(res.quality_report.quality_category == "RESEARCH_GRADE" || res.quality_report.quality_category == "GOOD");
+    EXPECT_GE(res.quality_report.sensor_stability_score, 20);
+    EXPECT_GE(res.quality_report.coupling_quality_score, 20);
+    EXPECT_LE(res.gravity_variance, 0.01f);
+
+    // Verify command JSON serialization
+    nlohmann::json cmd;
+    cmd["sensor_type"] = "RESONANCE";
+    std::string json_out = eng->executeCommandJson(cmd.dump());
+    auto j = nlohmann::json::parse(json_out);
+    EXPECT_TRUE(j.contains("quality_report"));
+    EXPECT_TRUE(j["quality_report"].contains("quality_category"));
+    EXPECT_TRUE(j.contains("hv_ratio"));
+    EXPECT_TRUE(j.contains("welch_segments_gated"));
+}
+
+TEST(ShmPipelineTest, AnomalyFirstBaselineGateProtectsHealthyBaseline) {
+    auto eng = makeSettledShmEngine(5.0f);
+    EXPECT_NEAR(eng->getController().getBaseline(), 5.0f, 0.1f);
+    EXPECT_TRUE(eng->getController().isBaselineValid());
+
+    // Inject 4.0 Hz signal (20% shift > 5% threshold)
+    auto sig_damaged = makeShmSignal(4.0f);
+    VibeMonitorResult res = eng->analyzePipeline(sig_damaged, sig_damaged, sig_damaged);
+
+    // Verify baseline was protected from being corrupted to 4.0 Hz!
+    EXPECT_TRUE(res.baseline_anomaly_blocked);
+    EXPECT_GE(res.consecutive_anomalies, 1u);
+    EXPECT_NEAR(eng->getController().getBaseline(), 5.0f, 0.1f);
+
+    // Now inject healthy 5.01 Hz signal (< 5% shift)
+    auto sig_healthy = makeShmSignal(5.01f);
+    VibeMonitorResult res_healthy = eng->analyzePipeline(sig_healthy, sig_healthy, sig_healthy);
+    EXPECT_FALSE(res_healthy.baseline_anomaly_blocked);
+    EXPECT_EQ(res_healthy.consecutive_anomalies, 0u);
+}
+
+TEST(ShmPipelineTest, BuildingCodeFloorsEmpiricalPrior) {
+    auto eng = makeSettledShmEngine(2.0f);
+
+    // Configure 5 floors -> expected f0 ~ 10.0 / 5 = 2.0 Hz
+    nlohmann::json cmd;
+    cmd["building_floors"] = 5;
+    std::string json_str = eng->executeCommandJson(cmd.dump());
+    EXPECT_EQ(eng->getController().getBuildingFloors(), 5u);
+
+    auto j = nlohmann::json::parse(json_str);
+    EXPECT_EQ(j["building_floors"].get<uint32_t>(), 5u);
+}
+
+

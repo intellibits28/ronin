@@ -51,7 +51,7 @@ struct TuningProfile {
     float bandpass_high_hz;
 };
 
-// Biquad High-Pass filter for sensor drift & DC offset removal
+// Biquad High-Pass filter for sensor drift & DC offset removal (64-bit IEEE 754 precision)
 class HighPassBiquad {
 public:
     HighPassBiquad();
@@ -59,8 +59,8 @@ public:
     float process(float sample);
     void reset();
 private:
-    float b0, b1, b2, a1, a2;
-    float z1, z2;
+    double b0, b1, b2, a1, a2;
+    double z1, z2;
 };
 
 // Biquad Band-Pass filter for isolating target string fundamental frequencies
@@ -73,6 +73,17 @@ public:
 private:
     float b0, b1, b2, a1, a2;
     float z1, z2;
+};
+
+// 4-Factor Research-Grade Quality Gate Report
+struct ShmQualityReport {
+    int total_score_pct = 100;
+    int sensor_stability_score = 30; // Max 30% (sample jitter & clock drift)
+    int noise_level_score = 25;      // Max 25% (noise floor & transient shock penalties)
+    int coupling_quality_score = 25; // Max 25% (gravity vector variance & stillness)
+    int frequency_stability_score = 20; // Max 20% (persistence streak & confidence)
+    std::string quality_category = "RESEARCH_GRADE"; // RESEARCH_GRADE (>=85), GOOD (>=70), FAIR (>=50), UNRELIABLE (<50)
+    std::string diagnostics_explanation;
 };
 
 // Phase A: Top-5 Peak Candidate struct above noise floor with modal validation metrics
@@ -89,6 +100,9 @@ struct ShmPeakCandidate {
     float stage1_score = 0.0f;
     uint32_t persistence_streak = 0;
     float stage2_score = 0.0f;
+    // Nakamura H/V and Horizontal Sway validation
+    float hv_ratio = 1.0f;
+    bool is_horizontal_sway = false;
 };
 
 enum class StructureType {
@@ -432,6 +446,13 @@ public:
     static constexpr uint32_t getPostImpulseSettleThreshold() { return POST_IMPULSE_SETTLE_THRESHOLD; }
     static constexpr float getStructuralShiftPct() { return STRUCTURAL_SHIFT_PCT; }
 
+    // Phase 2 & 3: Longitudinal Welford statistics & Anomaly-First baseline protection
+    void setBuildingFloors(uint32_t floors);
+    uint32_t getBuildingFloors() const;
+    float getBaselineStdDev() const;
+    uint32_t getConsecutiveAnomalies() const;
+    bool isBaselineAnomalyBlocked() const;
+
 private:
     float calculateMovingMeanLocked() const;
     float calculateMovingStdDevLocked() const;
@@ -440,6 +461,7 @@ private:
     AdaptiveSamplingProfile m_active_profile;
     TuningProfile m_tuning_profile;
     StructureType m_structure_type = StructureType::SINGLE_STORY_MASONRY;
+    uint32_t m_building_floors = 0;
     ShmPeakPersistenceTracker m_persistence_tracker;
 
     // Fixed-capacity circular buffer optimized for low memory footprint on mobile
@@ -454,12 +476,17 @@ private:
     size_t m_nf_head;
     size_t m_nf_size;
 
-    // SHM: Historical baseline with multi-window convergence accumulator
+    // SHM: Historical baseline with multi-window convergence accumulator & Welford online tracking
     float m_baseline_f0;
     bool m_baseline_valid;
     uint32_t m_baseline_samples = 0;
     uint64_t m_baseline_timestamp_s = 0;
     float m_baseline_confidence_pct = 0.0f;
+    uint32_t m_welford_count = 0;
+    float m_welford_mean_f0 = 0.0f;
+    float m_welford_m2 = 0.0f;
+    uint32_t m_consecutive_anomalies = 0;
+    bool m_baseline_anomaly_blocked = false;
 
     // Baseline accumulator: collects f0 readings and locks when converged
     static constexpr size_t MIN_BASELINE_WINDOWS = 5;   // require 5 converging windows
@@ -555,6 +582,18 @@ struct VibeMonitorResult {
     uint32_t welch_segment_size = 512;
     uint32_t welch_overlap = 256;
     uint32_t welch_segments_used = 3;
+    uint32_t welch_segments_gated = 0;
+    // Phase 1 enhancements: Nakamura H/V & Superstructure Horizontal Sway
+    float hv_ratio = 1.0f;
+    bool is_horizontal_sway = false;
+    // Phase 2 enhancements: 4-Factor Research-Grade Quality Gate & Stationary Coupling
+    ShmQualityReport quality_report;
+    float gravity_variance = 0.0f;
+    // Phase 3 enhancements: Longitudinal Welford stats & Anomaly Protection
+    float baseline_std_dev_hz = 0.0f;
+    uint32_t consecutive_anomalies = 0;
+    bool baseline_anomaly_blocked = false;
+    uint32_t building_floors = 0;
     // Active Inference Level 1 Sensory Gating
     float free_energy = 0.0f;
     Ronin::Kernel::Reasoning::SensoryGazeState gaze_state = Ronin::Kernel::Reasoning::SensoryGazeState::QUIESCENT;

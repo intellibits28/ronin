@@ -24,6 +24,7 @@ SemanticRouter::SparseVector SemanticRouter::vectorize(const std::string& text) 
     SparseVector vec;
     auto norm_res = NLP::MyanmarLinguisticNormalizer::normalize(text);
     std::string clean = norm_res.cleaned_text.empty() ? text : norm_res.cleaned_text;
+    std::transform(clean.begin(), clean.end(), clean.begin(), [](unsigned char c){ return std::tolower(c); });
     if (clean.empty()) return vec;
 
     std::unordered_map<uint32_t, float> feat_map;
@@ -224,7 +225,7 @@ void SemanticRouter::buildIndex() {
         } else if (name.find("VAULT") != std::string::npos) {
             g.threshold = 0.28f;
         } else {
-            g.threshold = 0.32f;
+            g.threshold = 0.28f;
         }
         g.sub_clusters = std::move(clusters);
         m_indexed_groups.push_back(std::move(g));

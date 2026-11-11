@@ -170,7 +170,7 @@ inline std::vector<IntentSubCluster> getCuratedIntentClusters() {
             "what can you do", "help me"
         }},
         {"CHAT_QUERY", LanguageRegister::MM, "_MM", {
-            "မင်္ဂလာပါ", "နေကောင်းလား", "မင်းဘယ်သူလဲ", "မင်းဘာလုပ်နိုင်လဲ", "ရှင်းပြပါ", "ကူညီပါ"
+            "မင်္ဂလာပါ", "နေကောင်းလား", "မင်းဘယ်သူလဲ", "မင်းဘာလုပ်နိုင်လဲ", "ဘာတွေလုပ်နိုင်လဲ", "ရှင်းပြပါ", "ကူညီပါ"
         }},
         {"CHAT_QUERY", LanguageRegister::MIX, "_MIX", {
             "hi ronin", "hello ronin", "ronin က ဘာတွေလုပ်နိုင်လဲ", "ဘာလုပ်ပေးနိုင်လဲ"
