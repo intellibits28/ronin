@@ -95,6 +95,36 @@ TEST_F(EvolutionTest, FastPathSemanticRouterBypass) {
         EXPECT_FALSE(vault_plan.plan_steps.empty());
         EXPECT_EQ(vault_plan.plan_steps[0], "LOOKUP_VAULT");
         EXPECT_EQ(vault_plan.parameters["vault_title"], "gemini api key");
+
+        // 3.b Verify "show my Gemini API key" routes to Vault lookup, NEVER location
+        AgentPlan show_key_plan = planner.createPlan("show my Gemini API key");
+        EXPECT_EQ(show_key_plan.intent_name, "LOOKUP_VAULT");
+        EXPECT_FALSE(show_key_plan.plan_steps.empty());
+        EXPECT_EQ(show_key_plan.plan_steps[0], "LOOKUP_VAULT");
+        EXPECT_EQ(show_key_plan.parameters["vault_title"], "gemini api key");
+
+        // 3.c Verify "update my Gemini API key to AIzaSy12345" routes to Vault update
+        AgentPlan update_key_plan = planner.createPlan("update my Gemini API key to AIzaSy12345");
+        EXPECT_EQ(update_key_plan.intent_name, "UPDATE_VAULT");
+        EXPECT_FALSE(update_key_plan.plan_steps.empty());
+        EXPECT_EQ(update_key_plan.plan_steps[0], "SAVE_VAULT");
+        EXPECT_EQ(update_key_plan.parameters["vault_title"], "gemini api key");
+        EXPECT_EQ(update_key_plan.parameters["vault_content"], "AIzaSy12345");
+
+        // 3.d Verify Burmese update "Gemini API key ကို AIzaSy98765 အဖြစ် ပြောင်းပေးပါ"
+        AgentPlan burmese_update_plan = planner.createPlan("Gemini API key ကို AIzaSy98765 အဖြစ် ပြောင်းပေးပါ");
+        EXPECT_EQ(burmese_update_plan.intent_name, "UPDATE_VAULT");
+        EXPECT_FALSE(burmese_update_plan.plan_steps.empty());
+        EXPECT_EQ(burmese_update_plan.plan_steps[0], "SAVE_VAULT");
+        EXPECT_EQ(burmese_update_plan.parameters["vault_title"], "gemini api key");
+        EXPECT_EQ(burmese_update_plan.parameters["vault_content"], "AIzaSy98765");
+
+        // 3.e Verify LongTermMemory vault update in-place and prefix stripping
+        EXPECT_TRUE(ltm->storeVault("Gemini API key", "old_encrypted_key"));
+        EXPECT_EQ(ltm->lookupVault("gemini api key"), "old_encrypted_key");
+        EXPECT_TRUE(ltm->storeVault("Gemini API key", "new_encrypted_key"));
+        EXPECT_EQ(ltm->lookupVault("gemini api key"), "new_encrypted_key");
+        EXPECT_EQ(ltm->lookupVault("my gemini api key"), "new_encrypted_key");
     }
 
     // 4. File search test
@@ -105,6 +135,19 @@ TEST_F(EvolutionTest, FastPathSemanticRouterBypass) {
         EXPECT_EQ(file_plan.plan_steps[0], "FILE_SEARCH");
         EXPECT_EQ(file_plan.parameters["query"], "invoice.pdf");
     }
+}
+
+TEST_F(EvolutionTest, VaultIntentRoutingDoesNotTriggerLocation) {
+    IntentEngine engine(ltm.get());
+
+    // 1. "show my Gemini API key" MUST NOT route to Location (Node 5)
+    CognitiveIntent intent_key = engine.process("show my Gemini API key", "");
+    EXPECT_EQ(intent_key.category, IntentCategory::AGENT_PLAN);
+    EXPECT_NE(intent_key.id, 5); // 5 is LocationNode!
+
+    // 2. "where am I" MUST route to Location (Node 5)
+    CognitiveIntent intent_loc = engine.process("where am i", "");
+    EXPECT_EQ(intent_loc.id, 5);
 }
 
 #include "capabilities/tool_registry.h"

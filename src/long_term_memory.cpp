@@ -334,6 +334,23 @@ bool LongTermMemory::storeVault(const std::string& title, const std::string& enc
     if (!m_db) { LOGE(TAG, "storeVault failed: DB is null."); return false; }
     if (m_read_only.load()) { LOGW(TAG, "storeVault blocked: Read-only mode active"); return false; }
     std::lock_guard<std::mutex> lock(m_mutex);
+
+    // 1. Try to update existing entry in place (case-insensitive) to prevent stale duplicates
+    const char* update_sql = "UPDATE vault SET encrypted_blob = ?, created_at = ? WHERE LOWER(title) = LOWER(?);";
+    sqlite3_stmt* update_stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, update_sql, -1, &update_stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(update_stmt, 1, encrypted_blob.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(update_stmt, 2, std::time(nullptr));
+        sqlite3_bind_text(update_stmt, 3, title.c_str(), -1, SQLITE_STATIC);
+        if (sqlite3_step(update_stmt) == SQLITE_DONE && sqlite3_changes(m_db) > 0) {
+            sqlite3_finalize(update_stmt);
+            LOGI(TAG, "storeVault updated existing entry: %s", title.c_str());
+            return true;
+        }
+        sqlite3_finalize(update_stmt);
+    }
+
+    // 2. Otherwise insert new vault entry
     const char* sql = "INSERT INTO vault (title, encrypted_blob, created_at) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
@@ -365,6 +382,29 @@ std::string LongTermMemory::lookupVault(const std::string& title) {
         }
     }
     sqlite3_finalize(stmt);
+
+    // If query failed and input has leading pronoun/article, retry with stripped prefix
+    if (result.empty()) {
+        std::string stripped = title;
+        for (const std::string& prefix : {"my ", "the ", "a ", "our "}) {
+            if (stripped.rfind(prefix, 0) == 0) {
+                stripped = stripped.substr(prefix.length());
+                break;
+            }
+        }
+        if (stripped != title && !stripped.empty()) {
+            std::string stripped_query = "%" + stripped + "%";
+            if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+                sqlite3_bind_text(stmt, 1, stripped_query.c_str(), -1, SQLITE_STATIC);
+                if (sqlite3_step(stmt) == SQLITE_ROW) {
+                    const unsigned char* val = sqlite3_column_text(stmt, 0);
+                    if (val) result = reinterpret_cast<const char*>(val);
+                }
+            }
+            sqlite3_finalize(stmt);
+        }
+    }
+
     return result;
 }
 

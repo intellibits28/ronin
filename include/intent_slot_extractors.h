@@ -49,6 +49,7 @@ public:
     static SmsSlotData extractSmsSlots(const std::string& input);
     static AlarmSlotData extractAlarmSlots(const std::string& input);
     static VaultSlotData extractVaultSlots(const std::string& input);
+    static std::string cleanVaultTitle(const std::string& raw);
     static FileSearchSlotData extractFileSearchSlots(const std::string& input);
     static LocationSlotData extractLocationSlots(const std::string& input);
 

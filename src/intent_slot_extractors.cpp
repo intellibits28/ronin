@@ -123,37 +123,133 @@ AlarmSlotData IntentSlotExtractors::extractAlarmSlots(const std::string& input) 
     return slots;
 }
 
+std::string IntentSlotExtractors::cleanVaultTitle(const std::string& raw) {
+    std::string t = raw;
+    std::vector<std::string> verbs = {
+        "update", "save", "store", "add", "change", "replace", "modify", "set",
+        "lookup", "find", "show", "get", "view", "what", "is", "tell", "check",
+        "my", "the", "a", "an", "in", "into", "from", "for", "vault", "secret", "entry", "credential",
+        "ကျွန်တော့်", "ကျွန်မ", "ငါ့", "ရဲ့", "ကို", "ထဲ", "ထဲက", "ထဲသို့", "ထဲမှာ",
+        "အသစ်", "အတွက်", "အချက်အလက်", "ရှာပေးပါ", "ရှာပေး", "ရှာဖွေ", "ရှာပါ", "ရှာ",
+        "ပြပေးပါ", "ပြပါ", "ပြ", "တောင်းပါ", "လုံခြုံရေး", "မှတ်ထား", "သိမ်းပါ", "သိမ်း"
+    };
+    for (const auto& w : verbs) {
+        size_t p = 0;
+        std::string wl = w;
+        std::transform(wl.begin(), wl.end(), wl.begin(), ::tolower);
+        std::string tl = t;
+        std::transform(tl.begin(), tl.end(), tl.begin(), ::tolower);
+        while ((p = tl.find(wl, p)) != std::string::npos) {
+            bool before_ok = (p == 0 || !std::isalnum(static_cast<unsigned char>(tl[p - 1])));
+            bool after_ok = (p + wl.length() == tl.length() || !std::isalnum(static_cast<unsigned char>(tl[p + wl.length()])));
+            if (before_ok && after_ok) {
+                t.replace(p, wl.length(), " ");
+                tl = t;
+                std::transform(tl.begin(), tl.end(), tl.begin(), ::tolower);
+                p += 1;
+            } else {
+                p += 1;
+            }
+        }
+    }
+    std::string res = trim(t);
+    for (char& c : res) {
+        if (static_cast<unsigned char>(c) < 128) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+    }
+    return res;
+}
+
 VaultSlotData IntentSlotExtractors::extractVaultSlots(const std::string& input) {
     VaultSlotData slots;
+    std::string input_lower = input;
+    for (char& c : input_lower) {
+        if (static_cast<unsigned char>(c) < 128) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+    }
     std::string norm = NLP::MyanmarLinguisticNormalizer::normalize(input).cleaned_text;
 
-    slots.is_save = (norm.find("save") != std::string::npos || norm.find("store") != std::string::npos ||
-                     norm.find("add") != std::string::npos || norm.find("သိမ်း") != std::string::npos ||
-                     norm.find("မှတ်") != std::string::npos);
+    slots.is_save = (
+        input_lower.find("save") != std::string::npos || input_lower.find("store") != std::string::npos ||
+        input_lower.find("add") != std::string::npos || input_lower.find("update") != std::string::npos ||
+        input_lower.find("change") != std::string::npos || input_lower.find("replace") != std::string::npos ||
+        input_lower.find("modify") != std::string::npos || input_lower.find("set") != std::string::npos ||
+        input_lower.find("သိမ်း") != std::string::npos || input_lower.find("မှတ်") != std::string::npos ||
+        input_lower.find("ပြင်") != std::string::npos || input_lower.find("ပြောင်း") != std::string::npos ||
+        input_lower.find("လဲ") != std::string::npos ||
+        norm.find("သိမ်း") != std::string::npos || norm.find("မှတ်") != std::string::npos ||
+        norm.find("ပြင်") != std::string::npos || norm.find("ပြောင်း") != std::string::npos
+    );
 
-    std::vector<std::string> to_remove = {
-        "lookup", "find", "show", "vault", "search", "query",
-        "ထဲက", "ထဲမှ", "ထဲသိမ်း", "ထဲမှာ", "လုံခြုံရေး", "မှတ်ထား", "သိမ်းပါ", "သိမ်း",
-        "ရှာပေးပါ", "ရှာပေး", "ရှာဖွေ", "ရှာ"
-    };
+    // 1. Check if input has quoted content
+    size_t q1 = input.find("\"");
+    if (q1 == std::string::npos) q1 = input.find("'");
+    size_t q2 = (q1 != std::string::npos) ? (input[q1] == '"' ? input.find("\"", q1 + 1) : input.find("'", q1 + 1)) : std::string::npos;
+    if (q1 != std::string::npos && q2 != std::string::npos) {
+        slots.content = input.substr(q1 + 1, q2 - q1 - 1);
+        std::string left = input.substr(0, q1) + " " + input.substr(q2 + 1);
+        slots.title = cleanVaultTitle(left);
+        slots.is_valid = !slots.title.empty();
+        return slots;
+    }
 
-    std::string target = norm;
-    for (const auto& word : to_remove) {
-        size_t p = 0;
-        while ((p = target.find(word, p)) != std::string::npos) {
-            target.replace(p, word.length(), " ");
-            p += 1;
+    // 2. Burmese grammatical pattern: <Title> ကို <Value> အဖြစ်/လို့/သို့ ပြောင်းပါ/ပြင်ပါ/သိမ်းပါ
+    if (slots.is_save) {
+        const std::string ko = " ကို ";
+        size_t p_ko = input_lower.find(ko);
+        if (p_ko != std::string::npos) {
+            const std::vector<std::string> burmese_as = {" အဖြစ် ", " လို့ ", " သို့ ", " အနေနဲ့ ", " အဖြစ်", " လို့", " သို့"};
+            for (const auto& as_word : burmese_as) {
+                size_t p_as = input_lower.find(as_word, p_ko + ko.length());
+                if (p_as != std::string::npos) {
+                    slots.title = cleanVaultTitle(input.substr(0, p_ko));
+                    slots.content = trim(input.substr(p_ko + ko.length(), p_as - (p_ko + ko.length())));
+                    slots.is_valid = !slots.title.empty();
+                    return slots;
+                }
+            }
         }
     }
 
-    // Check if input has quoted content or key-value separator
-    size_t q1 = input.find("\"");
-    size_t q2 = (q1 != std::string::npos) ? input.find("\"", q1 + 1) : std::string::npos;
-    if (q1 != std::string::npos && q2 != std::string::npos) {
-        slots.content = input.substr(q1 + 1, q2 - q1 - 1);
+    // 3. English key-value separators: <Title> to/as/with/:/= <Value>
+    if (slots.is_save) {
+        const std::vector<std::pair<std::string, size_t>> seps = {
+            {" to ", 4}, {" as ", 4}, {" with ", 6}, {" = ", 3}, {": ", 2},
+            {" အဖြစ် ", std::string(" အဖြစ် ").length()},
+            {" လို့ ", std::string(" လို့ ").length()},
+            {" သို့ ", std::string(" သို့ ").length()}
+        };
+        for (const auto& [sep, len] : seps) {
+            size_t p = input_lower.find(sep);
+            if (p != std::string::npos) {
+                std::string left = input.substr(0, p);
+                std::string right = input.substr(p + len);
+                
+                slots.title = cleanVaultTitle(left);
+                
+                std::vector<std::string> right_suffixes = {
+                    " in vault", " in the vault", " please",
+                    "ပြောင်းပေးပါ", "ပြောင်းပါ", "ပြင်ပေးပါ", "ပြင်ပါ",
+                    "သိမ်းပေးပါ", "သိမ်းပါ", "မှတ်ပေးပါ", "မှတ်ပါ",
+                    "update လုပ်ပေးပါ", "update လုပ်ပါ", "ပါ", "နော်"
+                };
+                for (const auto& suf : right_suffixes) {
+                    size_t sp = right.rfind(suf);
+                    if (sp != std::string::npos && sp + suf.length() == right.length()) {
+                        right = right.substr(0, sp);
+                    }
+                }
+                slots.content = trim(right);
+                slots.is_valid = !slots.title.empty();
+                return slots;
+            }
+        }
     }
 
-    slots.title = trim(target);
+    // 4. Fallback title extraction (lookup or save without separator)
+    slots.title = cleanVaultTitle(input_lower);
     slots.is_valid = !slots.title.empty();
     return slots;
 }

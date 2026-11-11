@@ -256,8 +256,18 @@ void SemanticRouter::initializeDefaultRoutes() {
         {
             "save to vault", "store secret key", "remember my password", "lookup vault",
             "remember fact", "save note", "recall note", "save password to vault",
+            "show my gemini api key", "show my api key", "show my password", "show my secret",
+            "get my api key", "get gemini api key", "what is my gemini api key", "what is my api key",
+            "gemini api key", "my gemini api key", "my api key", "api key",
+            "update gemini api key", "update my gemini api key", "update api key", "update vault", "update password",
+            "change gemini api key", "change my api key", "change password", "replace gemini api key",
+            "save gemini api key", "store gemini api key", "save my gemini api key",
             "မှတ်ထား", "သိမ်းထား", "လုံခြုံရေး vault", "လျှို့ဝှက်ချက် သိမ်း", "မှတ်ဉာဏ် ပြန်ရှာ",
-            "မှတ်ထားပေးပါ", "လျှို့ဝှက်ချက် သိမ်းထား"
+            "မှတ်ထားပေးပါ", "လျှို့ဝှက်ချက် သိမ်းထား",
+            "gemini api key ပြပါ", "api key ပြပါ", "api key ပြပေးပါ", "စကားဝှက် ပြပါ", "လျှို့ဝှက်ကုဒ် ပြပါ",
+            "gemini api key ပြင်ပါ", "gemini api key ပြင်ပေးပါ", "api key ပြင်ပေးပါ",
+            "gemini api key အသစ် ပြောင်းပါ", "api key အသစ် ပြောင်းပေးပါ", "gemini api key သိမ်းပါ",
+            "vault ထဲ သိမ်းပါ", "vault ထဲက ပြပါ"
         },
         0.30f
     });

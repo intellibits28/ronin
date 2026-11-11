@@ -69,11 +69,18 @@ bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
         std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
         
         if (lower_query.find("api key") != std::string::npos || lower_query.find("password") != std::string::npos || 
-            lower_query.find("secret") != std::string::npos || lower_query.find("vault") != std::string::npos) {
-            if (out_plan.intent_name.find("FACT") != std::string::npos) {
-                LOGW("RoninPlanner", "v1.6 Hardening: Overriding Hallucinated FACT intent to VAULT for sensitive query.");
-                out_plan.intent_name = (out_plan.intent_name == "SAVE_FACT" || out_plan.intent_name == "ADD_FACT") ? "SAVE_VAULT" : "LOOKUP_VAULT";
-                if (out_plan.plan_steps.size() > 0) out_plan.plan_steps[0] = out_plan.intent_name;
+            lower_query.find("secret") != std::string::npos || lower_query.find("vault") != std::string::npos ||
+            lower_query.find("token") != std::string::npos || lower_query.find("credential") != std::string::npos) {
+            if (out_plan.intent_name.find("FACT") != std::string::npos || 
+                out_plan.intent_name == "LOCATION" || out_plan.intent_name == "MAP") {
+                LOGW("RoninPlanner", "v1.6 Hardening: Overriding Hallucinated non-vault intent to VAULT for sensitive query.");
+                bool is_saving = (lower_query.find("save") != std::string::npos || lower_query.find("store") != std::string::npos ||
+                                  lower_query.find("update") != std::string::npos || lower_query.find("change") != std::string::npos ||
+                                  lower_query.find("replace") != std::string::npos || lower_query.find("set") != std::string::npos ||
+                                  lower_query.find("သိမ်း") != std::string::npos || lower_query.find("မှတ်") != std::string::npos ||
+                                  lower_query.find("ပြင်") != std::string::npos || lower_query.find("ပြောင်း") != std::string::npos);
+                out_plan.intent_name = is_saving ? "SAVE_VAULT" : "LOOKUP_VAULT";
+                out_plan.plan_steps = {out_plan.intent_name};
             }
         }
         
@@ -85,9 +92,12 @@ bool TaskPlanner::parsePlan(const std::string& llm_json, AgentPlan& out_plan) {
             }
         }
 
-        // Force SAVE_FACT or SAVE_VAULT if user explicitly asks to save/remember
+        // Force SAVE_FACT or SAVE_VAULT if user explicitly asks to save/update/remember
         if (lower_query.find("မှတ်ထား") != std::string::npos || lower_query.find("သိမ်းထား") != std::string::npos || 
-            lower_query.find("save") != std::string::npos || lower_query.find("store") != std::string::npos) {
+            lower_query.find("save") != std::string::npos || lower_query.find("store") != std::string::npos ||
+            lower_query.find("update") != std::string::npos || lower_query.find("change") != std::string::npos ||
+            lower_query.find("replace") != std::string::npos || lower_query.find("set") != std::string::npos ||
+            lower_query.find("ပြင်") != std::string::npos || lower_query.find("ပြောင်း") != std::string::npos) {
             
             if (out_plan.intent_name.find("FACT") != std::string::npos) {
                 LOGW("RoninPlanner", "v1.6 Hardening: Overriding Hallucinated LOOKUP intent to SAVE for memory query.");
@@ -596,12 +606,44 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             }
         }
         if (route_match.route_name == "LOCATION") {
-            auto loc_slots = IntentSlotExtractors::extractLocationSlots(input);
-            if (!loc_slots.is_saving) {
-                return {5, route_match.confidence, true, IntentCategory::TOOL_QUERY};
+            bool has_vault_keyword = (
+                input_lower.find("vault") != std::string::npos ||
+                input_lower.find("secret") != std::string::npos ||
+                input_lower.find("key") != std::string::npos ||
+                input_lower.find("api") != std::string::npos ||
+                input_lower.find("password") != std::string::npos ||
+                input_lower.find("token") != std::string::npos ||
+                input_lower.find("credential") != std::string::npos ||
+                input_lower.find("လုံခြုံ") != std::string::npos ||
+                input_lower.find("လျှို့ဝှက်") != std::string::npos ||
+                input_lower.find("စကားဝှက်") != std::string::npos
+            );
+            bool has_loc_keyword = (
+                input_lower.find("location") != std::string::npos ||
+                input_lower.find("gps") != std::string::npos ||
+                input_lower.find("coordinates") != std::string::npos ||
+                input_lower.find("map") != std::string::npos ||
+                input_lower.find("where") != std::string::npos ||
+                input_lower.find("navigate") != std::string::npos ||
+                input_lower.find("position") != std::string::npos ||
+                input_lower.find("တည်နေရာ") != std::string::npos ||
+                input_lower.find("မြေပုံ") != std::string::npos ||
+                input_lower.find("ဘယ်မှာ") != std::string::npos ||
+                input_lower.find("ဘယ်ရောက်") != std::string::npos ||
+                input_lower.find("နေရာ") != std::string::npos
+            );
+            if (has_vault_keyword && !has_loc_keyword) {
+                Ronin::Kernel::Capability::HardwareBridge::updateDevHUD("PLANNING", "PENDING", 0.0f, "");
+                return {1, 0.95f, true, IntentCategory::AGENT_PLAN};
             }
-            Ronin::Kernel::Capability::HardwareBridge::updateDevHUD("PLANNING", "PENDING", 0.0f, "");
-            return {1, route_match.confidence, true, IntentCategory::AGENT_PLAN};
+            if (has_loc_keyword) {
+                auto loc_slots = IntentSlotExtractors::extractLocationSlots(input);
+                if (!loc_slots.is_saving) {
+                    return {5, route_match.confidence, true, IntentCategory::TOOL_QUERY};
+                }
+                Ronin::Kernel::Capability::HardwareBridge::updateDevHUD("PLANNING", "PENDING", 0.0f, "");
+                return {1, route_match.confidence, true, IntentCategory::AGENT_PLAN};
+            }
         }
         if (route_match.route_name == "PITCH_ANALYSIS" ||
             route_match.route_name == "SHM_VIBRATION" ||
@@ -656,7 +698,9 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
                            token_set.count("doc") || token_set.count("txt") ||
                            token_set.count("ဖိုင်") || token_set.count("မနက်ဖြန်") ||
                            token_set.count("ဒီနေ့") || token_set.count("ချိန်း") ||
-                           token_set.count("vault") || token_set.count("လုံခြုံ");
+                           token_set.count("vault") || token_set.count("လုံခြုံ") ||
+                           token_set.count("update") || token_set.count("ပြင်") ||
+                           token_set.count("ပြောင်း") || token_set.count("လဲ");
 
     // v12.18: Decouple sensor from simple agent to prevent location->sensor misrouting
     bool is_sensor_req = token_set.count("တုန်ခါမှု") || token_set.count("vibration") || 
@@ -896,8 +940,98 @@ bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan
         return false;
     }
     
-    // 3. Location/Map Check
-    bool has_loc_kw = (norm.find("location") != std::string::npos || norm.find("gps") != std::string::npos || 
+    auto trim = [](const std::string& str) -> std::string {
+        size_t first = str.find_first_not_of(" \t\r\n'\"");
+        if (first == std::string::npos) return "";
+        size_t last = str.find_last_not_of(" \t\r\n'\"");
+        return str.substr(first, (last - first + 1));
+    };
+
+    auto extractSearchTarget = [&](const std::string& raw_in) -> std::string {
+        std::string target = raw_in;
+        std::vector<std::string> to_remove = {
+            "lookup", "get", "find", "show", "vault", "secret", "in", "for", "from",
+            "search", "files", "file", "query", "my", "the", "me", "what", "is",
+            "tell", "view", "check", "please",
+            "ရှာပေးပါ", "ရှာပါ", "ရှာ", "ပြပေးပါ", "ပြပါ", "ပြ", "တောင်းပါ", "လုံခြုံရေး", "ထဲက", "ထဲမှ", "ဖိုင်",
+            "ကျွန်တော့်", "ကျွန်မ", "ငါ့", "ရဲ့", "ကို", "ပါ", "ပေးပါ"
+        };
+        for (const auto& word : to_remove) {
+            size_t p = 0;
+            std::string w_lower = word;
+            std::transform(w_lower.begin(), w_lower.end(), w_lower.begin(), ::tolower);
+            while ((p = target.find(w_lower, p)) != std::string::npos) {
+                bool before_ok = (p == 0 || !std::isalnum(static_cast<unsigned char>(target[p - 1])));
+                bool after_ok = (p + w_lower.length() == target.length() || !std::isalnum(static_cast<unsigned char>(target[p + w_lower.length()])));
+                
+                if (before_ok && after_ok) {
+                    target.replace(p, w_lower.length(), " ");
+                    p += 1;
+                } else {
+                    p += 1;
+                }
+            }
+        }
+        return trim(target);
+    };
+
+    // 3. Vault / Secret / Credential Check
+    bool has_vault_kw = (norm.find("vault") != std::string::npos || norm.find("secret") != std::string::npos || 
+                         norm.find("key") != std::string::npos || norm.find("api") != std::string::npos || 
+                         norm.find("password") != std::string::npos || norm.find("token") != std::string::npos ||
+                         norm.find("credential") != std::string::npos || norm.find("လုံခြုံ") != std::string::npos ||
+                         norm.find("လျှို့ဝှက်") != std::string::npos || norm.find("စကားဝှက်") != std::string::npos);
+    if (has_vault_kw) {
+        bool is_sending = (norm.find("sms") != std::string::npos || norm.find("message") != std::string::npos || 
+                           norm.find("ပို့") != std::string::npos || norm.find("email") != std::string::npos || 
+                           norm.find("mail") != std::string::npos || norm.find("send") != std::string::npos);
+        if (!is_sending) {
+            bool is_saving = (norm.find("save") != std::string::npos || norm.find("store") != std::string::npos || 
+                              norm.find("add") != std::string::npos || norm.find("update") != std::string::npos ||
+                              norm.find("change") != std::string::npos || norm.find("replace") != std::string::npos ||
+                              norm.find("modify") != std::string::npos || norm.find("set") != std::string::npos ||
+                              norm.find("သိမ်း") != std::string::npos || norm.find("မှတ်") != std::string::npos ||
+                              norm.find("ပြင်") != std::string::npos || norm.find("ပြောင်း") != std::string::npos ||
+                              norm.find("လဲ") != std::string::npos);
+            if (is_saving) {
+                auto vault_slots = IntentSlotExtractors::extractVaultSlots(input);
+                if (vault_slots.is_valid && !vault_slots.content.empty()) {
+                    bool is_update = (norm.find("update") != std::string::npos || norm.find("change") != std::string::npos ||
+                                      norm.find("replace") != std::string::npos || norm.find("ပြင်") != std::string::npos ||
+                                      norm.find("ပြောင်း") != std::string::npos || norm.find("လဲ") != std::string::npos);
+                    out_plan.intent_name = is_update ? "UPDATE_VAULT" : "SAVE_VAULT";
+                    out_plan.plan_steps = {"SAVE_VAULT"};
+                    out_plan.parameters["vault_title"] = vault_slots.title;
+                    out_plan.parameters["vault_content"] = vault_slots.content;
+                    out_plan.parameters["action"] = "SAVE_VAULT";
+                    out_plan.parameters["original_query"] = input;
+                    auto now = std::chrono::system_clock::now().time_since_epoch().count();
+                    out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
+                    return true;
+                } else if (vault_slots.content.empty()) {
+                    // Update/save requested without value: guide user via conversational fallback
+                    out_plan.intent_name = "fallback_chat";
+                    out_plan.plan_steps = {};
+                    out_plan.parameters["original_query"] = input;
+                    return true;
+                }
+            } else {
+                std::string target = extractSearchTarget(norm);
+                if (!target.empty()) {
+                    out_plan.intent_name = "LOOKUP_VAULT";
+                    out_plan.plan_steps = {"LOOKUP_VAULT"};
+                    out_plan.parameters["vault_title"] = target;
+                    out_plan.parameters["original_query"] = input;
+                    auto now = std::chrono::system_clock::now().time_since_epoch().count();
+                    out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 4. Location/Map Check
+    bool has_loc_kw = (!has_vault_kw) && (norm.find("location") != std::string::npos || norm.find("gps") != std::string::npos || 
                        norm.find("map") != std::string::npos || norm.find("တည်နေရာ") != std::string::npos || 
                        norm.find("မြေပုံ") != std::string::npos || norm.find("နေရာ") != std::string::npos);
     if (has_loc_kw) {
@@ -936,64 +1070,6 @@ bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan
             auto now = std::chrono::system_clock::now().time_since_epoch().count();
             out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
             return true;
-        }
-    }
-    
-    auto trim = [](const std::string& str) -> std::string {
-        size_t first = str.find_first_not_of(" \t\r\n'\"");
-        if (first == std::string::npos) return "";
-        size_t last = str.find_last_not_of(" \t\r\n'\"");
-        return str.substr(first, (last - first + 1));
-    };
-
-    auto extractSearchTarget = [&](const std::string& raw_in) -> std::string {
-        std::string target = raw_in;
-        std::vector<std::string> to_remove = {
-            "lookup", "get", "find", "show", "vault", "secret", "in", "for", "from",
-            "search", "files", "file", "query",
-            "ရှာပေးပါ", "ရှာပါ", "ပြပါ", "တောင်းပါ", "လုံခြုံရေး", "ထဲက", "ထဲမှ", "ဖိုင်"
-        };
-        for (const auto& word : to_remove) {
-            size_t p = 0;
-            std::string w_lower = word;
-            std::transform(w_lower.begin(), w_lower.end(), w_lower.begin(), ::tolower);
-            while ((p = target.find(w_lower, p)) != std::string::npos) {
-                bool before_ok = (p == 0 || !std::isalnum(static_cast<unsigned char>(target[p - 1])));
-                bool after_ok = (p + w_lower.length() == target.length() || !std::isalnum(static_cast<unsigned char>(target[p + w_lower.length()])));
-                
-                if (before_ok && after_ok) {
-                    target.replace(p, w_lower.length(), " ");
-                    p += 1;
-                } else {
-                    p += 1;
-                }
-            }
-        }
-        return trim(target);
-    };
-
-    // 4. Vault / Memory Lookup Check
-    bool has_vault_kw = (norm.find("vault") != std::string::npos || norm.find("secret") != std::string::npos || 
-                         norm.find("key") != std::string::npos || norm.find("api") != std::string::npos || 
-                         norm.find("password") != std::string::npos || norm.find("လုံခြုံ") != std::string::npos);
-    if (has_vault_kw) {
-        bool is_saving = (norm.find("save") != std::string::npos || norm.find("store") != std::string::npos || 
-                          norm.find("add") != std::string::npos || norm.find("သိမ်း") != std::string::npos || 
-                          norm.find("မှတ်") != std::string::npos);
-        bool is_sending = (norm.find("sms") != std::string::npos || norm.find("message") != std::string::npos || 
-                           norm.find("ပို့") != std::string::npos || norm.find("email") != std::string::npos || 
-                           norm.find("mail") != std::string::npos || norm.find("send") != std::string::npos);
-        if (!is_saving && !is_sending) {
-            std::string target = extractSearchTarget(norm);
-            if (!target.empty()) {
-                out_plan.intent_name = "LOOKUP_VAULT";
-                out_plan.plan_steps = {"LOOKUP_VAULT"};
-                out_plan.parameters["vault_title"] = target;
-                out_plan.parameters["original_query"] = input;
-                auto now = std::chrono::system_clock::now().time_since_epoch().count();
-                out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
-                return true;
-            }
         }
     }
     

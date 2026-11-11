@@ -1428,18 +1428,35 @@ class MainActivity : FragmentActivity() {
                                     "Fact saved: $entity.$attr = $value"
                                 } else "Error: Database failure."
                             }
-                            actionName.contains("VAULT") && (actionName.contains("SAVE") || actionName.contains("ADD")) -> {
+                            actionName.contains("VAULT") && (actionName.contains("SAVE") || actionName.contains("ADD") || actionName.contains("UPDATE") || actionName.contains("CHANGE") || actionName.contains("REPLACE") || actionName.contains("SET")) -> {
                                 val title = params["vault_title"] ?: params["title"] ?: "Secret"
                                 val content = params["vault_content"] ?: params["content"] ?: ""
-                                authenticateAndExecute("Store Secret", "Authenticate to encrypt and store in Vault") {
-                                    val encrypted = nativeEngine.encryptSecret(content)
-                                    if (nativeEngine.storeVault(title, encrypted)) {
-                                        nativeEngine.pushKernelMessage("[AGENT] Vault entry saved: $title")
-                                        "Vault entry saved: $title" 
-                                    } else "Error: Database failure."
+                                if (content.isEmpty()) {
+                                    "Error: Secret content is empty."
+                                } else {
+                                    val isUpdate = actionName.contains("UPDATE") || actionName.contains("CHANGE") || actionName.contains("REPLACE")
+                                    val opTitle = if (isUpdate) "Update Secret" else "Store Secret"
+                                    val opDesc = if (isUpdate) "Authenticate to update encrypted secret in Vault" else "Authenticate to encrypt and store in Vault"
+                                    val msg = if (isUpdate) "Vault entry updated: $title" else "Vault entry saved: $title"
+                                    authenticateAndExecute(opTitle, opDesc) {
+                                        val encrypted = nativeEngine.encryptSecret(content)
+                                        if (nativeEngine.storeVault(title, encrypted)) {
+                                            // Synchronize with Cloud Provider API key if applicable
+                                            if (title.lowercase().contains("gemini")) {
+                                                saveApiKey("Gemini", content)
+                                                saveApiKey("Gemini-Flash", content)
+                                            } else if (title.lowercase().contains("openrouter")) {
+                                                saveApiKey("OpenRouter", content)
+                                            } else if (title.lowercase().contains("openai")) {
+                                                saveApiKey("OpenAI", content)
+                                            }
+                                            nativeEngine.pushKernelMessage("[AGENT] $msg")
+                                            msg 
+                                        } else "Error: Database failure."
+                                    }
                                 }
                             }
-                            actionName.contains("VAULT") && (actionName.contains("QUERY") || actionName.contains("LOOKUP") || actionName.contains("CHECK") || actionName.contains("READ") || actionName.contains("ACCESS")) -> {
+                            actionName.contains("VAULT") && (actionName.contains("QUERY") || actionName.contains("LOOKUP") || actionName.contains("CHECK") || actionName.contains("READ") || actionName.contains("ACCESS") || actionName.contains("SHOW") || actionName.contains("GET")) -> {
                                 val rawTitle = params["vault_title"] ?: params["title"] ?: params["query"] ?: ""
                                 if (rawTitle.isEmpty()) {
                                     ""
@@ -1447,7 +1464,13 @@ class MainActivity : FragmentActivity() {
                                     authenticateAndExecute("Access Vault", "Authenticate to retrieve secret: $rawTitle") {
                                         var encrypted = nativeEngine.lookupVault(rawTitle)
                                         if (encrypted.isEmpty()) {
-                                            listOf("card", "visa", "bank", "password", "key", "secret").forEach { kw ->
+                                            val stripped = rawTitle.replace(Regex("^(my|the|a|an|our)\\s+", RegexOption.IGNORE_CASE), "").trim()
+                                            if (stripped.isNotEmpty() && stripped != rawTitle) {
+                                                encrypted = nativeEngine.lookupVault(stripped)
+                                            }
+                                        }
+                                        if (encrypted.isEmpty()) {
+                                            listOf("gemini", "card", "visa", "bank", "password", "key", "secret", "token").forEach { kw ->
                                                 if (rawTitle.lowercase().contains(kw)) {
                                                     val res = nativeEngine.lookupVault(kw)
                                                     if (res.isNotEmpty()) { encrypted = res; return@forEach }
@@ -1458,7 +1481,25 @@ class MainActivity : FragmentActivity() {
                                             val decrypted = nativeEngine.decryptSecret(encrypted)
                                             nativeEngine.pushKernelMessage("\n[VAULT] Result: $decrypted")
                                             decrypted
-                                        } else "Error: No vault entry found."
+                                        } else {
+                                            // Fallback: Check configured cloud provider API key in SharedPreferences
+                                            val fallbackSpKey = if (rawTitle.lowercase().contains("gemini")) {
+                                                sharedPreferences.getString("Gemini", null)
+                                                    ?: sharedPreferences.getString("Gemini-Flash", null)
+                                                    ?: sharedPreferences.getString("gemini_api_key", null)
+                                            } else if (rawTitle.lowercase().contains("openrouter")) {
+                                                sharedPreferences.getString("OpenRouter", null)
+                                            } else if (rawTitle.lowercase().contains("openai")) {
+                                                sharedPreferences.getString("OpenAI", null)
+                                            } else null
+
+                                            if (!fallbackSpKey.isNullOrEmpty()) {
+                                                nativeEngine.pushKernelMessage("\n[SETTINGS] Result: $fallbackSpKey")
+                                                fallbackSpKey
+                                            } else {
+                                                "Error: No vault entry found."
+                                            }
+                                        }
                                     }
                                 }
                             }
