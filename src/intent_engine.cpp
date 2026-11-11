@@ -586,8 +586,25 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
     auto norm_result = NLP::MyanmarLinguisticNormalizer::normalize(input);
     std::string input_lower = norm_result.cleaned_text.empty() ? input : norm_result.cleaned_text;
 
+    // Phase 1 / Refinement 5: Stateful Multi-Turn Slot Carry-Over
+    if (hasPendingSlot()) {
+        std::string in_lower = input;
+        std::transform(in_lower.begin(), in_lower.end(), in_lower.begin(), ::tolower);
+        bool is_cancel = (in_lower.find("cancel") != std::string::npos || in_lower.find("stop") != std::string::npos ||
+                          in_lower.find("မလုပ်တော့") != std::string::npos || in_lower.find("မလိုတော့") != std::string::npos ||
+                          in_lower.find("မလုပ်နဲ့") != std::string::npos);
+        if (!is_cancel && in_lower != "hi" && in_lower != "hello" && in_lower != "မင်္ဂလာပါ") {
+            Ronin::Kernel::Capability::HardwareBridge::updateDevHUD("PLANNING", "PENDING", 1.0f, "");
+            return {1, 1.0f, true, IntentCategory::AGENT_PLAN};
+        }
+    }
+
     // Tier 1: Semantic Vector / Centroid Router (<1ms execution)
     RouteMatch route_match = m_semantic_router.route(input);
+    if (route_match.is_ambiguous || route_match.route_name == "CLARIFICATION") {
+        LOGI(TAG, "v13.0 SemanticRouter detected ambiguous intent (margin < 0.04)");
+        return {0, route_match.confidence, false, IntentCategory::CLARIFICATION};
+    }
     if (route_match.is_confident) {
         LOGI(TAG, "v13.0 SemanticRouter matched '%s' (conf: %.2f)",
              route_match.route_name.c_str(), route_match.confidence);
@@ -650,7 +667,10 @@ CognitiveIntent IntentEngine::process(const std::string& input, const std::strin
             route_match.route_name == "FILE_SEARCH" ||
             route_match.route_name == "SEND_SMS" ||
             route_match.route_name == "SET_ALARM" ||
-            route_match.route_name == "VAULT_MEMORY") {
+            route_match.route_name == "VAULT_MEMORY" ||
+            route_match.route_name == "VAULT_LOOKUP" ||
+            route_match.route_name == "VAULT_UPDATE" ||
+            route_match.route_name == "VAULT_SAVE") {
             Ronin::Kernel::Capability::HardwareBridge::updateDevHUD("PLANNING", "PENDING", 0.0f, "");
             return {1, route_match.confidence, true, IntentCategory::AGENT_PLAN};
         }
@@ -807,6 +827,39 @@ static std::string normalizeBurmeseDigits(const std::string& s) {
 }
 
 bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan) {
+    // Phase 1 / Refinement 5: Fulfill pending slot from multi-turn clarification dialog
+    if (m_pending_slot.ttl_turns > 0) {
+        std::string in_lower = input;
+        std::transform(in_lower.begin(), in_lower.end(), in_lower.begin(), ::tolower);
+        bool is_cancel = (in_lower.find("cancel") != std::string::npos || in_lower.find("stop") != std::string::npos ||
+                          in_lower.find("quit") != std::string::npos || in_lower.find("မလုပ်တော့") != std::string::npos ||
+                          in_lower.find("မလိုတော့") != std::string::npos || in_lower.find("မလုပ်နဲ့") != std::string::npos);
+        if (is_cancel || in_lower == "hi" || in_lower == "hello" || in_lower == "မင်္ဂလာပါ") {
+            m_pending_slot = PendingSlotState();
+        } else {
+            auto trim_raw = [](const std::string& str) -> std::string {
+                size_t first = str.find_first_not_of(" \t\r\n'\"");
+                if (first == std::string::npos) return "";
+                size_t last = str.find_last_not_of(" \t\r\n'\"");
+                return str.substr(first, (last - first + 1));
+            };
+            std::string user_val = trim_raw(input);
+            if (!user_val.empty()) {
+                out_plan.intent_name = m_pending_slot.pending_intent;
+                out_plan.plan_steps = {"SAVE_VAULT"};
+                out_plan.parameters["vault_title"] = m_pending_slot.target_entity;
+                out_plan.parameters["vault_content"] = user_val;
+                out_plan.parameters["action"] = "SAVE_VAULT";
+                out_plan.parameters["original_query"] = input;
+                auto now = std::chrono::system_clock::now().time_since_epoch().count();
+                out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
+
+                m_pending_slot = PendingSlotState(); // Clear once fulfilled
+                return true;
+            }
+        }
+    }
+
     auto norm_res = NLP::MyanmarLinguisticNormalizer::normalize(input);
     std::string norm = norm_res.raw_normalized_text;
     std::string clean = norm_res.cleaned_text;
@@ -1007,12 +1060,22 @@ bool TaskPlanner::tryFastPathRoute(const std::string& input, AgentPlan& out_plan
                     out_plan.parameters["original_query"] = input;
                     auto now = std::chrono::system_clock::now().time_since_epoch().count();
                     out_plan.parameters["corr_id"] = "FAST_PATH_BYPASS_" + std::to_string(now);
+                    m_pending_slot = PendingSlotState();
                     return true;
                 } else if (vault_slots.content.empty()) {
-                    // Update/save requested without value: guide user via conversational fallback
+                    // Update/save requested without value: store pending slot and guide user via conversational fallback
+                    bool is_update = (norm.find("update") != std::string::npos || norm.find("change") != std::string::npos ||
+                                      norm.find("replace") != std::string::npos || norm.find("ပြင်") != std::string::npos ||
+                                      norm.find("ပြောင်း") != std::string::npos || norm.find("လဲ") != std::string::npos);
+                    m_pending_slot.pending_intent = is_update ? "UPDATE_VAULT" : "SAVE_VAULT";
+                    m_pending_slot.target_slot = "vault_content";
+                    m_pending_slot.target_entity = vault_slots.title.empty() ? "gemini api key" : vault_slots.title;
+                    m_pending_slot.ttl_turns = 1;
+
                     out_plan.intent_name = "fallback_chat";
                     out_plan.plan_steps = {};
                     out_plan.parameters["original_query"] = input;
+                    out_plan.parameters["clarification_needed"] = "vault_content";
                     return true;
                 }
             } else {

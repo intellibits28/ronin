@@ -25,6 +25,16 @@
 namespace Ronin::Kernel::Intent {
 
 /**
+ * Stateful slot carry-over for clarification multi-turn dialogs (Architectural Refinement 5).
+ */
+struct PendingSlotState {
+    std::string pending_intent; // e.g. "VAULT_UPDATE", "VAULT_SAVE"
+    std::string target_slot;    // e.g. "vault_content"
+    std::string target_entity;  // e.g. "gemini api key"
+    int ttl_turns = 0;          // turns remaining (1 = active)
+};
+
+/**
  * v7.0: Orchestrates complex multi-step tasks using LLM-driven planning.
  */
 class TaskPlanner {
@@ -42,10 +52,16 @@ public:
 
     bool tryFastPathRoute(const std::string& input, AgentPlan& out_plan);
 
+    PendingSlotState getPendingSlot() const { return m_pending_slot; }
+    void setPendingSlot(const PendingSlotState& state) { m_pending_slot = state; }
+    void clearPendingSlot() { m_pending_slot = PendingSlotState(); }
+    bool hasPendingSlot() const { return m_pending_slot.ttl_turns > 0; }
+
 private:
     Model::InferenceEngine* m_engine;
     Reasoning::BeliefState* m_belief_state;
     Memory::LongTermMemory* m_ltm;
+    PendingSlotState m_pending_slot;
 };
 
 enum class ThermalState {
@@ -80,6 +96,22 @@ public:
 
     TaskPlanner* getPlanner() const {
         return m_planner.get();
+    }
+
+    PendingSlotState getPendingSlot() const {
+        return m_planner ? m_planner->getPendingSlot() : PendingSlotState();
+    }
+
+    void setPendingSlot(const PendingSlotState& state) {
+        if (m_planner) m_planner->setPendingSlot(state);
+    }
+
+    void clearPendingSlot() {
+        if (m_planner) m_planner->clearPendingSlot();
+    }
+
+    bool hasPendingSlot() const {
+        return m_planner ? m_planner->hasPendingSlot() : false;
     }
 
     void setBeliefState(Reasoning::BeliefState* bs) {

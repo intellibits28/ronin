@@ -1,5 +1,6 @@
 #include "failure_telemetry_bus.h"
 #include "ronin_log.h"
+#include "security/credential_sanitizer.h"
 #include <chrono>
 
 #define TAG "FailureTelemetry"
@@ -12,11 +13,12 @@ FailureTelemetryBus& FailureTelemetryBus::getInstance() {
 }
 
 void FailureTelemetryBus::logFailure(const std::string& exec_id, const std::string& node_id, FailureType type, const std::string& details) {
+    std::string safe_details = Security::CredentialSanitizer::sanitizeText(details);
     LOGW(TAG, "[SEMANTIC FAILURE] ExecID: %s | Node: %s | Type: %d | Details: %s", 
-         exec_id.c_str(), node_id.c_str(), static_cast<int>(type), details.c_str());
+         exec_id.c_str(), node_id.c_str(), static_cast<int>(type), safe_details.c_str());
          
     if (!m_ltm) return;
-    m_ltm->storeFailure(node_id, static_cast<int>(type), 0, details);
+    m_ltm->storeFailure(node_id, static_cast<int>(type), 0, safe_details);
 }
 
 std::vector<Ronin::Kernel::FailureRecord> FailureTelemetryBus::getRecentFailures(const std::string& node_id, int limit) {

@@ -119,6 +119,7 @@ set(RONIN_CORE_SOURCES
     src/myanmar_linguistic_normalizer.cpp
     src/intent_slot_extractors.cpp
     src/semantic_router.cpp
+    src/security/credential_sanitizer.cpp
     src/dsp/resonance_analyzer.cpp
     src/dsp/dsp_tools.cpp
     src/dsp/vibe_monitor.cpp
@@ -266,4 +267,8 @@ if(NOT RONIN_BUILD_ANDROID)
     add_executable(ronin_active_inference_benchmark tests/active_inference_benchmark.cpp)
     target_link_libraries(ronin_active_inference_benchmark ronin_core gtest_main)
     add_test(NAME ronin_active_inference_benchmark COMMAND ronin_active_inference_benchmark)
+
+    add_executable(ronin_semantic_routing_test tests/semantic_routing_test.cpp)
+    target_link_libraries(ronin_semantic_routing_test ronin_core gtest_main)
+    add_test(NAME ronin_semantic_routing_test COMMAND ronin_semantic_routing_test)
 endif()

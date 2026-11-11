@@ -1,0 +1,347 @@
+{
+  "schema_version": 2,
+  "model_target": "embeddinggemma-2-270m",
+  "embedding_dim": 768,
+  "intents": [
+    {
+      "name": "VAULT_LOOKUP",
+      "registers": {
+        "EN": [
+          "show my api key",
+          "get my secret key",
+          "lookup vault password",
+          "what is my api key",
+          "show my gemini api key",
+          "view vault secret",
+          "retrieve my password",
+          "find my api token"
+        ],
+        "MM": [
+          "လျှို့ဝှက်ကုဒ် ပြပါ",
+          "စကားဝှက် ရှာပေးပါ",
+          "လျှို့ဝှက်ချက် ပြပါ",
+          "စကားဝှက် ဘာလဲ",
+          "လုံခြုံရေး ကုဒ် ပြပေးပါ",
+          "လျှို့ဝှက်ချက် ဘာလဲ"
+        ],
+        "MIX": [
+          "gemini api key ပြပါ",
+          "my api key ပြပေးပါ",
+          "vault ထဲက key ပြပါ",
+          "gemini api key ဘာလဲ",
+          "openai key ရှာပေးပါ",
+          "gemini key ပြပါ"
+        ]
+      }
+    },
+    {
+      "name": "VAULT_UPDATE",
+      "registers": {
+        "EN": [
+          "update my gemini api key to",
+          "change password to",
+          "replace secret key with",
+          "modify api key",
+          "update vault entry to",
+          "reset my secret token to",
+          "change my api key"
+        ],
+        "MM": [
+          "လျှို့ဝှက်ကုဒ် အသစ် ပြောင်းပေးပါ",
+          "စကားဝှက် ပြင်ပါ",
+          "လျှို့ဝှက်ချက် အသစ် လဲပါ",
+          "စကားဝှက် အသစ် ပြောင်းပါ",
+          "လျှို့ဝှက်ကုဒ် ပြင်ဆင်ပါ"
+        ],
+        "MIX": [
+          "gemini api key ကို အဖြစ် ပြောင်းပေးပါ",
+          "api key အသစ် update လုပ်ပေးပါ",
+          "vault ထဲက key ပြင်ပါ",
+          "gemini key အသစ် လဲပေးပါ",
+          "gemini api key update လုပ်မယ်"
+        ]
+      }
+    },
+    {
+      "name": "VAULT_SAVE",
+      "registers": {
+        "EN": [
+          "save to vault",
+          "store secret key in vault",
+          "save password as",
+          "remember secret in vault",
+          "store credentials in vault",
+          "save api key as"
+        ],
+        "MM": [
+          "လုံခြုံရေး vault ထဲ သိမ်းပါ",
+          "လျှို့ဝှက်ချက် အဖြစ် သိမ်းထားပါ",
+          "စကားဝှက် သိမ်းပေးပါ",
+          "လျှို့ဝှက်ကုဒ် မှတ်ထားပါ",
+          "vault ထဲ သိမ်းပါ"
+        ],
+        "MIX": [
+          "gemini api key ကို vault ထဲ သိမ်းပါ",
+          "api key အသစ် သိမ်းထားပါ",
+          "password ကို vault ထဲ မှတ်ထားပါ",
+          "token ကို vault ထဲ ထည့်ပါ",
+          "ကားနံပါတ် vault ထဲသိမ်းပါ"
+        ]
+      }
+    },
+    {
+      "name": "LOCATION",
+      "registers": {
+        "EN": [
+          "where am i",
+          "my location",
+          "show my location",
+          "get gps coordinates",
+          "show location",
+          "open map",
+          "current position",
+          "navigate to current position"
+        ],
+        "MM": [
+          "ငါ အခု ဘယ်မှာလဲ",
+          "ငါ ဘယ်ရောက်နေလဲ",
+          "လက်ရှိ တည်နေရာ ပြပါ",
+          "မြေပုံ ဖွင့်ပါ",
+          "လက်ရှိ နေရာ ဘယ်မှာလဲ",
+          "မြေပုံ ကြည့်မယ်"
+        ],
+        "MIX": [
+          "current location ပြပါ",
+          "gps coordinates တောင်းပါ",
+          "map ဖွင့်ပေးပါ",
+          "my location ပြပါ",
+          "current position ဘယ်မှာလဲ"
+        ]
+      }
+    },
+    {
+      "name": "DEVICE_SETTINGS",
+      "registers": {
+        "EN": [
+          "turn on wifi",
+          "turn off wifi",
+          "toggle wifi",
+          "enable wifi",
+          "disable wifi",
+          "turn on bluetooth",
+          "turn off bluetooth",
+          "toggle bluetooth"
+        ],
+        "MM": [
+          "ဝိုင်ဖိုင် ဖွင့်",
+          "ဝိုင်ဖိုင် ပိတ်",
+          "ဘလူးတု ဖွင့်",
+          "ဘလူးတု ပိတ်",
+          "ဝိုင်ဖိုင် ဖွင့်ပေးပါ",
+          "ဘလူးတု ပိတ်လိုက်တော့"
+        ],
+        "MIX": [
+          "wifi ဖွင့်ပါ",
+          "wifi ပိတ်ပါ",
+          "bluetooth ဖွင့်ပေး",
+          "bluetooth ပိတ်ပေး",
+          "wifi toggle လုပ်ပါ"
+        ]
+      }
+    },
+    {
+      "name": "FILE_SEARCH",
+      "registers": {
+        "EN": [
+          "find pdf files",
+          "search documents",
+          "find file",
+          "locate invoice",
+          "search storage",
+          "find python script",
+          "find images"
+        ],
+        "MM": [
+          "ဖိုင် ရှာ",
+          "စာရွက်စာတမ်း ရှာ",
+          "ဖုန်းထဲက ဖိုင် ရှာ",
+          "စာရွက်စာတမ်းတွေ ရှာပေးပါ",
+          "ဖိုင် ရှာပါ"
+        ],
+        "MIX": [
+          "pdf ဖိုင် ရှာပေးပါ",
+          "invoice file ရှာပါ",
+          "document တွေ ရှာပေး",
+          "txt ဖိုင် ရှာပါ"
+        ]
+      }
+    },
+    {
+      "name": "SEND_SMS",
+      "registers": {
+        "EN": [
+          "send sms to",
+          "send text message",
+          "sms to contact",
+          "send message to brother",
+          "text message to"
+        ],
+        "MM": [
+          "မက်ဆေ့ခ်ျ ပို့",
+          "စာပို့",
+          "ဖုန်းမက်ဆေ့ခ်ျ ပို့",
+          "ဆီ စာပို့ပါ",
+          "မက်ဆေ့ခ်ျ ပို့ပေးပါ"
+        ],
+        "MIX": [
+          "sms ပို့ပါ",
+          "ဆီ sms ပို့ပေးပါ",
+          "ဆီ message ပို့ပါ",
+          "sms ပို့"
+        ]
+      }
+    },
+    {
+      "name": "SET_ALARM",
+      "registers": {
+        "EN": [
+          "set alarm at",
+          "wake me up tomorrow",
+          "alarm at 7am",
+          "set a reminder alarm",
+          "alarm for tomorrow morning"
+        ],
+        "MM": [
+          "မနက်ဖြန် နှိုး",
+          "နှိုးစက် ပေး",
+          "မနက် နှိုးစက် ထား",
+          "အချိန် နှိုးပေးပါ",
+          "မနက်ဖြန် 7 နာရီ နှိုး"
+        ],
+        "MIX": [
+          "alarm 7am ထားပါ",
+          "မနက်ဖြန် alarm ပေးပါ",
+          "မနက်ဖြန် 7:00 နှိုး",
+          "alarm ပေးပါ"
+        ]
+      }
+    },
+    {
+      "name": "SHM_VIBRATION",
+      "registers": {
+        "EN": [
+          "analyze vibration",
+          "check structural health",
+          "resonance frequency",
+          "vibration monitoring",
+          "building stability check",
+          "modal frequency test"
+        ],
+        "MM": [
+          "တုန်ခါမှု စစ်ဆေး",
+          "အဆောက်အအုံ ကြံ့ခိုင်မှု",
+          "တုန်ခါမှု တိုင်းတာ",
+          "ကြံ့ခိုင်မှု စစ်ဆေးပါ"
+        ],
+        "MIX": [
+          "shm diagnostics လုပ်ပါ",
+          "building resonance စစ်ပါ",
+          "vibration analyze လုပ်ပေးပါ",
+          "တုန်ခါမှု စစ်ဆေးပေးပါ"
+        ]
+      }
+    },
+    {
+      "name": "PITCH_ANALYSIS",
+      "registers": {
+        "EN": [
+          "guitar tuner",
+          "tune my guitar",
+          "run guitar tuner",
+          "pitch analysis",
+          "note mapper",
+          "instrument tuner",
+          "tune violin",
+          "tune ukulele"
+        ],
+        "MM": [
+          "ဂစ်တာ အသံညှိ",
+          "ဂစ်တာ ကြိုးညှိ",
+          "တူရိယာ အသံညှိ",
+          "ကြိုးညှိ",
+          "အသံညှိမယ်"
+        ],
+        "MIX": [
+          "guitar tuner ဖွင့်ပါ",
+          "ဂစ်တာ tuner",
+          "guitar ကြိုးညှိပေးပါ",
+          "guitar tuning လုပ်မယ်"
+        ]
+      }
+    },
+    {
+      "name": "CHAT_QUERY",
+      "registers": {
+        "EN": [
+          "hello",
+          "hi",
+          "how are you",
+          "who are you",
+          "explain how to",
+          "tell me about",
+          "what can you do",
+          "help me"
+        ],
+        "MM": [
+          "မင်္ဂလာပါ",
+          "နေကောင်းလား",
+          "မင်းဘယ်သူလဲ",
+          "မင်းဘာလုပ်နိုင်လဲ",
+          "ရှင်းပြပါ",
+          "ကူညီပါ"
+        ],
+        "MIX": [
+          "hi ronin",
+          "hello ronin",
+          "ronin က ဘာတွေလုပ်နိုင်လဲ",
+          "ဘာလုပ်ပေးနိုင်လဲ"
+        ]
+      }
+    },
+    {
+      "name": "FLASHLIGHT",
+      "registers": {
+        "EN": [
+          "turn on flashlight",
+          "turn off flashlight",
+          "switch on flashlight",
+          "switch off flashlight",
+          "flashlight on",
+          "flashlight off",
+          "torch on",
+          "torch off",
+          "light"
+        ],
+        "MM": [
+          "ဓာတ်မီး ဖွင့်",
+          "ဓာတ်မီး ပိတ်",
+          "မီးဖွင့်",
+          "မီးပိတ်",
+          "မီးထိုး",
+          "မီးရောင်ဖွင့်",
+          "မီးရောင်ပိတ်",
+          "မီးပိတ်လိုက်တော့",
+          "ဓာတ်မီး ထိုးပေး",
+          "ဓာတ်မီး ထိုး"
+        ],
+        "MIX": [
+          "flashlight ဖွင့်",
+          "flashlight ပိတ်",
+          "torch ဖွင့်ပေး",
+          "torch ပိတ်",
+          "flashlight on ပေးပါ"
+        ]
+      }
+    }
+  ]
+}

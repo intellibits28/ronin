@@ -82,7 +82,8 @@ enum class IntentCategory : uint32_t {
     TOOL_QUERY = 2,     // Hardware/System tool execution
     MEMORY_QUERY = 3,   // Recall from Long-term memory
     FACT_QUERY = 4,     // World knowledge/fact checking
-    AGENT_PLAN = 5      // Multi-step complex task
+    AGENT_PLAN = 5,     // Multi-step complex task
+    CLARIFICATION = 6   // User input ambiguous or missing required slots
 };
 
 /**

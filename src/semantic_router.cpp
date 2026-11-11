@@ -11,7 +11,7 @@ SemanticRouter::SemanticRouter() {
 }
 
 uint32_t SemanticRouter::hashFeature(const std::string& feat) {
-    // FNV-1a hash
+    // FNV-1a 32-bit hash
     uint32_t hash = 2166136261u;
     for (unsigned char c : feat) {
         hash ^= c;
@@ -20,23 +20,23 @@ uint32_t SemanticRouter::hashFeature(const std::string& feat) {
     return hash;
 }
 
-SemanticRouter::SparseVector SemanticRouter::vectorize(const std::string& text) const {
+SemanticRouter::SparseVector SemanticRouter::vectorize(const std::string& text) {
     SparseVector vec;
     auto norm_res = NLP::MyanmarLinguisticNormalizer::normalize(text);
-    std::string clean = norm_res.cleaned_text;
+    std::string clean = norm_res.cleaned_text.empty() ? text : norm_res.cleaned_text;
     if (clean.empty()) return vec;
 
     std::unordered_map<uint32_t, float> feat_map;
 
-    // 1. Word unigrams
+    // 1. Word unigrams (weight = 2.0f)
     std::stringstream ss(clean);
     std::string word;
     while (ss >> word) {
         uint32_t h = hashFeature("w:" + word);
-        feat_map[h] += 2.0f; // Give higher weight to whole words
+        feat_map[h] += 2.0f;
     }
 
-    // 2. Character 3-grams and 4-grams (captures Myanmar morphs and English stems)
+    // 2. Character 3-grams and 4-grams (captures Myanmar syllables and English morphology)
     if (clean.length() >= 3) {
         for (size_t i = 0; i + 3 <= clean.length(); ++i) {
             uint32_t h3 = hashFeature("3g:" + clean.substr(i, 3));
@@ -60,7 +60,17 @@ SemanticRouter::SparseVector SemanticRouter::vectorize(const std::string& text) 
     std::sort(vec.features.begin(), vec.features.end(), [](const Feature& a, const Feature& b) {
         return a.id < b.id;
     });
-    vec.norm = std::sqrt(sum_sq);
+
+    // Refinement 1: Individual exemplar vectors are strictly unit-normalized
+    if (sum_sq > 1e-12f) {
+        float inv_norm = 1.0f / std::sqrt(sum_sq);
+        for (auto& f : vec.features) {
+            f.weight *= inv_norm;
+        }
+        vec.norm = 1.0f;
+    } else {
+        vec.norm = 0.0f;
+    }
 
     return vec;
 }
@@ -85,207 +95,395 @@ float SemanticRouter::cosineSimilarity(const SparseVector& a, const SparseVector
         }
     }
 
-    return dot / (a.norm * b.norm);
+    // Since both a and b are strictly unit L2 normalized, dot product is exact cosine similarity
+    return std::clamp(dot, -1.0f, 1.0f);
 }
 
 void SemanticRouter::addRoute(const RouteDefinition& route) {
-    m_routes.push_back(route);
+    m_legacy_routes.push_back(route);
     m_indexed = false;
 }
 
+void SemanticRouter::addSubCluster(const IntentSubCluster& cluster) {
+    m_sub_clusters.push_back(cluster);
+    m_indexed = false;
+}
+
+void SemanticRouter::setThreshold(const std::string& intent_name, float threshold) {
+    m_custom_thresholds[intent_name] = threshold;
+    for (auto& g : m_indexed_groups) {
+        if (g.name == intent_name) {
+            g.threshold = threshold;
+        }
+    }
+}
+
+void SemanticRouter::setDenseCentroid(const std::string& intent_name, LanguageRegister reg, const std::vector<float>& centroid) {
+    DenseSubClusterIndex d_idx;
+    d_idx.intent_name = intent_name;
+    d_idx.reg = reg;
+    d_idx.full_cluster_name = intent_name + "_" + languageRegisterToString(reg);
+    d_idx.centroid = centroid;
+    l2Normalize(d_idx.centroid);
+    m_dense_centroids.push_back(std::move(d_idx));
+}
+
 void SemanticRouter::buildIndex() {
-    m_indexed_routes.clear();
-    m_indexed_routes.reserve(m_routes.size());
+    m_indexed_groups.clear();
 
-    for (const auto& r : m_routes) {
-        RouteIndex r_idx;
-        r_idx.name = r.name;
-        r_idx.threshold = r.threshold;
-        r_idx.exemplar_vectors.reserve(r.utterances.size());
+    // Map: intent_name -> vector of SubCentroidIndex
+    std::unordered_map<std::string, std::vector<SubCentroidIndex>> group_map;
 
-        for (const auto& utt : r.utterances) {
+    // 1. Process 3-register sub-clusters (Refinement 2)
+    for (const auto& sub : m_sub_clusters) {
+        SubCentroidIndex s_idx;
+        s_idx.intent_name = sub.intent_name;
+        s_idx.reg = sub.reg;
+        s_idx.full_cluster_name = sub.intent_name + sub.register_suffix;
+        s_idx.utterances = sub.exemplars;
+
+        // Sum normalized exemplar vectors: sum(v_hat_i)
+        std::unordered_map<uint32_t, float> feat_acc;
+        for (const auto& utt : sub.exemplars) {
             SparseVector u_vec = vectorize(utt);
             if (u_vec.norm > 1e-6f) {
-                r_idx.exemplar_vectors.push_back(std::move(u_vec));
+                for (const auto& f : u_vec.features) {
+                    feat_acc[f.id] += f.weight;
+                }
             }
         }
-        m_indexed_routes.push_back(std::move(r_idx));
+
+        // Refinement 1: Strict L2 Re-Normalization of the centroid
+        // C_k = sum(v_hat) / ||sum(v_hat)||_2
+        float sum_sq = 0.0f;
+        for (const auto& [id, val] : feat_acc) {
+            sum_sq += val * val;
+        }
+
+        if (sum_sq > 1e-12f) {
+            float inv_norm = 1.0f / std::sqrt(sum_sq);
+            s_idx.centroid_vec.features.reserve(feat_acc.size());
+            for (const auto& [id, val] : feat_acc) {
+                s_idx.centroid_vec.features.push_back({id, val * inv_norm});
+            }
+            std::sort(s_idx.centroid_vec.features.begin(), s_idx.centroid_vec.features.end(),
+                      [](const Feature& a, const Feature& b) { return a.id < b.id; });
+            s_idx.centroid_vec.norm = 1.0f; // Exactly 1.0
+        }
+
+        group_map[sub.intent_name].push_back(std::move(s_idx));
     }
+
+    // 2. Process legacy routes if any
+    for (const auto& r : m_legacy_routes) {
+        if (group_map.find(r.name) == group_map.end()) {
+            SubCentroidIndex s_idx;
+            s_idx.intent_name = r.name;
+            s_idx.reg = LanguageRegister::MIX;
+            s_idx.full_cluster_name = r.name + "_MIX";
+            s_idx.utterances = r.utterances;
+
+            std::unordered_map<uint32_t, float> feat_acc;
+            for (const auto& utt : r.utterances) {
+                SparseVector u_vec = vectorize(utt);
+                if (u_vec.norm > 1e-6f) {
+                    for (const auto& f : u_vec.features) {
+                        feat_acc[f.id] += f.weight;
+                    }
+                }
+            }
+
+            float sum_sq = 0.0f;
+            for (const auto& [id, val] : feat_acc) {
+                sum_sq += val * val;
+            }
+
+            if (sum_sq > 1e-12f) {
+                float inv_norm = 1.0f / std::sqrt(sum_sq);
+                s_idx.centroid_vec.features.reserve(feat_acc.size());
+                for (const auto& [id, val] : feat_acc) {
+                    s_idx.centroid_vec.features.push_back({id, val * inv_norm});
+                }
+                std::sort(s_idx.centroid_vec.features.begin(), s_idx.centroid_vec.features.end(),
+                          [](const Feature& a, const Feature& b) { return a.id < b.id; });
+                s_idx.centroid_vec.norm = 1.0f;
+            }
+
+            group_map[r.name].push_back(std::move(s_idx));
+        }
+    }
+
+    // Assemble final indexed groups
+    for (auto& [name, clusters] : group_map) {
+        IntentGroup g;
+        g.name = name;
+        if (m_custom_thresholds.find(name) != m_custom_thresholds.end()) {
+            g.threshold = m_custom_thresholds[name];
+        } else if (name == "CHAT_QUERY") {
+            g.threshold = 0.28f;
+        } else if (name.find("VAULT") != std::string::npos) {
+            g.threshold = 0.28f;
+        } else {
+            g.threshold = 0.32f;
+        }
+        g.sub_clusters = std::move(clusters);
+        m_indexed_groups.push_back(std::move(g));
+    }
+
     m_indexed = true;
 }
 
+bool SemanticRouter::performLexicalTieBreak(
+    const std::string& query,
+    const std::string& top_intent,
+    const std::string& runner_up,
+    std::string& out_resolved_intent
+) {
+    auto norm_res = NLP::MyanmarLinguisticNormalizer::normalize(query);
+    std::string q_clean = norm_res.cleaned_text.empty() ? query : norm_res.cleaned_text;
+    std::transform(q_clean.begin(), q_clean.end(), q_clean.begin(), ::tolower);
+
+    // Mutation markers: update, change, replace, modify, etc.
+    const std::vector<std::string> mutation_markers = {
+        "update", "change", "replace", "modify", "edit", "reset",
+        "ပြောင်း", "ပြင်", "လဲ", "အသစ်"
+    };
+
+    // Save/creation markers: save, store, remember, etc.
+    const std::vector<std::string> save_markers = {
+        "save", "store", "remember", "keep", "record",
+        "သိမ်း", "မှတ်", "ထည့်"
+    };
+
+    // Lookup/read markers: show, get, lookup, find, what is, etc.
+    const std::vector<std::string> lookup_markers = {
+        "show", "get", "lookup", "find", "what is", "tell", "view", "check",
+        "ပြ", "ရှာ", "တောင်း", "ကြည့်"
+    };
+
+    bool has_mutation = false;
+    for (const auto& m : mutation_markers) {
+        if (q_clean.find(m) != std::string::npos) {
+            has_mutation = true;
+            break;
+        }
+    }
+
+    bool has_save = false;
+    for (const auto& s : save_markers) {
+        if (q_clean.find(s) != std::string::npos) {
+            has_save = true;
+            break;
+        }
+    }
+
+    bool has_lookup = false;
+    for (const auto& l : lookup_markers) {
+        if (q_clean.find(l) != std::string::npos) {
+            has_lookup = true;
+            break;
+        }
+    }
+
+    bool candidates_are_vault = (
+        top_intent.find("VAULT") != std::string::npos ||
+        runner_up.find("VAULT") != std::string::npos
+    );
+
+    if (candidates_are_vault) {
+        if (has_mutation) {
+            out_resolved_intent = "VAULT_UPDATE";
+            return true;
+        }
+        if (has_save && !has_mutation) {
+            out_resolved_intent = "VAULT_SAVE";
+            return true;
+        }
+        if (has_lookup && !has_mutation && !has_save) {
+            out_resolved_intent = "VAULT_LOOKUP";
+            return true;
+        }
+    }
+
+    // Hardware vs Setting markers
+    if ((top_intent == "FLASHLIGHT" && runner_up == "DEVICE_SETTINGS") ||
+        (top_intent == "DEVICE_SETTINGS" && runner_up == "FLASHLIGHT")) {
+        if (q_clean.find("flashlight") != std::string::npos || q_clean.find("torch") != std::string::npos ||
+            q_clean.find("ဓာတ်မီး") != std::string::npos || q_clean.find("မီး") != std::string::npos) {
+            out_resolved_intent = "FLASHLIGHT";
+            return true;
+        }
+        if (q_clean.find("wifi") != std::string::npos || q_clean.find("bluetooth") != std::string::npos ||
+            q_clean.find("ဝိုင်ဖိုင်") != std::string::npos || q_clean.find("ဘလူးတု") != std::string::npos) {
+            out_resolved_intent = "DEVICE_SETTINGS";
+            return true;
+        }
+    }
+
+    return false; // Unable to break tie deterministically
+}
+
 RouteMatch SemanticRouter::route(const std::string& query) const {
-    RouteMatch best_match;
-    if (!m_indexed || m_indexed_routes.empty()) return best_match;
+    RouteMatch result;
+    if (!m_indexed || m_indexed_groups.empty()) return result;
 
     SparseVector q_vec = vectorize(query);
-    if (q_vec.norm <= 1e-6f) return best_match;
+    if (q_vec.norm <= 1e-6f) return result;
 
-    float global_max_sim = -1.0f;
-    size_t best_idx = 0;
+    struct ScoredIntent {
+        std::string intent_name;
+        float score = 0.0f;
+        float threshold = 0.30f;
+        std::string best_sub_cluster;
+    };
 
-    for (size_t i = 0; i < m_indexed_routes.size(); ++i) {
-        const auto& r_idx = m_indexed_routes[i];
-        float max_route_sim = 0.0f;
+    std::vector<ScoredIntent> scored_intents;
+    scored_intents.reserve(m_indexed_groups.size());
 
-        for (const auto& ex_vec : r_idx.exemplar_vectors) {
-            float sim = cosineSimilarity(q_vec, ex_vec);
-            if (sim > max_route_sim) {
-                max_route_sim = sim;
+    // Refinement 2: Evaluate intent score via max-pooling across sub-centroids:
+    // score(k) = max_{j in {EN, MM, MIX}} (q_hat . C_{k,j})
+    for (const auto& group : m_indexed_groups) {
+        float max_sub_sim = -1.0f;
+        std::string best_cluster_name = group.name + "_MIX";
+
+        for (const auto& sub : group.sub_clusters) {
+            float sim = cosineSimilarity(q_vec, sub.centroid_vec);
+            if (sim > max_sub_sim) {
+                max_sub_sim = sim;
+                best_cluster_name = sub.full_cluster_name;
             }
         }
 
-        if (max_route_sim > global_max_sim) {
-            global_max_sim = max_route_sim;
-            best_idx = i;
+        scored_intents.push_back({
+            group.name,
+            std::max(0.0f, max_sub_sim),
+            group.threshold,
+            best_cluster_name
+        });
+    }
+
+    if (scored_intents.empty()) return result;
+
+    // Sort descending by score
+    std::sort(scored_intents.begin(), scored_intents.end(), [](const ScoredIntent& a, const ScoredIntent& b) {
+        return a.score > b.score;
+    });
+
+    const auto& top = scored_intents[0];
+    float s1 = top.score;
+    float s2 = (scored_intents.size() > 1) ? scored_intents[1].score : 0.0f;
+    std::string s2_name = (scored_intents.size() > 1) ? scored_intents[1].intent_name : "";
+
+    result.route_name = top.intent_name;
+    result.confidence = s1;
+    result.matched_sub_cluster = top.best_sub_cluster;
+    result.runner_up_confidence = s2;
+    result.runner_up_route = s2_name;
+
+    // Confidence threshold check
+    if (s1 < top.threshold) {
+        result.is_confident = false;
+        result.is_ambiguous = false;
+        return result;
+    }
+
+    // Refinement 3: Top-2 Margin Ambiguity Guard & Lexer Tie-Breaker
+    // Require S1 >= tau AND (S1 - S2) >= 0.04
+    float margin = s1 - s2;
+    if (margin < 0.04f && scored_intents.size() > 1) {
+        std::string resolved_intent;
+        bool tie_broken = performLexicalTieBreak(query, top.intent_name, s2_name, resolved_intent);
+        if (tie_broken) {
+            result.route_name = resolved_intent;
+            result.is_confident = true;
+            result.is_ambiguous = false;
+        } else {
+            result.is_ambiguous = true;
+            result.is_confident = false;
+            result.route_name = "CLARIFICATION";
+        }
+    } else {
+        result.is_confident = true;
+        result.is_ambiguous = false;
+    }
+
+    return result;
+}
+
+RouteMatch SemanticRouter::routeDense(const std::vector<float>& query_embedding) const {
+    RouteMatch result;
+    if (m_dense_centroids.empty() || query_embedding.empty()) return result;
+
+    std::vector<float> q_norm = query_embedding;
+    l2Normalize(q_norm);
+
+    // Group by intent and max-pool across registers
+    std::unordered_map<std::string, std::pair<float, std::string>> intent_scores;
+
+    for (const auto& d : m_dense_centroids) {
+        float sim = dotProductCosine(q_norm, d.centroid);
+        auto it = intent_scores.find(d.intent_name);
+        if (it == intent_scores.end() || sim > it->second.first) {
+            intent_scores[d.intent_name] = {sim, d.full_cluster_name};
         }
     }
 
-    if (global_max_sim >= 0.0f) {
-        best_match.route_name = m_indexed_routes[best_idx].name;
-        best_match.confidence = global_max_sim;
-        best_match.is_confident = (global_max_sim >= m_indexed_routes[best_idx].threshold);
+    struct DenseScored {
+        std::string name;
+        float score = 0.0f;
+        std::string cluster;
+    };
+    std::vector<DenseScored> scored;
+    for (const auto& [name, p] : intent_scores) {
+        scored.push_back({name, p.first, p.second});
+    }
+    std::sort(scored.begin(), scored.end(), [](const DenseScored& a, const DenseScored& b) {
+        return a.score > b.score;
+    });
+
+    if (scored.empty()) return result;
+
+    float s1 = scored[0].score;
+    float s2 = (scored.size() > 1) ? scored[1].score : 0.0f;
+    std::string s2_name = (scored.size() > 1) ? scored[1].name : "";
+
+    result.route_name = scored[0].name;
+    result.confidence = s1;
+    result.matched_sub_cluster = scored[0].cluster;
+    result.runner_up_confidence = s2;
+    result.runner_up_route = s2_name;
+
+    // Threshold for dense 768-dim embedding is tau = 0.72
+    constexpr float TAU_DENSE = 0.72f;
+    if (s1 < TAU_DENSE) {
+        result.is_confident = false;
+        result.is_ambiguous = false;
+        return result;
     }
 
-    return best_match;
+    if ((s1 - s2) < 0.04f && scored.size() > 1) {
+        std::string resolved;
+        bool tie_broken = performLexicalTieBreak("", scored[0].name, s2_name, resolved);
+        if (tie_broken) {
+            result.route_name = resolved;
+            result.is_confident = true;
+            result.is_ambiguous = false;
+        } else {
+            result.is_ambiguous = true;
+            result.is_confident = false;
+            result.route_name = "CLARIFICATION";
+        }
+    } else {
+        result.is_confident = true;
+        result.is_ambiguous = false;
+    }
+
+    return result;
 }
 
 void SemanticRouter::initializeDefaultRoutes() {
-    m_routes.clear();
-
-    // 1. FLASHLIGHT
-    addRoute({
-        "FLASHLIGHT",
-        {
-            "turn on flashlight", "turn off flashlight", "switch on flashlight", "switch off flashlight",
-            "flashlight on", "flashlight off", "torch on", "torch off", "light",
-            "ဓာတ်မီး ဖွင့်", "ဓာတ်မီး ပိတ်", "မီးဖွင့်", "မီးပိတ်", "မီးထိုး", "မီးရောင်ဖွင့်", "မီးရောင်ပိတ်",
-            "မီးပိတ်လိုက်တော့", "ဓာတ်မီး ထိုးပေး", "ဓာတ်မီး ထိုး"
-        },
-        0.35f
-    });
-
-    // 2. PITCH_ANALYSIS (Guitar & Instrument Tuner)
-    addRoute({
-        "PITCH_ANALYSIS",
-        {
-            "guitar tuner", "tune my guitar", "run guitar tuner", "instrument tuner",
-            "pitch analysis", "note mapper", "frequency tuner", "tune violin", "tune ukulele",
-            "ဂစ်တာ အသံညှိ", "ဂစ်တာ ကြိုးညှိ", "ဂစ်တာ tuner", "တူရိယာ အသံညှိ", "ကြိုးညှိ",
-            "ဂစ်တာတီးဖို့ ကြိုးညှိ", "အသံညှိမယ်", "ဂစ်တာ အသံညှိပေးပါ", "ဂစ်တာ ကြိုးညှိမယ်"
-        },
-        0.35f
-    });
-
-    // 3. SHM_VIBRATION (Structural Health Monitoring & Resonance)
-    addRoute({
-        "SHM_VIBRATION",
-        {
-            "analyze vibration", "check structural health", "resonance frequency", "vibration monitoring",
-            "building stability check", "bridge vibration test", "shm diagnostics", "modal frequency",
-            "building resonance test", "building resonance",
-            "တုန်ခါမှု စစ်ဆေး", "အဆောက်အအုံ ကြံ့ခိုင်မှု", "တုန်ခါမှု တိုင်းတာ", "အဆောက်အအုံ တုန်ခါမှု",
-            "ကြံ့ခိုင်မှု စစ်ဆေး", "တုန်ခါမှု အချက်အလက်", "အဆောက်အအုံ ကြံ့ခိုင်မှု တိုင်းတာ", "တုန်ခါမှု စစ်ဆေးပေးပါ"
-        },
-        0.35f
-    });
-
-    // 4. LOCATION & MAP
-    addRoute({
-        "LOCATION",
-        {
-            "where am i", "my location", "show my location", "get gps coordinates", "show location", "open map",
-            "navigate to", "location on map", "current position",
-            "ငါ အခု ဘယ်မှာလဲ", "ငါ ဘယ်ရောက်နေလဲ", "ငါ အခု ဘယ်ရောက်နေလဲ", "တည်နေရာ ပြ", "တည်နေရာ ရှာ", "မြေပုံ ဖွင့်",
-            "လက်ရှိ နေရာ", "မြေပုံ ကြည့်", "တည်နေရာ ပြပေးပါ"
-        },
-        0.32f
-    });
-
-    // 5. DEVICE_SETTINGS (Wi-Fi, Bluetooth)
-    addRoute({
-        "DEVICE_SETTINGS",
-        {
-            "turn on wifi", "turn off wifi", "toggle wifi", "enable wifi", "disable wifi",
-            "turn on bluetooth", "turn off bluetooth", "toggle bluetooth", "bluetooth connect",
-            "ဝိုင်ဖိုင် ဖွင့်", "ဝိုင်ဖိုင် ပိတ်", "wifi ဖွင့်", "wifi ပိတ်",
-            "ဘလူးတု ဖွင့်", "ဘလူးတု ပိတ်", "bluetooth ဖွင့်", "bluetooth ပိတ်",
-            "ဝိုင်ဖိုင် ဖွင့်ပါ", "ဘလူးတု ပိတ်ပေး"
-        },
-        0.35f
-    });
-
-    // 6. FILE_SEARCH
-    addRoute({
-        "FILE_SEARCH",
-        {
-            "find pdf files", "search documents", "find file", "locate invoice", "search storage",
-            "find images", "search music file", "find python script",
-            "ဖိုင် ရှာ", "စာရွက်စာတမ်း ရှာ", "pdf ရှာ", "ဖုန်းထဲက ဖိုင် ရှာ", "စာရွက်စာတမ်းတွေ ရှာ",
-            "ဖိုင် ရှာပေးပါ", "စာရွက်စာတမ်း ရှာပါ"
-        },
-        0.32f
-    });
-
-    // 7. SEND_SMS
-    addRoute({
-        "SEND_SMS",
-        {
-            "send sms to", "send text message", "sms to contact", "send message to",
-            "send sms to brother", "send sms",
-            "မက်ဆေ့ခ်ျ ပို့", "sms ပို့", "စာပို့", "ဖုန်းမက်ဆေ့ခ်ျ ပို့",
-            "မက်ဆေ့ခ်ျ ပို့ပေးပါ", "ဆီ စာပို့", "ဆီ စာပို့ပါ", "ဆီ sms ပို့"
-        },
-        0.35f
-    });
-
-    // 8. SET_ALARM
-    addRoute({
-        "SET_ALARM",
-        {
-            "set alarm at", "wake me up tomorrow", "alarm 7am", "set a reminder alarm", "set alarm at 7am",
-            "မနက်ဖြန် နှိုး", "နှိုးစက် ပေး", "မနက် နှိုးစက်", "နှိုးစက် ထား", "အချိန် နှိုး",
-            "မနက်ဖြန် 7:00 နှိုး", "မနက်ဖြန် 7 နာရီ နှိုး", "မနက်ဖြန် နှိုးပါ", "နှိုးစက် ပေးပါ"
-        },
-        0.32f
-    });
-
-    // 9. VAULT_MEMORY
-    addRoute({
-        "VAULT_MEMORY",
-        {
-            "save to vault", "store secret key", "remember my password", "lookup vault",
-            "remember fact", "save note", "recall note", "save password to vault",
-            "show my gemini api key", "show my api key", "show my password", "show my secret",
-            "get my api key", "get gemini api key", "what is my gemini api key", "what is my api key",
-            "gemini api key", "my gemini api key", "my api key", "api key",
-            "update gemini api key", "update my gemini api key", "update api key", "update vault", "update password",
-            "change gemini api key", "change my api key", "change password", "replace gemini api key",
-            "save gemini api key", "store gemini api key", "save my gemini api key",
-            "မှတ်ထား", "သိမ်းထား", "လုံခြုံရေး vault", "လျှို့ဝှက်ချက် သိမ်း", "မှတ်ဉာဏ် ပြန်ရှာ",
-            "မှတ်ထားပေးပါ", "လျှို့ဝှက်ချက် သိမ်းထား",
-            "gemini api key ပြပါ", "api key ပြပါ", "api key ပြပေးပါ", "စကားဝှက် ပြပါ", "လျှို့ဝှက်ကုဒ် ပြပါ",
-            "gemini api key ပြင်ပါ", "gemini api key ပြင်ပေးပါ", "api key ပြင်ပေးပါ",
-            "gemini api key အသစ် ပြောင်းပါ", "api key အသစ် ပြောင်းပေးပါ", "gemini api key သိမ်းပါ",
-            "vault ထဲ သိမ်းပါ", "vault ထဲက ပြပါ"
-        },
-        0.30f
-    });
-
-    // 10. CHAT_QUERY
-    addRoute({
-        "CHAT_QUERY",
-        {
-            "hello", "hi", "hey ronin", "mingalaba", "how are you", "who are you",
-            "explain how to", "tell me about", "what can you do", "help me", "hello ronin",
-            "မင်္ဂလာပါ", "ဟယ်လို", "နေကောင်းလား", "မင်းဘယ်သူလဲ", "မင်းဘာလုပ်နိုင်လဲ",
-            "ရှင်းပြပါ", "ကူညီပါ", "ဘယ်လိုလုပ်ရမလဲ", "မင်း ဘာတွေလုပ်နိုင်လဲ",
-            "ronin က ဘာတွေလုပ်နိုင်လဲ", "ronin ဘာလုပ်နိုင်လဲ", "ဘာတွေလုပ်နိုင်လဲ",
-            "စွမ်းဆောင်ရည်တွေ ပြောပြပါ", "ဘာလုပ်ပေးနိုင်လဲ"
-        },
-        0.28f
-    });
-
+    m_sub_clusters = getCuratedIntentClusters();
+    m_legacy_routes.clear();
     buildIndex();
 }
 

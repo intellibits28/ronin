@@ -2,6 +2,7 @@
 #include "ronin_log.h"
 #include "intent_engine.h"
 #include "jni_utils.h"
+#include "security/credential_sanitizer.h"
 #include <thread>
 
 #define TAG "RoninHardwareBridge"
@@ -118,13 +119,14 @@ void HardwareBridge::pushMessage(const std::string& message) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return;
 
+    std::string safe_message = Security::CredentialSanitizer::sanitizeText(message);
     Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninLogThread");
     JNIEnv* env = scopedEnv.env();
 
     if (env) {
         jmethodID mid = env->GetMethodID(s_clazz, "pushKernelMessage", "(Ljava/lang/String;)V");
         if (mid) {
-            jstring jmsg = env->NewStringUTF(message.c_str());
+            jstring jmsg = env->NewStringUTF(safe_message.c_str());
             env->CallVoidMethod(s_instance, mid, jmsg);
             env->DeleteLocalRef(jmsg);
         }
@@ -320,14 +322,16 @@ void HardwareBridge::setInferenceSilence(bool silent) {
 void HardwareBridge::updateDevHUD(const std::string& state, const std::string& intent, float confidence, const std::string& plan) {
 #ifdef __ANDROID__
     if (!s_vm || !s_instance || !s_clazz) return;
+    std::string safe_intent = Security::CredentialSanitizer::sanitizeText(intent);
+    std::string safe_plan = Security::CredentialSanitizer::sanitizeText(plan);
     Ronin::Kernel::JNI::ScopedJniEnv scopedEnv(s_vm, "RoninHUDThread");
     JNIEnv* env = scopedEnv.env();
     if (env) {
         jmethodID mid = env->GetMethodID(s_clazz, "updateDevHUD", "(Ljava/lang/String;Ljava/lang/String;FLjava/lang/String;)V");
         if (mid) {
             jstring jstate = env->NewStringUTF(state.c_str());
-            jstring jintent = env->NewStringUTF(intent.c_str());
-            jstring jplan = env->NewStringUTF(plan.c_str());
+            jstring jintent = env->NewStringUTF(safe_intent.c_str());
+            jstring jplan = env->NewStringUTF(safe_plan.c_str());
             env->CallVoidMethod(s_instance, mid, jstate, jintent, (jfloat)confidence, jplan);
             env->DeleteLocalRef(jstate);
             env->DeleteLocalRef(jintent);

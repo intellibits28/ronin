@@ -1207,7 +1207,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Keep
     @Suppress("unused")
     fun pushKernelMessage(message: String) {
-        onKernelMessageCallback?.invoke(message)
+        val safeMessage = CredentialSanitizer.sanitizeText(message)
+        onKernelMessageCallback?.invoke(safeMessage)
     }
 
     @Keep
@@ -1294,7 +1295,9 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     @Keep
     @Suppress("unused")
     fun updateDevHUD(state: String, intent: String, confidence: Float, plan: String) {
-        onDevHUDUpdateCallback?.invoke(state, intent, confidence, plan)
+        val safeIntent = CredentialSanitizer.sanitizeText(intent)
+        val safePlan = CredentialSanitizer.sanitizeText(plan)
+        onDevHUDUpdateCallback?.invoke(state, safeIntent, confidence, safePlan)
     }
 
     @Keep
