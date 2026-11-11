@@ -11,6 +11,7 @@
 3. **Privacy-Aware Local Research Engine (`/research`)**: 100% local synthesis using Gemma 4 E2B, DuckDuckGo Lite form-encoded search, 256 KB stream limits, SSRF redirect DNS-pinning, inline citations, and explicit "SAVE TO VAULT" persistence with provenance.
 4. **Hardened Termux MCP Bridge (`/mcp`)**: Cryptographically signed local agent tool runner with HMAC-SHA256, timestamp replay window, 16-byte random hex nonces, and a strict Capability Security Policy permanently blocking arbitrary shell execution (CodeQL #18 CWE-78).
 5. **Pre-Flight Security Remediation**: Full mitigation of vulnerabilities `RONIN-SEC-01` through `RONIN-SEC-08`, including AES-256-GCM encrypted cognitive vault backup/restore (`.roninvault`).
+6. **Multi-Centroid Semantic Intent Router & Zero-Credential Vault Safety**: 3-register sub-clustering (`EN`, `MM`, `MIX`), L2 re-normalized centroids ($\|\vec{C}_k\|_2 = 1.0$), top-2 margin ambiguity guard ($S_1 - S_2 \ge 0.04$) with deterministic lexical tie-breaking, non-destructive stateful updates (`PendingSlotState`), and universal value-based regex secret redaction (`[REDACTED_SECRET]`).
 
 ---
 
@@ -62,6 +63,13 @@
   * 32-slot C++ & Kotlin ring buffer tracking burst rate surprise, path sensitivity (`..`, `.ssh`, `.env`, `/sdcard/dcim`, `ronin_cognitive`), and intent-path divergence; escalates `ALLOW` tools to `MCP_HITL_CONFIRM` when $F_{\text{mcp}} > 0.70$.
   * Write-time `surprise_score` calculation in `LongTermMemory::storeFact` and thermal-gated ($< 38^\circ\text{C}$) top-5 surprise reconciliation during `/reflect`.
 * **Phase 4 — Lock-Free Audio Kalman Precision Filter**: Inline real-time sensory precision weighting ($\Pi_{\text{audio}} = \exp(-\beta \cdot \text{noise\_rms})$) in `ResonanceAnalyzer::computeAudioKalmanPrecision` with zero mutex contention.
+
+### 7. Multi-Centroid Semantic Intent Router & Zero-Credential Vault Safety
+* **12-Intent Multi-Centroid Sub-Clustering**: Evaluates queries against 3 language-register sub-centroids per intent (`*_EN`, `*_MM`, `*_MIX`) with score max-pooling $\text{score}(k) = \max_{j} (\vec{q} \cdot \vec{C}_{k,j})$, resolving colloquial English, Burmese, and Burm-glish requests without keyword brittleness.
+* **Strict L2 Re-Normalization**: Pre-computed centroid vectors and vectorized query embeddings are strictly normalized to unit length ($\|\vec{C}_k\|_2 = 1.0$), ensuring dot products yield exact cosine similarity in $[-1, 1]$.
+* **Top-2 Margin Ambiguity Guard & Lexer Tie-Breaker**: Tracks best score $S_1$ and runner-up $S_2$. When $(S_1 - S_2) < 0.04$, a deterministic C++ lexical tie-breaker checks for mutation verbs (`"ပြောင်း"`, `"ပြင်"`, `"update"`, `"change"`) vs creation/read markers (`"သိမ်း"`, `"မှတ်"`, `"ပြ"`, `"save"`, `"show"`), routing unresolved ambiguities to `IntentCategory::CLARIFICATION`.
+* **Stateful Multi-Turn Context Carry-Over (`PendingSlotState`)**: If a user requests a vault update without providing the new key, Ronin leaves the existing SQLite entry untouched and prompts the user. When the user provides the key on the next turn, the pending intent (`UPDATE_VAULT`) is automatically fulfilled.
+* **Universal Value-Based Secret Pattern Scanner (`CredentialSanitizer`)**: Real-time regex scanner in C++ and Kotlin intercepts and redacts Google API keys (`AIza...`), OpenAI keys (`sk-...`), GitHub PATs (`ghp_...`), Bearer headers, and Burmese assignment markers (`<secret> အဖြစ် / လို့ / သို့`) in-place as `[REDACTED_SECRET]` across logs, DevHUD, telemetry, and UI.
 
 ---
 

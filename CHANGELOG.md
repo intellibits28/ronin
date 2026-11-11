@@ -5,6 +5,24 @@ All notable changes to the Ronin Kernel project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.2] - 2026-11-11
+
+### Added
+- **Multi-Centroid Semantic Intent Router**: Cascaded intent routing across 12 primary intents (`VAULT_LOOKUP`, `VAULT_UPDATE`, `VAULT_SAVE`, `LOCATION`, `DEVICE_SETTINGS`, `FILE_SEARCH`, `SEND_SMS`, `SET_ALARM`, `SHM_VIBRATION`, `PITCH_ANALYSIS`, `CHAT_QUERY`, `FLASHLIGHT`) partitioned into 3 language registers: `*_EN` (English), `*_MM` (Burmese), and `*_MIX` (Burm-glish) with score max-pooling.
+- **Strict L2 Re-Normalization**: Pre-computed centroid vectors and vectorized query embeddings strictly unit-normalized ($\|\vec{C}_k\|_2 = 1.0$), ensuring exact cosine similarity dot products in $[-1, 1]$.
+- **Top-2 Margin Ambiguity Guard & Lexer Tie-Breaker**: Margin enforcement ($S_1 \ge \tau$ and $S_1 - S_2 \ge 0.04$) with deterministic C++ lexical tie-breaker checking mutation verbs (`"ပြောင်း"`, `"ပြင်"`, `"update"`, `"change"`) vs creation/read markers (`"သိမ်း"`, `"မှတ်"`, `"ပြ"`, `"save"`, `"show"`), safely routing unresolved ambiguity to `IntentCategory::CLARIFICATION`.
+- **Stateful Multi-Turn Context Carry-Over**: Non-destructive slot carry-over (`PendingSlotState`, `ttl_turns = 1`) enabling interactive clarification when vault update parameters are missing, automatically fulfilling the update on follow-up user input.
+- **Universal Value-Based Credential Sanitizer**: Real-time regex pattern scanner in C++ (`CredentialSanitizer`) and Kotlin masking Google API keys (`AIza...`), OpenAI keys (`sk-...`), GitHub PATs (`ghp_...`), Bearer headers, and Burmese assignment markers (`<secret> အဖြစ် / လို့ / သို့`) in-place as `[REDACTED_SECRET]` across logs, DevHUD, telemetry, and UI.
+- **Comprehensive Test Coverage**: Registered `ronin_semantic_routing_test` host C++ test suite (15 tests) and `SemanticRoutingSafetyTest` Android JVM test suite (7 tests) verifying unit norms, max-pooling, tie-breaking, secret redaction, and multi-turn carry-over.
+
+### Changed
+- **Intent Engine JNI & Routing Binding**: Connected `SemanticRouter` centroid matcher and `PendingSlotState` into `IntentEngine::process` and `TaskPlanner::tryFastPathRoute`.
+- **HardwareBridge & FailureTelemetry Redaction**: Integrated `CredentialSanitizer::sanitizeText` across `HardwareBridge::pushMessage`, `HardwareBridge::updateDevHUD`, and `FailureTelemetryBus::logFailure`.
+
+### Fixed
+- **Vault In-Place Update & Secret Query Routing**: Fixed false location trigger on secret queries (`"show my gemini api key"`), correctly routing to `VAULT_LOOKUP`, and enabled in-place updates for existing SQLite vault rows.
+- **Burmese Agglutinative Syntax Parsing**: Prevented multibyte UTF-8 byte offset corruption in Burmese slot slicing by using ASCII-lowercased string references.
+
 ## [5.1.1] - 2026-11-07
 
 ### Added
