@@ -287,15 +287,64 @@ Ronin v5.1.1 တွင် Active Inference (`ActiveInferenceCore` နှင့�
 
 ---
 
-## ၁၁။ ရေရှည်မှတ်ဉာဏ်နှင့် လုံခြုံရေး Vault (Long-Term Memory & Vault)
+## ၁၁။ ရေရှည်မှတ်ဉာဏ်နှင့် လုံခြုံရေး Vault (Long-Term Memory & Vault Security)
 
-* **မှတ်ဉာဏ် သိမ်းဆည်းခြင်း (Save Memory)**:
+Ronin တွင် ရေရှည်မှတ်ဉာဏ် (Cognitive Memory) နှင့် အရေးကြီးသော လျှို့ဝှက်ကုဒ်/API Key များကို လုံခြုံစွာ သိမ်းဆည်းနိုင်သည့် **Hardware-Backed AES-256-GCM Secure Vault** ပါဝင်ပါသည်။
+
+Ronin Kernel v5.1.x တွင် Keyword အတိအကျ ရိုက်စရာမလိုဘဲ မြန်မာ၊ အင်္ဂလိပ်နှင့် ကပြားစာများ (Burm-glish) ကို နားလည်နိုင်သော **Multi-Centroid Semantic Intent Router** နှင့် **Zero-Credential Logging Protection** ကို ထည့်သွင်း အဆင့်မြှင့်တင်ထားပါသည်။
+
+---
+
+### ၁၁.၁။ ရေရှည်မှတ်ဉာဏ် သိမ်းဆည်းခြင်းနှင့် ပြန်မေးခြင်း (General Facts & Notes)
+
+* **မှတ်ဉာဏ် သိမ်းဆည်းခြင်း (Save Memory / Facts)**:
   - `"ငါ့မွေးနေ့က အောက်တိုဘာ ၂၀ ဖြစ်တယ် မှတ်ထားပေးပါ"`
+  - `"ကားနံပါတ် 1A-9999 မှတ်ထားပေးပါ"`
   - `"Ronin, remember my office gate code is 9876"`
 * **မှတ်ဉာဏ် ပြန်မေးခြင်း (Recall Memory)**:
   - `"ငါ့မွေးနေ့ ဘယ်တော့လဲ"`
+  - `"ကားနံပါတ် ဘာလဲ"`
   - `"What did I tell you about my office gate code?"`
-* **လုံခြုံရေး Vault**: လျှို့ဝှက်ကုဒ်များနှင့် အရေးကြီး အချက်အလက်များကို AES-256-GCM စနစ်ဖြင့် ကုဒ်ဝှက်သိမ်းဆည်းထားပြီး၊ လက်ဗွေ (Biometric) သို့မဟုတ် ဖုန်းလော့ခ်ကုဒ် အောင်မြင်မှသာ ပြန်လည်ထုတ်ပေးပါသည်။
+
+---
+
+### ၁၁.၂။ Secure Vault လုပ်ဆောင်ချက်များ (Vault CRUD & Key Management)
+
+လုံခြုံရေး Vault သည် အရေးကြီးသော API Key များ၊ Password များနှင့် Token များကို SQLite Database ထဲတွင် AES-256-GCM ဖြင့် ကုဒ်ဝှက်သိမ်းဆည်းထားပြီး လက်ဗွေ (Biometric) သို့မဟုတ် ဖုန်းလော့ခ်ကုဒ် စစ်ဆေးပြီးမှသာ ပြန်လည်ထုတ်ယူပေးပါသည်။
+
+#### ၁။ အသစ်သိမ်းဆည်းခြင်း (Create / Save)
+* **English**: `"save to vault: gemini api key as AIzaSyD..."` သို့မဟုတ် `"store secret in vault: ..."`
+* **မြန်မာ**: `"gemini api key ကို AIzaSyD... အဖြစ် vault ထဲ သိမ်းပါ"` သို့မဟုတ် `"စကားဝှက် သိမ်းပေးပါ"`
+* **Burm-glish**: `"gemini api key ကို vault ထဲ သိမ်းထားပါ"`
+
+#### ၂။ ပြန်လည်ကြည့်ရှုခြင်း (Retrieve / Lookup)
+Vault ထဲမှ Secret များကို တောင်းဆိုသည့်အခါ GPS Location သို့မဟုတ် အခြား Tool များ မှားယွင်းမခေါ်ဘဲ Vault ထဲမှ တိုက်ရိုက် ရှာဖွေပေးပါသည်-
+* **English**: `"show my gemini api key"`, `"lookup vault password"`, `"what is my api key"`
+* **မြန်မာ**: `"gemini api key ပြပါ"`, `"လျှို့ဝှက်ကုဒ် ပြပေးပါ"`, `"စကားဝှက် ရှာပေးပါ"`
+* **Burm-glish**: `"my api key ပြပါ"`, `"vault ထဲက gemini key ပြပေးပါ"`
+* *(မှတ်ချက် - Secret ကို ပြသရန် ဖုန်း၏ Biometric/Fingerprint Authentication အရင်တောင်းဆိုပါမည်။)*
+
+#### ၃။ ရှိပြီးသား Key ကို အသစ်ဖြင့် လဲလှယ်ပြင်ဆင်ခြင်း (In-Place Update)
+API Key အဟောင်း သက်တမ်းကုန်သွား၍ဖြစ်စေ၊ အသစ်လဲလို၍ဖြစ်စေ အလွယ်တကူ ပြောင်းလဲနိုင်ပါသည်-
+* **English**: `"update my gemini api key to AIzaSyD..."`, `"change password to ..."`
+* **မြန်မာ**: `"gemini api key ကို AIzaSyD... အဖြစ် ပြောင်းပေးပါ"`, `"စကားဝှက် ပြင်ပေးပါ"`
+* **Burm-glish**: `"gemini api key update လုပ်မယ်: AIzaSyD..."`
+* **Auto-Sync**: Gemini, OpenAI သို့မဟုတ် OpenRouter API Key ကို Update လုပ်လိုက်ပါက Settings ထဲရှိ Cloud Provider SharedPreferences သို့ပါ အလိုအလျောက် တစ်ပြိုင်နက် Sync ပြုလုပ်ပေးပါသည်။
+
+---
+
+### ၁၁.၃။ အပြန်အလှန် စကားပြောဆိုမှုဖြင့် ဖြည့်စွက်နိုင်ခြင်း (Stateful Multi-Turn Clarification)
+
+အသုံးပြုသူက Key အသစ်မပါဘဲ `"update my gemini api key"` သို့မဟုတ် `"gemini api key ပြင်ပေးပါ"` ဟုသာ မေးမြန်းမိပါက:
+1. **ဒေတာမပျက်စီးစေခြင်း**: Ronin သည် ရှိပြီးသား Key ကို အလွတ် (Blank) ဖြစ်သွားအောင် ဘယ်သောအခါမှ မဖျက်ပစ်ပါ။
+2. **Key အသစ် တောင်းဆိုခြင်း**: စနစ်က API Key အသစ် ပေးပို့ရန် ယဉ်ကျေးစွာ အသိပေးပါမည်။
+3. **Context Carry-Over**: နောက်တစ်ကြိမ် မက်ဆေ့ခ်ျတွင် အသုံးပြုသူက Key သီးသန့် (ဥပမာ `AIzaSyD12345...`) ကိုသာ ရိုက်ထည့်ပေးလိုက်သည်နှင့် Ronin သည် Context ကို ဆက်လက်မှတ်မိနေပြီး `gemini api key` အား ထို Key အသစ်ဖြင့် အလိုအလျောက် အောင်မြင်စွာ Update ပြုလုပ်ပေးပါမည်။
+
+---
+
+### ၁၁.၄။ သတင်းအချက်အလက် လုံခြုံရေးနှင့် Zero-Credential Redaction
+
+* **Logs & Developer HUD Protection**: အသုံးပြုသူ ရိုက်ထည့်လိုက်သော မေးခွန်းထဲတွင် Google API Keys (`AIza...`), OpenAI Keys (`sk-...`), GitHub PATs (`ghp_...`), Bearer Headers များ ပါဝင်နေပါက C++ Core နှင့် Kotlin အဆင့်နှစ်ခုစလုံးရှိ **CredentialSanitizer** က အလိုအလျောက် ဖမ်းယူပြီး DevHUD, Telemetry Bus, System Logs နှင့် Error မျက်နှာပြင်များတွင် `[REDACTED_SECRET]` အဖြစ် အလိုအလျောက် ဖုံးကွယ် (Mask) ပေးထားသဖြင့် Logcat မှတစ်ဆင့် Key ပေါက်ကြားခြင်း မရှိနိုင်ပါ။
 
 ---
 

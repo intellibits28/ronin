@@ -85,6 +85,30 @@ Rooted in Karl Friston's Free Energy Principle (FEP), Ronin implements a hierarc
   4. **Phase 4 — Lock-Free Audio Kalman Precision Filter**: `ResonanceAnalyzer::computeAudioKalmanPrecision` executes inline on the real-time audio/DSP thread without mutex locks or heap allocations, dynamically weighting sensory gain $K_t = \frac{\Pi_{\text{audio}}}{\Pi_{\text{audio}} + \Pi_{\text{prior}}}$ via $\Pi_{\text{audio}} = \exp(-\beta \cdot \text{noise\_rms})$.
 - **Developer HUD Telemetry**: Real-time JNI export of Free Energy $F$, Gaze State, and selected Policy to Compose HUD gauges.
 
+## Multi-Centroid Semantic Intent Router & Vault Safety
+
+Ronin Kernel v5.1.x replaces brittle keyword/hash-based routing with a cascaded, resilient semantic intent architecture:
+
+- **Multi-Centroid Sub-Clustering**:
+  - 12 primary intents (`VAULT_LOOKUP`, `VAULT_UPDATE`, `VAULT_SAVE`, `LOCATION`, `DEVICE_SETTINGS`, `FILE_SEARCH`, `SEND_SMS`, `SET_ALARM`, `SHM_VIBRATION`, `PITCH_ANALYSIS`, `CHAT_QUERY`, `FLASHLIGHT`) partitioned across 3 language registers: `*_EN` (English), `*_MM` (Burmese), and `*_MIX` (Burm-glish).
+  - Evaluates intent score via max-pooling across sub-centroids: $\text{score}(k) = \max_{j \in \{\text{EN, MM, MIX}\}} (\vec{q} \cdot \vec{C}_{k,j})$.
+- **Strict L2 Re-Normalization**:
+  - Sparse subword n-gram feature vectors and dense 768-dim embeddings are strictly unit-normalized ($\|\cdot\|_2 = 1.0$).
+  - Mean centroids are re-normalized by their L2 norm ($\vec{C}_k = \frac{\sum \hat{v}_i}{\|\sum \hat{v}_i\|_2}$), ensuring dot products ($\vec{q} \cdot \vec{C}_{k,j}$) yield exact cosine similarity in $[-1, 1]$.
+- **Top-2 Margin Ambiguity Guard & Lexer Tie-Breaker**:
+  - Tracks best score $S_1$ and runner-up $S_2$.
+  - Requires $S_1 \ge \tau$ AND $(S_1 - S_2) \ge 0.04$.
+  - When $(S_1 - S_2) < 0.04$, invokes a deterministic C++ lexical tie-breaker:
+    - Mutation verbs (`"ပြောင်း"`, `"ပြင်"`, `"အသစ်"`, `"update"`, `"change"`, `"replace"`) $\to$ `VAULT_UPDATE`.
+    - Creation/Save markers (`"သိမ်း"`, `"မှတ်"`, `"save"`, `"store"`) $\to$ `VAULT_SAVE`.
+    - Read/Lookup markers (`"ပြ"`, `"ရှာ"`, `"show"`, `"lookup"`) $\to$ `VAULT_LOOKUP`.
+    - If still unresolved, routes safely to `IntentCategory::CLARIFICATION` without accidental execution.
+- **Stateful Multi-Turn Context Carry-Over**:
+  - `PendingSlotState` (`ttl_turns = 1`) tracks pending intent context when user requests a Vault update without providing the new secret token.
+  - On the subsequent turn, user follow-up containing the key is automatically bound to the pending intent and executed without destroying existing SQLite vault entries.
+- **Global Value-Based Secret Redaction Pipe**:
+  - `CredentialSanitizer` (C++ & Kotlin) scans all text, JSON payloads, and DevHUD strings for Google API (`AIza[0-9A-Za-z\-_]{35}`), OpenAI (`sk-[A-Za-z0-9\-_]{20,}`), GitHub PATs (`ghp_...`), Bearer headers, and Burmese assignment markers (`<secret> အဖြစ် / လို့ / သို့`), replacing them in-place with `[REDACTED_SECRET]`.
+
 ## Document Intelligence & Hybrid RRF RAG (`/docsearch`)
 
 Ronin features an integrated on-device personal document intelligence and Hybrid RAG subsystem bridging Android OS pickers, native SQLite vector search, and local LLMs:
