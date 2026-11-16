@@ -83,14 +83,19 @@ object PrivacyShield {
         """\b(?:[0-9]{1,2}|[\u1040-\u1049]{1,2})/[A-Za-z\u1000-\u104F]+(?:\([A-Za-z\u1000-\u104F]+\))?(?:[0-9]{6}|[\u1040-\u1049]{6})\b"""
     )
 
-    // 2. Myanmar Phone Numbers (+959..., 09..., +၉၅၉..., ၀၉...)
+    // 2. Myanmar Phone Numbers (+95 9..., 09..., +၉၅ ၉..., ၀၉..., spaces/hyphens/dots/slashes supported)
     private val MYANMAR_PHONE_REGEX = Regex(
-        """(?<=\A|[\s,.:;!?'"()\[\]])(?:\+?959|09|\+?၉၅၉|၀၉)[- ]?(?:[0-9]{7,9}|[\u1040-\u1049]{7,9})(?=\z|[\s,.:;!?'"()\[\]])"""
+        """(?<=\A|[\s,.:;!?'"()\[\]/|•·\u1000-\u103F])(?:\(?\+?(?:95|၉၅)\)?[-.\s]*(?:9|၉)|\(?(?:09|၀၉)\)?)(?:[-.\s]*(?:[0-9]|[\u1040-\u1049])){7,9}(?=\z|[^\d\u1040-\u1049])"""
     )
 
-    // International Phone with labels (Tel:, Phone:, Ph:)
+    // Labeled Phone with prefixes (Tel:, Phone:, Ph:, Viber:, Office:, Fax:, ဖုန်း:) including landlines like 01-234567
     private val LABELED_PHONE_REGEX = Regex(
-        """(?i:\b(?:tel|phone|mobile|call|ph|cell|viber)[:\s]+)(\+?[0-9]{7,15})\b"""
+        """(?i:(?:tel|phone|mobile|mob|call|ph|cell|viber|whatsapp|wa|hotline|office|fax|ဖုန်း|ဆက်သွယ်ရန်)[.:\-\s]+)(\+?(?:[0-9\u1040-\u1049][-.\s()]*){6,15}[0-9\u1040-\u1049])(?=\z|[^\d\u1040-\u1049])"""
+    )
+
+    // Generic International E.164 Phone (+1..., +65..., +66...) with 8-15 total digits
+    private val INTL_PHONE_REGEX = Regex(
+        """(?<=\A|[\s,;!?'"()\[\]/|•·])(\+[1-9](?:[-.\s()]?[0-9]){7,14})(?=\z|[^\d])"""
     )
 
     // 3. Email Addresses
@@ -157,6 +162,7 @@ object PrivacyShield {
         if (config.redactPhone) {
             currentText = redactPattern(currentText, MYANMAR_PHONE_REGEX, "[PHONE_REDACTED]", RedactionType.PHONE, occurrences, typesFound)
             currentText = redactPattern(currentText, LABELED_PHONE_REGEX, "[PHONE_REDACTED]", RedactionType.PHONE, occurrences, typesFound, matchGroupIndex = 1)
+            currentText = redactPattern(currentText, INTL_PHONE_REGEX, "[PHONE_REDACTED]", RedactionType.PHONE, occurrences, typesFound, matchGroupIndex = 1)
         }
 
         // 6. Emails
@@ -231,9 +237,29 @@ object PrivacyShield {
         if (config.redactSecrets && API_KEY_REGEX.containsMatchIn(text)) return true
         if (config.redactCredentials && PASSWORD_REGEX.containsMatchIn(text)) return true
         if (config.redactFinancial && (CREDIT_CARD_REGEX.containsMatchIn(text) || BANK_ACCOUNT_REGEX.containsMatchIn(text))) return true
-        if (config.redactPhone && (MYANMAR_PHONE_REGEX.containsMatchIn(text) || LABELED_PHONE_REGEX.containsMatchIn(text))) return true
+        if (config.redactPhone && (MYANMAR_PHONE_REGEX.containsMatchIn(text) || LABELED_PHONE_REGEX.containsMatchIn(text) || INTL_PHONE_REGEX.containsMatchIn(text))) return true
         if (config.redactEmail && EMAIL_REGEX.containsMatchIn(text)) return true
         return false
+    }
+
+    /**
+     * Produces a partial masked phone string (e.g. "097•••••56") for locked on-device previews.
+     */
+    fun maskPhoneForPreview(phone: String): String {
+        val clean = phone.trim()
+        if (clean.length <= 5) return "•••••"
+        return clean.take(3) + "•••••" + clean.takeLast(2)
+    }
+
+    /**
+     * Produces a partial masked email string (e.g. "a***@domain.com") for locked on-device previews.
+     */
+    fun maskEmailForPreview(email: String): String {
+        val at = email.indexOf('@')
+        if (at <= 0) return "[EMAIL_REDACTED]"
+        val local = email.substring(0, at)
+        val domain = email.substring(at)
+        return "${local.first()}•••$domain"
     }
 
     /**

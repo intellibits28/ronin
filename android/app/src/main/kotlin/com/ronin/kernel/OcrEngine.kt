@@ -53,7 +53,9 @@ object OcrEngine {
         val language: String = "",
         val processingTimeMs: Long = 0,
         val pageCount: Int = 1,
-        val error: String? = null
+        val error: String? = null,
+        val darkModeInverted: Boolean = false,
+        val psmMode: String = "AUTO"
     )
 
     /**
@@ -312,19 +314,67 @@ object OcrEngine {
         }
     }
 
+    internal fun isMeaningfulOcrLine(line: String): Boolean {
+        val trimmed = line.trim()
+        if (trimmed.length < 2) return false
+        val validChars = trimmed.count { it.isLetterOrDigit() || it in '\u1000'..'\u109F' || it == '+' }
+        return validChars >= 2
+    }
+
+    internal fun mergeUniqueOcrLines(primaryText: String, secondaryText: String): String {
+        val primaryLines = primaryText.lines().map { it.trim() }.filter { it.isNotBlank() }
+        val secondaryLines = secondaryText.lines().map { it.trim() }.filter { isMeaningfulOcrLine(it) }
+        if (primaryLines.isEmpty()) return secondaryLines.joinToString("\n")
+        if (secondaryLines.isEmpty()) return primaryLines.joinToString("\n")
+
+        val normalizeKey = { s: String ->
+            s.lowercase().replace(Regex("[\\s\\p{Punct}]+"), "")
+        }
+        val existingKeys = primaryLines.map { normalizeKey(it) }.filter { it.isNotEmpty() }.toMutableSet()
+        val extraHeaderLines = mutableListOf<String>()
+        val extraTailLines = mutableListOf<String>()
+
+        secondaryLines.forEachIndexed { idx, line ->
+            val key = normalizeKey(line)
+            val isCovered = key.isEmpty() || existingKeys.any {
+                it == key || (key.length >= 4 && it.contains(key)) || (it.length >= 4 && key.contains(it))
+            }
+            if (!isCovered) {
+                existingKeys.add(key)
+                if (idx == 0 && !line.any { it.isDigit() } && extraHeaderLines.isEmpty()) {
+                    extraHeaderLines.add(line)
+                } else {
+                    extraTailLines.add(line)
+                }
+            }
+        }
+        return (extraHeaderLines + primaryLines + extraTailLines).joinToString("\n")
+    }
+
     private fun recognizeImageFile(
         context: Context,
         imageFile: File,
         language: String,
         startTime: Long
     ): OcrResult {
-        var bitmap: Bitmap? = null
+        var rawBitmap: Bitmap? = null
+        var orientedBitmap: Bitmap? = null
+        var preparedBitmap: Bitmap? = null
+        var invertedBitmap: Bitmap? = null
         var tessBaseAPI: TessBaseAPI? = null
         return try {
-            bitmap = decodeSampledBitmap(imageFile.absolutePath, 2048, 2048)
-            if (bitmap == null) {
+            rawBitmap = decodeSampledBitmap(imageFile.absolutePath, 2048, 2048)
+            if (rawBitmap == null) {
                 return OcrResult(success = false, error = "Failed to decode image: ${imageFile.name}")
             }
+
+            orientedBitmap = OcrImagePreprocessor.applyExifOrientation(imageFile.absolutePath, rawBitmap)
+            if (orientedBitmap != rawBitmap) {
+                rawBitmap = null // recycled inside applyExifOrientation
+            }
+
+            val prepared = OcrImagePreprocessor.prepareForTesseract(orientedBitmap, forceInvert = false)
+            preparedBitmap = prepared.bitmap
 
             tessBaseAPI = TessBaseAPI()
             val datapath = context.filesDir.absolutePath
@@ -333,20 +383,71 @@ object OcrEngine {
                 return OcrResult(success = false, error = "Failed to initialize Tesseract engine with language '$language'")
             }
 
+            tessBaseAPI.setVariable("user_defined_dpi", "300")
+
+            // Pass 1: PSM_AUTO on preprocessed (contrast-stretched, upscaled, padded, dark-mode-ready) image
             tessBaseAPI.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO
-            tessBaseAPI.setImage(bitmap)
+            tessBaseAPI.setImage(preparedBitmap)
+            val autoText = (tessBaseAPI.utF8Text ?: "").trim()
+            val autoConf = tessBaseAPI.meanConfidence()
 
-            val text = tessBaseAPI.utF8Text ?: ""
-            val confidence = tessBaseAPI.meanConfidence()
+            var bestText = autoText
+            var bestConf = autoConf
+            var usedPsm = "AUTO"
+            var usedDarkInvert = prepared.inverted
+
+            val autoNonBlankLines = autoText.lines().count { isMeaningfulOcrLine(it) }
+
+            // Pass 2: PSM_SPARSE_TEXT for business cards & cropped screenshots if Pass 1 looks sparse or uncertain
+            if (autoNonBlankLines < 3 || autoText.length < 36 || autoConf < 74) {
+                tessBaseAPI.pageSegMode = TessBaseAPI.PageSegMode.PSM_SPARSE_TEXT
+                tessBaseAPI.setImage(preparedBitmap)
+                val sparseText = (tessBaseAPI.utF8Text ?: "").trim()
+                val sparseConf = tessBaseAPI.meanConfidence()
+                val sparseLines = sparseText.lines().count { isMeaningfulOcrLine(it) }
+
+                if (sparseLines > autoNonBlankLines || (sparseLines == autoNonBlankLines && sparseText.length > autoText.length && sparseConf >= autoConf - 8)) {
+                    bestText = mergeUniqueOcrLines(sparseText, autoText)
+                    bestConf = maxOf(autoConf, sparseConf)
+                    usedPsm = "SPARSE_FUSED"
+                } else if (sparseText.isNotBlank()) {
+                    val merged = mergeUniqueOcrLines(autoText, sparseText)
+                    if (merged != bestText) {
+                        bestText = merged
+                        usedPsm = "AUTO+SPARSE"
+                    }
+                }
+            }
+
+            // Pass 3: Mixed-polarity rescue (e.g. white Name on dark blue header + black numbers on white card body)
+            val currentLines = bestText.lines().count { isMeaningfulOcrLine(it) }
+            if (!prepared.inverted && prepared.statsBefore.darkFraction >= 0.16f && currentLines < 3) {
+                val invPrepared = OcrImagePreprocessor.prepareForTesseract(orientedBitmap, forceInvert = true)
+                invertedBitmap = invPrepared.bitmap
+                tessBaseAPI.pageSegMode = TessBaseAPI.PageSegMode.PSM_SPARSE_TEXT
+                tessBaseAPI.setImage(invertedBitmap)
+                val invText = (tessBaseAPI.utF8Text ?: "").trim()
+                val invConf = tessBaseAPI.meanConfidence()
+                val invLines = invText.lines().count { isMeaningfulOcrLine(it) }
+                if (invLines > 0 && invConf >= 45) {
+                    bestText = mergeUniqueOcrLines(bestText, invText)
+                    if (bestText.lines().count { isMeaningfulOcrLine(it) } > currentLines) {
+                        usedDarkInvert = true
+                        usedPsm = "$usedPsm+BIMODAL"
+                    }
+                }
+            }
+
             val timeTaken = System.currentTimeMillis() - startTime
-
             OcrResult(
                 success = true,
-                text = text.trim(),
-                confidence = confidence,
+                text = bestText.trim(),
+                confidence = bestConf,
                 language = language,
                 processingTimeMs = timeTaken,
-                pageCount = 1
+                pageCount = 1,
+                darkModeInverted = usedDarkInvert,
+                psmMode = usedPsm
             )
         } catch (e: Exception) {
             Log.e(TAG, "OCR recognition error: ${e.message}", e)
@@ -354,7 +455,10 @@ object OcrEngine {
         } finally {
             try {
                 tessBaseAPI?.recycle()
-                bitmap?.recycle()
+                invertedBitmap?.recycle()
+                preparedBitmap?.recycle()
+                orientedBitmap?.recycle()
+                rawBitmap?.recycle()
             } catch (_: Exception) {}
         }
     }

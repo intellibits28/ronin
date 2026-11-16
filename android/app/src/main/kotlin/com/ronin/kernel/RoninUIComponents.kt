@@ -902,7 +902,11 @@ fun AgentResponseCard(
     onContinue: () -> Unit,
     onFeedback: (Boolean) -> Unit,
     onSummarizeFile: ((String) -> Unit)? = null,
-    onOcrFile: ((String) -> Unit)? = null
+    onOcrFile: ((String) -> Unit)? = null,
+    onUnlockOcrPii: ((ChatMessage) -> Unit)? = null,
+    onLockOcrPii: ((ChatMessage) -> Unit)? = null,
+    onReviewContact: ((ChatMessage, ContactSaveMode) -> Unit)? = null,
+    onOpenSavedContact: ((Long, String?) -> Unit)? = null
 ) {
     val isUser = msg.sender == "User"
     val context = LocalContext.current
@@ -1078,6 +1082,17 @@ fun AgentResponseCard(
                         }
                     }
 
+                    if (!isUser && (msg.detectedContact != null || msg.rawOcrText.isNotEmpty())) {
+                        OcrContactActionCard(
+                            msg = msg,
+                            privacyShieldEnabled = chatViewModel.privacyShieldEnabled,
+                            onUnlockPiiClick = { onUnlockOcrPii?.invoke(msg) },
+                            onLockPiiClick = { onLockOcrPii?.invoke(msg) },
+                            onReviewContactClick = { mode -> onReviewContact?.invoke(msg, mode) },
+                            onOpenSavedContactClick = { id, key -> onOpenSavedContact?.invoke(id, key) }
+                        )
+                    }
+
                     if (msg.isTruncated && !isUser) {
                         Spacer(Modifier.height(8.dp))
                         OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
@@ -1123,6 +1138,7 @@ val ALL_RONIN_COMMANDS = listOf(
     RoninSlashCommand("/docsearch", "Hybrid RRF semantic+lexical search: /docsearch <path> <term>"),
     RoninSlashCommand("/read", "Preview document contents: /read <path> [lines]"),
     RoninSlashCommand("/ocr", "Extract text from image/PDF: /ocr <path> [mya|eng]"),
+    RoninSlashCommand("/contact", "Parse & save/update contact from OCR or text: /contact [info]"),
     RoninSlashCommand("/privacy", "Privacy Shield & PII Redaction: /privacy [on|off|test]"),
     RoninSlashCommand("/vault", "Encrypted Vault (AES-256): /vault [list|encrypt|decrypt|delete]"),
     RoninSlashCommand("/hygiene", "Storage hygiene & duplicate file cleaner: /hygiene"),
@@ -1282,7 +1298,8 @@ fun InputBar(
 fun AttachmentPickerDialog(
     onDismiss: () -> Unit,
     onPickPhotoOcr: () -> Unit,
-    onPickDocument: () -> Unit
+    onPickDocument: () -> Unit,
+    onPickCameraCard: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1299,7 +1316,7 @@ fun AttachmentPickerDialog(
         text = {
             Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                 Text(
-                    "Choose an option to load files or photos directly into Ronin:",
+                    "Choose an option to load files, screenshots, or business cards:",
                     color = Color.LightGray,
                     fontSize = 13.sp
                 )
@@ -1322,16 +1339,44 @@ fun AttachmentPickerDialog(
                         Text("🖼️", fontSize = 24.sp)
                         Spacer(Modifier.width(14.dp))
                         Column {
-                            Text("Gallery / Photos (OCR)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("Gallery / Photos (OCR & Cards)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Spacer(Modifier.height(2.dp))
-                            Text("Pick image to extract text (Myanmar & English)", color = Color.LightGray, fontSize = 11.sp)
+                            Text("Extract text, phone numbers & contacts (Myanmar & Eng)", color = Color.LightGray, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                if (onPickCameraCard != null) {
+                    Spacer(Modifier.height(10.dp))
+
+                    // Option 2: Camera Business Card Scan
+                    Surface(
+                        color = Color(0xFF25283D),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF34D399).copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            onDismiss()
+                            onPickCameraCard()
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("📷", fontSize = 24.sp)
+                            Spacer(Modifier.width(14.dp))
+                            Column {
+                                Text("Scan Business Card (Camera)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Spacer(Modifier.height(2.dp))
+                                Text("Snap a card to add/update phonebook contacts", color = Color.LightGray, fontSize = 11.sp)
+                            }
                         }
                     }
                 }
 
                 Spacer(Modifier.height(10.dp))
 
-                // Option 2: Browse Documents
+                // Option 3: Browse Documents
                 Surface(
                     color = Color(0xFF25283D),
                     shape = RoundedCornerShape(12.dp),
@@ -1392,6 +1437,10 @@ fun SettingsSection(
                 SettingsSwitchRow("Privacy Shield (PII Redaction)", chatViewModel.privacyShieldEnabled) {
                     chatViewModel.privacyShieldEnabled = it
                     activity?.savePrivacyShieldEnabled(it)
+                }
+                SettingsSwitchRow("Biometric Lock for Contacts", chatViewModel.biometricContactsEnabled) {
+                    chatViewModel.biometricContactsEnabled = it
+                    activity?.saveBiometricContactsEnabled(it)
                 }
                 SettingsSwitchRow("Cloud Only Mode", chatViewModel.cloudOnlyMode) {
                     chatViewModel.cloudOnlyMode = it

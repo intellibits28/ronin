@@ -45,6 +45,15 @@ object CapabilityPolicyEngine {
             allowOffline = true,
             allowCloud = true
         ),
+        "CONTACTS_WRITE" to Policy(
+            "CONTACTS_WRITE",
+            listOf(android.Manifest.permission.READ_CONTACTS, android.Manifest.permission.WRITE_CONTACTS),
+            requiresHITL = true,
+            requiresAudit = true,
+            RiskLevel.HIGH,
+            allowOffline = true,
+            allowCloud = true
+        ),
         "CALENDAR" to Policy(
             "CALENDAR",
             listOf(android.Manifest.permission.READ_CALENDAR, android.Manifest.permission.WRITE_CALENDAR),

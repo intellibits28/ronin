@@ -105,4 +105,40 @@ class PrivacyShieldTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun testSpacedHyphenatedAndSlashSeparatedMyanmarPhonesRedacted() {
+        val input = "Ko Kyaw\n09 799 123 456\n09-420-987-654\n09111222333/09444555666\nOffice Tel: 01-234567"
+        val result = PrivacyShield.redact(input)
+
+        assertTrue(result.hasRedactions)
+        assertEquals(5, result.redactionCount)
+        assertTrue(result.sanitizedText.contains("Ko Kyaw"))
+        assertFalse(result.sanitizedText.contains("799"))
+        assertFalse(result.sanitizedText.contains("420"))
+        assertFalse(result.sanitizedText.contains("09111222333"))
+        assertFalse(result.sanitizedText.contains("09444555666"))
+        assertFalse(result.sanitizedText.contains("01-234567"))
+    }
+
+    @Test
+    fun testShmTelemetryDecimalsNotFalseMatchedAsIntlPhone() {
+        val input = "Resonance f0 = 4.52 Hz, SNR = +18.4 dB, Date 09-12-2026"
+        val result = PrivacyShield.redact(input)
+
+        assertFalse(result.hasRedactions)
+        assertEquals(0, result.redactionCount)
+    }
+
+    @Test
+    fun testPreviewMaskingHelpers() {
+        val maskedPhone = PrivacyShield.maskPhoneForPreview("09799123456")
+        assertTrue(maskedPhone.startsWith("097"))
+        assertTrue(maskedPhone.endsWith("56"))
+        assertTrue(maskedPhone.contains("•"))
+        assertFalse(maskedPhone.contains("91234"))
+
+        val maskedEmail = PrivacyShield.maskEmailForPreview("kyaw@apex.com.mm")
+        assertEquals("k•••@apex.com.mm", maskedEmail)
+    }
 }

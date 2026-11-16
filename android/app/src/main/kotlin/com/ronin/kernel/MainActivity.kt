@@ -65,6 +65,7 @@ import android.provider.ContactsContract
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -94,6 +95,16 @@ class ChatMessage(
     var feedbackGiven by mutableStateOf(false) // v10.2.17
     val fileResults = mutableStateListOf<String>().apply { addAll(initialFileResults) }
 
+    // OCR & Contact Extraction state
+    var rawOcrText by mutableStateOf("")
+    var ocrHeaderPrefix by mutableStateOf("")
+    var isOcrPiiUnlocked by mutableStateOf(false)
+    var detectedContact by mutableStateOf<ContactCardParser.ParsedContactCandidate?>(null)
+    var matchedExistingContacts by mutableStateOf<List<ContactManager.ExistingContactRecord>>(emptyList())
+    var contactSavedStatus by mutableStateOf<String?>(null)
+    var savedContactId by mutableStateOf(-1L)
+    var savedContactLookupKey by mutableStateOf<String?>(null)
+
     fun copy(
         content: String = this.content,
         isThinking: Boolean = this.isThinking,
@@ -104,6 +115,14 @@ class ChatMessage(
     ) = ChatMessage(id, sender, content, isThinking, thoughtContent, sessionId, fileResults).apply {
         this.isTruncated = isTruncated
         this.isContinuing = isContinuing
+        this.rawOcrText = this@ChatMessage.rawOcrText
+        this.ocrHeaderPrefix = this@ChatMessage.ocrHeaderPrefix
+        this.isOcrPiiUnlocked = this@ChatMessage.isOcrPiiUnlocked
+        this.detectedContact = this@ChatMessage.detectedContact
+        this.matchedExistingContacts = this@ChatMessage.matchedExistingContacts
+        this.contactSavedStatus = this@ChatMessage.contactSavedStatus
+        this.savedContactId = this@ChatMessage.savedContactId
+        this.savedContactLookupKey = this@ChatMessage.savedContactLookupKey
     }
 }
 
@@ -140,6 +159,8 @@ class ChatViewModel : ViewModel() {
     var offlineMode by mutableStateOf(false)
     var cloudOnlyMode by mutableStateOf(false)
     var privacyShieldEnabled by mutableStateOf(true)
+    var biometricContactsEnabled by mutableStateOf(true)
+    var activeContactReviewRequest by mutableStateOf<ContactReviewRequest?>(null)
     var localModelPath by mutableStateOf("")
     var primaryCloudProvider by mutableStateOf("Gemini")
     val cloudProviders = mutableStateListOf<CloudProvider>()
@@ -611,6 +632,7 @@ class MainActivity : FragmentActivity() {
         chatViewModel.isThinkingEnabled = sharedPreferences.getBoolean("is_thinking_enabled", true)
         chatViewModel.cloudOnlyMode = sharedPreferences.getBoolean("cloud_only_mode", false)
         chatViewModel.privacyShieldEnabled = sharedPreferences.getBoolean("privacy_shield_enabled", true)
+        chatViewModel.biometricContactsEnabled = sharedPreferences.getBoolean("biometric_contacts_enabled", true)
         chatViewModel.hfAccessToken = sharedPreferences.getString("hf_access_token", "") ?: ""
         refreshInstalledTessModels()
 
@@ -802,6 +824,11 @@ class MainActivity : FragmentActivity() {
         chatViewModel.privacyShieldEnabled = enabled
         sharedPreferences.edit().putBoolean("privacy_shield_enabled", enabled).apply()
     }
+    fun saveBiometricContactsEnabled(enabled: Boolean) {
+        val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        chatViewModel.biometricContactsEnabled = enabled
+        sharedPreferences.edit().putBoolean("biometric_contacts_enabled", enabled).apply()
+    }
 
     fun fetchModels(provider: String) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
@@ -942,6 +969,7 @@ class MainActivity : FragmentActivity() {
             android.Manifest.permission.RECORD_AUDIO,
             android.Manifest.permission.SEND_SMS,
             android.Manifest.permission.READ_CONTACTS,
+            android.Manifest.permission.WRITE_CONTACTS,
             android.Manifest.permission.READ_CALENDAR,
             android.Manifest.permission.WRITE_CALENDAR,
             android.Manifest.permission.READ_EXTERNAL_STORAGE
@@ -1102,6 +1130,94 @@ class MainActivity : FragmentActivity() {
             latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
         } catch (e: Exception) {}
         return approved
+    }
+
+    fun authenticateBiometricAsync(
+        title: String,
+        subtitle: String,
+        fallbackToHitlIfUnavailable: Boolean = true,
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        runOnUiThread {
+            try {
+                val biometricManager = BiometricManager.from(this)
+                val authenticators = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val strongStatus = biometricManager.canAuthenticate(
+                        BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                    )
+                    if (strongStatus == BiometricManager.BIOMETRIC_SUCCESS) {
+                        BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                    } else {
+                        BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                    }
+                } else {
+                    BiometricManager.Authenticators.BIOMETRIC_WEAK
+                }
+
+                val keyguard = getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
+                val canAuth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    biometricManager.canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
+                } else {
+                    @Suppress("DEPRECATION")
+                    biometricManager.canAuthenticate() == BiometricManager.BIOMETRIC_SUCCESS ||
+                        (keyguard?.isDeviceSecure == true)
+                }
+
+                if (!canAuth) {
+                    if (fallbackToHitlIfUnavailable) {
+                        val vm = ViewModelProvider(this)[ChatViewModel::class.java]
+                        vm.hitlIntentName = "BIOMETRIC_FALLBACK"
+                        vm.hitlMessage = "$title\n\n$subtitle"
+                        vm.onHITLResult = { approved ->
+                            onResult(approved, if (approved) null else "Confirmation declined.")
+                        }
+                        vm.showHITLDialog = true
+                    } else {
+                        onResult(false, "Biometric or device credential lock is not configured on this device.")
+                    }
+                    return@runOnUiThread
+                }
+
+                val executor = ContextCompat.getMainExecutor(this)
+                val biometricPrompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(authResult: BiometricPrompt.AuthenticationResult) {
+                        super.onAuthenticationSucceeded(authResult)
+                        onResult(true, null)
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        super.onAuthenticationError(errorCode, errString)
+                        onResult(false, errString.toString())
+                    }
+                })
+
+                val promptBuilder = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle(title)
+                    .setSubtitle(subtitle)
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    promptBuilder.setAllowedAuthenticators(authenticators)
+                } else {
+                    @Suppress("DEPRECATION")
+                    promptBuilder.setDeviceCredentialAllowed(true)
+                }
+
+                biometricPrompt.authenticate(promptBuilder.build())
+            } catch (e: Exception) {
+                Log.w("RoninKernel_MainActivity", "Biometric prompt error: ${e.message}")
+                if (fallbackToHitlIfUnavailable) {
+                    val vm = ViewModelProvider(this)[ChatViewModel::class.java]
+                    vm.hitlIntentName = "BIOMETRIC_FALLBACK"
+                    vm.hitlMessage = "$title\n\n$subtitle"
+                    vm.onHITLResult = { approved ->
+                        onResult(approved, if (approved) null else "Confirmation declined.")
+                    }
+                    vm.showHITLDialog = true
+                } else {
+                    onResult(false, e.message)
+                }
+            }
+        }
     }
 
     private fun setupHardwareCallbacks() {
@@ -1331,7 +1447,11 @@ class MainActivity : FragmentActivity() {
         nativeEngine.executeAgentToolCallback = { toolName, params ->
             val actionName = (params["action"] ?: toolName).uppercase()
             val intentContext = (params["intent"] ?: "").uppercase()
-            Log.i("RoninKernel_MainActivity", "Executing Tool: $toolName (Action: $actionName, Intent: $intentContext)")
+            val isContactWriteAction = (actionName.contains("CONTACT") || toolName.uppercase().contains("CONTACT")) &&
+                (actionName.contains("ADD") || actionName.contains("SAVE") || actionName.contains("UPDATE") ||
+                 actionName.contains("CREATE") || actionName.contains("MERGE"))
+            val policyId = if (isContactWriteAction) "CONTACTS_WRITE" else toolName
+            Log.i("RoninKernel_MainActivity", "Executing Tool: $toolName (Action: $actionName, Intent: $intentContext, Policy: $policyId)")
             if (!actionName.contains("NOTE_MAPPER") && !actionName.contains("TUNER") && toolName.uppercase() != "NOTE_MAPPER" && toolName.uppercase() != "AUDIO_CAPTURE" && toolName.uppercase() != "FFT" && toolName.uppercase() != "DETECT_PEAKS") {
                 runOnUiThread {
                     if (vm.tunerResult.status != "IDLE") {
@@ -1343,7 +1463,7 @@ class MainActivity : FragmentActivity() {
             val eval = CapabilityPolicyEngine.evaluate(
                 context = this,
                 nativeEngine = nativeEngine,
-                capabilityId = toolName,
+                capabilityId = policyId,
                 params = params,
                 isOffline = vm.offlineMode,
                 isCloudOnly = vm.cloudOnlyMode
@@ -1352,10 +1472,10 @@ class MainActivity : FragmentActivity() {
             if (eval is CapabilityPolicyEngine.EvaluationResult.Denied) {
                 "Error: Policy Denied - ${eval.reason}"
             } else {
-                val policy = CapabilityPolicyEngine.getPolicy(toolName)
-                val hitlApproved = if (policy != null && policy.requiresHITL) {
+                val policy = CapabilityPolicyEngine.getPolicy(policyId)
+                val hitlApproved = if (policy != null && policy.requiresHITL && !isContactWriteAction) {
                     requestHITLConfirmationInKotlin(
-                        intentName = toolName,
+                        intentName = policyId,
                         message = "Agent requests permission to execute sensitive action: $toolName (${params["message"] ?: params["sms_body"] ?: params["title"] ?: ""})"
                     )
                 } else {
@@ -1530,19 +1650,59 @@ class MainActivity : FragmentActivity() {
                         }
                     } catch (e: Exception) { "Error: ${e.message}" }
                 }
-                actionName.contains("CONTACT") || actionName.contains("RESOLVE") || toolName == "CONTACTS" -> {
-                    val name = params["recipient_name"] ?: params["recipient"] ?: params["contact_name"] ?: "Unknown"
-                    val resolvedPhone = resolveContactName(name)
-                    val resolvedEmail = resolveContactEmail(name)
-                    if (intentContext.contains("MAIL") || actionName.contains("MAIL")) {
-                        if (resolvedEmail.isNotEmpty()) resolvedEmail
-                        else if (resolvedPhone == "PERMISSION_DENIED") "Error: Permission Denied"
-                        else if (resolvedPhone.startsWith("NOT_FOUND")) name
-                        else name
+                actionName.contains("CONTACT") || actionName.contains("RESOLVE") || toolName == "CONTACTS" || toolName == "CONTACTS_WRITE" -> {
+                    if (isContactWriteAction) {
+                        val rawSource = params["original_query"] ?: params["contact_text"] ?: listOfNotNull(
+                            params["contact_name"] ?: params["name"],
+                            params["phone"] ?: params["phone_number"]
+                        ).joinToString("\n")
+                        val parsed = ContactCardParser.parseNaturalContactCommand(rawSource)
+                        val candidate = if (parsed.hasContactInfo) {
+                            parsed
+                        } else {
+                            var lastCand: ContactCardParser.ParsedContactCandidate? = null
+                            val snapLatch = java.util.concurrent.CountDownLatch(1)
+                            runOnUiThread {
+                                lastCand = vm.messages.lastOrNull { it.detectedContact != null }?.detectedContact
+                                snapLatch.countDown()
+                            }
+                            try { snapLatch.await(2, TimeUnit.SECONDS) } catch (_: Exception) {}
+                            lastCand
+                        }
+                        if (candidate == null || !candidate.hasContactInfo) {
+                            "No contact phone number or email found to save."
+                        } else {
+                            val matches = ContactManager.findMatchingContacts(this@MainActivity, candidate)
+                            val initialMode = if (actionName.contains("UPDATE") || actionName.contains("MERGE") || matches.isNotEmpty()) {
+                                ContactSaveMode.UPDATE_EXISTING
+                            } else {
+                                ContactSaveMode.CREATE_NEW
+                            }
+                            runOnUiThread {
+                                vm.activeContactReviewRequest = ContactReviewRequest(
+                                    sourceMessageId = null,
+                                    initialCandidate = candidate,
+                                    initialMatches = matches,
+                                    initialMode = initialMode,
+                                    alreadyBiometricVerified = false
+                                )
+                            }
+                            "Opened Contact Approval Dialog for '${candidate.displayName.ifBlank { candidate.phones.firstOrNull()?.number ?: "Contact" }}'."
+                        }
                     } else {
-                        if (resolvedPhone == "PERMISSION_DENIED") "Error: Permission Denied"
-                        else if (resolvedPhone.startsWith("NOT_FOUND")) "Error: Contact not found: $name"
-                        else resolvedPhone
+                        val name = params["recipient_name"] ?: params["recipient"] ?: params["contact_name"] ?: "Unknown"
+                        val resolvedPhone = resolveContactName(name)
+                        val resolvedEmail = resolveContactEmail(name)
+                        if (intentContext.contains("MAIL") || actionName.contains("MAIL")) {
+                            if (resolvedEmail.isNotEmpty()) resolvedEmail
+                            else if (resolvedPhone == "PERMISSION_DENIED") "Error: Permission Denied"
+                            else if (resolvedPhone.startsWith("NOT_FOUND")) name
+                            else name
+                        } else {
+                            if (resolvedPhone == "PERMISSION_DENIED") "Error: Permission Denied"
+                            else if (resolvedPhone.startsWith("NOT_FOUND")) "Error: Contact not found: $name"
+                            else resolvedPhone
+                        }
                     }
                 }
                 
@@ -2182,6 +2342,198 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
         }
     }
 
+    fun formatOcrBubbleContent(
+        headerPrefix: String,
+        rawText: String,
+        privacyShieldEnabled: Boolean,
+        isUnlocked: Boolean,
+        parsedContact: ContactCardParser.ParsedContactCandidate?,
+        matchedCount: Int
+    ): String {
+        val contactLine = if (parsedContact != null && parsedContact.hasContactInfo) {
+            val matchText = if (matchedCount > 0) " • $matchedCount existing match(es)" else ""
+            "\n• 📇 Contact Card Detected: ${parsedContact.phones.size} phone(s)$matchText"
+        } else ""
+
+        return if (privacyShieldEnabled && !isUnlocked) {
+            val red = PrivacyShield.redact(rawText)
+            val privacyBadge = if (red.hasRedactions) {
+                "\n• 🛡️ Privacy Shield: Redacted ${red.redactionCount} PII item(s) ([${red.redactedTypes.joinToString()}])"
+            } else ""
+            val preview = if (red.sanitizedText.length > 3000) red.sanitizedText.take(3000) + "\n... [truncated]" else red.sanitizedText
+            "$headerPrefix$privacyBadge$contactLine\n\n```text\n$preview\n```"
+        } else {
+            val privacyBadge = if (privacyShieldEnabled && PrivacyShield.isSensitive(rawText)) {
+                "\n• 🔓 Privacy Shield: Local Biometric Unlocked (Cloud Blocked)"
+            } else ""
+            val preview = if (rawText.length > 3000) rawText.take(3000) + "\n... [truncated]" else rawText
+            "$headerPrefix$privacyBadge$contactLine\n\n```text\n$preview\n```"
+        }
+    }
+
+    var pendingContactWriteAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val contactsPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val writeGranted = grants[android.Manifest.permission.WRITE_CONTACTS] == true || ContactManager.hasWritePermission(context)
+        val pending = pendingContactWriteAction
+        pendingContactWriteAction = null
+        if (writeGranted) {
+            pending?.invoke()
+        } else {
+            Toast.makeText(context, "Contacts write permission is required to save/update contacts.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun executeContactWriteWithSecurity(
+        mode: ContactSaveMode,
+        candidate: ContactCardParser.ParsedContactCandidate,
+        targetExisting: ContactManager.ExistingContactRecord?,
+        sourceMessageId: Long?,
+        alreadyBiometricVerified: Boolean
+    ) {
+        val executeWrite: () -> Unit = {
+            scope.launch {
+                val writeRes = withContext(Dispatchers.IO) {
+                    when (mode) {
+                        ContactSaveMode.CREATE_NEW -> ContactManager.insertNewContact(context, candidate)
+                        ContactSaveMode.UPDATE_EXISTING -> {
+                            val target = targetExisting ?: return@withContext ContactManager.ContactWriteResult(
+                                success = false,
+                                error = "No existing contact selected to update."
+                            )
+                            ContactManager.updateExistingContact(context, target, candidate)
+                        }
+                    }
+                }
+                if (writeRes.success) {
+                    engine.storeAuditLog(
+                        "CONTACT_WRITE",
+                        "action=${writeRes.action}, name=${writeRes.displayName}, added_phones=${writeRes.addedPhonesCount}"
+                    )
+                    val statusText = if (writeRes.action == "CREATED") {
+                        "Saved new contact: ${writeRes.displayName}"
+                    } else {
+                        "Updated '${writeRes.displayName}' (+${writeRes.addedPhonesCount} phone(s))"
+                    }
+                    if (sourceMessageId != null) {
+                        val srcMsg = chatViewModel.messages.find { it.id == sourceMessageId }
+                        if (srcMsg != null) {
+                            srcMsg.contactSavedStatus = statusText
+                            srcMsg.savedContactId = writeRes.contactId
+                            srcMsg.savedContactLookupKey = writeRes.lookupKey
+                        }
+                    }
+                    chatViewModel.messages.add(
+                        ChatMessage(System.currentTimeMillis(), "Ronin", "✅ **${writeRes.message}**")
+                    )
+                    Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
+                } else {
+                    chatViewModel.messages.add(
+                        ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Contact save failed: ${writeRes.error ?: "Unknown error"}")
+                    )
+                    Toast.makeText(context, writeRes.error ?: "Contact save failed", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
+        val needsBiometric = !alreadyBiometricVerified &&
+            (chatViewModel.biometricContactsEnabled || mode == ContactSaveMode.UPDATE_EXISTING)
+
+        val gatedExecution: () -> Unit = {
+            if (needsBiometric && activity != null) {
+                val bioTitle = if (mode == ContactSaveMode.UPDATE_EXISTING) "Approve Contact Update" else "Approve New Contact"
+                val bioTarget = if (mode == ContactSaveMode.UPDATE_EXISTING) {
+                    targetExisting?.displayName ?: candidate.displayName
+                } else {
+                    candidate.displayName.ifBlank { candidate.phones.firstOrNull()?.number ?: "Contact" }
+                }
+                val bioSubtitle = if (mode == ContactSaveMode.UPDATE_EXISTING) {
+                    "Authenticate to modify existing contact: $bioTarget"
+                } else {
+                    "Authenticate to add new contact: $bioTarget"
+                }
+                activity.authenticateBiometricAsync(bioTitle, bioSubtitle, fallbackToHitlIfUnavailable = true) { ok, err ->
+                    if (ok) {
+                        executeWrite()
+                    } else {
+                        Toast.makeText(context, err ?: "Contact confirmation cancelled", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } else {
+                executeWrite()
+            }
+        }
+
+        if (!ContactManager.hasWritePermission(context) || !ContactManager.hasReadPermission(context)) {
+            pendingContactWriteAction = gatedExecution
+            contactsPermissionLauncher.launch(
+                arrayOf(
+                    android.Manifest.permission.READ_CONTACTS,
+                    android.Manifest.permission.WRITE_CONTACTS
+                )
+            )
+        } else {
+            gatedExecution()
+        }
+    }
+
+    fun unlockOcrMessagePii(msg: ChatMessage, thenOpenMode: ContactSaveMode? = null) {
+        val unlockAndOpen = { verifiedNow: Boolean ->
+            msg.isOcrPiiUnlocked = true
+            if (msg.rawOcrText.isNotBlank() && msg.ocrHeaderPrefix.isNotBlank()) {
+                msg.content = formatOcrBubbleContent(
+                    headerPrefix = msg.ocrHeaderPrefix,
+                    rawText = msg.rawOcrText,
+                    privacyShieldEnabled = chatViewModel.privacyShieldEnabled,
+                    isUnlocked = true,
+                    parsedContact = msg.detectedContact,
+                    matchedCount = msg.matchedExistingContacts.size
+                )
+            }
+            if (thenOpenMode != null && msg.detectedContact != null) {
+                chatViewModel.activeContactReviewRequest = ContactReviewRequest(
+                    sourceMessageId = msg.id,
+                    initialCandidate = msg.detectedContact!!,
+                    initialMatches = msg.matchedExistingContacts,
+                    initialMode = thenOpenMode,
+                    alreadyBiometricVerified = verifiedNow
+                )
+            }
+        }
+
+        if (activity != null && chatViewModel.privacyShieldEnabled && !msg.isOcrPiiUnlocked) {
+            activity.authenticateBiometricAsync(
+                title = "Unlock Protected OCR Info",
+                subtitle = "Authenticate to reveal masked phone numbers & contact info",
+                fallbackToHitlIfUnavailable = true
+            ) { ok, err ->
+                if (ok) {
+                    unlockAndOpen(true)
+                } else {
+                    Toast.makeText(context, err ?: "Authentication cancelled", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } else {
+            unlockAndOpen(false)
+        }
+    }
+
+    fun openContactReviewFromMessage(msg: ChatMessage, mode: ContactSaveMode) {
+        val candidate = msg.detectedContact ?: return
+        if (chatViewModel.privacyShieldEnabled && !msg.isOcrPiiUnlocked) {
+            unlockOcrMessagePii(msg, thenOpenMode = mode)
+        } else {
+            chatViewModel.activeContactReviewRequest = ContactReviewRequest(
+                sourceMessageId = msg.id,
+                initialCandidate = candidate,
+                initialMatches = msg.matchedExistingContacts,
+                initialMode = mode,
+                alreadyBiometricVerified = false
+            )
+        }
+    }
+
     fun triggerOcrWorkflow(target: String, langInput: String = "mya+eng", logUserMessage: Boolean = true) {
         val lang = if (langInput.isNotBlank()) langInput else "mya+eng"
         if (logUserMessage) {
@@ -2220,23 +2572,83 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
             if (text.isBlank()) {
                 roninMsg.content = "🔍 OCR completed in ${ocrResult.processingTimeMs} ms, but no readable text was detected in **${resolved.name}**."
             } else {
-                val (processedText, privacyBadge) = if (chatViewModel.privacyShieldEnabled) {
-                    val red = PrivacyShield.redact(text)
-                    if (red.hasRedactions) {
-                        Pair(red.sanitizedText, "\n• 🛡️ Privacy Shield: Redacted ${red.redactionCount} PII item(s) ([${red.redactedTypes.joinToString()}])")
-                    } else {
-                        Pair(text, "")
+                val parsedContact = ContactCardParser.parse(text)
+                val matches = if (parsedContact.hasContactInfo) {
+                    withContext(Dispatchers.IO) {
+                        ContactManager.findMatchingContacts(context, parsedContact)
                     }
                 } else {
-                    Pair(text, "")
+                    emptyList()
                 }
-                val preview = if (processedText.length > 3000) processedText.take(3000) + "\n... [truncated]" else processedText
-                roninMsg.content = "🔍 **OCR Recognition Results** (${resolved.name}):\n• Language: `${ocrResult.language}`\n• Confidence: `${ocrResult.confidence}%`\n• Time Taken: `${ocrResult.processingTimeMs} ms`$privacyBadge\n\n```text\n$preview\n```"
+
+                val psmNote = if (ocrResult.psmMode != "AUTO") " • Mode: `${ocrResult.psmMode}`" else ""
+                val headerPrefix = "🔍 **OCR Recognition Results** (${resolved.name}):\n• Language: `${ocrResult.language}`\n• Confidence: `${ocrResult.confidence}%`\n• Time Taken: `${ocrResult.processingTimeMs} ms`$psmNote"
+
+                roninMsg.rawOcrText = text
+                roninMsg.ocrHeaderPrefix = headerPrefix
+                roninMsg.isOcrPiiUnlocked = !chatViewModel.privacyShieldEnabled
+                roninMsg.detectedContact = if (parsedContact.hasContactInfo) parsedContact else null
+                roninMsg.matchedExistingContacts = matches
+
+                roninMsg.content = formatOcrBubbleContent(
+                    headerPrefix = headerPrefix,
+                    rawText = text,
+                    privacyShieldEnabled = chatViewModel.privacyShieldEnabled,
+                    isUnlocked = roninMsg.isOcrPiiUnlocked,
+                    parsedContact = roninMsg.detectedContact,
+                    matchedCount = matches.size
+                )
             }
             roninMsg.fileResults.clear()
             roninMsg.fileResults.add(resolved.absolutePath)
             roninMsg.isThinking = false
             chatViewModel.isGenerating = false
+        }
+    }
+
+    var pendingCameraCardFile by remember { mutableStateOf<File?>(null) }
+    val cameraCaptureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val file = pendingCameraCardFile
+        pendingCameraCardFile = null
+        if (success && file != null && file.exists() && file.length() > 0) {
+            triggerOcrWorkflow(file.absolutePath, "mya+eng")
+        } else {
+            file?.delete()
+        }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            try {
+                val attachDir = File(context.cacheDir, "attachments").apply { if (!exists()) mkdirs() }
+                val photoFile = File(attachDir, "card_${System.currentTimeMillis()}.jpg")
+                pendingCameraCardFile = photoFile
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile)
+                cameraCaptureLauncher.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Camera launch failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Camera permission is required to scan business cards.", Toast.LENGTH_SHORT).show()
+        }
+    }
+    fun launchCameraBusinessCardScan() {
+        val granted = ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            try {
+                val attachDir = File(context.cacheDir, "attachments").apply { if (!exists()) mkdirs() }
+                val photoFile = File(attachDir, "card_${System.currentTimeMillis()}.jpg")
+                pendingCameraCardFile = photoFile
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile)
+                cameraCaptureLauncher.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Camera launch failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
         }
     }
 
@@ -2376,6 +2788,22 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                     chatViewModel = chatViewModel,
                                     onSummarizeFile = { filePath -> triggerSummarizeWorkflow(filePath, true) },
                                     onOcrFile = { filePath -> triggerOcrWorkflow(filePath, "mya+eng", true) },
+                                    onUnlockOcrPii = { unlockOcrMessagePii(it, thenOpenMode = null) },
+                                    onLockOcrPii = { m ->
+                                        m.isOcrPiiUnlocked = false
+                                        if (m.rawOcrText.isNotBlank() && m.ocrHeaderPrefix.isNotBlank()) {
+                                            m.content = formatOcrBubbleContent(
+                                                headerPrefix = m.ocrHeaderPrefix,
+                                                rawText = m.rawOcrText,
+                                                privacyShieldEnabled = chatViewModel.privacyShieldEnabled,
+                                                isUnlocked = false,
+                                                parsedContact = m.detectedContact,
+                                                matchedCount = m.matchedExistingContacts.size
+                                            )
+                                        }
+                                    },
+                                    onReviewContact = { m, mode -> openContactReviewFromMessage(m, mode) },
+                                    onOpenSavedContact = { cid, lkey -> ContactManager.openContactInSystemApp(context, cid, lkey) },
                                     onContinue = {
                                         if (!chatViewModel.isGenerating && !msg.isContinuing) {
                                             msg.isContinuing = true
@@ -2840,6 +3268,68 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             }
                                         }
 
+                                        if (cmdClean.startsWith("/contact")) {
+                                            val rest = raw.trim().substringAfter(" ", "").trim()
+                                            if (rest.isBlank()) {
+                                                val lastContactMsg = chatViewModel.messages.lastOrNull { it.detectedContact != null }
+                                                if (lastContactMsg != null && lastContactMsg.detectedContact != null) {
+                                                    val mode = if (lastContactMsg.matchedExistingContacts.isNotEmpty()) {
+                                                        ContactSaveMode.UPDATE_EXISTING
+                                                    } else {
+                                                        ContactSaveMode.CREATE_NEW
+                                                    }
+                                                    openContactReviewFromMessage(lastContactMsg, mode)
+                                                    chatViewModel.isGenerating = false
+                                                    return@launch
+                                                } else {
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(
+                                                            System.currentTimeMillis(),
+                                                            "Ronin",
+                                                            "📇 **Contact & Business Card Assistant**\n\n• Attach a business card or screenshot via **📎 > Gallery / Camera** to auto-extract Name, Phone(s), Email & Company.\n• Or pass inline text: `/contact Ko Kyaw Zin 09799123456 09420987654`"
+                                                        )
+                                                    )
+                                                    chatViewModel.isGenerating = false
+                                                    return@launch
+                                                }
+                                            } else {
+                                                val parsed = ContactCardParser.parseNaturalContactCommand(rest)
+                                                if (!parsed.hasContactInfo) {
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(
+                                                            System.currentTimeMillis(),
+                                                            "Ronin",
+                                                            "❌ No phone number or email detected in `$rest`. Please provide e.g. `/contact Kyaw Min 09799123456`."
+                                                        )
+                                                    )
+                                                } else {
+                                                    val matches = withContext(Dispatchers.IO) {
+                                                        ContactManager.findMatchingContacts(context, parsed)
+                                                    }
+                                                    val initialMode = if (matches.isNotEmpty()) ContactSaveMode.UPDATE_EXISTING else ContactSaveMode.CREATE_NEW
+                                                    val cardMsg = ChatMessage(
+                                                        System.currentTimeMillis(),
+                                                        "Ronin",
+                                                        "📇 Parsed contact info from text (**${parsed.displayName.ifBlank { "Contact" }}**, ${parsed.phones.size} phone(s)). Choose **New Contact** or **Update Existing** below:"
+                                                    ).apply {
+                                                        detectedContact = parsed
+                                                        matchedExistingContacts = matches
+                                                        isOcrPiiUnlocked = true
+                                                    }
+                                                    chatViewModel.messages.add(cardMsg)
+                                                    chatViewModel.activeContactReviewRequest = ContactReviewRequest(
+                                                        sourceMessageId = cardMsg.id,
+                                                        initialCandidate = parsed,
+                                                        initialMatches = matches,
+                                                        initialMode = initialMode,
+                                                        alreadyBiometricVerified = false
+                                                    )
+                                                }
+                                                chatViewModel.isGenerating = false
+                                                return@launch
+                                            }
+                                        }
+
                                         if (cmdClean.startsWith("/privacy")) {
                                             val sub = raw.trim().substringAfter(" ", "").trim()
                                             when {
@@ -3068,6 +3558,77 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 return@launch
                                             }
                                         }
+
+                                        val isContactIntent = (
+                                            rawLower.contains("contact") ||
+                                            rawLower.contains("business card") ||
+                                            rawLower.contains("phonebook") ||
+                                            raw.contains("ဖုန်းနံပါတ်") ||
+                                            raw.contains("အဆက်အသွယ်")
+                                        ) && (
+                                            rawLower.contains("add") || rawLower.contains("save") ||
+                                            rawLower.contains("new") || rawLower.contains("update") ||
+                                            rawLower.contains("merge") || rawLower.contains("scan") ||
+                                            raw.contains("ထည့်") || raw.contains("သိမ်း") ||
+                                            raw.contains("ပြင်") || raw.contains("ဖတ်") ||
+                                            raw.contains("အသစ်")
+                                        )
+                                        if (isContactIntent && !rawLower.contains("sms") && !rawLower.contains("email") && !rawLower.contains("mail")) {
+                                            val inlineParsed = ContactCardParser.parseNaturalContactCommand(raw)
+                                            if (inlineParsed.hasContactInfo) {
+                                                val matches = withContext(Dispatchers.IO) {
+                                                    ContactManager.findMatchingContacts(context, inlineParsed)
+                                                }
+                                                val prefMode = if (rawLower.contains("update") || raw.contains("ရှိပြီးသား") || (matches.isNotEmpty() && !rawLower.contains("new"))) {
+                                                    ContactSaveMode.UPDATE_EXISTING
+                                                } else {
+                                                    ContactSaveMode.CREATE_NEW
+                                                }
+                                                val cardMsg = ChatMessage(
+                                                    System.currentTimeMillis() + 1,
+                                                    "Ronin",
+                                                    "📇 Contact details extracted (**${inlineParsed.displayName.ifBlank { "Contact" }}**, ${inlineParsed.phones.size} phone(s)). Please confirm whether to add as a **New Contact** or **Update Existing**:"
+                                                ).apply {
+                                                    detectedContact = inlineParsed
+                                                    matchedExistingContacts = matches
+                                                    isOcrPiiUnlocked = true
+                                                }
+                                                chatViewModel.messages.add(cardMsg)
+                                                chatViewModel.activeContactReviewRequest = ContactReviewRequest(
+                                                    sourceMessageId = cardMsg.id,
+                                                    initialCandidate = inlineParsed,
+                                                    initialMatches = matches,
+                                                    initialMode = prefMode,
+                                                    alreadyBiometricVerified = false
+                                                )
+                                                chatViewModel.isGenerating = false
+                                                return@launch
+                                            } else {
+                                                val lastContactMsg = chatViewModel.messages.lastOrNull { it.detectedContact != null }
+                                                if (lastContactMsg != null && lastContactMsg.detectedContact != null) {
+                                                    val prefMode = when {
+                                                        rawLower.contains("new") || raw.contains("အသစ်") -> ContactSaveMode.CREATE_NEW
+                                                        rawLower.contains("update") || raw.contains("ရှိပြီးသား") -> ContactSaveMode.UPDATE_EXISTING
+                                                        lastContactMsg.matchedExistingContacts.isNotEmpty() -> ContactSaveMode.UPDATE_EXISTING
+                                                        else -> ContactSaveMode.CREATE_NEW
+                                                    }
+                                                    openContactReviewFromMessage(lastContactMsg, prefMode)
+                                                    chatViewModel.isGenerating = false
+                                                    return@launch
+                                                } else if (rawLower.contains("scan") || rawLower.contains("business card") || raw.contains("ဖတ်")) {
+                                                    showAttachmentPicker = true
+                                                    chatViewModel.messages.add(
+                                                        ChatMessage(
+                                                            System.currentTimeMillis() + 1,
+                                                            "Ronin",
+                                                            "📇 **Business Card / Contact Scanner**\n\nPlease pick a photo from Gallery or scan a Business Card with Camera to extract Name & Phone numbers."
+                                                        )
+                                                    )
+                                                    chatViewModel.isGenerating = false
+                                                    return@launch
+                                                }
+                                            }
+                                        }
                                     }
 
                                     val roninMsg = ChatMessage(System.currentTimeMillis() + 1, "Ronin", "", initialIsThinking = true)
@@ -3192,6 +3753,28 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         "image/*",
                         "*/*"
                     )
+                )
+            },
+            onPickCameraCard = {
+                launchCameraBusinessCardScan()
+            }
+        )
+    }
+
+    val contactReviewReq = chatViewModel.activeContactReviewRequest
+    if (contactReviewReq != null) {
+        ContactReviewAndApproveDialog(
+            request = contactReviewReq,
+            requireBiometricConfirmation = chatViewModel.biometricContactsEnabled,
+            onDismiss = { chatViewModel.activeContactReviewRequest = null },
+            onApprove = { mode, editedCandidate, targetExisting, alreadyVerified ->
+                chatViewModel.activeContactReviewRequest = null
+                executeContactWriteWithSecurity(
+                    mode = mode,
+                    candidate = editedCandidate,
+                    targetExisting = targetExisting,
+                    sourceMessageId = contactReviewReq.sourceMessageId,
+                    alreadyBiometricVerified = alreadyVerified
                 )
             }
         )

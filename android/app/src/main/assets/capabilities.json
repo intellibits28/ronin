@@ -142,5 +142,21 @@
     "estimated_power_cost": "LOW",
     "deterministic": true,
     "streaming": false
+  },
+  {
+    "schema_version": 1,
+    "id": 13,
+    "name": "ContactsNode",
+    "capability_version": "1.0.0",
+    "subjects": ["contact", "contacts", "business card", "phonebook", "အဆက်အသွယ်", "ဖုန်းနံပါတ်"],
+    "actions": ["add", "save", "update", "merge", "insert", "resolve", "ထည့်", "သိမ်း", "ပြင်"],
+    "confidence_threshold": 0.7,
+    "dependencies": [],
+    "permissions": ["android.permission.READ_CONTACTS", "android.permission.WRITE_CONTACTS"],
+    "inputs": ["contact_candidate"],
+    "outputs": ["contact_write_result"],
+    "estimated_power_cost": "LOW",
+    "deterministic": true,
+    "streaming": false
   }
 ]
