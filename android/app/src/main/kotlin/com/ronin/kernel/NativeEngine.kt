@@ -373,6 +373,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun hybridSearchNative(queryText: String, queryEmbedding: FloatArray, docPathFilter: String, topK: Int): Array<String>
     private external fun hybridSearchWithModelNative(queryText: String, queryEmbedding: FloatArray, docPathFilter: String, topK: Int, modelId: String): Array<String>
     private external fun evaluateRagWakeupNative(queryText: String, docPathFilter: String, topK: Int): String
+    private external fun isMediaIndexedNative(mediaPath: String, modifiedAt: Long, modelId: String): Boolean
+    private external fun storeMediaEmbeddingsAtomicNative(mediaPath: String, mediaUri: String, displayName: String, metadataText: String, modifiedAt: Long, fileSize: Long, durationMs: Long, modelId: String, modalities: Array<String>, segmentIndices: IntArray, startMsList: LongArray, endMsList: LongArray, flatEmbeddings: FloatArray, dimension: Int): Boolean
+    private external fun searchMediaEmbeddingsNative(queryEmbedding: FloatArray, modalityFilter: String, modelId: String, lexicalQuery: String, topK: Int): Array<String>
+    private external fun getMediaIndexStatsNative(modelId: String): String
+    private external fun deleteMediaEmbeddingsNative(mediaPath: String, modelId: String): Int
+    private external fun clearMediaEmbeddingsNative(modelId: String): Int
 
     enum class EmbeddingTier(val modelId: String, val fileName: String, val sizeMb: Int) {
         TIER_270M("embeddinggemma-2-270m", "embeddinggemma-2-270m.litertlm", 165),
@@ -383,30 +389,55 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     var configuredEmbeddingTier: EmbeddingTier = EmbeddingTier.TIER_270M
     var embeddingModelPath: String = ""
 
-    fun resolveEmbeddingModelPath(): String {
-        if (embeddingModelPath.isNotBlank() && File(embeddingModelPath).exists()) return embeddingModelPath
+    fun resolveActiveEmbeddingModelId(modelPath: String): String {
+        val nameLower = File(modelPath).name.lowercase()
+        return when {
+            nameLower.contains("740m") -> "embeddinggemma-2-740m"
+            nameLower.contains("440m") -> "embeddinggemma-2-440m"
+            nameLower.contains("270m") -> "embeddinggemma-2-270m"
+            nameLower.isNotBlank() -> File(modelPath).nameWithoutExtension.lowercase()
+            else -> configuredEmbeddingTier.modelId
+        }
+    }
+
+    fun resolveEmbeddingModelPath(requireMultimodal: Boolean = false): String {
+        if (!requireMultimodal && embeddingModelPath.isNotBlank() && File(embeddingModelPath).exists()) {
+            return embeddingModelPath
+        }
         val modelsDir = File(context.filesDir, "models")
-        val candidates = listOf(
+        val multimodalCandidates = listOf(
+            File(modelsDir, "embeddinggemma-2-740m.litertlm"),
+            File(modelsDir, "embedding-gemma-2-740m.litertlm"),
+            File(modelsDir, "embedding-gemma-2-740m-int4.litertlm"),
+            File(modelsDir, "embeddinggemma-2-440m.litertlm"),
+            File(modelsDir, "embeddinggemma-2-text-vision-440m.litertlm"),
+            File(modelsDir, "embedding-gemma-2-text-vision-440m-litert-lm.litertlm")
+        )
+        val textCandidates = listOf(
             File(modelsDir, configuredEmbeddingTier.fileName),
             File(modelsDir, "embeddinggemma-2-270m.litertlm"),
             File(modelsDir, "embeddinggemma-2-text-270m.litertlm"),
-            File(modelsDir, "embeddinggemma-2-440m.litertlm"),
-            File(modelsDir, "embeddinggemma-2-740m.litertlm"),
-            File(modelsDir, "embedding-gemma-2-740m-int4.litertlm"),
             File(context.filesDir, "embeddinggemma-2-270m.litertlm")
         )
-        for (c in candidates) {
+        val orderedCandidates = if (requireMultimodal) {
+            multimodalCandidates + textCandidates
+        } else {
+            listOf(File(modelsDir, configuredEmbeddingTier.fileName)) + multimodalCandidates + textCandidates
+        }
+        for (c in orderedCandidates) {
             if (c.exists() && c.isFile) {
-                embeddingModelPath = c.absolutePath
-                return embeddingModelPath
+                if (!requireMultimodal) embeddingModelPath = c.absolutePath
+                return c.absolutePath
             }
         }
-        val dynamicEmb = modelsDir.listFiles { f ->
-            f.isFile && f.name.endsWith(".litertlm", true) && f.name.contains("embedding", true)
-        }?.firstOrNull()
-        if (dynamicEmb != null) {
-            embeddingModelPath = dynamicEmb.absolutePath
-            return embeddingModelPath
+        val dynamicMatches = modelsDir.listFiles { f ->
+            f.isFile && f.name.endsWith(".litertlm", true) &&
+                (f.name.contains("embedding", true) || f.name.contains("gecko", true))
+        }?.sortedByDescending { it.length() }.orEmpty()
+        val picked = dynamicMatches.firstOrNull()
+        if (picked != null) {
+            if (!requireMultimodal) embeddingModelPath = picked.absolutePath
+            return picked.absolutePath
         }
         return ""
     }
@@ -416,7 +447,12 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
      * to prevent Android Binder TransactionTooLargeException.
      * When embedding model is absent, returns empty list so callers route cleanly to FTS5 BM25 lexical search (zero hash pollution).
      */
-    suspend fun generateEmbeddingsSubBatched(texts: List<String>, customEmbPath: String = ""): List<FloatArray> = withContext(Dispatchers.IO) {
+    suspend fun generateEmbeddingsSubBatched(
+        texts: List<String>,
+        customEmbPath: String = "",
+        taskMode: String = InferenceService.TASK_RAW,
+        titleHint: String = ""
+    ): List<FloatArray> = withContext(Dispatchers.IO) {
         if (texts.isEmpty()) return@withContext emptyList()
         val modelPath = if (customEmbPath.isNotBlank()) customEmbPath else resolveEmbeddingModelPath()
         if (modelPath.isBlank() || !File(modelPath).exists()) {
@@ -446,7 +482,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
         for (subBatch in subBatches) {
             val flat: FloatArray? = try {
-                inferenceService?.generateEmbeddingsBatch(subBatch, modelPath)
+                inferenceService?.generateEmbeddingsBatchWithTask(subBatch, taskMode, titleHint, modelPath)
             } catch (e: Exception) {
                 Log.w(TAG, "Binder embedding sub-batch error: ${e.message}")
                 null
@@ -465,6 +501,156 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             }
         }
         results
+    }
+
+    data class MultimodalEmbeddingInput(val mediaType: String, val payload: String)
+
+    suspend fun inspectEmbeddingModelAsync(customEmbPath: String = ""): JSONObject? = withContext(Dispatchers.IO) {
+        val modelPath = if (customEmbPath.isNotBlank()) customEmbPath else resolveEmbeddingModelPath()
+        if (modelPath.isBlank() || !File(modelPath).exists()) return@withContext null
+        return@withContext try {
+            val raw = inferenceService?.inspectEmbeddingModel(modelPath) ?: return@withContext null
+            JSONObject(raw)
+        } catch (e: Exception) {
+            Log.w(TAG, "inspectEmbeddingModelAsync failed: ${e.message}")
+            null
+        }
+    }
+
+    fun releaseEmbeddingEngineSafe() {
+        try {
+            inferenceService?.releaseEmbeddingEngine()
+        } catch (e: Exception) {
+            Log.w(TAG, "releaseEmbeddingEngineSafe failed: ${e.message}")
+        }
+    }
+
+    suspend fun generateMultimodalEmbeddingsBatchSafe(
+        items: List<MultimodalEmbeddingInput>,
+        visionTokensPerImage: Int = 280,
+        customEmbPath: String = ""
+    ): List<FloatArray> = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext emptyList()
+        val modelPath = if (customEmbPath.isNotBlank()) customEmbPath else resolveEmbeddingModelPath(requireMultimodal = true)
+        if (modelPath.isBlank() || !File(modelPath).exists()) return@withContext emptyList()
+
+        val results = ArrayList<FloatArray>(items.size)
+        val dim = InferenceService.EMBEDDING_DIM
+        val chunks = items.chunked(16)
+        for (chunk in chunks) {
+            val types = chunk.map { it.mediaType }
+            val payloads = chunk.map { it.payload }
+            val flat: FloatArray? = try {
+                inferenceService?.generateMultimodalEmbeddingsBatch(types, payloads, visionTokensPerImage, modelPath)
+            } catch (e: Exception) {
+                Log.w(TAG, "Multimodal Binder batch error: ${e.message}")
+                null
+            }
+            if (flat != null && flat.size == chunk.size * dim) {
+                for (i in chunk.indices) {
+                    val slice = FloatArray(dim)
+                    System.arraycopy(flat, i * dim, slice, 0, dim)
+                    results.add(slice)
+                }
+            } else {
+                return@withContext emptyList()
+            }
+        }
+        results
+    }
+
+    fun isMediaIndexedSafe(mediaPath: String, modifiedAt: Long, modelId: String = "embeddinggemma-2-740m"): Boolean {
+        if (!isLibLoaded) return false
+        return try {
+            isMediaIndexedNative(mediaPath, modifiedAt, modelId)
+        } catch (e: Exception) {
+            Log.e(TAG, "isMediaIndexedSafe failed: ${e.message}")
+            false
+        }
+    }
+
+    fun storeMediaEmbeddingsAtomicSafe(
+        mediaPath: String,
+        mediaUri: String,
+        displayName: String,
+        metadataText: String,
+        modifiedAt: Long,
+        fileSize: Long,
+        durationMs: Long,
+        modelId: String,
+        modalities: List<String>,
+        segmentIndices: List<Int>,
+        startMsList: List<Long>,
+        endMsList: List<Long>,
+        embeddings: List<FloatArray>
+    ): Boolean {
+        if (!isLibLoaded || modalities.isEmpty() || embeddings.size != modalities.size) return false
+        return try {
+            val n = modalities.size
+            val dim = embeddings[0].size
+            val flat = FloatArray(n * dim)
+            for (i in 0 until n) {
+                System.arraycopy(embeddings[i], 0, flat, i * dim, dim)
+            }
+            storeMediaEmbeddingsAtomicNative(
+                mediaPath,
+                mediaUri,
+                displayName,
+                metadataText,
+                modifiedAt,
+                fileSize,
+                durationMs,
+                modelId,
+                modalities.toTypedArray(),
+                segmentIndices.toIntArray(),
+                startMsList.toLongArray(),
+                endMsList.toLongArray(),
+                flat,
+                dim
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "storeMediaEmbeddingsAtomicSafe failed: ${e.message}")
+            false
+        }
+    }
+
+    fun searchMediaEmbeddingsSafe(
+        queryEmbedding: FloatArray,
+        modalityFilter: String = "ALL",
+        modelId: String = "",
+        lexicalQuery: String = "",
+        topK: Int = 8
+    ): List<JSONObject> {
+        if (!isLibLoaded) return emptyList()
+        return try {
+            val rawArr = searchMediaEmbeddingsNative(queryEmbedding, modalityFilter, modelId, lexicalQuery, topK)
+            rawArr.mapNotNull { str ->
+                try { JSONObject(str) } catch (_: Exception) { null }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "searchMediaEmbeddingsSafe failed: ${e.message}")
+            emptyList()
+        }
+    }
+
+    fun getMediaIndexStatsSafe(modelId: String = ""): JSONObject {
+        if (!isLibLoaded) return JSONObject().put("images", 0).put("audio", 0).put("videos", 0).put("total_segments", 0)
+        return try {
+            JSONObject(getMediaIndexStatsNative(modelId))
+        } catch (e: Exception) {
+            Log.e(TAG, "getMediaIndexStatsSafe failed: ${e.message}")
+            JSONObject().put("images", 0).put("audio", 0).put("videos", 0).put("total_segments", 0)
+        }
+    }
+
+    fun deleteMediaEmbeddingsSafe(mediaPath: String, modelId: String = ""): Int {
+        if (!isLibLoaded) return 0
+        return try { deleteMediaEmbeddingsNative(mediaPath, modelId) } catch (_: Exception) { 0 }
+    }
+
+    fun clearMediaEmbeddingsSafe(modelId: String = ""): Int {
+        if (!isLibLoaded) return 0
+        return try { clearMediaEmbeddingsNative(modelId) } catch (_: Exception) { 0 }
     }
 
     fun isDocumentIndexedSafe(docPath: String, docHash: String, modelId: String = "embeddinggemma-2-270m"): Boolean {

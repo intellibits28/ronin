@@ -906,7 +906,8 @@ fun AgentResponseCard(
     onUnlockOcrPii: ((ChatMessage) -> Unit)? = null,
     onLockOcrPii: ((ChatMessage) -> Unit)? = null,
     onReviewContact: ((ChatMessage, ContactSaveMode) -> Unit)? = null,
-    onOpenSavedContact: ((Long, String?) -> Unit)? = null
+    onOpenSavedContact: ((Long, String?) -> Unit)? = null,
+    onPlayMediaMoment: ((MediaSearchResultItem, Long) -> Unit)? = null
 ) {
     val isUser = msg.sender == "User"
     val context = LocalContext.current
@@ -1093,6 +1094,13 @@ fun AgentResponseCard(
                         )
                     }
 
+                    if (!isUser && msg.mediaSearchResults.isNotEmpty()) {
+                        MediaSearchResultListCard(
+                            items = msg.mediaSearchResults,
+                            onPlayMoment = { item, tsMs -> onPlayMediaMoment?.invoke(item, tsMs) }
+                        )
+                    }
+
                     if (msg.isTruncated && !isUser) {
                         Spacer(Modifier.height(8.dp))
                         OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
@@ -1134,6 +1142,8 @@ val ALL_RONIN_COMMANDS = listOf(
     RoninSlashCommand("/research", "Sovereign Local Web Research: /research <query>"),
     RoninSlashCommand("/mcp", "Authenticated Termux MCP Bridge: /mcp [status|tools|call|token]"),
     RoninSlashCommand("/files", "Search files across storage: /files <name>"),
+    RoninSlashCommand("/mediasearch", "Semantic search Photos, Audio & Videos: /mediasearch <query>"),
+    RoninSlashCommand("/mediaindex", "Index phone Photos, Audio & Videos: /mediaindex [all|photos|audio|video|status|clear]"),
     RoninSlashCommand("/summarize", "Summarize file or document (RAG): /summarize <path/name>"),
     RoninSlashCommand("/docsearch", "Hybrid RRF semantic+lexical search: /docsearch <path> <term>"),
     RoninSlashCommand("/read", "Preview document contents: /read <path> [lines]"),
@@ -1299,7 +1309,8 @@ fun AttachmentPickerDialog(
     onDismiss: () -> Unit,
     onPickPhotoOcr: () -> Unit,
     onPickDocument: () -> Unit,
-    onPickCameraCard: (() -> Unit)? = null
+    onPickCameraCard: (() -> Unit)? = null,
+    onPickSimilarMedia: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1342,6 +1353,34 @@ fun AttachmentPickerDialog(
                             Text("Gallery / Photos (OCR & Cards)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Spacer(Modifier.height(2.dp))
                             Text("Extract text, phone numbers & contacts (Myanmar & Eng)", color = Color.LightGray, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                if (onPickSimilarMedia != null) {
+                    Spacer(Modifier.height(10.dp))
+
+                    // Option: Visual Similarity Search via EmbeddingGemma 2
+                    Surface(
+                        color = Color(0xFF25283D),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF64B5F6).copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            onDismiss()
+                            onPickSimilarMedia()
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🔍", fontSize = 24.sp)
+                            Spacer(Modifier.width(14.dp))
+                            Column {
+                                Text("Find Similar Photos / Videos (EmbeddingGemma 2)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Spacer(Modifier.height(2.dp))
+                                Text("Match visually similar gallery photos or video frames on-device", color = Color.LightGray, fontSize = 11.sp)
+                            }
                         }
                     }
                 }
@@ -1740,6 +1779,11 @@ fun SettingsSection(
                     Text("Import Custom .traineddata", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
+        }
+
+        // Section 4.6: Multimodal Media Search (EmbeddingGemma 2)
+        item {
+            MediaIndexerSettingsSection(chatViewModel = chatViewModel, activity = activity)
         }
 
         // Section 5: Developer

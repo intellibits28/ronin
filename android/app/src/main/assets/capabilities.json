@@ -158,5 +158,21 @@
     "estimated_power_cost": "LOW",
     "deterministic": true,
     "streaming": false
+  },
+  {
+    "schema_version": 1,
+    "id": 14,
+    "name": "MediaSearchNode",
+    "capability_version": "1.0.0",
+    "subjects": ["photo", "image", "picture", "audio", "voice", "video", "clip", "moment", "gallery", "ပုံ", "ဓာတ်ပုံ", "အသံ", "ဗီဒီယို", "ဗွီဒီယို"],
+    "actions": ["search", "find", "index", "locate", "show", "play", "ရှာ", "ပြ", "ဖွင့်"],
+    "confidence_threshold": 0.65,
+    "dependencies": [],
+    "permissions": ["android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_AUDIO", "android.permission.READ_MEDIA_VIDEO"],
+    "inputs": ["media_query"],
+    "outputs": ["media_matches"],
+    "estimated_power_cost": "MEDIUM",
+    "deterministic": true,
+    "streaming": false
   }
 ]

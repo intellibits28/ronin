@@ -126,6 +126,51 @@ public:
     std::vector<HybridSearchMatch> searchEmbeddings(const std::vector<float>& query_embedding, const std::string& doc_path_filter = "", int top_k = 5, const std::string& model_id = "");
     std::vector<HybridSearchMatch> hybridSearch(const std::string& query_text, const std::vector<float>& query_embedding, const std::string& doc_path_filter = "", int top_k = 5, const std::string& model_id = "");
 
+    // Multimodal Media Search Store (EmbeddingGemma 2: Photos, Audio, Video Frames & Tracks)
+    struct MediaSegment {
+        std::string modality; // "IMAGE", "AUDIO", "VIDEO_FRAME", "VIDEO_AUDIO"
+        int segment_index = 0;
+        int64_t start_ms = 0;
+        int64_t end_ms = 0;
+        std::vector<float> embedding;
+    };
+
+    struct MediaSearchMatch {
+        std::string media_path;
+        std::string media_uri;
+        std::string modality;
+        int segment_index = 0;
+        int64_t start_ms = 0;
+        int64_t end_ms = 0;
+        int64_t duration_ms = 0;
+        std::string display_name;
+        std::string metadata_text;
+        float cosine_score = 0.0f;
+        float final_score = 0.0f;
+        std::string model_id;
+    };
+
+    bool isMediaIndexed(const std::string& media_path, int64_t modified_at, const std::string& model_id = "embeddinggemma-2-740m");
+    bool storeMediaEmbeddingsAtomic(
+        const std::string& media_path,
+        const std::string& media_uri,
+        const std::string& display_name,
+        const std::string& metadata_text,
+        int64_t modified_at,
+        int64_t file_size,
+        int64_t duration_ms,
+        const std::string& model_id,
+        const std::vector<MediaSegment>& segments);
+    std::vector<MediaSearchMatch> searchMediaEmbeddings(
+        const std::vector<float>& query_embedding,
+        const std::string& modality_filter = "",
+        const std::string& model_id = "",
+        const std::string& lexical_query = "",
+        int top_k = 8);
+    std::string getMediaIndexStatsJson(const std::string& model_id = "");
+    int deleteMediaEmbeddings(const std::string& media_path, const std::string& model_id = "");
+    int clearMediaEmbeddings(const std::string& model_id = "");
+
     // Active Inference Phase 1: Dual-Gate BM25 Entropy for Smart RAG Wakeup (/docsearch)
     struct LexicalFreeEnergyResult {
         float top_bm25_magnitude = 0.0f;

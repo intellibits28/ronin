@@ -110,7 +110,7 @@ object ModelDownloadManager {
         ),
         DownloadableModelSpec(
             id = "embedding-gemma-2-740m-int4",
-            displayName = "EmbeddingGemma 2 740M (768D On-Demand RAG)",
+            displayName = "EmbeddingGemma 2 740M (Omnimodal 768D)",
             category = ModelCategory.EMBEDDING,
             hfRepo = "litert-community/embeddinggemma-2-740m-litert-lm",
             fileName = "embeddinggemma-2-740m.litertlm",
@@ -118,8 +118,8 @@ object ModelDownloadManager {
             approxSizeMb = 462,
             minRamGb = 4.0f,
             recommendedRamGb = 6.0f,
-            quantization = "INT4 • 768D Vector",
-            description = "Official ungated 768D semantic embedding model for `/docsearch`, `/summarize`, and `/research` Hybrid RRF.",
+            quantization = "INT4 • 768D Omnimodal",
+            description = "Full Omnimodal (Text + Photo + Audio + Video Search) & `/docsearch` Hybrid RRF — Requires LiteRT-LM 0.18+ (768D vector space).",
             supportsMyanmar = true,
             requiresHfToken = false
         ),
@@ -188,7 +188,7 @@ object ModelDownloadManager {
         ),
         DownloadableModelSpec(
             id = "embedding-gemma-2-270m-int8",
-            displayName = "EmbeddingGemma 2 Text 270M (Ultra-Light 768D RAG)",
+            displayName = "EmbeddingGemma 2 Text 270M (Text-Only RAG)",
             category = ModelCategory.EMBEDDING,
             hfRepo = "litert-community/embeddinggemma-2-text-270m-litert-lm",
             fileName = "embeddinggemma-2-text-270m.litertlm",
@@ -196,8 +196,8 @@ object ModelDownloadManager {
             approxSizeMb = 157,
             minRamGb = 3.0f,
             recommendedRamGb = 4.0f,
-            quantization = "INT8 • 768D Vector",
-            description = "Ultra-compact 157 MB EmbeddingGemma 2 model (Ungated) for instant document indexing on 4GB–6GB RAM devices.",
+            quantization = "INT8 • 768D Text-Only",
+            description = "Text-Only RAG (Documents/Notes, 157 MB, Ungated) for 4GB–6GB RAM devices. Download 740M for Photo/Audio/Video search.",
             supportsMyanmar = true,
             requiresHfToken = false
         )

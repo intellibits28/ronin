@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <sstream>
 #include <unordered_set>
+#include <nlohmann/json.hpp>
 #include "ronin_log.h"
 
 #define TAG "RoninLongTermMemory"
@@ -101,7 +102,10 @@ bool LongTermMemory::initSchema() {
         "CREATE TABLE IF NOT EXISTS perception_history (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, state_type TEXT, state_value TEXT);",
         "CREATE TABLE IF NOT EXISTS document_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_path TEXT NOT NULL, doc_hash TEXT NOT NULL DEFAULT '', chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, embedding_blob BLOB NOT NULL, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-270m', dimension INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(doc_path, model_id, chunk_index) ON CONFLICT REPLACE);",
         "CREATE INDEX IF NOT EXISTS idx_doc_path_model ON document_embeddings(doc_path, model_id);",
-        "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks_fts USING fts5(chunk_text, content='document_embeddings', content_rowid='id');"
+        "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks_fts USING fts5(chunk_text, content='document_embeddings', content_rowid='id');",
+        "CREATE TABLE IF NOT EXISTS media_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, media_path TEXT NOT NULL, media_uri TEXT NOT NULL DEFAULT '', modality TEXT NOT NULL, segment_index INTEGER NOT NULL DEFAULT 0, start_ms INTEGER NOT NULL DEFAULT 0, end_ms INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, display_name TEXT NOT NULL DEFAULT '', metadata_text TEXT NOT NULL DEFAULT '', modified_at INTEGER NOT NULL DEFAULT 0, file_size INTEGER NOT NULL DEFAULT 0, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-740m', dimension INTEGER NOT NULL, embedding_blob BLOB NOT NULL, created_at INTEGER NOT NULL, UNIQUE(media_path, model_id, modality, segment_index) ON CONFLICT REPLACE);",
+        "CREATE INDEX IF NOT EXISTS idx_media_emb_path_model ON media_embeddings(media_path, model_id);",
+        "CREATE INDEX IF NOT EXISTS idx_media_emb_modality_model ON media_embeddings(modality, model_id);"
     };
 
     if (sqlite3_exec(m_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
@@ -1411,6 +1415,339 @@ LongTermMemory::LexicalFreeEnergyResult LongTermMemory::computeLexicalFreeEnergy
     out.expected_free_energy_semantic = decision.expected_free_energy_semantic;
     out.top_matches = std::move(matches);
     return out;
+}
+
+bool LongTermMemory::isMediaIndexed(const std::string& media_path, int64_t modified_at, const std::string& model_id) {
+    if (!m_db || media_path.empty()) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const char* sql = "SELECT id FROM media_embeddings WHERE media_path = ? AND modified_at = ? AND model_id = ? LIMIT 1;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_text(stmt, 1, media_path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, modified_at);
+    sqlite3_bind_text(stmt, 3, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    bool exists = (sqlite3_step(stmt) == SQLITE_ROW);
+    sqlite3_finalize(stmt);
+    return exists;
+}
+
+bool LongTermMemory::storeMediaEmbeddingsAtomic(
+    const std::string& media_path,
+    const std::string& media_uri,
+    const std::string& display_name,
+    const std::string& metadata_text,
+    int64_t modified_at,
+    int64_t file_size,
+    int64_t duration_ms,
+    const std::string& model_id,
+    const std::vector<MediaSegment>& segments) {
+    if (!m_db || media_path.empty() || segments.empty()) return false;
+    if (m_read_only.load()) {
+        LOGW(TAG, "storeMediaEmbeddingsAtomic blocked: Read-only SafeMode active");
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (sqlite3_exec(m_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "storeMediaEmbeddingsAtomic begin transaction failed: %s", sqlite3_errmsg(m_db));
+        return false;
+    }
+
+    const char* del_sql = "DELETE FROM media_embeddings WHERE media_path = ? AND model_id = ?;";
+    sqlite3_stmt* del_stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, del_sql, -1, &del_stmt, nullptr) != SQLITE_OK) {
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+    sqlite3_bind_text(del_stmt, 1, media_path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(del_stmt, 2, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(del_stmt) != SQLITE_DONE) {
+        sqlite3_finalize(del_stmt);
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+    sqlite3_finalize(del_stmt);
+
+    const char* ins_sql =
+        "INSERT INTO media_embeddings ("
+        "media_path, media_uri, modality, segment_index, start_ms, end_ms, duration_ms, "
+        "display_name, metadata_text, modified_at, file_size, model_id, dimension, embedding_blob, created_at"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+    sqlite3_stmt* ins_stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, ins_sql, -1, &ins_stmt, nullptr) != SQLITE_OK) {
+        LOGE(TAG, "storeMediaEmbeddingsAtomic prepare insert failed: %s", sqlite3_errmsg(m_db));
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    int64_t now = std::time(nullptr);
+    bool insertedAny = false;
+    for (const auto& seg : segments) {
+        if (seg.embedding.empty() || seg.modality.empty()) continue;
+        std::vector<float> normalized = seg.embedding;
+        l2Normalize(normalized);
+
+        sqlite3_reset(ins_stmt);
+        sqlite3_clear_bindings(ins_stmt);
+        sqlite3_bind_text(ins_stmt, 1, media_path.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(ins_stmt, 2, media_uri.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(ins_stmt, 3, seg.modality.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(ins_stmt, 4, seg.segment_index);
+        sqlite3_bind_int64(ins_stmt, 5, seg.start_ms);
+        sqlite3_bind_int64(ins_stmt, 6, seg.end_ms);
+        sqlite3_bind_int64(ins_stmt, 7, duration_ms);
+        sqlite3_bind_text(ins_stmt, 8, display_name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(ins_stmt, 9, metadata_text.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(ins_stmt, 10, modified_at);
+        sqlite3_bind_int64(ins_stmt, 11, file_size);
+        sqlite3_bind_text(ins_stmt, 12, model_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(ins_stmt, 13, static_cast<int>(normalized.size()));
+        sqlite3_bind_blob(ins_stmt, 14, normalized.data(), static_cast<int>(normalized.size() * sizeof(float)), SQLITE_TRANSIENT);
+        sqlite3_bind_int64(ins_stmt, 15, now);
+
+        if (sqlite3_step(ins_stmt) != SQLITE_DONE) {
+            LOGE(TAG, "storeMediaEmbeddingsAtomic insert failed: %s", sqlite3_errmsg(m_db));
+            sqlite3_finalize(ins_stmt);
+            sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+            return false;
+        }
+        insertedAny = true;
+    }
+    sqlite3_finalize(ins_stmt);
+
+    if (!insertedAny) {
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    if (sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        sqlite3_exec(m_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+    return true;
+}
+
+std::vector<LongTermMemory::MediaSearchMatch> LongTermMemory::searchMediaEmbeddings(
+    const std::vector<float>& query_embedding,
+    const std::string& modality_filter,
+    const std::string& model_id,
+    const std::string& lexical_query,
+    int top_k) {
+    if (!m_db || top_k <= 0) return {};
+    if (query_embedding.empty() && lexical_query.empty()) return {};
+
+    std::vector<float> q_norm = query_embedding;
+    if (!q_norm.empty()) l2Normalize(q_norm);
+    const size_t q_dim = q_norm.size();
+
+    alignas(16) float q_aligned[1024];
+    const float* q_ptr = q_norm.data();
+    if (!q_norm.empty() && q_dim <= 1024) {
+        std::memcpy(q_aligned, q_norm.data(), q_dim * sizeof(float));
+        q_ptr = q_aligned;
+    }
+
+    // Prepare lexical tokens for optional filename/metadata tie-breaking
+    std::vector<std::string> lex_tokens;
+    if (!lexical_query.empty()) {
+        std::string lower_lex = lexical_query;
+        std::transform(lower_lex.begin(), lower_lex.end(), lower_lex.begin(), [](unsigned char c) { return std::tolower(c); });
+        std::stringstream ss(lower_lex);
+        std::string tok;
+        while (ss >> tok) {
+            if (tok.size() >= 2) lex_tokens.push_back(tok);
+        }
+        auto segs = segmentText(lexical_query);
+        for (const auto& s : segs) {
+            if (s.size() >= 2 && std::find(lex_tokens.begin(), lex_tokens.end(), s) == lex_tokens.end()) {
+                lex_tokens.push_back(s);
+            }
+        }
+    }
+
+    std::string norm_filter = modality_filter;
+    std::transform(norm_filter.begin(), norm_filter.end(), norm_filter.begin(), [](unsigned char c) { return std::toupper(c); });
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::string sql =
+        "SELECT media_path, media_uri, modality, segment_index, start_ms, end_ms, duration_ms, "
+        "display_name, metadata_text, embedding_blob, dimension, model_id "
+        "FROM media_embeddings WHERE 1=1";
+
+    bool bind_custom_modality = false;
+    if (!norm_filter.empty() && norm_filter != "ALL") {
+        if (norm_filter == "VIDEO") {
+            sql += " AND (modality = 'VIDEO_FRAME' OR modality = 'VIDEO_AUDIO')";
+        } else if (norm_filter == "PHOTO" || norm_filter == "IMAGE") {
+            sql += " AND modality = 'IMAGE'";
+        } else if (norm_filter == "AUDIO") {
+            sql += " AND modality = 'AUDIO'";
+        } else {
+            sql += " AND modality = ?";
+            bind_custom_modality = true;
+        }
+    }
+    if (!model_id.empty()) {
+        sql += " AND model_id = ?";
+    }
+    sql += ";";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return {};
+    int p_idx = 1;
+    if (bind_custom_modality) {
+        sqlite3_bind_text(stmt, p_idx++, norm_filter.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    if (!model_id.empty()) {
+        sqlite3_bind_text(stmt, p_idx++, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    std::vector<MediaSearchMatch> candidates;
+    alignas(16) float row_aligned[1024];
+    std::vector<float> fallback_buf;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int dim = sqlite3_column_int(stmt, 10);
+        int blob_bytes = sqlite3_column_bytes(stmt, 9);
+        const void* blob_ptr = sqlite3_column_blob(stmt, 9);
+
+        float cos_sim = 0.0f;
+        if (q_dim > 0) {
+            if (!blob_ptr || dim <= 0 || static_cast<size_t>(dim) != q_dim || blob_bytes != static_cast<int>(dim * sizeof(float))) {
+                continue;
+            }
+            const float* row_ptr = nullptr;
+            if (q_dim <= 1024) {
+                std::memcpy(row_aligned, blob_ptr, q_dim * sizeof(float));
+                row_ptr = row_aligned;
+            } else {
+                fallback_buf.resize(q_dim);
+                std::memcpy(fallback_buf.data(), blob_ptr, q_dim * sizeof(float));
+                row_ptr = fallback_buf.data();
+            }
+            cos_sim = alignedDotProduct(q_ptr, row_ptr, q_dim);
+        }
+
+        std::string disp_name = columnText(stmt, 7);
+        std::string meta_txt = columnText(stmt, 8);
+        int lex_hits = 0;
+        if (!lex_tokens.empty()) {
+            std::string hay = disp_name + " " + meta_txt;
+            std::transform(hay.begin(), hay.end(), hay.begin(), [](unsigned char c) { return std::tolower(c); });
+            for (const auto& lt : lex_tokens) {
+                if (hay.find(lt) != std::string::npos) {
+                    lex_hits++;
+                }
+            }
+        }
+
+        float final_score = (q_dim > 0)
+            ? (cos_sim + std::min(0.08f, static_cast<float>(lex_hits) * 0.04f))
+            : (static_cast<float>(lex_hits) * 0.25f);
+
+        if (q_dim == 0 && lex_hits <= 0) {
+            continue;
+        }
+
+        MediaSearchMatch m;
+        m.media_path = columnText(stmt, 0);
+        m.media_uri = columnText(stmt, 1);
+        m.modality = columnText(stmt, 2);
+        m.segment_index = sqlite3_column_int(stmt, 3);
+        m.start_ms = sqlite3_column_int64(stmt, 4);
+        m.end_ms = sqlite3_column_int64(stmt, 5);
+        m.duration_ms = sqlite3_column_int64(stmt, 6);
+        m.display_name = std::move(disp_name);
+        m.metadata_text = std::move(meta_txt);
+        m.cosine_score = cos_sim;
+        m.final_score = final_score;
+        m.model_id = columnText(stmt, 11);
+        candidates.push_back(std::move(m));
+    }
+    sqlite3_finalize(stmt);
+
+    std::sort(candidates.begin(), candidates.end(), [](const MediaSearchMatch& a, const MediaSearchMatch& b) {
+        if (std::abs(a.final_score - b.final_score) > 1e-6f) {
+            return a.final_score > b.final_score;
+        }
+        return a.cosine_score > b.cosine_score;
+    });
+
+    if (static_cast<int>(candidates.size()) > top_k) {
+        candidates.resize(static_cast<size_t>(top_k));
+    }
+    return candidates;
+}
+
+std::string LongTermMemory::getMediaIndexStatsJson(const std::string& model_id) {
+    nlohmann::json j;
+    j["images"] = 0;
+    j["audio"] = 0;
+    j["videos"] = 0;
+    j["total_segments"] = 0;
+    j["model_id"] = model_id;
+    if (!m_db) return j.dump();
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto countQuery = [&](const char* base_sql) -> int {
+        std::string sql = base_sql;
+        if (!model_id.empty()) sql += " AND model_id = ?";
+        sql += ";";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return 0;
+        if (!model_id.empty()) sqlite3_bind_text(stmt, 1, model_id.c_str(), -1, SQLITE_TRANSIENT);
+        int cnt = 0;
+        if (sqlite3_step(stmt) == SQLITE_ROW) cnt = sqlite3_column_int(stmt, 0);
+        sqlite3_finalize(stmt);
+        return cnt;
+    };
+
+    j["images"] = countQuery("SELECT COUNT(DISTINCT media_path) FROM media_embeddings WHERE modality = 'IMAGE'");
+    j["audio"] = countQuery("SELECT COUNT(DISTINCT media_path) FROM media_embeddings WHERE modality = 'AUDIO'");
+    j["videos"] = countQuery("SELECT COUNT(DISTINCT media_path) FROM media_embeddings WHERE modality IN ('VIDEO_FRAME', 'VIDEO_AUDIO')");
+    j["total_segments"] = countQuery("SELECT COUNT(*) FROM media_embeddings WHERE 1=1");
+    return j.dump();
+}
+
+int LongTermMemory::deleteMediaEmbeddings(const std::string& media_path, const std::string& model_id) {
+    if (!m_db || media_path.empty()) return 0;
+    if (m_read_only.load()) {
+        LOGW(TAG, "deleteMediaEmbeddings blocked: Read-only SafeMode active");
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::string sql = model_id.empty()
+        ? "DELETE FROM media_embeddings WHERE media_path = ?;"
+        : "DELETE FROM media_embeddings WHERE media_path = ? AND model_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return 0;
+    sqlite3_bind_text(stmt, 1, media_path.c_str(), -1, SQLITE_TRANSIENT);
+    if (!model_id.empty()) {
+        sqlite3_bind_text(stmt, 2, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    int deleted = (sqlite3_step(stmt) == SQLITE_DONE) ? sqlite3_changes(m_db) : 0;
+    sqlite3_finalize(stmt);
+    return deleted;
+}
+
+int LongTermMemory::clearMediaEmbeddings(const std::string& model_id) {
+    if (!m_db) return 0;
+    if (m_read_only.load()) {
+        LOGW(TAG, "clearMediaEmbeddings blocked: Read-only SafeMode active");
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::string sql = model_id.empty()
+        ? "DELETE FROM media_embeddings;"
+        : "DELETE FROM media_embeddings WHERE model_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return 0;
+    if (!model_id.empty()) {
+        sqlite3_bind_text(stmt, 1, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    int deleted = (sqlite3_step(stmt) == SQLITE_DONE) ? sqlite3_changes(m_db) : 0;
+    sqlite3_finalize(stmt);
+    return deleted;
 }
 
 } // namespace Ronin::Kernel::Memory

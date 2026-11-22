@@ -16,4 +16,8 @@ interface IInferenceService {
     boolean isLowPerformanceMode();
     String summarizeAndReset();
     float[] generateEmbeddingsBatch(in List<String> texts, String embeddingModelPath);
+    float[] generateEmbeddingsBatchWithTask(in List<String> texts, String taskMode, String titleHint, String embeddingModelPath);
+    float[] generateMultimodalEmbeddingsBatch(in List<String> mediaTypes, in List<String> payloads, int visionTokensPerImage, String embeddingModelPath);
+    String inspectEmbeddingModel(String embeddingModelPath);
+    void releaseEmbeddingEngine();
 }

@@ -318,4 +318,154 @@ JNIEXPORT jstring JNICALL native_evaluateRagWakeup(JNIEnv* env, jobject thiz, js
     return env->NewStringUTF(j.dump().c_str());
 }
 
+JNIEXPORT jboolean JNICALL native_isMediaIndexed(JNIEnv* env, jobject thiz, jstring mediaPath, jlong modifiedAt, jstring modelId) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return JNI_FALSE;
+    bool indexed = runtime.ltm->isMediaIndexed(
+        ConvertJStringToString(env, mediaPath),
+        static_cast<int64_t>(modifiedAt),
+        ConvertJStringToString(env, modelId)
+    );
+    return indexed ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL native_storeMediaEmbeddingsAtomic(
+    JNIEnv* env, jobject thiz,
+    jstring mediaPath, jstring mediaUri, jstring displayName, jstring metadataText,
+    jlong modifiedAt, jlong fileSize, jlong durationMs, jstring modelId,
+    jobjectArray modalities, jintArray segmentIndices, jlongArray startMsList, jlongArray endMsList,
+    jfloatArray flatEmbeddings, jint dimension) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return JNI_FALSE;
+    if (!modalities || !segmentIndices || !startMsList || !endMsList || !flatEmbeddings || dimension <= 0) {
+        return JNI_FALSE;
+    }
+
+    jsize n = env->GetArrayLength(modalities);
+    if (n <= 0 ||
+        env->GetArrayLength(segmentIndices) != n ||
+        env->GetArrayLength(startMsList) != n ||
+        env->GetArrayLength(endMsList) != n ||
+        env->GetArrayLength(flatEmbeddings) < n * dimension) {
+        return JNI_FALSE;
+    }
+
+    jint* idxPtr = env->GetIntArrayElements(segmentIndices, nullptr);
+    jlong* startPtr = env->GetLongArrayElements(startMsList, nullptr);
+    jlong* endPtr = env->GetLongArrayElements(endMsList, nullptr);
+    jfloat* embPtr = env->GetFloatArrayElements(flatEmbeddings, nullptr);
+    if (!idxPtr || !startPtr || !endPtr || !embPtr) {
+        if (idxPtr) env->ReleaseIntArrayElements(segmentIndices, idxPtr, JNI_ABORT);
+        if (startPtr) env->ReleaseLongArrayElements(startMsList, startPtr, JNI_ABORT);
+        if (endPtr) env->ReleaseLongArrayElements(endMsList, endPtr, JNI_ABORT);
+        if (embPtr) env->ReleaseFloatArrayElements(flatEmbeddings, embPtr, JNI_ABORT);
+        return JNI_FALSE;
+    }
+
+    std::vector<LongTermMemory::MediaSegment> segments;
+    segments.reserve(static_cast<size_t>(n));
+    for (jsize i = 0; i < n; ++i) {
+        jstring jMod = static_cast<jstring>(env->GetObjectArrayElement(modalities, i));
+        std::string mod = ConvertJStringToString(env, jMod);
+        if (jMod) env->DeleteLocalRef(jMod);
+
+        LongTermMemory::MediaSegment seg;
+        seg.modality = std::move(mod);
+        seg.segment_index = idxPtr[i];
+        seg.start_ms = static_cast<int64_t>(startPtr[i]);
+        seg.end_ms = static_cast<int64_t>(endPtr[i]);
+        seg.embedding.assign(embPtr + i * dimension, embPtr + (i + 1) * dimension);
+        segments.push_back(std::move(seg));
+    }
+
+    env->ReleaseIntArrayElements(segmentIndices, idxPtr, JNI_ABORT);
+    env->ReleaseLongArrayElements(startMsList, startPtr, JNI_ABORT);
+    env->ReleaseLongArrayElements(endMsList, endPtr, JNI_ABORT);
+    env->ReleaseFloatArrayElements(flatEmbeddings, embPtr, JNI_ABORT);
+
+    bool ok = runtime.ltm->storeMediaEmbeddingsAtomic(
+        ConvertJStringToString(env, mediaPath),
+        ConvertJStringToString(env, mediaUri),
+        ConvertJStringToString(env, displayName),
+        ConvertJStringToString(env, metadataText),
+        static_cast<int64_t>(modifiedAt),
+        static_cast<int64_t>(fileSize),
+        static_cast<int64_t>(durationMs),
+        ConvertJStringToString(env, modelId),
+        segments
+    );
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jobjectArray JNICALL native_searchMediaEmbeddings(
+    JNIEnv* env, jobject thiz,
+    jfloatArray queryEmbedding, jstring modalityFilter, jstring modelId, jstring lexicalQuery, jint topK) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return nullptr;
+
+    std::vector<float> qVec;
+    if (queryEmbedding) {
+        jsize len = env->GetArrayLength(queryEmbedding);
+        if (len > 0) {
+            jfloat* ptr = env->GetFloatArrayElements(queryEmbedding, nullptr);
+            if (ptr) {
+                qVec.assign(ptr, ptr + len);
+                env->ReleaseFloatArrayElements(queryEmbedding, ptr, JNI_ABORT);
+            }
+        }
+    }
+
+    auto matches = runtime.ltm->searchMediaEmbeddings(
+        qVec,
+        modalityFilter ? ConvertJStringToString(env, modalityFilter) : "",
+        modelId ? ConvertJStringToString(env, modelId) : "",
+        lexicalQuery ? ConvertJStringToString(env, lexicalQuery) : "",
+        static_cast<int>(topK)
+    );
+
+    std::vector<std::string> out;
+    out.reserve(matches.size());
+    for (const auto& m : matches) {
+        nlohmann::json j;
+        j["media_path"] = m.media_path;
+        j["media_uri"] = m.media_uri;
+        j["modality"] = m.modality;
+        j["segment_index"] = m.segment_index;
+        j["start_ms"] = m.start_ms;
+        j["end_ms"] = m.end_ms;
+        j["duration_ms"] = m.duration_ms;
+        j["display_name"] = m.display_name;
+        j["metadata_text"] = m.metadata_text;
+        j["cosine_score"] = m.cosine_score;
+        j["final_score"] = m.final_score;
+        j["model_id"] = m.model_id;
+        out.push_back(j.dump());
+    }
+    return toStringArray(env, out);
+}
+
+JNIEXPORT jstring JNICALL native_getMediaIndexStats(JNIEnv* env, jobject thiz, jstring modelId) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return env->NewStringUTF("{\"images\":0,\"audio\":0,\"videos\":0,\"total_segments\":0}");
+    std::string stats = runtime.ltm->getMediaIndexStatsJson(modelId ? ConvertJStringToString(env, modelId) : "");
+    return env->NewStringUTF(stats.c_str());
+}
+
+JNIEXPORT jint JNICALL native_deleteMediaEmbeddings(JNIEnv* env, jobject thiz, jstring mediaPath, jstring modelId) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return 0;
+    return static_cast<jint>(runtime.ltm->deleteMediaEmbeddings(
+        ConvertJStringToString(env, mediaPath),
+        modelId ? ConvertJStringToString(env, modelId) : ""
+    ));
+}
+
+JNIEXPORT jint JNICALL native_clearMediaEmbeddings(JNIEnv* env, jobject thiz, jstring modelId) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return 0;
+    return static_cast<jint>(runtime.ltm->clearMediaEmbeddings(
+        modelId ? ConvertJStringToString(env, modelId) : ""
+    ));
+}
+
 } // extern "C"

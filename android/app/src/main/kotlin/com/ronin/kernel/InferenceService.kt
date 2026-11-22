@@ -32,6 +32,11 @@ class InferenceService : Service() {
     private var litertEngine: Engine? = null
     private var litertConversation: Conversation? = null
     private var currentModelPath: String = ""
+
+    private var cachedEmbeddingEngine: EmbeddingEngine? = null
+    private var cachedEmbeddingModelPath: String = ""
+    private var cachedEmbVisionEnabled: Boolean = false
+    private var cachedEmbAudioEnabled: Boolean = false
     
     private var currentTemp = 0.7f
     private var currentTopK = 40
@@ -125,7 +130,16 @@ class InferenceService : Service() {
 
         override fun isHydrated(): Boolean = litertEngine != null
         override fun getActiveModelPath(): String = currentModelPath
-        override fun notifyTrimMemory(level: Int) { if (level >= 80) resetConversationInternal() }
+        override fun notifyTrimMemory(level: Int) {
+            if (level >= 80) {
+                resetConversationInternal()
+                serviceScope.launch {
+                    inferenceMutex.withLock {
+                        releaseEmbeddingEngineLocked()
+                    }
+                }
+            }
+        }
         override fun setSafeMode(enabled: Boolean) {}
         override fun isLowPerformanceMode(): Boolean = false
         override fun resetConversation() { 
@@ -140,11 +154,7 @@ class InferenceService : Service() {
             val fullResult = StringBuilder()
             try {
                 activeConv.sendMessageAsync(Message.user(summaryPrompt)).collect { partial ->
-                    val token = try { 
-                        val method = partial.javaClass.getMethod("getText")
-                        method.invoke(partial) as String 
-                    } catch(e: Exception) { partial.toString() }
-                    fullResult.append(token)
+                    fullResult.append(extractTokenText(partial))
                 }
                 val summary = fullResult.toString().replace("[REPLY]", "").replace("[/REPLY]", "").trim()
                 lastSummary = summary
@@ -179,6 +189,15 @@ class InferenceService : Service() {
         }
 
         override fun generateEmbeddingsBatch(texts: List<String>?, embeddingModelPath: String?): FloatArray {
+            return generateEmbeddingsBatchWithTask(texts, TASK_RAW, "", embeddingModelPath)
+        }
+
+        override fun generateEmbeddingsBatchWithTask(
+            texts: List<String>?,
+            taskMode: String?,
+            titleHint: String?,
+            embeddingModelPath: String?
+        ): FloatArray {
             if (texts.isNullOrEmpty()) return FloatArray(0)
             // Enforce max 16 chunks and <= 128 KB UTF-8 byte budget per Binder IPC transaction
             var byteCount = 0
@@ -191,13 +210,71 @@ class InferenceService : Service() {
                 safeTexts.add(t)
             }
             return runBlocking(Dispatchers.IO) {
-                computeEmbeddingsBatchInternal(safeTexts, embeddingModelPath ?: "")
+                computeTextEmbeddingsBatchInternal(
+                    texts = safeTexts,
+                    taskMode = taskMode ?: TASK_RAW,
+                    titleHint = titleHint ?: "",
+                    embeddingModelPath = embeddingModelPath ?: ""
+                )
+            }
+        }
+
+        override fun generateMultimodalEmbeddingsBatch(
+            mediaTypes: List<String>?,
+            payloads: List<String>?,
+            visionTokensPerImage: Int,
+            embeddingModelPath: String?
+        ): FloatArray {
+            if (mediaTypes.isNullOrEmpty() || payloads.isNullOrEmpty() || mediaTypes.size != payloads.size) {
+                return FloatArray(0)
+            }
+            val limit = minOf(mediaTypes.size, 16)
+            val safeTypes = mediaTypes.take(limit)
+            val safePayloads = payloads.take(limit)
+            return runBlocking(Dispatchers.IO) {
+                computeMultimodalEmbeddingsBatchInternal(
+                    mediaTypes = safeTypes,
+                    payloads = safePayloads,
+                    visionTokensPerImage = visionTokensPerImage,
+                    embeddingModelPath = embeddingModelPath ?: ""
+                )
+            }
+        }
+
+        override fun inspectEmbeddingModel(embeddingModelPath: String?): String {
+            return inspectEmbeddingModelInternal(embeddingModelPath ?: "")
+        }
+
+        override fun releaseEmbeddingEngine() {
+            runBlocking(Dispatchers.IO) {
+                inferenceMutex.withLock {
+                    releaseEmbeddingEngineLocked()
+                }
             }
         }
     }
 
     companion object {
         const val EMBEDDING_DIM = 768
+        const val TASK_QUERY = "QUERY"
+        const val TASK_DOCUMENT = "DOCUMENT"
+        const val TASK_RAW = "RAW"
+
+        /**
+         * Formats text queries and corpus chunks with official EmbeddingGemma 2 asymmetric prefixes.
+         * Note: Non-text modalities (images, video frames, audio) must NOT use text task prefixes.
+         */
+        fun formatForEmbeddingGemma2(text: String, taskMode: String, titleHint: String = ""): String {
+            val clean = text.trim()
+            return when (taskMode.uppercase()) {
+                TASK_QUERY -> "task: search result | query: $clean"
+                TASK_DOCUMENT -> {
+                    val safeTitle = titleHint.trim().ifEmpty { "none" }
+                    "title: $safeTitle | text: $clean"
+                }
+                else -> text
+            }
+        }
 
         init {
             try { System.loadLibrary("ronin_kernel") } catch (e: Throwable) {
@@ -243,75 +320,276 @@ class InferenceService : Service() {
         }
     }
 
-    private suspend fun computeEmbeddingsBatchInternal(texts: List<String>, embeddingModelPath: String): FloatArray {
+    private fun l2NormalizeCopy(rawVec: FloatArray): FloatArray {
+        var sumSq = 0.0
+        for (v in rawVec) sumSq += v.toDouble() * v.toDouble()
+        return if (sumSq > 1e-12) {
+            val inv = (1.0 / kotlin.math.sqrt(sumSq)).toFloat()
+            FloatArray(rawVec.size) { idx -> rawVec[idx] * inv }
+        } else {
+            rawVec.copyOf()
+        }
+    }
+
+    private fun releaseEmbeddingEngineLocked() {
+        synchronized(this) {
+            val eng = cachedEmbeddingEngine
+            cachedEmbeddingEngine = null
+            cachedEmbeddingModelPath = ""
+            cachedEmbVisionEnabled = false
+            cachedEmbAudioEnabled = false
+            if (eng != null) {
+                try {
+                    if (eng.isInitialized()) eng.close()
+                } catch (e: Throwable) {
+                    Log.w(TAG, "EmbeddingEngine close notice: ${e.message}")
+                }
+            }
+        }
+    }
+
+    private fun inspectEmbeddingModelInternal(embeddingModelPath: String): String {
+        val out = JSONObject()
+        val embFile = if (embeddingModelPath.isNotBlank()) File(embeddingModelPath) else null
+        if (embFile == null || !embFile.exists() || !embFile.isFile) {
+            out.put("exists", false)
+            out.put("is_embedding", false)
+            out.put("error", "Model file not found")
+            return out.toString()
+        }
+        return try {
+            ModelInfo.from(embFile.absolutePath).use { info ->
+                val mods = info.inputModalities()
+                val isEmb = info.modelType == ModelType.EMBEDDING
+                val dim = (info as? ModelInfo.Embedding)?.dimension() ?: EMBEDDING_DIM
+                out.put("exists", true)
+                out.put("model_path", embFile.absolutePath)
+                out.put("model_name", embFile.name)
+                out.put("is_embedding", isEmb)
+                out.put("model_type", info.modelType.name)
+                out.put("dimension", dim)
+                out.put("text", mods.text)
+                out.put("vision", mods.vision)
+                out.put("audio", mods.audio)
+                out.put("video", mods.video)
+                out.put("max_context_tokens", info.maxContextTokens())
+                out.put("max_vision_token_budget", info.maxVisionTokenBudget())
+                out.put("min_runtime_version", info.minRuntimeVersion())
+            }
+            out.toString()
+        } catch (t: Throwable) {
+            Log.w(TAG, "ModelInfo inspection failed for ${embFile.name}: ${t.message}")
+            out.put("exists", true)
+            out.put("is_embedding", false)
+            out.put("error", t.message ?: "ModelInfo failed")
+            out.toString()
+        }
+    }
+
+    private fun getOrCreateEmbeddingEngineLocked(
+        embFile: File,
+        requireVision: Boolean,
+        requireAudio: Boolean
+    ): EmbeddingEngine? {
+        val existing = cachedEmbeddingEngine
+        if (existing != null && existing.isInitialized() && cachedEmbeddingModelPath == embFile.absolutePath) {
+            val visionOk = !requireVision || cachedEmbVisionEnabled
+            val audioOk = !requireAudio || cachedEmbAudioEnabled
+            if (visionOk && audioOk) {
+                return existing
+            }
+        }
+
+        releaseEmbeddingEngineLocked()
+
+        val freeRam = try { getFreeRamGBNative() } catch (_: Throwable) { 4.0f }
+        if (currentModelPath.isNotEmpty() && freeRam < 2.2f) {
+            Log.i(TAG, "On-Demand RAG Swap: Releasing Reasoning Model ($currentModelPath) to load EmbeddingGemma 2 (${embFile.name}), FreeRAM=${"%.2f".format(freeRam)}GB")
+            releaseResourcesLocked()
+        }
+
+        var supportsVision = requireVision
+        var supportsAudio = requireAudio
+        var visionGpuSupported = false
+        try {
+            ModelInfo.from(embFile.absolutePath).use { info ->
+                if (info.modelType != ModelType.EMBEDDING) {
+                    Log.w(TAG, "Model ${embFile.name} reported ModelType=${info.modelType} instead of EMBEDDING")
+                }
+                val mods = info.inputModalities()
+                supportsVision = mods.vision
+                supportsAudio = mods.audio
+                visionGpuSupported = mods.vision && info.supportedBackends(Modality.VISION).contains(BackendType.GPU)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "ModelInfo fallback for ${embFile.name}: ${t.message}")
+        }
+
+        if (requireVision && !supportsVision) {
+            Log.w(TAG, "Model ${embFile.name} does not support vision embeddings.")
+            return null
+        }
+        if (requireAudio && !supportsAudio) {
+            Log.w(TAG, "Model ${embFile.name} does not support audio embeddings.")
+            return null
+        }
+
+        val enableVision = requireVision || (cachedEmbVisionEnabled && supportsVision)
+        val enableAudio = requireAudio || (cachedEmbAudioEnabled && supportsAudio)
+
+        fun tryInitEngine(vBackend: Backend?, aBackend: Backend?): EmbeddingEngine? {
+            val cfg = EmbeddingEngineConfig(
+                modelPath = embFile.absolutePath,
+                backend = Backend.CPU(),
+                visionBackend = vBackend,
+                audioBackend = aBackend,
+                cacheDir = cacheDir.absolutePath
+            )
+            val eng = EmbeddingEngine(cfg)
+            return try {
+                eng.initialize()
+                eng
+            } catch (t: Throwable) {
+                try {
+                    if (eng.isInitialized()) eng.close()
+                } catch (_: Throwable) {}
+                throw t
+            }
+        }
+
+        val audioBackend = if (enableAudio) Backend.CPU() else null
+        val initializedEngine = if (enableVision && visionGpuSupported) {
+            try {
+                tryInitEngine(Backend.GPU(), audioBackend)
+            } catch (gpuErr: Throwable) {
+                Log.w(TAG, "Vision GPU backend init failed (${gpuErr.message}); retrying on CPU")
+                tryInitEngine(Backend.CPU(), audioBackend)
+            }
+        } else {
+            val visionBackend = if (enableVision) Backend.CPU() else null
+            tryInitEngine(visionBackend, audioBackend)
+        }
+
+        if (initializedEngine != null && initializedEngine.isInitialized()) {
+            cachedEmbeddingEngine = initializedEngine
+            cachedEmbeddingModelPath = embFile.absolutePath
+            cachedEmbVisionEnabled = enableVision
+            cachedEmbAudioEnabled = enableAudio
+            Log.i(TAG, "EmbeddingGemma 2 initialized: ${embFile.name} (vision=$enableVision, audio=$enableAudio)")
+        }
+        return initializedEngine
+    }
+
+    private suspend fun computeTextEmbeddingsBatchInternal(
+        texts: List<String>,
+        taskMode: String,
+        titleHint: String,
+        embeddingModelPath: String
+    ): FloatArray {
         val embFile = if (embeddingModelPath.isNotBlank()) File(embeddingModelPath) else null
         val canUseLitertEmb = embFile != null && embFile.exists() && embFile.isFile
-
         if (!canUseLitertEmb) {
-            // Zero feature-hash fallback: When neural embedding model is absent, return empty array
-            // so callers cleanly fall back to SQLite FTS5 BM25 lexical search without vector space pollution.
+            // Zero feature-hash fallback: callers cleanly fall back to SQLite FTS5 BM25 lexical search
             return FloatArray(0)
         }
 
         val result = FloatArray(texts.size * EMBEDDING_DIM)
-
-        // Batch-First On-Demand Model Swapping with RAM Guard & Mutex Protection
         inferenceMutex.withLock {
-            val previousModelPath = currentModelPath
-            val freeRam = try { getFreeRamGBNative() } catch (_: Throwable) { 4.0f }
-            val needsSwap = previousModelPath.isNotEmpty() && previousModelPath != embFile!!.absolutePath && freeRam < 2.2f
-
-            var tempEngine: Engine? = null
             try {
-                if (needsSwap) {
-                    Log.i(TAG, "On-Demand RAG Swap: Releasing Reasoning Model ($previousModelPath) to load EmbeddingGemma 2 (${embFile!!.name}), FreeRAM=${"%.2f".format(freeRam)}GB")
-                    releaseResourcesLocked()
+                val engine = getOrCreateEmbeddingEngineLocked(embFile!!, requireVision = false, requireAudio = false)
+                    ?: return FloatArray(0)
+                val opts = EmbeddingOptions(normalize = true)
+                val inputsList = texts.map { raw ->
+                    listOf(InputData.Text(formatForEmbeddingGemma2(raw, taskMode, titleHint)))
                 }
-                val engineToUse = if (currentModelPath == embFile!!.absolutePath && litertEngine != null) {
-                    litertEngine!!
-                } else {
-                    val cfg = EngineConfig(modelPath = embFile.absolutePath, maxNumTokens = 512)
-                    Engine(cfg).also {
-                        it.initialize()
-                        tempEngine = it
-                    }
+                val batchResponses = try {
+                    engine.computeEmbeddingBatch(inputsList, opts)
+                } catch (batchErr: Throwable) {
+                    Log.w(TAG, "computeEmbeddingBatch fallback to single calls: ${batchErr.message}")
+                    inputsList.map { single -> engine.computeEmbedding(single, opts) }
                 }
-
-                // Attempt native LiteRT embedding extraction
-                val embedMethod = try {
-                    engineToUse.javaClass.methods.firstOrNull {
-                        it.name.contains("embed", ignoreCase = true) && it.parameterCount == 1
-                    }
-                } catch (_: Throwable) { null }
-
-                for (i in texts.indices) {
-                    val rawVec = try {
-                        val invoked = embedMethod?.invoke(engineToUse, texts[i])
-                        when (invoked) {
-                            is FloatArray -> invoked
-                            is List<*> -> invoked.filterIsInstance<Number>().map { it.toFloat() }.toFloatArray()
-                            else -> null
-                        }
-                    } catch (_: Throwable) { null }
-
-                    if (rawVec != null && rawVec.size == EMBEDDING_DIM) {
-                        var sumSq = 0.0
-                        for (v in rawVec) sumSq += v.toDouble() * v.toDouble()
-                        val finalVec = if (sumSq > 1e-12) {
-                            val inv = (1.0 / kotlin.math.sqrt(sumSq)).toFloat()
-                            FloatArray(EMBEDDING_DIM) { idx -> rawVec[idx] * inv }
-                        } else rawVec
-                        System.arraycopy(finalVec, 0, result, i * EMBEDDING_DIM, EMBEDDING_DIM)
-                    } else {
-                        Log.w(TAG, "LiteRT embedding extraction failed for chunk $i; falling back cleanly to lexical search")
+                if (batchResponses.size != texts.size) {
+                    Log.w(TAG, "Unexpected batch response size: ${batchResponses.size} != ${texts.size}")
+                    return FloatArray(0)
+                }
+                for (i in batchResponses.indices) {
+                    val rawVec = batchResponses[i].embedding
+                    if (rawVec.size != EMBEDDING_DIM) {
+                        Log.w(TAG, "Unexpected embedding dim=${rawVec.size} (expected $EMBEDDING_DIM) at index $i")
                         return FloatArray(0)
                     }
+                    val normalized = l2NormalizeCopy(rawVec)
+                    System.arraycopy(normalized, 0, result, i * EMBEDDING_DIM, EMBEDDING_DIM)
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "EmbeddingGemma 2 on-demand pass failed: ${t.message}")
+                Log.w(TAG, "EmbeddingGemma 2 text pass failed: ${t.message}")
+                releaseEmbeddingEngineLocked()
                 return FloatArray(0)
-            } finally {
-                try { tempEngine?.close() } catch (_: Throwable) {}
+            }
+        }
+        return result
+    }
+
+    private suspend fun computeMultimodalEmbeddingsBatchInternal(
+        mediaTypes: List<String>,
+        payloads: List<String>,
+        visionTokensPerImage: Int,
+        embeddingModelPath: String
+    ): FloatArray {
+        val embFile = if (embeddingModelPath.isNotBlank()) File(embeddingModelPath) else null
+        if (embFile == null || !embFile.exists() || !embFile.isFile) return FloatArray(0)
+
+        val needVision = mediaTypes.any { it.equals("IMAGE_FILE", ignoreCase = true) }
+        val needAudio = mediaTypes.any { it.equals("AUDIO_FILE", ignoreCase = true) }
+
+        val result = FloatArray(mediaTypes.size * EMBEDDING_DIM)
+        inferenceMutex.withLock {
+            try {
+                val engine = getOrCreateEmbeddingEngineLocked(embFile, requireVision = needVision, requireAudio = needAudio)
+                    ?: return FloatArray(0)
+                val opts = EmbeddingOptions(
+                    normalize = true,
+                    visionTokensPerImage = visionTokensPerImage.takeIf { it > 0 }
+                )
+                for (i in mediaTypes.indices) {
+                    val mType = mediaTypes[i].uppercase()
+                    val payload = payloads[i]
+                    val inputList: List<InputData> = when (mType) {
+                        "TEXT" -> listOf(InputData.Text(payload))
+                        "IMAGE_FILE" -> {
+                            val imgFile = File(payload)
+                            if (!imgFile.exists() || !imgFile.isFile) {
+                                Log.w(TAG, "Missing image file for embedding: $payload")
+                                return FloatArray(0)
+                            }
+                            listOf(InputData.Image(imgFile.readBytes()))
+                        }
+                        "AUDIO_FILE" -> {
+                            val audFile = File(payload)
+                            if (!audFile.exists() || !audFile.isFile) {
+                                Log.w(TAG, "Missing audio file for embedding: $payload")
+                                return FloatArray(0)
+                            }
+                            listOf(InputData.Audio(audFile.readBytes()))
+                        }
+                        else -> {
+                            Log.w(TAG, "Unsupported mediaType for embedding: $mType")
+                            return FloatArray(0)
+                        }
+                    }
+                    val resp = engine.computeEmbedding(inputList, opts)
+                    val rawVec = resp.embedding
+                    if (rawVec.size != EMBEDDING_DIM) {
+                        Log.w(TAG, "Multimodal embedding dim mismatch: ${rawVec.size} != $EMBEDDING_DIM ($mType)")
+                        return FloatArray(0)
+                    }
+                    val normalized = l2NormalizeCopy(rawVec)
+                    System.arraycopy(normalized, 0, result, i * EMBEDDING_DIM, EMBEDDING_DIM)
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "EmbeddingGemma 2 multimodal pass failed: ${t.message}")
+                releaseEmbeddingEngineLocked()
+                return FloatArray(0)
             }
         }
         return result
@@ -328,6 +606,7 @@ class InferenceService : Service() {
         }
         return runBlocking(Dispatchers.IO) {
             inferenceMutex.withLock {
+                releaseEmbeddingEngineLocked()
                 releaseResourcesLocked()
                 try {
                     // Keep the engine token window aligned with the UI generation config.
@@ -438,6 +717,13 @@ class InferenceService : Service() {
     }.flowOn(Dispatchers.IO)
 
     private fun extractTokenText(partial: Any): String {
+        if (partial is Message) {
+            val sb = StringBuilder()
+            for (c in partial.contents.contents) {
+                if (c is Content.Text) sb.append(c.text)
+            }
+            if (sb.isNotEmpty()) return sb.toString()
+        }
         if (!getTextLookupDone) {
             synchronized(this) {
                 if (!getTextLookupDone) {
@@ -465,5 +751,10 @@ class InferenceService : Service() {
         }
     }
 
-    override fun onDestroy() { super.onDestroy(); releaseResources(); try { shutdownKernelNative() } catch (e: Exception) {} }
+    override fun onDestroy() {
+        releaseEmbeddingEngineLocked()
+        releaseResources()
+        try { shutdownKernelNative() } catch (e: Exception) {}
+        super.onDestroy()
+    }
 }

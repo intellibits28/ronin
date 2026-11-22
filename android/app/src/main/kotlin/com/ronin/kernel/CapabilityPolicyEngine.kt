@@ -85,6 +85,23 @@ object CapabilityPolicyEngine {
             allowOffline = true,
             allowCloud = true
         ),
+        "MEDIA_SEARCH" to Policy(
+            "MEDIA_SEARCH",
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                listOf(
+                    android.Manifest.permission.READ_MEDIA_IMAGES,
+                    android.Manifest.permission.READ_MEDIA_AUDIO,
+                    android.Manifest.permission.READ_MEDIA_VIDEO
+                )
+            } else {
+                listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+            },
+            requiresHITL = false,
+            requiresAudit = true,
+            RiskLevel.LOW,
+            allowOffline = true,
+            allowCloud = true
+        ),
         "LOCATION" to Policy(
             "LOCATION",
             listOf(android.Manifest.permission.ACCESS_FINE_LOCATION),

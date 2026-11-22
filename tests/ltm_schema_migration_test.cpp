@@ -301,4 +301,114 @@ TEST(LongTermMemoryVectorHybrid, DocumentChunksFtsSyncOnReindex) {
     execSql(ltm.getDatabase(), "INSERT INTO document_chunks_fts(document_chunks_fts) VALUES('integrity-check');");
 }
 
+TEST(LongTermMemoryMediaEmbeddings, AtomicStoreModalityFiltersTimestampsAndSafeMode) {
+    LongTermMemory ltm(":memory:");
+    const std::string model_740m = "embeddinggemma-2-740m";
+
+    ASSERT_TRUE(tableExists(ltm.getDatabase(), "media_embeddings"));
+
+    // Photo embedding along +X axis
+    std::vector<LongTermMemory::MediaSegment> imgSegs(1);
+    imgSegs[0].modality = "IMAGE";
+    imgSegs[0].segment_index = 0;
+    imgSegs[0].start_ms = 0;
+    imgSegs[0].end_ms = 0;
+    imgSegs[0].embedding = {1.0f, 0.0f, 0.0f, 0.0f};
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/sdcard/DCIM/beach_dog.jpg",
+        "content://media/external/images/media/101",
+        "beach_dog.jpg",
+        "DCIM Camera",
+        1700000100LL,
+        245000LL,
+        0LL,
+        model_740m,
+        imgSegs));
+
+    // Audio voice memo along +Y axis
+    std::vector<LongTermMemory::MediaSegment> audSegs(2);
+    audSegs[0] = {"AUDIO", 0, 0LL, 20000LL, {0.1f, 0.9f, 0.0f, 0.0f}};
+    audSegs[1] = {"AUDIO", 1, 15000LL, 35000LL, {0.0f, 1.0f, 0.0f, 0.0f}};
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/sdcard/Recordings/q4_budget.m4a",
+        "content://media/external/audio/media/202",
+        "q4_budget.m4a",
+        "Recordings",
+        1700000200LL,
+        512000LL,
+        35000LL,
+        model_740m,
+        audSegs));
+
+    // Video with two frame segments (+Z and +X) and one audio segment (+W)
+    std::vector<LongTermMemory::MediaSegment> vidSegs(3);
+    vidSegs[0] = {"VIDEO_FRAME", 0, 0LL, 5000LL, {0.2f, 0.0f, 0.8f, 0.0f}};
+    vidSegs[1] = {"VIDEO_FRAME", 1, 45000LL, 50000LL, {0.95f, 0.0f, 0.25f, 0.0f}};
+    vidSegs[2] = {"VIDEO_AUDIO", 0, 30000LL, 50000LL, {0.0f, 0.0f, 0.1f, 0.99f}};
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/sdcard/Movies/holiday.mp4",
+        "content://media/external/video/media/303",
+        "holiday.mp4",
+        "Movies",
+        1700000300LL,
+        4096000LL,
+        60000LL,
+        model_740m,
+        vidSegs));
+
+    EXPECT_TRUE(ltm.isMediaIndexed("/sdcard/DCIM/beach_dog.jpg", 1700000100LL, model_740m));
+    EXPECT_FALSE(ltm.isMediaIndexed("/sdcard/DCIM/beach_dog.jpg", 1700000999LL, model_740m));
+
+    // Query near +X across ALL: image (1.0) should rank #1, video frame at 45000ms (~0.967) #2
+    auto allMatches = ltm.searchMediaEmbeddings({1.0f, 0.0f, 0.0f, 0.0f}, "ALL", model_740m, "", 5);
+    ASSERT_GE(allMatches.size(), 2u);
+    EXPECT_EQ(allMatches[0].media_path, "/sdcard/DCIM/beach_dog.jpg");
+    EXPECT_EQ(allMatches[0].modality, "IMAGE");
+    EXPECT_EQ(allMatches[1].media_path, "/sdcard/Movies/holiday.mp4");
+    EXPECT_EQ(allMatches[1].start_ms, 45000LL);
+
+    // Filter VIDEO matches both VIDEO_FRAME and VIDEO_AUDIO
+    auto videoAudioMatches = ltm.searchMediaEmbeddings({0.0f, 0.0f, 0.0f, 1.0f}, "VIDEO", model_740m, "", 5);
+    ASSERT_FALSE(videoAudioMatches.empty());
+    EXPECT_EQ(videoAudioMatches[0].modality, "VIDEO_AUDIO");
+    EXPECT_EQ(videoAudioMatches[0].start_ms, 30000LL);
+
+    // Filter AUDIO
+    auto audioMatches = ltm.searchMediaEmbeddings({0.0f, 1.0f, 0.0f, 0.0f}, "AUDIO", model_740m, "", 5);
+    ASSERT_EQ(audioMatches.size(), 2u);
+    EXPECT_EQ(audioMatches[0].start_ms, 15000LL);
+
+    // Atomic re-index purges stale segments (3 -> 1)
+    std::vector<LongTermMemory::MediaSegment> vidUpdated(1);
+    vidUpdated[0] = {"VIDEO_FRAME", 0, 10000LL, 15000LL, {0.0f, 0.0f, 1.0f, 0.0f}};
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/sdcard/Movies/holiday.mp4",
+        "content://media/external/video/media/303",
+        "holiday.mp4",
+        "Movies",
+        1700000400LL,
+        4096000LL,
+        60000LL,
+        model_740m,
+        vidUpdated));
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings WHERE media_path='/sdcard/Movies/holiday.mp4';"), 1);
+
+    // Stats check
+    std::string statsJson = ltm.getMediaIndexStatsJson(model_740m);
+    EXPECT_NE(statsJson.find("\"images\":1"), std::string::npos);
+    EXPECT_NE(statsJson.find("\"audio\":1"), std::string::npos);
+    EXPECT_NE(statsJson.find("\"videos\":1"), std::string::npos);
+    EXPECT_NE(statsJson.find("\"total_segments\":4"), std::string::npos);
+
+    // SafeMode blocks writes/deletes/clear
+    ltm.setReadOnly(true);
+    EXPECT_FALSE(ltm.storeMediaEmbeddingsAtomic("/sdcard/DCIM/blocked.jpg", "", "blocked.jpg", "", 10LL, 10LL, 0LL, model_740m, imgSegs));
+    EXPECT_EQ(ltm.deleteMediaEmbeddings("/sdcard/DCIM/beach_dog.jpg", model_740m), 0);
+    EXPECT_EQ(ltm.clearMediaEmbeddings(model_740m), 0);
+    ltm.setReadOnly(false);
+
+    EXPECT_EQ(ltm.deleteMediaEmbeddings("/sdcard/DCIM/beach_dog.jpg", model_740m), 1);
+    EXPECT_EQ(ltm.clearMediaEmbeddings(model_740m), 3);
+}
+
 

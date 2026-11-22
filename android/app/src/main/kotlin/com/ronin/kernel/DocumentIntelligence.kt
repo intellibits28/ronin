@@ -716,7 +716,11 @@ object DocumentIntelligence {
         if (chunks.isNotEmpty()) {
             val embModelPath = nativeEngine?.resolveEmbeddingModelPath() ?: ""
             val hasNeuralModel = embModelPath.isNotBlank() && File(embModelPath).exists()
-            val modelId = nativeEngine?.configuredEmbeddingTier?.modelId ?: "embeddinggemma-2-270m"
+            val modelId = if (nativeEngine != null && embModelPath.isNotBlank()) {
+                nativeEngine.resolveActiveEmbeddingModelId(embModelPath)
+            } else {
+                nativeEngine?.configuredEmbeddingTier?.modelId ?: "embeddinggemma-2-270m"
+            }
 
             if (hasNeuralModel && nativeEngine != null && nativeEngine.isNativeLibraryLoaded()) {
                 val docHash = computeFileSha256(file)
@@ -753,7 +757,12 @@ object DocumentIntelligence {
                 } else {
                     // Atomic re-indexing check: only generate and index embeddings if document hash changed
                     if (!alreadyIndexed) {
-                        val chunkVectors = nativeEngine.generateEmbeddingsSubBatched(chunks, embModelPath)
+                        val chunkVectors = nativeEngine.generateEmbeddingsSubBatched(
+                            texts = chunks,
+                            customEmbPath = embModelPath,
+                            taskMode = InferenceService.TASK_DOCUMENT,
+                            titleHint = file.name
+                        )
                         if (chunkVectors.size == chunks.size) {
                             val chunksWithIndex = chunks.mapIndexed { idx, txt -> idx to txt }
                             nativeEngine.storeDocumentChunksAtomicSafe(file.absolutePath, docHash, modelId, chunksWithIndex, chunkVectors)
@@ -761,7 +770,11 @@ object DocumentIntelligence {
                     }
 
                     // Query vector extraction (INSPECT_DOC policy)
-                    val queryVecList = nativeEngine.generateEmbeddingsSubBatched(listOf(query), embModelPath)
+                    val queryVecList = nativeEngine.generateEmbeddingsSubBatched(
+                        texts = listOf(query),
+                        customEmbPath = embModelPath,
+                        taskMode = InferenceService.TASK_QUERY
+                    )
                     val queryVec = if (queryVecList.isNotEmpty()) queryVecList[0] else FloatArray(0)
 
                     val hybridJsonList = nativeEngine.hybridSearchWithModelSafe(query, queryVec, file.absolutePath, topK = 4, modelId = modelId)
