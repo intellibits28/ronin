@@ -770,6 +770,16 @@ class MainActivity : FragmentActivity() {
 
     fun hydrateModel(path: String) {
         val chatViewModel = ViewModelProvider(this)[ChatViewModel::class.java]
+        val fileName = File(path).name
+        if (ModelDownloadManager.isEmbeddingModelFileName(fileName)) {
+            Toast.makeText(
+                this,
+                "$fileName is an EmbeddingGemma 2 vector model. Keep Gemma 4 active as Chat Brain; embeddings run automatically on-demand.",
+                Toast.LENGTH_LONG
+            ).show()
+            refreshMediaIndexInfo()
+            return
+        }
         lifecycleScope.launch {
             chatViewModel.kernelStatus = "Hydrating..."
             when (val result = nativeEngine.loadModelResult(path)) {

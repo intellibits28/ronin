@@ -1,5 +1,6 @@
 package com.ronin.kernel
 
+import android.app.ActivityManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -17,6 +18,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.annotation.Keep
 import java.io.File
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -33,10 +35,18 @@ class InferenceService : Service() {
     private var litertConversation: Conversation? = null
     private var currentModelPath: String = ""
 
+    @Volatile
+    private var lastEmbeddingError: String = ""
+    @Volatile
+    private var visionGpuBlocked: Boolean = false
+
     private var cachedEmbeddingEngine: EmbeddingEngine? = null
     private var cachedEmbeddingModelPath: String = ""
     private var cachedEmbVisionEnabled: Boolean = false
     private var cachedEmbAudioEnabled: Boolean = false
+    private var cachedEmbVisionIsGpu: Boolean = false
+    private var cachedEmbVisionSignatures: IntArray = IntArray(0)
+    private var cachedEmbMaxVisionBudget: Int = 0
     
     private var currentTemp = 0.7f
     private var currentTopK = 40
@@ -252,6 +262,8 @@ class InferenceService : Service() {
                 }
             }
         }
+
+        override fun getLastEmbeddingError(): String = lastEmbeddingError
     }
 
     companion object {
@@ -274,6 +286,20 @@ class InferenceService : Service() {
                 }
                 else -> text
             }
+        }
+
+        /**
+         * Selects a valid per-image vision token budget matching the model's vision signatures and max budget.
+         */
+        fun selectVisionTokensPerImage(requested: Int, supportedSignatures: IntArray, maxBudget: Int): Int? {
+            if (requested <= 0) return null
+            val validSigs = supportedSignatures.filter { it > 0 }.sorted()
+            if (validSigs.isNotEmpty()) {
+                val bounded = if (maxBudget > 0) validSigs.filter { it <= maxBudget } else validSigs
+                val pool = if (bounded.isNotEmpty()) bounded else validSigs
+                return pool.lastOrNull { it <= requested } ?: pool.first()
+            }
+            return if (maxBudget > 0) minOf(requested, maxBudget) else null
         }
 
         init {
@@ -320,6 +346,21 @@ class InferenceService : Service() {
         }
     }
 
+    private fun getWorkerAvailableRamGB(): Float {
+        return try {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            if (am != null) {
+                val mi = ActivityManager.MemoryInfo()
+                am.getMemoryInfo(mi)
+                mi.availMem / (1024f * 1024f * 1024f)
+            } else {
+                4.0f
+            }
+        } catch (_: Throwable) {
+            4.0f
+        }
+    }
+
     private fun l2NormalizeCopy(rawVec: FloatArray): FloatArray {
         var sumSq = 0.0
         for (v in rawVec) sumSq += v.toDouble() * v.toDouble()
@@ -338,6 +379,9 @@ class InferenceService : Service() {
             cachedEmbeddingModelPath = ""
             cachedEmbVisionEnabled = false
             cachedEmbAudioEnabled = false
+            cachedEmbVisionIsGpu = false
+            cachedEmbVisionSignatures = IntArray(0)
+            cachedEmbMaxVisionBudget = 0
             if (eng != null) {
                 try {
                     if (eng.isInitialized()) eng.close()
@@ -362,6 +406,13 @@ class InferenceService : Service() {
                 val mods = info.inputModalities()
                 val isEmb = info.modelType == ModelType.EMBEDDING
                 val dim = (info as? ModelInfo.Embedding)?.dimension() ?: EMBEDDING_DIM
+                val visionSigs = runCatching { info.visionSignatureSelection() }.getOrNull() ?: IntArray(0)
+                val visionGpuSupported = mods.vision && runCatching {
+                    info.supportedBackends(Modality.VISION).contains(BackendType.GPU)
+                }.getOrDefault(false)
+                val sigArray = JSONArray()
+                for (sig in visionSigs) sigArray.put(sig)
+
                 out.put("exists", true)
                 out.put("model_path", embFile.absolutePath)
                 out.put("model_name", embFile.name)
@@ -374,6 +425,8 @@ class InferenceService : Service() {
                 out.put("video", mods.video)
                 out.put("max_context_tokens", info.maxContextTokens())
                 out.put("max_vision_token_budget", info.maxVisionTokenBudget())
+                out.put("vision_signatures", sigArray)
+                out.put("vision_gpu_supported", visionGpuSupported)
                 out.put("min_runtime_version", info.minRuntimeVersion())
             }
             out.toString()
@@ -389,28 +442,34 @@ class InferenceService : Service() {
     private fun getOrCreateEmbeddingEngineLocked(
         embFile: File,
         requireVision: Boolean,
-        requireAudio: Boolean
+        requireAudio: Boolean,
+        forceVisionCpu: Boolean = false
     ): EmbeddingEngine? {
         val existing = cachedEmbeddingEngine
         if (existing != null && existing.isInitialized() && cachedEmbeddingModelPath == embFile.absolutePath) {
-            val visionOk = !requireVision || cachedEmbVisionEnabled
+            val visionOk = !requireVision || (cachedEmbVisionEnabled && (!forceVisionCpu || !cachedEmbVisionIsGpu))
             val audioOk = !requireAudio || cachedEmbAudioEnabled
             if (visionOk && audioOk) {
                 return existing
             }
         }
 
+        val prevSameModel = cachedEmbeddingModelPath == embFile.absolutePath
+        val prevVision = prevSameModel && cachedEmbVisionEnabled && !forceVisionCpu
+        val prevAudio = prevSameModel && cachedEmbAudioEnabled
         releaseEmbeddingEngineLocked()
 
-        val freeRam = try { getFreeRamGBNative() } catch (_: Throwable) { 4.0f }
-        if (currentModelPath.isNotEmpty() && freeRam < 2.2f) {
-            Log.i(TAG, "On-Demand RAG Swap: Releasing Reasoning Model ($currentModelPath) to load EmbeddingGemma 2 (${embFile.name}), FreeRAM=${"%.2f".format(freeRam)}GB")
+        val availRamGb = getWorkerAvailableRamGB()
+        if (litertEngine != null && (requireVision || requireAudio || availRamGb < 3.2f)) {
+            Log.i(TAG, "On-Demand RAG Swap: Releasing Reasoning Model ($currentModelPath) before ${embFile.name} (vision=$requireVision, audio=$requireAudio, availRAM=${"%.2f".format(availRamGb)}GB)")
             releaseResourcesLocked()
         }
 
         var supportsVision = requireVision
         var supportsAudio = requireAudio
         var visionGpuSupported = false
+        var visionSignatures = IntArray(0)
+        var maxVisionBudget = 0
         try {
             ModelInfo.from(embFile.absolutePath).use { info ->
                 if (info.modelType != ModelType.EMBEDDING) {
@@ -419,25 +478,31 @@ class InferenceService : Service() {
                 val mods = info.inputModalities()
                 supportsVision = mods.vision
                 supportsAudio = mods.audio
-                visionGpuSupported = mods.vision && info.supportedBackends(Modality.VISION).contains(BackendType.GPU)
+                visionSignatures = runCatching { info.visionSignatureSelection() }.getOrNull() ?: IntArray(0)
+                maxVisionBudget = runCatching { info.maxVisionTokenBudget() }.getOrDefault(0)
+                visionGpuSupported = mods.vision && runCatching {
+                    info.supportedBackends(Modality.VISION).contains(BackendType.GPU)
+                }.getOrDefault(false)
             }
         } catch (t: Throwable) {
             Log.w(TAG, "ModelInfo fallback for ${embFile.name}: ${t.message}")
         }
 
         if (requireVision && !supportsVision) {
-            Log.w(TAG, "Model ${embFile.name} does not support vision embeddings.")
+            lastEmbeddingError = "Model '${embFile.name}' has no vision encoder (vision=$supportsVision, audio=$supportsAudio). Download EmbeddingGemma 2 740M (Omnimodal)."
+            Log.w(TAG, lastEmbeddingError)
             return null
         }
         if (requireAudio && !supportsAudio) {
-            Log.w(TAG, "Model ${embFile.name} does not support audio embeddings.")
+            lastEmbeddingError = "Model '${embFile.name}' has no audio encoder (vision=$supportsVision, audio=$supportsAudio). Download EmbeddingGemma 2 740M (Omnimodal)."
+            Log.w(TAG, lastEmbeddingError)
             return null
         }
 
-        val enableVision = requireVision || (cachedEmbVisionEnabled && supportsVision)
-        val enableAudio = requireAudio || (cachedEmbAudioEnabled && supportsAudio)
+        val enableVision = requireVision || (prevVision && supportsVision)
+        val enableAudio = requireAudio || (prevAudio && supportsAudio)
 
-        fun tryInitEngine(vBackend: Backend?, aBackend: Backend?): EmbeddingEngine? {
+        fun tryInitEngine(vBackend: Backend?, aBackend: Backend?): EmbeddingEngine {
             val cfg = EmbeddingEngineConfig(
                 modelPath = embFile.absolutePath,
                 backend = Backend.CPU(),
@@ -458,16 +523,27 @@ class InferenceService : Service() {
         }
 
         val audioBackend = if (enableAudio) Backend.CPU() else null
-        val initializedEngine = if (enableVision && visionGpuSupported) {
-            try {
-                tryInitEngine(Backend.GPU(), audioBackend)
-            } catch (gpuErr: Throwable) {
-                Log.w(TAG, "Vision GPU backend init failed (${gpuErr.message}); retrying on CPU")
-                tryInitEngine(Backend.CPU(), audioBackend)
+        val useVisionGpu = enableVision && visionGpuSupported && !forceVisionCpu && !visionGpuBlocked
+        var actualVisionIsGpu = false
+        val initializedEngine: EmbeddingEngine? = try {
+            if (useVisionGpu) {
+                try {
+                    val eng = tryInitEngine(Backend.GPU(), audioBackend)
+                    actualVisionIsGpu = true
+                    eng
+                } catch (gpuErr: Throwable) {
+                    visionGpuBlocked = true
+                    Log.w(TAG, "Vision GPU backend init failed (${gpuErr.message}); retrying on CPU")
+                    tryInitEngine(Backend.CPU(), audioBackend)
+                }
+            } else {
+                val visionBackend = if (enableVision) Backend.CPU() else null
+                tryInitEngine(visionBackend, audioBackend)
             }
-        } else {
-            val visionBackend = if (enableVision) Backend.CPU() else null
-            tryInitEngine(visionBackend, audioBackend)
+        } catch (cpuErr: Throwable) {
+            lastEmbeddingError = "Failed to initialize ${embFile.name}: ${cpuErr.javaClass.simpleName}: ${cpuErr.message}"
+            Log.w(TAG, lastEmbeddingError)
+            null
         }
 
         if (initializedEngine != null && initializedEngine.isInitialized()) {
@@ -475,7 +551,13 @@ class InferenceService : Service() {
             cachedEmbeddingModelPath = embFile.absolutePath
             cachedEmbVisionEnabled = enableVision
             cachedEmbAudioEnabled = enableAudio
-            Log.i(TAG, "EmbeddingGemma 2 initialized: ${embFile.name} (vision=$enableVision, audio=$enableAudio)")
+            cachedEmbVisionIsGpu = actualVisionIsGpu
+            cachedEmbVisionSignatures = visionSignatures
+            cachedEmbMaxVisionBudget = maxVisionBudget
+            Log.i(
+                TAG,
+                "EmbeddingGemma 2 initialized: ${embFile.name} (vision=$enableVision gpu=$actualVisionIsGpu audio=$enableAudio sigs=${visionSignatures.contentToString()} maxVision=$maxVisionBudget)"
+            )
         }
         return initializedEngine
     }
@@ -489,10 +571,11 @@ class InferenceService : Service() {
         val embFile = if (embeddingModelPath.isNotBlank()) File(embeddingModelPath) else null
         val canUseLitertEmb = embFile != null && embFile.exists() && embFile.isFile
         if (!canUseLitertEmb) {
-            // Zero feature-hash fallback: callers cleanly fall back to SQLite FTS5 BM25 lexical search
+            lastEmbeddingError = "Embedding model file missing."
             return FloatArray(0)
         }
 
+        lastEmbeddingError = ""
         val result = FloatArray(texts.size * EMBEDDING_DIM)
         inferenceMutex.withLock {
             try {
@@ -509,20 +592,23 @@ class InferenceService : Service() {
                     inputsList.map { single -> engine.computeEmbedding(single, opts) }
                 }
                 if (batchResponses.size != texts.size) {
-                    Log.w(TAG, "Unexpected batch response size: ${batchResponses.size} != ${texts.size}")
+                    lastEmbeddingError = "Unexpected text batch response size: ${batchResponses.size} != ${texts.size}"
+                    Log.w(TAG, lastEmbeddingError)
                     return FloatArray(0)
                 }
                 for (i in batchResponses.indices) {
                     val rawVec = batchResponses[i].embedding
                     if (rawVec.size != EMBEDDING_DIM) {
-                        Log.w(TAG, "Unexpected embedding dim=${rawVec.size} (expected $EMBEDDING_DIM) at index $i")
+                        lastEmbeddingError = "Unexpected embedding dim=${rawVec.size} (expected $EMBEDDING_DIM) at index $i"
+                        Log.w(TAG, lastEmbeddingError)
                         return FloatArray(0)
                     }
                     val normalized = l2NormalizeCopy(rawVec)
                     System.arraycopy(normalized, 0, result, i * EMBEDDING_DIM, EMBEDDING_DIM)
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "EmbeddingGemma 2 text pass failed: ${t.message}")
+                lastEmbeddingError = "${embFile!!.name} text pass failed: ${t.javaClass.simpleName}: ${t.message}"
+                Log.w(TAG, lastEmbeddingError)
                 releaseEmbeddingEngineLocked()
                 return FloatArray(0)
             }
@@ -537,62 +623,117 @@ class InferenceService : Service() {
         embeddingModelPath: String
     ): FloatArray {
         val embFile = if (embeddingModelPath.isNotBlank()) File(embeddingModelPath) else null
-        if (embFile == null || !embFile.exists() || !embFile.isFile) return FloatArray(0)
+        if (embFile == null || !embFile.exists() || !embFile.isFile) {
+            lastEmbeddingError = "Multimodal embedding model file missing."
+            return FloatArray(0)
+        }
 
         val needVision = mediaTypes.any { it.equals("IMAGE_FILE", ignoreCase = true) }
         val needAudio = mediaTypes.any { it.equals("AUDIO_FILE", ignoreCase = true) }
 
-        val result = FloatArray(mediaTypes.size * EMBEDDING_DIM)
-        inferenceMutex.withLock {
-            try {
-                val engine = getOrCreateEmbeddingEngineLocked(embFile, requireVision = needVision, requireAudio = needAudio)
-                    ?: return FloatArray(0)
-                val opts = EmbeddingOptions(
-                    normalize = true,
-                    visionTokensPerImage = visionTokensPerImage.takeIf { it > 0 }
-                )
-                for (i in mediaTypes.indices) {
-                    val mType = mediaTypes[i].uppercase()
-                    val payload = payloads[i]
-                    val inputList: List<InputData> = when (mType) {
-                        "TEXT" -> listOf(InputData.Text(payload))
-                        "IMAGE_FILE" -> {
-                            val imgFile = File(payload)
-                            if (!imgFile.exists() || !imgFile.isFile) {
-                                Log.w(TAG, "Missing image file for embedding: $payload")
-                                return FloatArray(0)
-                            }
-                            listOf(InputData.Image(imgFile.readBytes()))
-                        }
-                        "AUDIO_FILE" -> {
-                            val audFile = File(payload)
-                            if (!audFile.exists() || !audFile.isFile) {
-                                Log.w(TAG, "Missing audio file for embedding: $payload")
-                                return FloatArray(0)
-                            }
-                            listOf(InputData.Audio(audFile.readBytes()))
-                        }
-                        else -> {
-                            Log.w(TAG, "Unsupported mediaType for embedding: $mType")
-                            return FloatArray(0)
-                        }
-                    }
-                    val resp = engine.computeEmbedding(inputList, opts)
-                    val rawVec = resp.embedding
-                    if (rawVec.size != EMBEDDING_DIM) {
-                        Log.w(TAG, "Multimodal embedding dim mismatch: ${rawVec.size} != $EMBEDDING_DIM ($mType)")
+        val preparedInputs = ArrayList<List<InputData>>(mediaTypes.size)
+        for (i in mediaTypes.indices) {
+            val mType = mediaTypes[i].uppercase()
+            val payload = payloads[i]
+            val itemInputs: List<InputData> = when (mType) {
+                "TEXT" -> listOf(InputData.Text(payload))
+                "IMAGE_FILE" -> {
+                    val imgFile = File(payload)
+                    if (!imgFile.exists() || !imgFile.isFile) {
+                        lastEmbeddingError = "Missing image file for embedding: $payload"
+                        Log.w(TAG, lastEmbeddingError)
                         return FloatArray(0)
                     }
-                    val normalized = l2NormalizeCopy(rawVec)
-                    System.arraycopy(normalized, 0, result, i * EMBEDDING_DIM, EMBEDDING_DIM)
+                    listOf(InputData.Image(imgFile.readBytes()))
                 }
-            } catch (t: Throwable) {
-                Log.w(TAG, "EmbeddingGemma 2 multimodal pass failed: ${t.message}")
-                releaseEmbeddingEngineLocked()
-                return FloatArray(0)
+                "AUDIO_FILE" -> {
+                    val audFile = File(payload)
+                    if (!audFile.exists() || !audFile.isFile) {
+                        lastEmbeddingError = "Missing audio file for embedding: $payload"
+                        Log.w(TAG, lastEmbeddingError)
+                        return FloatArray(0)
+                    }
+                    listOf(InputData.Audio(audFile.readBytes()))
+                }
+                else -> {
+                    lastEmbeddingError = "Unsupported mediaType for embedding: $mType"
+                    Log.w(TAG, lastEmbeddingError)
+                    return FloatArray(0)
+                }
             }
+            preparedInputs.add(itemInputs)
         }
-        return result
+
+        fun runBatchOnce(engine: EmbeddingEngine, resolvedTokens: Int?): FloatArray {
+            val opts = EmbeddingOptions(
+                normalize = true,
+                visionTokensPerImage = resolvedTokens
+            )
+            val out = FloatArray(preparedInputs.size * EMBEDDING_DIM)
+            for (i in preparedInputs.indices) {
+                val resp = engine.computeEmbedding(preparedInputs[i], opts)
+                val rawVec = resp.embedding
+                if (rawVec.size != EMBEDDING_DIM) {
+                    throw IllegalStateException("Multimodal embedding dim mismatch: ${rawVec.size} != $EMBEDDING_DIM")
+                }
+                val normalized = l2NormalizeCopy(rawVec)
+                System.arraycopy(normalized, 0, out, i * EMBEDDING_DIM, EMBEDDING_DIM)
+            }
+            return out
+        }
+
+        lastEmbeddingError = ""
+        inferenceMutex.withLock {
+            var lastErr: Throwable? = null
+            val firstEngine = getOrCreateEmbeddingEngineLocked(embFile, requireVision = needVision, requireAudio = needAudio, forceVisionCpu = false)
+                ?: return FloatArray(0)
+            val firstTokens = if (needVision) {
+                selectVisionTokensPerImage(visionTokensPerImage, cachedEmbVisionSignatures, cachedEmbMaxVisionBudget)
+            } else null
+
+            try {
+                return runBatchOnce(firstEngine, firstTokens)
+            } catch (t: Throwable) {
+                lastErr = t
+                Log.w(TAG, "Multimodal pass failed (gpu=$cachedEmbVisionIsGpu tokens=$firstTokens): ${t.message}")
+            }
+
+            if (needVision && cachedEmbVisionIsGpu) {
+                visionGpuBlocked = true
+                releaseEmbeddingEngineLocked()
+                val cpuEngine = getOrCreateEmbeddingEngineLocked(embFile, requireVision = true, requireAudio = needAudio, forceVisionCpu = true)
+                if (cpuEngine != null) {
+                    val cpuTokens = selectVisionTokensPerImage(visionTokensPerImage, cachedEmbVisionSignatures, cachedEmbMaxVisionBudget)
+                    try {
+                        return runBatchOnce(cpuEngine, cpuTokens)
+                    } catch (cpuErr: Throwable) {
+                        lastErr = cpuErr
+                        Log.w(TAG, "Multimodal CPU fallback pass failed (tokens=$cpuTokens): ${cpuErr.message}")
+                        if (cpuTokens != null) {
+                            try {
+                                return runBatchOnce(cpuEngine, null)
+                            } catch (defErr: Throwable) {
+                                lastErr = defErr
+                                Log.w(TAG, "Multimodal CPU default-options retry failed: ${defErr.message}")
+                            }
+                        }
+                    }
+                }
+            } else if (needVision && firstTokens != null) {
+                try {
+                    return runBatchOnce(firstEngine, null)
+                } catch (defErr: Throwable) {
+                    lastErr = defErr
+                    Log.w(TAG, "Multimodal default-options retry failed: ${defErr.message}")
+                }
+            }
+
+            val backendLabel = if (cachedEmbVisionIsGpu) "GPU" else "CPU"
+            lastEmbeddingError = "${embFile.name} ($backendLabel): ${lastErr?.javaClass?.simpleName}: ${lastErr?.message ?: "Unknown error"}"
+            Log.w(TAG, "EmbeddingGemma 2 multimodal pass failed completely: $lastEmbeddingError")
+            releaseEmbeddingEngineLocked()
+            return FloatArray(0)
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -680,8 +821,8 @@ class InferenceService : Service() {
             Log.d(TAG, "Injected Summary Anchor into Turn 1.")
         }
         
-        // v6.1 Maximum RAM Guard: 0.8GB (Mid-range protection)
-        val freeRam = try { getFreeRamGBNative() } catch (e: Exception) { 4.0f }
+        // v6.1 Maximum RAM Guard: 0.8GB (Mid-range protection via live ActivityManager memory inside :inference_core)
+        val freeRam = getWorkerAvailableRamGB()
         if (freeRam < 0.8f && !isConversationFresh) {
             Log.w(TAG, "CRITICAL RAM ALERT (%.2fGB). Purging KV Cache.".format(freeRam))
             resetConversationLocked()

@@ -20,4 +20,5 @@ interface IInferenceService {
     float[] generateMultimodalEmbeddingsBatch(in List<String> mediaTypes, in List<String> payloads, int visionTokensPerImage, String embeddingModelPath);
     String inspectEmbeddingModel(String embeddingModelPath);
     void releaseEmbeddingEngine();
+    String getLastEmbeddingError();
 }

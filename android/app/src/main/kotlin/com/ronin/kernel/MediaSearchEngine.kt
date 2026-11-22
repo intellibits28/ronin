@@ -1190,10 +1190,33 @@ object MediaSearchEngine {
                 success = false,
                 query = imageFile.name,
                 filter = filter,
-                error = "EmbeddingGemma 2 multimodal model not installed."
+                error = "EmbeddingGemma 2 multimodal model not installed. Please download EmbeddingGemma 2 740M (~462 MB) from Settings > Hugging Face Model Hub (your Gemma 4 Chat Brain stays active)."
             )
         }
+        val embFileName = File(modelPath).name
         val modelId = nativeEngine.resolveActiveEmbeddingModelId(modelPath)
+        val infoJson = nativeEngine.inspectEmbeddingModelAsync(modelPath)
+            ?: return@withContext MediaSearchOutcome(
+                success = false,
+                query = imageFile.name,
+                filter = filter,
+                modelId = modelId,
+                error = "Inference worker service unavailable while inspecting $embFileName. Please retry."
+            )
+        val isEmb = infoJson.optBoolean("is_embedding", false)
+        val supportsVision = infoJson.optBoolean("vision", false)
+        if (!isEmb || !supportsVision) {
+            val supportsText = infoJson.optBoolean("text", false)
+            val supportsAudio = infoJson.optBoolean("audio", false)
+            return@withContext MediaSearchOutcome(
+                success = false,
+                query = imageFile.name,
+                filter = filter,
+                modelId = modelId,
+                error = "Embedding model `$embFileName` does not support Vision inputs (text=$supportsText, vision=$supportsVision, audio=$supportsAudio).\n\nVisual Search အတွက် **Settings > Hugging Face Model Hub** မှ `EmbeddingGemma 2 740M (Omnimodal)` (~462 MB) ကို download လုပ်ပေးပါ (Active Brain က Gemma 4 ပဲ ဆက်ရှိနေမှာဖြစ်ပြီး EmbeddingGemma 2 က On-Demand အလိုအလျောက် တွဲအလုပ်လုပ်ပါမည်)။"
+            )
+        }
+
         val anyStats = nativeEngine.getMediaIndexStatsSafe("")
         if (anyStats.optInt("total_segments", 0) == 0) {
             return@withContext MediaSearchOutcome(
@@ -1223,12 +1246,17 @@ object MediaSearchEngine {
                 customEmbPath = modelPath
             )
             val qVec = vecs.firstOrNull()
-                ?: return@withContext MediaSearchOutcome(
-                    success = false,
-                    query = imageFile.name,
-                    filter = filter,
-                    error = "Vision encoder failed or is unsupported by installed model."
-                )
+                ?: run {
+                    val workerDetail = nativeEngine.getLastEmbeddingErrorSafe()
+                    val reasonSuffix = if (workerDetail.isNotBlank()) "\n• Detail: `$workerDetail`" else ""
+                    return@withContext MediaSearchOutcome(
+                        success = false,
+                        query = imageFile.name,
+                        filter = filter,
+                        modelId = modelId,
+                        error = "Vision encoder failed on `$embFileName` while encoding `${imageFile.name}`.$reasonSuffix"
+                    )
+                }
 
             val rawJson = nativeEngine.searchMediaEmbeddingsSafe(
                 queryEmbedding = qVec,

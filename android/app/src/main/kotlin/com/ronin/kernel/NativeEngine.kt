@@ -433,13 +433,45 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         val dynamicMatches = modelsDir.listFiles { f ->
             f.isFile && f.name.endsWith(".litertlm", true) &&
                 (f.name.contains("embedding", true) || f.name.contains("gecko", true))
-        }?.sortedByDescending { it.length() }.orEmpty()
+        }?.sortedWith(
+            compareByDescending<File> { file ->
+                if (requireMultimodal) {
+                    val n = file.name.lowercase()
+                    when {
+                        n.contains("740m") || n.contains("omni") -> 3
+                        n.contains("440m") || n.contains("vision") -> 2
+                        n.contains("270m") || n.contains("text") -> 0
+                        else -> 1
+                    }
+                } else {
+                    0
+                }
+            }.thenByDescending { it.length() }
+        ).orEmpty()
         val picked = dynamicMatches.firstOrNull()
         if (picked != null) {
             if (!requireMultimodal) embeddingModelPath = picked.absolutePath
             return picked.absolutePath
         }
         return ""
+    }
+
+    private suspend fun ensureInferenceServiceBound(timeoutMs: Long = 5000L): IInferenceService? {
+        inferenceService?.let { return it }
+        withContext(Dispatchers.Main) {
+            if (!isServiceBound || inferenceService == null) {
+                try {
+                    bindInferenceService()
+                } catch (e: Exception) {
+                    Log.w(TAG, "bindInferenceService failed: ${e.message}")
+                }
+            }
+        }
+        val start = System.currentTimeMillis()
+        while (inferenceService == null && (System.currentTimeMillis() - start) < timeoutMs) {
+            delay(100)
+        }
+        return inferenceService
     }
 
     /**
@@ -458,6 +490,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (modelPath.isBlank() || !File(modelPath).exists()) {
             return@withContext emptyList()
         }
+        val svc = ensureInferenceServiceBound() ?: return@withContext emptyList()
 
         // Partition texts into sub-batches: max 16 chunks and <= 128 KB byte budget per transaction
         val subBatches = mutableListOf<List<String>>()
@@ -482,7 +515,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
         for (subBatch in subBatches) {
             val flat: FloatArray? = try {
-                inferenceService?.generateEmbeddingsBatchWithTask(subBatch, taskMode, titleHint, modelPath)
+                svc.generateEmbeddingsBatchWithTask(subBatch, taskMode, titleHint, modelPath)
             } catch (e: Exception) {
                 Log.w(TAG, "Binder embedding sub-batch error: ${e.message}")
                 null
@@ -508,12 +541,21 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     suspend fun inspectEmbeddingModelAsync(customEmbPath: String = ""): JSONObject? = withContext(Dispatchers.IO) {
         val modelPath = if (customEmbPath.isNotBlank()) customEmbPath else resolveEmbeddingModelPath()
         if (modelPath.isBlank() || !File(modelPath).exists()) return@withContext null
+        val svc = ensureInferenceServiceBound() ?: return@withContext null
         return@withContext try {
-            val raw = inferenceService?.inspectEmbeddingModel(modelPath) ?: return@withContext null
+            val raw = svc.inspectEmbeddingModel(modelPath)
             JSONObject(raw)
         } catch (e: Exception) {
             Log.w(TAG, "inspectEmbeddingModelAsync failed: ${e.message}")
             null
+        }
+    }
+
+    fun getLastEmbeddingErrorSafe(): String {
+        return try {
+            inferenceService?.getLastEmbeddingError().orEmpty()
+        } catch (_: Exception) {
+            ""
         }
     }
 
@@ -533,6 +575,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         if (items.isEmpty()) return@withContext emptyList()
         val modelPath = if (customEmbPath.isNotBlank()) customEmbPath else resolveEmbeddingModelPath(requireMultimodal = true)
         if (modelPath.isBlank() || !File(modelPath).exists()) return@withContext emptyList()
+        val svc = ensureInferenceServiceBound() ?: return@withContext emptyList()
 
         val results = ArrayList<FloatArray>(items.size)
         val dim = InferenceService.EMBEDDING_DIM
@@ -541,7 +584,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             val types = chunk.map { it.mediaType }
             val payloads = chunk.map { it.payload }
             val flat: FloatArray? = try {
-                inferenceService?.generateMultimodalEmbeddingsBatch(types, payloads, visionTokensPerImage, modelPath)
+                svc.generateMultimodalEmbeddingsBatch(types, payloads, visionTokensPerImage, modelPath)
             } catch (e: Exception) {
                 Log.w(TAG, "Multimodal Binder batch error: ${e.message}")
                 null

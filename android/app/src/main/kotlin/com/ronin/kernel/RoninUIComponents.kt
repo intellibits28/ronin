@@ -1677,13 +1677,15 @@ fun SettingsSection(
 
         // Section 4: Local Brain & Hugging Face Hub
         item {
+            val reasoningModels = chatViewModel.discoveredModels.filter { !ModelDownloadManager.isEmbeddingModelFileName(File(it).name) }
+            val embeddingModels = chatViewModel.discoveredModels.filter { ModelDownloadManager.isEmbeddingModelFileName(File(it).name) }
             SettingsCardSection(title = "4. Local Brain & Hugging Face Hub") {
-                Text("Installed Models (${chatViewModel.discoveredModels.size})", color = Color.Gray, fontSize = 12.sp)
+                Text("Reasoning Brains (${reasoningModels.size})", color = Color.Gray, fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
-                if (chatViewModel.discoveredModels.isEmpty()) {
-                    Text("No local models installed.", color = Color.DarkGray, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                if (reasoningModels.isEmpty()) {
+                    Text("No reasoning LLM installed.", color = Color.DarkGray, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                 } else {
-                    chatViewModel.discoveredModels.forEach { path ->
+                    reasoningModels.forEach { path ->
                         val isActive = path == chatViewModel.localModelPath
                         Row(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = isActive, onClick = { activity?.hydrateModel(path) }, colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF66BB6A)))
@@ -1693,6 +1695,38 @@ fun SettingsSection(
                             }
                         }
                     }
+                }
+                if (embeddingModels.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Embedding Models (768D Auto On-Demand • Coexists with Gemma 4)", color = Color(0xFFCE93D8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(4.dp))
+                    embeddingModels.forEach { path ->
+                        Row(modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = Color(0xFF9C27B0).copy(alpha = 0.22f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    "768D AUTO",
+                                    color = Color(0xFFCE93D8),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(File(path).name, modifier = Modifier.weight(1f), color = Color(0xFFE0E0E0), fontSize = 12.sp)
+                            IconButton(onClick = { activity?.deleteLocalModel(path) }, modifier = Modifier.size(40.dp)) {
+                                Icon(Icons.Default.Delete, null, tint = Color(0xFFEF5350), modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                    Text(
+                        "Runs automatically alongside your active Reasoning Brain for /docsearch & /mediasearch.",
+                        color = Color.Gray,
+                        fontSize = 10.sp
+                    )
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(

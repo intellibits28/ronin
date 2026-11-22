@@ -145,4 +145,25 @@ class MultimodalMediaSearchTest {
         assertNull(MediaIntentParser.parseNaturalMediaSearchIntent("ocr Screenshot.jpg"))
         assertNull(MediaIntentParser.parseNaturalMediaSearchIntent("/mediasearch sunset"))
     }
+
+    @Test
+    fun `selectVisionTokensPerImage clamps and aligns token budgets to model signatures`() {
+        assertNull(InferenceService.selectVisionTokensPerImage(0, intArrayOf(70, 140, 280), 280))
+        assertEquals(280, InferenceService.selectVisionTokensPerImage(280, intArrayOf(70, 140, 280, 560), 280))
+        assertEquals(140, InferenceService.selectVisionTokensPerImage(280, intArrayOf(70, 140), 560))
+        assertEquals(70, InferenceService.selectVisionTokensPerImage(100, intArrayOf(70, 140, 280), 280))
+        assertEquals(140, InferenceService.selectVisionTokensPerImage(50, intArrayOf(140, 280), 280))
+        assertEquals(140, InferenceService.selectVisionTokensPerImage(280, intArrayOf(70, 140, 280), 140))
+        assertEquals(256, InferenceService.selectVisionTokensPerImage(280, IntArray(0), 256))
+        assertNull(InferenceService.selectVisionTokensPerImage(280, IntArray(0), 0))
+    }
+
+    @Test
+    fun `isEmbeddingModelFileName distinguishes EmbeddingGemma and Gecko files from LLMs`() {
+        assertTrue(ModelDownloadManager.isEmbeddingModelFileName("embeddinggemma-2-740m.litertlm"))
+        assertTrue(ModelDownloadManager.isEmbeddingModelFileName("embeddinggemma-2-text-270m.litertlm"))
+        assertTrue(ModelDownloadManager.isEmbeddingModelFileName("Gecko-110m-en.litertlm"))
+        assertFalse(ModelDownloadManager.isEmbeddingModelFileName("gemma-4-E2B-it.litertlm"))
+        assertFalse(ModelDownloadManager.isEmbeddingModelFileName("Qwen3.5-0.8B_int8.litertlm"))
+    }
 }

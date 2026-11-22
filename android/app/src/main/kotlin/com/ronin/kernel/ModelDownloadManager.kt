@@ -606,4 +606,8 @@ object ModelDownloadManager {
             activeCancelFlags.remove(spec.id)
         }
     }
+
+    fun isEmbeddingModelFileName(fileName: String): Boolean {
+        return fileName.contains("embedding", ignoreCase = true) || fileName.contains("gecko", ignoreCase = true)
+    }
 }
