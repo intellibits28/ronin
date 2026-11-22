@@ -166,4 +166,13 @@ class MultimodalMediaSearchTest {
         assertFalse(ModelDownloadManager.isEmbeddingModelFileName("gemma-4-E2B-it.litertlm"))
         assertFalse(ModelDownloadManager.isEmbeddingModelFileName("Qwen3.5-0.8B_int8.litertlm"))
     }
+
+    @Test
+    fun `MediaModalityFilter VISUAL maps cleanly to native VISUAL SQL filter`() {
+        assertEquals("VISUAL", MediaModalityFilter.VISUAL.sqlFilter)
+        assertEquals("IMAGE", MediaModalityFilter.IMAGE.sqlFilter)
+        assertEquals("VIDEO", MediaModalityFilter.VIDEO.sqlFilter)
+        assertEquals("AUDIO", MediaModalityFilter.AUDIO.sqlFilter)
+        assertEquals("ALL", MediaModalityFilter.ALL.sqlFilter)
+    }
 }

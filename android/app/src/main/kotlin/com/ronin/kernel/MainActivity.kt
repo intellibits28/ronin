@@ -2800,13 +2800,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         outcome.indexEmpty -> ChatMessage(
                             System.currentTimeMillis() + 1,
                             "Ronin",
-                            "📸 ဖုန်းထဲက ပုံ/အသံ/Video တွေကို Index မလုပ်ရသေးပါဘူး။\n\n`/mediaindex` လို့ရိုက်ပြီး (သို့) **Settings > 4.6 Multimodal Media Search** ကနေ အရင် Index လုပ်ပေးပါ။"
+                            "📸 Indexed Photos / Video Frames မရှိသေးပါ။\n\nAudio ဖိုင်တွေသာ Index ဖြစ်နေသေးပါက ဓာတ်ပုံနှင့် ဗီဒီယိုများကို Index ထည့်ရန် /mediaindex ဟု ရိုက်ပို့ပါ (သို့မဟုတ် Menu > Settings > 4.6 Multimodal Media Search > Index Photos / Index All ကို နှိပ်ပါ)။"
                         )
-                        outcome.results.isEmpty() -> ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🔍 Indexed media ထဲမှာ **${cachedFile.name}** နဲ့ ဆင်တူတဲ့ ပုံ/Video မတွေ့သေးပါ။")
+                        outcome.results.isEmpty() -> ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🔍 Indexed Photos / Video Frames ထဲမှာ ${cachedFile.name} နဲ့ ဆင်တူတဲ့ ပုံ/Video မတွေ့သေးပါ။")
                         else -> ChatMessage(
                             System.currentTimeMillis() + 1,
                             "Ronin",
-                            "🔍 **Visual Similarity Results** (EmbeddingGemma 2 • `${outcome.modelId}`):\nFound **${outcome.results.size}** match(es) visually similar to **${cachedFile.name}**:"
+                            "🔍 Visual Similarity Results (EmbeddingGemma 2 • ${outcome.modelId})\nFound ${outcome.results.size} visual match(es) similar to ${cachedFile.name}:"
                         ).apply {
                             mediaSearchResults.addAll(outcome.results)
                         }
@@ -3075,15 +3075,15 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                     val modelPath = engine.resolveEmbeddingModelPath(requireMultimodal = true)
                                                     val info = if (modelPath.isNotBlank()) engine.inspectEmbeddingModelAsync(modelPath) else null
                                                     val statusMsg = buildString {
-                                                        append("📊 **Multimodal Media Index Status (LiteRT-LM 0.19.1)**\n\n")
-                                                        append("• Active Embedding Model: `${File(modelPath).name.ifBlank { "None Installed" }}`\n")
+                                                        append("📊 Multimodal Media Index Status (LiteRT-LM 0.19.1)\n\n")
+                                                        append("• Active Embedding Model: ${File(modelPath).name.ifBlank { "None Installed" }}\n")
                                                         if (info != null && info.optBoolean("exists", false)) {
                                                             append("• Encoders: text=${info.optBoolean("text")}, vision=${info.optBoolean("vision")}, audio=${info.optBoolean("audio")}, dim=${info.optInt("dimension")}\n")
                                                         }
-                                                        append("• Indexed Photos: **${stats.optInt("images", 0)}**\n")
-                                                        append("• Indexed Audio: **${stats.optInt("audio", 0)}**\n")
-                                                        append("• Indexed Videos: **${stats.optInt("videos", 0)}**\n")
-                                                        append("• Total Vector Segments: **${stats.optInt("total_segments", 0)}**\n")
+                                                        append("• Indexed Photos: ${stats.optInt("images", 0)}\n")
+                                                        append("• Indexed Audio: ${stats.optInt("audio", 0)}\n")
+                                                        append("• Indexed Videos: ${stats.optInt("videos", 0)} (with visual keyframes: ${stats.optInt("video_frames", 0)})\n")
+                                                        append("• Total Vector Segments: ${stats.optInt("total_segments", 0)}\n")
                                                     }
                                                     chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", statusMsg))
                                                 }
@@ -3139,13 +3139,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                     ChatMessage(
                                                         System.currentTimeMillis(),
                                                         "Ronin",
-                                                        "🔍 **Multimodal Media Search (EmbeddingGemma 2 • 768D)**\n\n" +
-                                                            "• `/mediasearch <query>` — Search Photos, Audio & Video moments together\n" +
-                                                            "• `/mediasearch photo <query>` — Search Photos only\n" +
-                                                            "• `/mediasearch audio <query>` — Search Audio / Voice memos only\n" +
-                                                            "• `/mediasearch video <query>` — Search Video frames & audio moments\n" +
-                                                            "• `/mediasearch --image <path>` — Visual similarity search by image\n" +
-                                                            "• `/mediaindex` — Index phone media first"
+                                                        "🔍 Multimodal Media Search (EmbeddingGemma 2 • 768D)\n\n" +
+                                                            "• /mediasearch <query> — Search Photos, Audio & Video moments together\n" +
+                                                            "• /mediasearch photo <query> — Search Photos only\n" +
+                                                            "• /mediasearch audio <query> — Search Audio / Voice memos only\n" +
+                                                            "• /mediasearch video <query> — Search Video frames & audio moments\n" +
+                                                            "• /mediasearch --image <path> — Visual similarity search by image\n" +
+                                                            "• /mediaindex — Index phone media first"
                                                     )
                                                 )
                                                 chatViewModel.isGenerating = false
@@ -3156,14 +3156,18 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 val imgQuery = rest.substringAfter(" ", "").trim().trim('"', '\'')
                                                 val resolvedImg = DocumentIntelligence.resolveFile(imgQuery) { engine.searchFiles(it) }
                                                 if (resolvedImg == null) {
-                                                    chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Could not find image: `$imgQuery`"))
+                                                    chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Could not find image: $imgQuery"))
                                                 } else {
                                                     val outcome = MediaSearchEngine.searchMediaByImage(context, engine, resolvedImg)
                                                     val outMsg = when {
                                                         outcome.error != null -> ChatMessage(System.currentTimeMillis(), "Ronin", "❌ ${outcome.error}")
-                                                        outcome.indexEmpty -> ChatMessage(System.currentTimeMillis(), "Ronin", "📸 Media index is empty. Run `/mediaindex` first.")
-                                                        outcome.results.isEmpty() -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 No visually similar media matched `${resolvedImg.name}`.")
-                                                        else -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 Found **${outcome.results.size}** visual match(es) for `${resolvedImg.name}` (`${outcome.modelId}`):").apply {
+                                                        outcome.indexEmpty -> ChatMessage(
+                                                            System.currentTimeMillis(),
+                                                            "Ronin",
+                                                            "📸 Indexed Photos / Video Frames မရှိသေးပါ။\n\n/mediaindex ဟုရိုက်ပြီး (သို့) Settings > 4.6 Multimodal Media Search > Index Photos / Index All ကို နှိပ်၍ အရင် Index လုပ်ပေးပါ။"
+                                                        )
+                                                        outcome.results.isEmpty() -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 Indexed Photos / Video Frames ထဲမှာ ${resolvedImg.name} နဲ့ ဆင်တူတဲ့ ပုံ/Video မတွေ့သေးပါ။")
+                                                        else -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 Visual Similarity Results (EmbeddingGemma 2 • ${outcome.modelId})\nFound ${outcome.results.size} visual match(es) for ${resolvedImg.name}:").apply {
                                                             mediaSearchResults.addAll(outcome.results)
                                                         }
                                                     }
@@ -3185,7 +3189,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             }
 
                                             if (queryText.isBlank()) {
-                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: `/mediasearch [photo|audio|video] <query>`"))
+                                                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /mediasearch [photo|audio|video] <query>"))
                                             } else {
                                                 val outcome = MediaSearchEngine.searchMediaByText(engine, queryText, modFilter, topK = 8)
                                                 val reply = when {
@@ -3193,13 +3197,13 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                     outcome.indexEmpty -> ChatMessage(
                                                         System.currentTimeMillis(),
                                                         "Ronin",
-                                                        "📸 **Media Index is Empty**\n\nဖုန်းထဲက ပုံ/အသံ/Video တွေကို **EmbeddingGemma 2 (740M Omnimodal)** နဲ့ Index မလုပ်ရသေးပါဘူး။\n• Settings > **Hugging Face Model Hub** မှ `EmbeddingGemma 2 740M` ကို download လုပ်ပြီး `/mediaindex` (သို့) **4.6 Multimodal Media Search** မှ **Index All** ကို နှိပ်ပါ။"
+                                                        "📸 Media Index is Empty\n\nဖုန်းထဲက ပုံ/အသံ/Video တွေကို EmbeddingGemma 2 (740M Omnimodal) နဲ့ Index မလုပ်ရသေးပါဘူး။\n• Settings > Hugging Face Model Hub မှ EmbeddingGemma 2 740M ကို download လုပ်ပြီး /mediaindex (သို့) 4.6 Multimodal Media Search မှ Index All ကို နှိပ်ပါ။"
                                                     )
-                                                    outcome.results.isEmpty() -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 No indexed ${modFilter.label.lowercase()} matched `\"$queryText\"`.")
+                                                    outcome.results.isEmpty() -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 No indexed ${modFilter.label.lowercase()} matched \"$queryText\".")
                                                     else -> ChatMessage(
                                                         System.currentTimeMillis(),
                                                         "Ronin",
-                                                        "🔍 **EmbeddingGemma 2 Search** (${modFilter.label} • `${outcome.modelId}`):\nFound **${outcome.results.size}** match(es) for `\"$queryText\"`:"
+                                                        "🔍 EmbeddingGemma 2 Search (${modFilter.label} • ${outcome.modelId})\nFound ${outcome.results.size} match(es) for \"$queryText\":"
                                                     ).apply {
                                                         mediaSearchResults.addAll(outcome.results)
                                                     }
@@ -3943,19 +3947,19 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 outcome.indexEmpty -> ChatMessage(
                                                     System.currentTimeMillis() + 1,
                                                     "Ronin",
-                                                    "📸 ဖုန်းထဲက ပုံ၊ အသံ၊ Video တွေကို Semantic Index မလုပ်ရသေးပါဘူး (`${mediaIntent.filter.label}`)။\n\n" +
-                                                        "1️⃣ **Settings > Section 4** မှ `EmbeddingGemma 2 740M (Omnimodal)` ကို Download/ထည့်သွင်းပါ။\n" +
-                                                        "2️⃣ **Section 4.6 Multimodal Media Search** (သို့) `/mediaindex` ဖြင့် ဖုန်းထဲက ဖိုင်များကို Index လုပ်ပြီးပါက `\"${mediaIntent.query}\"` ကို ချက်ချင်း ရှာပေးနိုင်ပါမည်။"
+                                                    "📸 ဖုန်းထဲက ပုံ၊ အသံ၊ Video တွေကို Semantic Index မလုပ်ရသေးပါဘူး (${mediaIntent.filter.label})။\n\n" +
+                                                        "1️⃣ Settings > Section 4 မှ EmbeddingGemma 2 740M (Omnimodal) ကို Download/ထည့်သွင်းပါ။\n" +
+                                                        "2️⃣ Section 4.6 Multimodal Media Search (သို့) /mediaindex ဖြင့် ဖုန်းထဲက ဖိုင်များကို Index လုပ်ပြီးပါက \"${mediaIntent.query}\" ကို ချက်ချင်း ရှာပေးနိုင်ပါမည်။"
                                                 )
                                                 outcome.results.isEmpty() -> ChatMessage(
                                                     System.currentTimeMillis() + 1,
                                                     "Ronin",
-                                                    "🔍 `\"${mediaIntent.query}\"` (${mediaIntent.filter.label}) နဲ့ ကိုက်ညီတဲ့ indexed media မတွေ့သေးပါ။"
+                                                    "🔍 \"${mediaIntent.query}\" (${mediaIntent.filter.label}) နဲ့ ကိုက်ညီတဲ့ indexed media မတွေ့သေးပါ။"
                                                 )
                                                 else -> ChatMessage(
                                                     System.currentTimeMillis() + 1,
                                                     "Ronin",
-                                                    "🔍 **EmbeddingGemma 2 Media Search** (${mediaIntent.filter.label}): `\"${mediaIntent.query}\"` အတွက် **${outcome.results.size}** ခု တွေ့ရှိပါသည်-"
+                                                    "🔍 EmbeddingGemma 2 Media Search (${mediaIntent.filter.label}): \"${mediaIntent.query}\" အတွက် ${outcome.results.size} ခု တွေ့ရှိပါသည်-"
                                                 ).apply {
                                                     mediaSearchResults.addAll(outcome.results)
                                                 }

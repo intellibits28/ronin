@@ -1578,6 +1578,8 @@ std::vector<LongTermMemory::MediaSearchMatch> LongTermMemory::searchMediaEmbeddi
     if (!norm_filter.empty() && norm_filter != "ALL") {
         if (norm_filter == "VIDEO") {
             sql += " AND (modality = 'VIDEO_FRAME' OR modality = 'VIDEO_AUDIO')";
+        } else if (norm_filter == "VISUAL") {
+            sql += " AND (modality = 'IMAGE' OR modality = 'VIDEO_FRAME')";
         } else if (norm_filter == "PHOTO" || norm_filter == "IMAGE") {
             sql += " AND modality = 'IMAGE'";
         } else if (norm_filter == "AUDIO") {
@@ -1684,6 +1686,7 @@ std::string LongTermMemory::getMediaIndexStatsJson(const std::string& model_id) 
     j["images"] = 0;
     j["audio"] = 0;
     j["videos"] = 0;
+    j["video_frames"] = 0;
     j["total_segments"] = 0;
     j["model_id"] = model_id;
     if (!m_db) return j.dump();
@@ -1705,6 +1708,7 @@ std::string LongTermMemory::getMediaIndexStatsJson(const std::string& model_id) 
     j["images"] = countQuery("SELECT COUNT(DISTINCT media_path) FROM media_embeddings WHERE modality = 'IMAGE'");
     j["audio"] = countQuery("SELECT COUNT(DISTINCT media_path) FROM media_embeddings WHERE modality = 'AUDIO'");
     j["videos"] = countQuery("SELECT COUNT(DISTINCT media_path) FROM media_embeddings WHERE modality IN ('VIDEO_FRAME', 'VIDEO_AUDIO')");
+    j["video_frames"] = countQuery("SELECT COUNT(DISTINCT media_path) FROM media_embeddings WHERE modality = 'VIDEO_FRAME'");
     j["total_segments"] = countQuery("SELECT COUNT(*) FROM media_embeddings WHERE 1=1");
     return j.dump();
 }

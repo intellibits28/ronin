@@ -42,6 +42,7 @@ enum class MediaIndexScope(val label: String) {
 
 enum class MediaModalityFilter(val sqlFilter: String, val label: String) {
     ALL("ALL", "All Media"),
+    VISUAL("VISUAL", "Photos & Video Frames"),
     IMAGE("IMAGE", "Photos"),
     AUDIO("AUDIO", "Audio"),
     VIDEO("VIDEO", "Videos")
@@ -912,6 +913,11 @@ object MediaSearchEngine {
             )
         }
 
+        val preStats = nativeEngine.getMediaIndexStatsSafe(modelId)
+        val upgradeAudioOnlyVideos = supportsVision &&
+            preStats.optInt("videos", 0) > 0 &&
+            preStats.optInt("video_frames", 0) == 0
+
         val tmpDir = File(context.cacheDir, "media_emb_tmp").apply { mkdirs() }
         var indexedImages = 0
         var indexedAudio = 0
@@ -942,7 +948,9 @@ object MediaSearchEngine {
                     )
                 )
 
-                if (nativeEngine.isMediaIndexedSafe(asset.mediaPath, asset.modifiedAtSec, modelId)) {
+                val shouldSkipExisting = !(upgradeAudioOnlyVideos && asset.modality == "VIDEO") &&
+                    nativeEngine.isMediaIndexedSafe(asset.mediaPath, asset.modifiedAtSec, modelId)
+                if (shouldSkipExisting) {
                     skipped++
                     return@forEachIndexed
                 }
@@ -1181,7 +1189,7 @@ object MediaSearchEngine {
         context: Context,
         nativeEngine: NativeEngine,
         imageFile: File,
-        filter: MediaModalityFilter = MediaModalityFilter.ALL,
+        filter: MediaModalityFilter = MediaModalityFilter.VISUAL,
         topK: Int = 8
     ): MediaSearchOutcome = withContext(Dispatchers.IO) {
         val modelPath = nativeEngine.resolveEmbeddingModelPath(requireMultimodal = true)
@@ -1213,12 +1221,19 @@ object MediaSearchEngine {
                 query = imageFile.name,
                 filter = filter,
                 modelId = modelId,
-                error = "Embedding model `$embFileName` does not support Vision inputs (text=$supportsText, vision=$supportsVision, audio=$supportsAudio).\n\nVisual Search အတွက် **Settings > Hugging Face Model Hub** မှ `EmbeddingGemma 2 740M (Omnimodal)` (~462 MB) ကို download လုပ်ပေးပါ (Active Brain က Gemma 4 ပဲ ဆက်ရှိနေမှာဖြစ်ပြီး EmbeddingGemma 2 က On-Demand အလိုအလျောက် တွဲအလုပ်လုပ်ပါမည်)။"
+                error = "Embedding model $embFileName does not support Vision inputs (text=$supportsText, vision=$supportsVision, audio=$supportsAudio).\n\nVisual Search အတွက် Settings > Hugging Face Model Hub မှ EmbeddingGemma 2 740M (Omnimodal) (~462 MB) ကို download လုပ်ပေးပါ (Active Brain က Gemma 4 ပဲ ဆက်ရှိနေမှာဖြစ်ပြီး EmbeddingGemma 2 က On-Demand အလိုအလျောက် တွဲအလုပ်လုပ်ပါမည်)။"
             )
         }
 
         val anyStats = nativeEngine.getMediaIndexStatsSafe("")
-        if (anyStats.optInt("total_segments", 0) == 0) {
+        val relevantSegments = when (filter) {
+            MediaModalityFilter.VISUAL -> anyStats.optInt("images", 0) + anyStats.optInt("video_frames", 0)
+            MediaModalityFilter.IMAGE -> anyStats.optInt("images", 0)
+            MediaModalityFilter.AUDIO -> anyStats.optInt("audio", 0)
+            MediaModalityFilter.VIDEO -> anyStats.optInt("videos", 0)
+            MediaModalityFilter.ALL -> anyStats.optInt("total_segments", 0)
+        }
+        if (relevantSegments == 0) {
             return@withContext MediaSearchOutcome(
                 success = true,
                 query = imageFile.name,

@@ -677,12 +677,15 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     }
 
     fun getMediaIndexStatsSafe(modelId: String = ""): JSONObject {
-        if (!isLibLoaded) return JSONObject().put("images", 0).put("audio", 0).put("videos", 0).put("total_segments", 0)
+        val emptyStats = {
+            JSONObject().put("images", 0).put("audio", 0).put("videos", 0).put("video_frames", 0).put("total_segments", 0)
+        }
+        if (!isLibLoaded) return emptyStats()
         return try {
             JSONObject(getMediaIndexStatsNative(modelId))
         } catch (e: Exception) {
             Log.e(TAG, "getMediaIndexStatsSafe failed: ${e.message}")
-            JSONObject().put("images", 0).put("audio", 0).put("videos", 0).put("total_segments", 0)
+            emptyStats()
         }
     }
 

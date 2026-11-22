@@ -367,6 +367,13 @@ TEST(LongTermMemoryMediaEmbeddings, AtomicStoreModalityFiltersTimestampsAndSafeM
     EXPECT_EQ(allMatches[1].media_path, "/sdcard/Movies/holiday.mp4");
     EXPECT_EQ(allMatches[1].start_ms, 45000LL);
 
+    // Query near +X across VISUAL: returns IMAGE and VIDEO_FRAME only (never AUDIO or VIDEO_AUDIO)
+    auto visualMatches = ltm.searchMediaEmbeddings({0.0f, 1.0f, 0.0f, 1.0f}, "VISUAL", model_740m, "", 10);
+    ASSERT_EQ(visualMatches.size(), 3u);
+    for (const auto& vm : visualMatches) {
+        EXPECT_TRUE(vm.modality == "IMAGE" || vm.modality == "VIDEO_FRAME");
+    }
+
     // Filter VIDEO matches both VIDEO_FRAME and VIDEO_AUDIO
     auto videoAudioMatches = ltm.searchMediaEmbeddings({0.0f, 0.0f, 0.0f, 1.0f}, "VIDEO", model_740m, "", 5);
     ASSERT_FALSE(videoAudioMatches.empty());
@@ -398,6 +405,7 @@ TEST(LongTermMemoryMediaEmbeddings, AtomicStoreModalityFiltersTimestampsAndSafeM
     EXPECT_NE(statsJson.find("\"images\":1"), std::string::npos);
     EXPECT_NE(statsJson.find("\"audio\":1"), std::string::npos);
     EXPECT_NE(statsJson.find("\"videos\":1"), std::string::npos);
+    EXPECT_NE(statsJson.find("\"video_frames\":1"), std::string::npos);
     EXPECT_NE(statsJson.find("\"total_segments\":4"), std::string::npos);
 
     // SafeMode blocks writes/deletes/clear
