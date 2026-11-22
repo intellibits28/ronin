@@ -1143,7 +1143,7 @@ val ALL_RONIN_COMMANDS = listOf(
     RoninSlashCommand("/mcp", "Authenticated Termux MCP Bridge: /mcp [status|tools|call|token]"),
     RoninSlashCommand("/files", "Search files across storage: /files <name>"),
     RoninSlashCommand("/mediasearch", "Semantic search Photos, Audio & Videos: /mediasearch <query>"),
-    RoninSlashCommand("/mediaindex", "Index phone Photos, Audio & Videos: /mediaindex [all|photos|audio|video|status|clear]"),
+    RoninSlashCommand("/mediaindex", "Index or pick Photos, Audio & Videos: /mediaindex [all|photos|pick|audio|video|status|clear]"),
     RoninSlashCommand("/summarize", "Summarize file or document (RAG): /summarize <path/name>"),
     RoninSlashCommand("/docsearch", "Hybrid RRF semantic+lexical search: /docsearch <path> <term>"),
     RoninSlashCommand("/read", "Preview document contents: /read <path> [lines]"),

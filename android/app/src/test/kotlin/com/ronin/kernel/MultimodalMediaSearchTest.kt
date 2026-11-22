@@ -175,4 +175,91 @@ class MultimodalMediaSearchTest {
         assertEquals("AUDIO", MediaModalityFilter.AUDIO.sqlFilter)
         assertEquals("ALL", MediaModalityFilter.ALL.sqlFilter)
     }
+
+    @Test
+    fun `isScreenshotAsset and isIgnoredMediaPath classify system and album paths accurately`() {
+        assertTrue(isScreenshotAsset("/storage/emulated/0/DCIM/Screenshots/Screenshot_2026-11-22.png", "Screenshots", "Screenshot_2026-11-22.png"))
+        assertTrue(isScreenshotAsset("/storage/emulated/0/Pictures/photo.jpg", "My Screenshots", "photo.jpg"))
+        assertTrue(isScreenshotAsset("/storage/emulated/0/Download/screen_shot_1.png", "Download", "screen_shot_1.png"))
+        assertFalse(isScreenshotAsset("/storage/emulated/0/DCIM/Camera/IMG_20261122.jpg", "Camera", "IMG_20261122.jpg"))
+
+        assertTrue(isIgnoredMediaPath("/storage/emulated/0/Android/data/com.foo/cache/img.jpg"))
+        assertTrue(isIgnoredMediaPath("/storage/emulated/0/DCIM/.thumbnails/1234.jpg"))
+        assertTrue(isIgnoredMediaPath("/storage/emulated/0/WhatsApp/Media/WhatsApp Stickers/stk.webp"))
+        assertFalse(isIgnoredMediaPath("/storage/emulated/0/DCIM/Camera/bougainvillea.jpg"))
+    }
+
+    @Test
+    fun `prioritizeMediaAssets puts Camera before other albums and Screenshots last or excluded`() {
+        val camOlder = DeviceMediaAsset("/DCIM/Camera/a.jpg", "", "IMAGE", "a.jpg", "Camera", 100L, 50000L, 0L)
+        val camNewer = DeviceMediaAsset("/DCIM/Camera/b.jpg", "", "IMAGE", "b.jpg", "Camera", 300L, 50000L, 0L)
+        val dl = DeviceMediaAsset("/Download/c.jpg", "", "IMAGE", "c.jpg", "Download", 500L, 50000L, 0L)
+        val ss = DeviceMediaAsset("/DCIM/Screenshots/Screenshot_1.png", "", "IMAGE", "Screenshot_1.png", "Screenshots", 900L, 50000L, 0L)
+        val aud = DeviceMediaAsset("/Recordings/note.m4a", "", "AUDIO", "note.m4a", "Recordings", 400L, 10000L, 5000L)
+
+        val orderedAll = prioritizeMediaAssets(listOf(ss, dl, camOlder, aud, camNewer), excludeScreenshots = false)
+        assertEquals(listOf(camNewer, camOlder, dl, aud, ss), orderedAll)
+
+        val orderedNoSs = prioritizeMediaAssets(listOf(ss, dl, camOlder, aud, camNewer), excludeScreenshots = true)
+        assertEquals(listOf(camNewer, camOlder, dl, aud), orderedNoSs)
+        assertFalse(orderedNoSs.any { it.mediaPath == ss.mediaPath })
+    }
+
+    @Test
+    fun `filterRelevantMediaMatches rejects flat 0_68 background noise while keeping real matches`() {
+        // 1. Flat 68% screenshot noise across 60 scanned photos -> all rejected
+        val flatNoise = (1..8).map { idx ->
+            MediaSearchResultItem(
+                mediaPath = "/DCIM/Screenshots/s$idx.png",
+                mediaUri = "",
+                modality = "IMAGE",
+                displayName = "s$idx.png",
+                startMs = 0L,
+                endMs = 0L,
+                durationMs = 0L,
+                score = 0.68f - idx * 0.002f,
+                cosineScore = 0.68f - idx * 0.002f,
+                zScore = 1.6f - idx * 0.2f,
+                corpusMean = 0.655f,
+                corpusStd = 0.015f,
+                corpusSize = 60
+            )
+        }
+        assertTrue(filterRelevantMediaMatches(flatNoise, MediaSearchQueryMode.TEXT_TO_MEDIA).isEmpty())
+
+        // 2. Real gallery with 488 items: 0.75..0.70 bougainvillea hits pass while 0.665 background fails
+        val galleryHits = listOf(
+            MediaSearchResultItem("/DCIM/Camera/flower1.jpg", "", "IMAGE", "flower1.jpg", 0L, 0L, 0L, 0.75f, cosineScore = 0.75f, zScore = 2.54f, corpusMean = 0.656f, corpusStd = 0.037f, corpusSize = 488),
+            MediaSearchResultItem("/DCIM/Camera/flower2.jpg", "", "IMAGE", "flower2.jpg", 0L, 0L, 0L, 0.70f, cosineScore = 0.70f, zScore = 1.19f, corpusMean = 0.656f, corpusStd = 0.037f, corpusSize = 488),
+            MediaSearchResultItem("/DCIM/Screenshots/bg.png", "", "IMAGE", "bg.png", 0L, 0L, 0L, 0.665f, cosineScore = 0.665f, zScore = 0.24f, corpusMean = 0.656f, corpusStd = 0.037f, corpusSize = 488)
+        )
+        val filteredGallery = filterRelevantMediaMatches(galleryHits, MediaSearchQueryMode.TEXT_TO_MEDIA)
+        assertEquals(2, filteredGallery.size)
+        assertEquals(listOf("/DCIM/Camera/flower1.jpg", "/DCIM/Camera/flower2.jpg"), filteredGallery.map { it.mediaPath })
+
+        // 3. Small homogeneous manually-picked set (6 photos all strong matches >= highFloor)
+        val smallManualSet = listOf(
+            MediaSearchResultItem("/DCIM/Camera/b1.jpg", "", "IMAGE", "b1.jpg", 0L, 0L, 0L, 0.74f, cosineScore = 0.74f, zScore = 0.6f, corpusMean = 0.73f, corpusStd = 0.01f, corpusSize = 6),
+            MediaSearchResultItem("/DCIM/Camera/b2.jpg", "", "IMAGE", "b2.jpg", 0L, 0L, 0L, 0.72f, cosineScore = 0.72f, zScore = -0.9f, corpusMean = 0.73f, corpusStd = 0.01f, corpusSize = 6)
+        )
+        assertEquals(2, filterRelevantMediaMatches(smallManualSet, MediaSearchQueryMode.TEXT_TO_MEDIA).size)
+
+        // 4. Visual similarity uses higher threshold, audio uses lower cross-modal threshold, lexical matches kept
+        val visualMixed = listOf(
+            MediaSearchResultItem("/DCIM/Camera/sim.jpg", "", "IMAGE", "sim.jpg", 0L, 0L, 0L, 0.84f, cosineScore = 0.84f, zScore = 2.0f, corpusMean = 0.68f, corpusStd = 0.08f, corpusSize = 40),
+            MediaSearchResultItem("/DCIM/Camera/weak.jpg", "", "IMAGE", "weak.jpg", 0L, 0L, 0L, 0.70f, cosineScore = 0.70f, zScore = 0.25f, corpusMean = 0.68f, corpusStd = 0.08f, corpusSize = 40)
+        )
+        assertEquals(listOf("/DCIM/Camera/sim.jpg"), filterRelevantMediaMatches(visualMixed, MediaSearchQueryMode.IMAGE_TO_VISUAL).map { it.mediaPath })
+
+        val audioMixed = listOf(
+            MediaSearchResultItem("/Recordings/meeting.m4a", "", "AUDIO", "meeting.m4a", 0L, 20000L, 20000L, 0.67f, cosineScore = 0.67f, zScore = 1.8f, corpusMean = 0.52f, corpusStd = 0.05f, corpusSize = 15),
+            MediaSearchResultItem("/Recordings/other.m4a", "", "AUDIO", "other.m4a", 0L, 20000L, 20000L, 0.54f, cosineScore = 0.54f, zScore = 0.4f, corpusMean = 0.52f, corpusStd = 0.05f, corpusSize = 15)
+        )
+        assertEquals(listOf("/Recordings/meeting.m4a"), filterRelevantMediaMatches(audioMixed, MediaSearchQueryMode.TEXT_TO_MEDIA).map { it.mediaPath })
+
+        val lexicalMatch = listOf(
+            MediaSearchResultItem("/DCIM/Camera/bougainvillea_2026.jpg", "", "IMAGE", "bougainvillea_2026.jpg", 0L, 0L, 0L, 0.71f, cosineScore = 0.63f, lexicalHits = 1, corpusSize = 30)
+        )
+        assertEquals(1, filterRelevantMediaMatches(lexicalMatch, MediaSearchQueryMode.TEXT_TO_MEDIA).size)
+    }
 }

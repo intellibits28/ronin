@@ -169,6 +169,15 @@ class ChatViewModel : ViewModel() {
     var mediaIndexStatsText by mutableStateOf("Photos: 0 • Audio: 0 • Videos: 0 (0 vectors)")
     var embeddingModelCapabilitiesText by mutableStateOf("Checking EmbeddingGemma 2 model...")
     var activeMediaPlayerRequest by mutableStateOf<MediaMomentPlayerRequest?>(null)
+    var mediaIndexVersion by mutableStateOf(0)
+    var totalIndexedMediaCount by mutableStateOf(0)
+    var devicePhotoCount by mutableStateOf(0)
+    var deviceNonScreenshotPhotoCount by mutableStateOf(0)
+    var deviceAudioCount by mutableStateOf(0)
+    var deviceVideoCount by mutableStateOf(0)
+    var deviceMediaCountsText by mutableStateOf("")
+    var excludeScreenshotsOnIndex by mutableStateOf(false)
+    var showIndexedMediaManager by mutableStateOf(false)
     var localModelPath by mutableStateOf("")
     var primaryCloudProvider by mutableStateOf("Gemini")
     val cloudProviders = mutableStateListOf<CloudProvider>()
@@ -288,6 +297,12 @@ class MainActivity : FragmentActivity() {
 
     private val brainPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importModelFromUri(it) }
+    }
+
+    private val manualMediaIndexPicker = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            startManualMediaIndexing(uris)
+        }
     }
 
     val tessdataPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -641,6 +656,7 @@ class MainActivity : FragmentActivity() {
         chatViewModel.cloudOnlyMode = sharedPreferences.getBoolean("cloud_only_mode", false)
         chatViewModel.privacyShieldEnabled = sharedPreferences.getBoolean("privacy_shield_enabled", true)
         chatViewModel.biometricContactsEnabled = sharedPreferences.getBoolean("biometric_contacts_enabled", true)
+        chatViewModel.excludeScreenshotsOnIndex = sharedPreferences.getBoolean("exclude_screenshots_on_index", false)
         chatViewModel.hfAccessToken = sharedPreferences.getString("hf_access_token", "") ?: ""
         refreshInstalledTessModels()
 
@@ -852,6 +868,27 @@ class MainActivity : FragmentActivity() {
     @Volatile
     private var mediaIndexCancelled = false
 
+    fun saveExcludeScreenshotsOnIndex(exclude: Boolean) {
+        val vm = ViewModelProvider(this)[ChatViewModel::class.java]
+        vm.excludeScreenshotsOnIndex = exclude
+        sharedPreferences.edit().putBoolean("exclude_screenshots_on_index", exclude).apply()
+    }
+
+    fun launchManualMediaIndexPicker() {
+        val vm = ViewModelProvider(this)[ChatViewModel::class.java]
+        if (vm.isIndexingMedia) {
+            Toast.makeText(this, "Media indexing already in progress...", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            manualMediaIndexPicker.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+            )
+        } catch (e: Exception) {
+            Toast.makeText(this, "Unable to open photo/video picker: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
     fun refreshMediaIndexInfo() {
         val vm = ViewModelProvider(this)[ChatViewModel::class.java]
         lifecycleScope.launch(Dispatchers.IO) {
@@ -859,6 +896,7 @@ class MainActivity : FragmentActivity() {
             val modelId = if (modelPath.isNotBlank()) nativeEngine.resolveActiveEmbeddingModelId(modelPath) else ""
             val info = if (modelPath.isNotBlank()) nativeEngine.inspectEmbeddingModelAsync(modelPath) else null
             val stats = nativeEngine.getMediaIndexStatsSafe(modelId)
+            val counts = MediaSearchEngine.countDeviceMedia(this@MainActivity)
 
             val capSummary = if (modelPath.isBlank()) {
                 "No EmbeddingGemma 2 model found. Install 740M in Section 4."
@@ -875,17 +913,30 @@ class MainActivity : FragmentActivity() {
                 "Model: ${File(modelPath).name} (Waiting for Worker Service...)"
             }
 
-            val statsSummary = "Indexed (${modelId.ifBlank { "default" }}): Photos ${stats.optInt("images", 0)} • Audio ${stats.optInt("audio", 0)} • Videos ${stats.optInt("videos", 0)} (${stats.optInt("total_segments", 0)} vectors)"
+            val imgCount = stats.optInt("images", 0)
+            val audCount = stats.optInt("audio", 0)
+            val vidCount = stats.optInt("videos", 0)
+            val totalIndexed = imgCount + audCount + vidCount
+            val statsSummary = "Indexed (${modelId.ifBlank { "default" }}): Photos $imgCount • Audio $audCount • Videos $vidCount (${stats.optInt("total_segments", 0)} vectors)"
+            val countsSummary = "Device Library: ${counts.totalPhotos} photos (${counts.nonScreenshotPhotos} albums, ${counts.screenshots} screenshots) • ${counts.audio} audio • ${counts.videos} videos"
             withContext(Dispatchers.Main) {
                 vm.embeddingModelCapabilitiesText = capSummary
                 vm.mediaIndexStatsText = statsSummary
+                vm.totalIndexedMediaCount = totalIndexed
+                vm.devicePhotoCount = counts.totalPhotos
+                vm.deviceNonScreenshotPhotoCount = counts.nonScreenshotPhotos
+                vm.deviceAudioCount = counts.audio
+                vm.deviceVideoCount = counts.videos
+                vm.deviceMediaCountsText = countsSummary
+                vm.mediaIndexVersion++
             }
         }
     }
 
-    fun startMediaIndexing(
-        scopeFilter: MediaIndexScope = MediaIndexScope.ALL,
-        onComplete: ((MediaIndexSummary) -> Unit)? = null
+    private fun runMediaIndexingJob(
+        initialStatus: String,
+        onComplete: ((MediaIndexSummary) -> Unit)?,
+        block: suspend ((MediaIndexProgress) -> Unit) -> MediaIndexSummary
     ) {
         val vm = ViewModelProvider(this)[ChatViewModel::class.java]
         if (vm.isIndexingMedia) {
@@ -895,22 +946,15 @@ class MainActivity : FragmentActivity() {
         mediaIndexCancelled = false
         vm.isIndexingMedia = true
         vm.mediaIndexFraction = 0f
-        vm.mediaIndexProgressText = "Scanning ${scopeFilter.label}..."
+        vm.mediaIndexProgressText = initialStatus
 
         mediaIndexJob = lifecycleScope.launch {
-            val summary = MediaSearchEngine.indexPhoneMedia(
-                context = this@MainActivity,
-                nativeEngine = nativeEngine,
-                scope = scopeFilter,
-                maxPerModality = 60,
-                isCancelled = { mediaIndexCancelled },
-                onProgress = { prog ->
-                    lifecycleScope.launch(Dispatchers.Main) {
-                        vm.mediaIndexFraction = if (prog.totalCount > 0) prog.currentIndex.toFloat() / prog.totalCount.toFloat() else 0f
-                        vm.mediaIndexProgressText = prog.statusText
-                    }
+            val summary = block { prog ->
+                lifecycleScope.launch(Dispatchers.Main) {
+                    vm.mediaIndexFraction = if (prog.totalCount > 0) prog.currentIndex.toFloat() / prog.totalCount.toFloat() else 0f
+                    vm.mediaIndexProgressText = prog.statusText
                 }
-            )
+            }
             vm.isIndexingMedia = false
             vm.mediaIndexFraction = if (summary.success) 1f else 0f
             vm.mediaIndexProgressText = summary.error ?: summary.stoppedForGuardrail ?: "Done"
@@ -925,6 +969,64 @@ class MainActivity : FragmentActivity() {
                 ).show()
             }
             onComplete?.invoke(summary)
+        }
+    }
+
+    fun startMediaIndexing(
+        scopeFilter: MediaIndexScope = MediaIndexScope.ALL,
+        onComplete: ((MediaIndexSummary) -> Unit)? = null
+    ) {
+        val vm = ViewModelProvider(this)[ChatViewModel::class.java]
+        runMediaIndexingJob(
+            initialStatus = "Scanning ${scopeFilter.label}...",
+            onComplete = onComplete
+        ) { reportProgress ->
+            MediaSearchEngine.indexPhoneMedia(
+                context = this@MainActivity,
+                nativeEngine = nativeEngine,
+                scope = scopeFilter,
+                maxPerModality = 5000,
+                excludeScreenshots = vm.excludeScreenshotsOnIndex,
+                isCancelled = { mediaIndexCancelled },
+                onProgress = reportProgress
+            )
+        }
+    }
+
+    fun startManualMediaIndexing(
+        uris: List<Uri>,
+        onComplete: ((MediaIndexSummary) -> Unit)? = null
+    ) {
+        if (uris.isEmpty()) return
+        runMediaIndexingJob(
+            initialStatus = "Preparing ${uris.size} selected item(s)...",
+            onComplete = onComplete
+        ) { reportProgress ->
+            MediaSearchEngine.indexSpecificMediaUris(
+                context = this@MainActivity,
+                nativeEngine = nativeEngine,
+                uris = uris,
+                isCancelled = { mediaIndexCancelled },
+                onProgress = reportProgress
+            )
+        }
+    }
+
+    fun removeIndexedMediaPaths(paths: List<String>, onDone: (() -> Unit)? = null) {
+        if (paths.isEmpty()) {
+            onDone?.invoke()
+            return
+        }
+        lifecycleScope.launch(Dispatchers.IO) {
+            var removed = 0
+            paths.forEach { path ->
+                removed += nativeEngine.deleteMediaEmbeddingsSafe(path, "")
+            }
+            refreshMediaIndexInfo()
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "Removed ${paths.size} item(s) ($removed vectors).", Toast.LENGTH_SHORT).show()
+                onDone?.invoke()
+            }
         }
     }
 
@@ -2794,15 +2896,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                 if (cachedFile != null) {
                     chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "🔍 Find media similar to: ${cachedFile.name}"))
                     chatViewModel.isGenerating = true
-                    val outcome = MediaSearchEngine.searchMediaByImage(context, engine, cachedFile)
+                    val outcome = MediaSearchEngine.searchMediaByImage(context, engine, cachedFile, topK = 24)
                     val replyMsg = when {
                         outcome.error != null -> ChatMessage(System.currentTimeMillis() + 1, "Ronin", "❌ ${outcome.error}")
                         outcome.indexEmpty -> ChatMessage(
                             System.currentTimeMillis() + 1,
                             "Ronin",
-                            "📸 Indexed Photos / Video Frames မရှိသေးပါ။\n\nAudio ဖိုင်တွေသာ Index ဖြစ်နေသေးပါက ဓာတ်ပုံနှင့် ဗီဒီယိုများကို Index ထည့်ရန် /mediaindex ဟု ရိုက်ပို့ပါ (သို့မဟုတ် Menu > Settings > 4.6 Multimodal Media Search > Index Photos / Index All ကို နှိပ်ပါ)။"
+                            "📸 Indexed Photos / Video Frames မရှိသေးပါ။\n\nAudio ဖိုင်တွေသာ Index ဖြစ်နေသေးပါက ဓာတ်ပုံနှင့် ဗီဒီယိုများကို Index ထည့်ရန် /mediaindex ဟု ရိုက်ပို့ပါ (သို့မဟုတ် Menu > Settings > 4.6 Multimodal Media Search > Add Photos / Videos သို့မဟုတ် Index All Photos ကို နှိပ်ပါ)။"
                         )
-                        outcome.results.isEmpty() -> ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🔍 Indexed Photos / Video Frames ထဲမှာ ${cachedFile.name} နဲ့ ဆင်တူတဲ့ ပုံ/Video မတွေ့သေးပါ။")
+                        outcome.results.isEmpty() -> {
+                            val diag = if (outcome.scannedCount > 0) {
+                                "\n\n(Checked ${outcome.scannedCount} indexed visual segments; max similarity ${Math.round(outcome.bestRejectedScore.coerceIn(0f, 1f) * 100f)}% did not meet relevance threshold. Try indexing more albums in Settings > 4.6.)"
+                            } else ""
+                            ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🔍 Indexed Photos / Video Frames ထဲမှာ ${cachedFile.name} နဲ့ ဆင်တူတဲ့ ပုံ/Video မတွေ့သေးပါ။$diag")
+                        }
                         else -> ChatMessage(
                             System.currentTimeMillis() + 1,
                             "Ronin",
@@ -3090,11 +3197,19 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 "clear" -> {
                                                     val cleared = withContext(Dispatchers.IO) { engine.clearMediaEmbeddingsSafe("") }
                                                     activity?.refreshMediaIndexInfo()
-                                                    chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🗑️ Cleared **$cleared** stored media vector segment(s)."))
+                                                    chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🗑️ Cleared $cleared stored media vector segment(s)."))
                                                 }
                                                 "cancel", "stop" -> {
                                                     activity?.cancelMediaIndexing()
-                                                    chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "⏹️ Stopping media indexing after the current file..."))
+                                                    chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "⏹️ Stopping media indexing after the current batch..."))
+                                                }
+                                                "pick", "add", "select" -> {
+                                                    if (activity == null) {
+                                                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Activity unavailable to open photo/video picker."))
+                                                    } else {
+                                                        activity.launchManualMediaIndexPicker()
+                                                        chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "🖼️ Opened photo & video picker — selected items will be indexed automatically."))
+                                                    }
                                                 }
                                                 else -> {
                                                     val idxScope = when (arg) {
@@ -3109,20 +3224,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                         val progressMsg = ChatMessage(
                                                             System.currentTimeMillis(),
                                                             "Ronin",
-                                                            "⏳ Starting on-device **EmbeddingGemma 2** indexing (${idxScope.label})..."
+                                                            "⏳ Starting on-device EmbeddingGemma 2 indexing (${idxScope.label})..."
                                                         )
                                                         chatViewModel.messages.add(progressMsg)
                                                         activity.startMediaIndexing(idxScope) { summary ->
                                                             if (summary.error != null) {
-                                                                progressMsg.content = "❌ **Media Indexing Failed**\n\n${summary.error}"
+                                                                progressMsg.content = "❌ Media Indexing Failed\n\n${summary.error}"
                                                             } else {
                                                                 val stopNote = summary.stoppedForGuardrail?.let { "\n• Note: $it" }
                                                                     ?: if (summary.cancelled) "\n• Status: Cancelled by user" else ""
-                                                                progressMsg.content = "✅ **Media Indexing Complete** (`${summary.modelId}`)\n" +
+                                                                progressMsg.content = "✅ Media Indexing Complete (${summary.modelId})\n" +
                                                                     "• Vision=${summary.supportsVision}, Audio=${summary.supportsAudio}\n" +
-                                                                    "• Newly Indexed: **${summary.indexedImages}** photos, **${summary.indexedAudio}** audio files, **${summary.indexedVideos}** videos\n" +
-                                                                    "• Unchanged Skipped: **${summary.skippedUnchanged}** • Failed: **${summary.failedCount}**$stopNote\n\n" +
-                                                                    "Now search with `/mediasearch <query>` or ask naturally in Burmese/English!"
+                                                                    "• Newly Indexed: ${summary.indexedImages} photos, ${summary.indexedAudio} audio files, ${summary.indexedVideos} videos\n" +
+                                                                    "• Unchanged Skipped: ${summary.skippedUnchanged} • Failed: ${summary.failedCount}$stopNote\n\n" +
+                                                                    "Now search with /mediasearch <query> or ask naturally in Burmese/English!"
                                                             }
                                                         }
                                                     }
@@ -3145,7 +3260,7 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                             "• /mediasearch audio <query> — Search Audio / Voice memos only\n" +
                                                             "• /mediasearch video <query> — Search Video frames & audio moments\n" +
                                                             "• /mediasearch --image <path> — Visual similarity search by image\n" +
-                                                            "• /mediaindex — Index phone media first"
+                                                            "• /mediaindex [all|photos|pick] — Index or pick phone media"
                                                     )
                                                 )
                                                 chatViewModel.isGenerating = false
@@ -3158,15 +3273,20 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                 if (resolvedImg == null) {
                                                     chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "❌ Could not find image: $imgQuery"))
                                                 } else {
-                                                    val outcome = MediaSearchEngine.searchMediaByImage(context, engine, resolvedImg)
+                                                    val outcome = MediaSearchEngine.searchMediaByImage(context, engine, resolvedImg, topK = 24)
                                                     val outMsg = when {
                                                         outcome.error != null -> ChatMessage(System.currentTimeMillis(), "Ronin", "❌ ${outcome.error}")
                                                         outcome.indexEmpty -> ChatMessage(
                                                             System.currentTimeMillis(),
                                                             "Ronin",
-                                                            "📸 Indexed Photos / Video Frames မရှိသေးပါ။\n\n/mediaindex ဟုရိုက်ပြီး (သို့) Settings > 4.6 Multimodal Media Search > Index Photos / Index All ကို နှိပ်၍ အရင် Index လုပ်ပေးပါ။"
+                                                            "📸 Indexed Photos / Video Frames မရှိသေးပါ။\n\n/mediaindex ဟုရိုက်ပြီး (သို့) Settings > 4.6 Multimodal Media Search > Add Photos / Videos ကို နှိပ်၍ အရင် Index လုပ်ပေးပါ။"
                                                         )
-                                                        outcome.results.isEmpty() -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 Indexed Photos / Video Frames ထဲမှာ ${resolvedImg.name} နဲ့ ဆင်တူတဲ့ ပုံ/Video မတွေ့သေးပါ။")
+                                                        outcome.results.isEmpty() -> {
+                                                            val diag = if (outcome.scannedCount > 0) {
+                                                                "\n\n(Scanned ${outcome.scannedCount} segments; max similarity ${Math.round(outcome.bestRejectedScore.coerceIn(0f, 1f) * 100f)}%)"
+                                                            } else ""
+                                                            ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 Indexed Photos / Video Frames ထဲမှာ ${resolvedImg.name} နဲ့ ဆင်တူတဲ့ ပုံ/Video မတွေ့သေးပါ။$diag")
+                                                        }
                                                         else -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 Visual Similarity Results (EmbeddingGemma 2 • ${outcome.modelId})\nFound ${outcome.results.size} visual match(es) for ${resolvedImg.name}:").apply {
                                                             mediaSearchResults.addAll(outcome.results)
                                                         }
@@ -3191,15 +3311,21 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                             if (queryText.isBlank()) {
                                                 chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "Ronin", "Usage: /mediasearch [photo|audio|video] <query>"))
                                             } else {
-                                                val outcome = MediaSearchEngine.searchMediaByText(engine, queryText, modFilter, topK = 8)
+                                                val searchTopK = if (modFilter == MediaModalityFilter.AUDIO || modFilter == MediaModalityFilter.VIDEO) 12 else 24
+                                                val outcome = MediaSearchEngine.searchMediaByText(engine, queryText, modFilter, topK = searchTopK)
                                                 val reply = when {
                                                     outcome.error != null -> ChatMessage(System.currentTimeMillis(), "Ronin", "❌ ${outcome.error}")
                                                     outcome.indexEmpty -> ChatMessage(
                                                         System.currentTimeMillis(),
                                                         "Ronin",
-                                                        "📸 Media Index is Empty\n\nဖုန်းထဲက ပုံ/အသံ/Video တွေကို EmbeddingGemma 2 (740M Omnimodal) နဲ့ Index မလုပ်ရသေးပါဘူး။\n• Settings > Hugging Face Model Hub မှ EmbeddingGemma 2 740M ကို download လုပ်ပြီး /mediaindex (သို့) 4.6 Multimodal Media Search မှ Index All ကို နှိပ်ပါ။"
+                                                        "📸 Media Index is Empty\n\nဖုန်းထဲက ပုံ/အသံ/Video တွေကို EmbeddingGemma 2 (740M Omnimodal) နဲ့ Index မလုပ်ရသေးပါဘူး။\n• Settings > Hugging Face Model Hub မှ EmbeddingGemma 2 740M ကို download လုပ်ပြီး /mediaindex (သို့) 4.6 Multimodal Media Search မှ Add Photos / Videos သို့မဟုတ် Index All Photos ကို နှိပ်ပါ။"
                                                     )
-                                                    outcome.results.isEmpty() -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 No indexed ${modFilter.label.lowercase()} matched \"$queryText\".")
+                                                    outcome.results.isEmpty() -> {
+                                                        val diag = if (outcome.scannedCount > 0) {
+                                                            "\n\nChecked ${outcome.scannedCount} indexed segments; max score was ${Math.round(outcome.bestRejectedScore.coerceIn(0f, 1f) * 100f)}% (filtered as background noise). Try Menu > Settings > 4.6 to index all phone photos or pick specific photos."
+                                                        } else ""
+                                                        ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 No relevant indexed ${modFilter.label.lowercase()} matched \"$queryText\".$diag")
+                                                    }
                                                     else -> ChatMessage(
                                                         System.currentTimeMillis(),
                                                         "Ronin",
@@ -3936,11 +4062,12 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
 
                                         val mediaIntent = MediaIntentParser.parseNaturalMediaSearchIntent(raw)
                                         if (mediaIntent != null) {
+                                            val natTopK = if (mediaIntent.filter == MediaModalityFilter.AUDIO || mediaIntent.filter == MediaModalityFilter.VIDEO) 12 else 24
                                             val outcome = MediaSearchEngine.searchMediaByText(
                                                 nativeEngine = engine,
                                                 query = mediaIntent.query,
                                                 filter = mediaIntent.filter,
-                                                topK = 8
+                                                topK = natTopK
                                             )
                                             val reply = when {
                                                 outcome.error != null -> ChatMessage(System.currentTimeMillis() + 1, "Ronin", "❌ ${outcome.error}")
@@ -3949,13 +4076,18 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                     "Ronin",
                                                     "📸 ဖုန်းထဲက ပုံ၊ အသံ၊ Video တွေကို Semantic Index မလုပ်ရသေးပါဘူး (${mediaIntent.filter.label})။\n\n" +
                                                         "1️⃣ Settings > Section 4 မှ EmbeddingGemma 2 740M (Omnimodal) ကို Download/ထည့်သွင်းပါ။\n" +
-                                                        "2️⃣ Section 4.6 Multimodal Media Search (သို့) /mediaindex ဖြင့် ဖုန်းထဲက ဖိုင်များကို Index လုပ်ပြီးပါက \"${mediaIntent.query}\" ကို ချက်ချင်း ရှာပေးနိုင်ပါမည်။"
+                                                        "2️⃣ Section 4.6 Multimodal Media Search (Add Photos / Videos သို့မဟုတ် Index All Photos) သို့မဟုတ် /mediaindex ဖြင့် Index လုပ်ပြီးပါက \"${mediaIntent.query}\" ကို ချက်ချင်း ရှာပေးနိုင်ပါမည်။"
                                                 )
-                                                outcome.results.isEmpty() -> ChatMessage(
-                                                    System.currentTimeMillis() + 1,
-                                                    "Ronin",
-                                                    "🔍 \"${mediaIntent.query}\" (${mediaIntent.filter.label}) နဲ့ ကိုက်ညီတဲ့ indexed media မတွေ့သေးပါ။"
-                                                )
+                                                outcome.results.isEmpty() -> {
+                                                    val diag = if (outcome.scannedCount > 0) {
+                                                        "\n\n(Scanned ${outcome.scannedCount} indexed segments; highest score ${Math.round(outcome.bestRejectedScore.coerceIn(0f, 1f) * 100f)}% was below relevance threshold. Settings > 4.6 မှ ပုံအားလုံး သို့မဟုတ် လိုချင်သော Album ပုံများကို Index ထပ်ထည့်နိုင်ပါသည်။)"
+                                                    } else ""
+                                                    ChatMessage(
+                                                        System.currentTimeMillis() + 1,
+                                                        "Ronin",
+                                                        "🔍 \"${mediaIntent.query}\" (${mediaIntent.filter.label}) နဲ့ ကိုက်ညီတဲ့ indexed media မတွေ့သေးပါ။$diag"
+                                                    )
+                                                }
                                                 else -> ChatMessage(
                                                     System.currentTimeMillis() + 1,
                                                     "Ronin",
@@ -4110,6 +4242,15 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
         MediaMomentPlayerDialog(
             request = mediaPlayerReq,
             onDismiss = { chatViewModel.activeMediaPlayerRequest = null }
+        )
+    }
+
+    if (chatViewModel.showIndexedMediaManager) {
+        IndexedMediaManagerDialog(
+            chatViewModel = chatViewModel,
+            nativeEngine = engine,
+            activity = activity,
+            onDismiss = { chatViewModel.showIndexedMediaManager = false }
         )
     }
 

@@ -438,6 +438,11 @@ JNIEXPORT jobjectArray JNICALL native_searchMediaEmbeddings(
         j["metadata_text"] = m.metadata_text;
         j["cosine_score"] = m.cosine_score;
         j["final_score"] = m.final_score;
+        j["z_score"] = m.z_score;
+        j["corpus_mean"] = m.corpus_mean;
+        j["corpus_std"] = m.corpus_std;
+        j["corpus_size"] = m.corpus_size;
+        j["lexical_hits"] = m.lexical_hits;
         j["model_id"] = m.model_id;
         out.push_back(j.dump());
     }
@@ -449,6 +454,18 @@ JNIEXPORT jstring JNICALL native_getMediaIndexStats(JNIEnv* env, jobject thiz, j
     if (!runtime.ltm) return env->NewStringUTF("{\"images\":0,\"audio\":0,\"videos\":0,\"total_segments\":0}");
     std::string stats = runtime.ltm->getMediaIndexStatsJson(modelId ? ConvertJStringToString(env, modelId) : "");
     return env->NewStringUTF(stats.c_str());
+}
+
+JNIEXPORT jstring JNICALL native_listIndexedMedia(
+    JNIEnv* env, jobject thiz, jstring modalityFilter, jstring modelId, jint limit) {
+    auto& runtime = runtimeContext();
+    if (!runtime.ltm) return env->NewStringUTF("[]");
+    std::string json = runtime.ltm->listIndexedMediaJson(
+        modalityFilter ? ConvertJStringToString(env, modalityFilter) : "",
+        modelId ? ConvertJStringToString(env, modelId) : "",
+        static_cast<int>(limit)
+    );
+    return env->NewStringUTF(json.c_str());
 }
 
 JNIEXPORT jint JNICALL native_deleteMediaEmbeddings(JNIEnv* env, jobject thiz, jstring mediaPath, jstring modelId) {

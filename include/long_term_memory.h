@@ -147,6 +147,11 @@ public:
         std::string metadata_text;
         float cosine_score = 0.0f;
         float final_score = 0.0f;
+        float z_score = 0.0f;
+        float corpus_mean = 0.0f;
+        float corpus_std = 0.0f;
+        int corpus_size = 0;
+        int lexical_hits = 0;
         std::string model_id;
     };
 
@@ -168,6 +173,10 @@ public:
         const std::string& lexical_query = "",
         int top_k = 8);
     std::string getMediaIndexStatsJson(const std::string& model_id = "");
+    std::string listIndexedMediaJson(
+        const std::string& modality_filter = "",
+        const std::string& model_id = "",
+        int limit = 500);
     int deleteMediaEmbeddings(const std::string& media_path, const std::string& model_id = "");
     int clearMediaEmbeddings(const std::string& model_id = "");
 

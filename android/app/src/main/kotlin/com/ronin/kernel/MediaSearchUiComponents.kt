@@ -3,20 +3,23 @@ package com.ronin.kernel
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
-import android.provider.MediaStore
 import android.widget.MediaController
 import android.widget.Toast
 import android.widget.VideoView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
@@ -26,6 +29,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -37,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -99,25 +104,29 @@ fun shareMediaItem(context: Context, item: MediaSearchResultItem) {
     }
 }
 
-private suspend fun loadThumbnailBitmap(
+private suspend fun loadMediaThumbnailBitmap(
     context: Context,
-    item: MediaSearchResultItem
+    mediaPath: String,
+    mediaUri: String,
+    modality: String,
+    startMs: Long = 0L,
+    targetPx: Int = 320
 ): Bitmap? = withContext(Dispatchers.IO) {
-    val file = File(item.mediaPath)
+    val file = File(mediaPath)
     val useFile = file.exists() && file.canRead()
-    val uri = if (!useFile && item.mediaUri.isNotBlank()) Uri.parse(item.mediaUri) else null
+    val uri = if (!useFile && mediaUri.isNotBlank()) Uri.parse(mediaUri) else null
     if (!useFile && uri == null) return@withContext null
 
     return@withContext try {
-        if (item.modality.startsWith("VIDEO")) {
+        if (modality.startsWith("VIDEO")) {
             val retriever = MediaMetadataRetriever()
             try {
                 if (useFile) retriever.setDataSource(file.absolutePath)
                 else retriever.setDataSource(context, uri!!)
-                val raw = retriever.getFrameAtTime(item.startMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                val raw = retriever.getFrameAtTime(startMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                     ?: retriever.getFrameAtTime(0L)
-                if (raw != null && max(raw.width, raw.height) > 280) {
-                    val scale = 280f / max(raw.width, raw.height).toFloat()
+                if (raw != null && max(raw.width, raw.height) > targetPx) {
+                    val scale = targetPx.toFloat() / max(raw.width, raw.height).toFloat()
                     val scaled = Bitmap.createScaledBitmap(
                         raw,
                         max(1, (raw.width * scale).roundToInt()),
@@ -130,21 +139,141 @@ private suspend fun loadThumbnailBitmap(
             } finally {
                 try { retriever.release() } catch (_: Throwable) {}
             }
-        } else if (item.modality == "IMAGE") {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            if (useFile) BitmapFactory.decodeFile(file.absolutePath, bounds)
-            else context.contentResolver.openInputStream(uri!!)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            var sample = 1
-            val longest = max(bounds.outWidth, bounds.outHeight)
-            while (longest / sample > 280) sample *= 2
-            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-            if (useFile) BitmapFactory.decodeFile(file.absolutePath, opts)
-            else context.contentResolver.openInputStream(uri!!)?.use { BitmapFactory.decodeStream(it, null, opts) }
+        } else if (modality == "IMAGE") {
+            MediaSearchEngine.decodeOrientedSampledBitmap(mediaPath, mediaUri, context, maxSidePx = targetPx)
         } else {
             null
         }
     } catch (_: Throwable) {
         null
+    }
+}
+
+private suspend fun loadThumbnailBitmap(
+    context: Context,
+    item: MediaSearchResultItem,
+    targetPx: Int = 320
+): Bitmap? = loadMediaThumbnailBitmap(
+    context = context,
+    mediaPath = item.mediaPath,
+    mediaUri = item.mediaUri,
+    modality = item.modality,
+    startMs = item.startMs,
+    targetPx = targetPx
+)
+
+@Composable
+fun PhotoPreviewDialog(
+    item: MediaSearchResultItem,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var previewBmp by remember(item.mediaPath, item.mediaUri) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(item.mediaPath, item.mediaUri) {
+        previewBmp = loadThumbnailBitmap(context, item, targetPx = 960)
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            color = RoninThemeTokens.Surface,
+            shape = RoninThemeTokens.RadiusLg,
+            border = BorderStroke(1.dp, RoninThemeTokens.Border),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "PHOTO MATCH • ${"%.2f".format(item.score)} (${(item.score.coerceIn(0f, 1f) * 100f).roundToInt()}%)",
+                            style = RoninThemeTokens.WhisperLabelStyle.copy(color = RoninThemeTokens.PrimaryEmerald)
+                        )
+                        Text(
+                            item.displayName,
+                            color = RoninThemeTokens.TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, "Close", tint = Color.Gray)
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 180.dp, max = 380.dp)
+                        .clip(RoninThemeTokens.RadiusMd)
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (previewBmp != null) {
+                        Image(
+                            bitmap = previewBmp!!.asImageBitmap(),
+                            contentDescription = item.displayName,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 380.dp)
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = RoninThemeTokens.PrimaryEmerald
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    item.mediaPath,
+                    color = RoninThemeTokens.TextMuted,
+                    fontSize = 10.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { openMediaItemExternally(context, item) },
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(1.dp, RoninThemeTokens.Border),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Open", fontSize = 11.sp)
+                    }
+                    OutlinedButton(
+                        onClick = { shareMediaItem(context, item) },
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(1.dp, RoninThemeTokens.Border),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Icon(Icons.Default.Share, null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Share", fontSize = 11.sp)
+                    }
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D))
+                    ) {
+                        Text("Close", color = Color.White, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -154,15 +283,110 @@ fun MediaSearchResultListCard(
     onPlayMoment: (MediaSearchResultItem, Long) -> Unit
 ) {
     val context = LocalContext.current
+    val photoItems = remember(items.toList()) { items.filter { it.modality == "IMAGE" } }
+    val momentItems = remember(items.toList()) { items.filter { it.modality != "IMAGE" } }
+    var previewPhoto by remember { mutableStateOf<MediaSearchResultItem?>(null) }
+    var showAllPhotos by remember(items.size) { mutableStateOf(false) }
+
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items.forEach { item ->
+        if (photoItems.isNotEmpty()) {
+            val visiblePhotos = if (showAllPhotos || photoItems.size <= 12) photoItems else photoItems.take(12)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                visiblePhotos.chunked(3).forEach { rowItems ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        rowItems.forEach { item ->
+                            var gridBmp by remember(item.mediaPath, item.mediaUri) { mutableStateOf<Bitmap?>(null) }
+                            LaunchedEffect(item.mediaPath, item.mediaUri) {
+                                gridBmp = loadThumbnailBitmap(context, item, targetPx = 320)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF0E111A))
+                                    .border(1.dp, RoninThemeTokens.Border, RoundedCornerShape(8.dp))
+                                    .clickable { previewPhoto = item },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (gridBmp != null) {
+                                    Image(
+                                        bitmap = gridBmp!!.asImageBitmap(),
+                                        contentDescription = item.displayName,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Image,
+                                        contentDescription = item.displayName,
+                                        tint = RoninThemeTokens.PrimaryEmerald,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(26.dp)
+                                        .align(Alignment.BottomCenter)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
+                                            )
+                                        )
+                                )
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.68f),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
+                                ) {
+                                    Text(
+                                        "%.2f".format(item.score),
+                                        color = RoninThemeTokens.PrimaryEmerald,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                        }
+                        repeat(3 - rowItems.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+            if (photoItems.size > 12) {
+                Surface(
+                    color = Color(0xFF25283D),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, RoninThemeTokens.Border),
+                    modifier = Modifier.fillMaxWidth().clickable { showAllPhotos = !showAllPhotos }
+                ) {
+                    Text(
+                        text = if (showAllPhotos) "Show fewer photos" else "Show all ${photoItems.size} photos (+${photoItems.size - 12} more)",
+                        color = Color(0xFF80DEEA),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(vertical = 8.dp).wrapContentWidth(Alignment.CenterHorizontally)
+                    )
+                }
+            }
+        }
+
+        momentItems.forEach { item ->
             var thumbBmp by remember(item.mediaPath, item.startMs) { mutableStateOf<Bitmap?>(null) }
             LaunchedEffect(item.mediaPath, item.mediaUri, item.startMs) {
                 if (item.modality == "IMAGE" || item.modality.startsWith("VIDEO")) {
-                    thumbBmp = loadThumbnailBitmap(context, item)
+                    thumbBmp = loadThumbnailBitmap(context, item, targetPx = 280)
                 }
             }
 
@@ -384,6 +608,12 @@ fun MediaSearchResultListCard(
                 }
             }
         }
+    }
+    if (previewPhoto != null) {
+        PhotoPreviewDialog(
+            item = previewPhoto!!,
+            onDismiss = { previewPhoto = null }
+        )
     }
 }
 
@@ -660,9 +890,18 @@ fun MediaIndexerSettingsSection(
         activity?.refreshMediaIndexInfo()
     }
 
+    val targetPhotoCount = if (chatViewModel.excludeScreenshotsOnIndex) {
+        chatViewModel.deviceNonScreenshotPhotoCount
+    } else {
+        chatViewModel.devicePhotoCount
+    }
+    val photoButtonLabel = if (targetPhotoCount > 0) "Index All $targetPhotoCount Photos" else "Index Photos"
+    val audioButtonLabel = if (chatViewModel.deviceAudioCount > 0) "Index Audio (${chatViewModel.deviceAudioCount})" else "Index Audio"
+    val videoButtonLabel = if (chatViewModel.deviceVideoCount > 0) "Index Videos (${chatViewModel.deviceVideoCount})" else "Index Videos"
+
     SettingsCardSection(title = "4.6 Multimodal Media Search (EmbeddingGemma 2)") {
         Text(
-            "Runtime: LiteRT-LM 0.19.1 • 768D Unified Vector Space",
+            "Runtime: LiteRT-LM 0.19.1 • 768D • Fast 70-Token Index",
             color = Color(0xFF00E5FF),
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace
@@ -680,6 +919,36 @@ fun MediaIndexerSettingsSection(
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace
         )
+        if (chatViewModel.deviceMediaCountsText.isNotBlank()) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                chatViewModel.deviceMediaCountsText,
+                color = RoninThemeTokens.TextMuted,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Skip Screenshots on auto-index",
+                color = RoninThemeTokens.TextSecondary,
+                fontSize = 11.sp
+            )
+            Switch(
+                checked = chatViewModel.excludeScreenshotsOnIndex,
+                onCheckedChange = { activity?.saveExcludeScreenshotsOnIndex(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = RoninThemeTokens.PrimaryEmerald,
+                    checkedTrackColor = RoninThemeTokens.PrimaryEmeraldDim
+                )
+            )
+        }
 
         if (chatViewModel.isIndexingMedia) {
             Spacer(Modifier.height(8.dp))
@@ -706,55 +975,526 @@ fun MediaIndexerSettingsSection(
                 Text("Cancel Media Indexing", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         } else {
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
+                    onClick = { activity?.launchManualMediaIndexPicker() },
+                    modifier = Modifier.weight(1f).heightIn(min = 42.dp),
+                    colors = ButtonDefaults.buttonColors(backgroundColor = RoninThemeTokens.PrimaryEmeraldDim),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.AddPhotoAlternate, null, tint = RoninThemeTokens.PrimaryEmerald, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add Photos / Videos", color = RoninThemeTokens.PrimaryEmerald, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                Button(
                     onClick = { activity?.startMediaIndexing(MediaIndexScope.PHOTOS) },
-                    modifier = Modifier.weight(1f).heightIn(min = 40.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 42.dp),
                     colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D)),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Index Photos", color = Color.White, fontSize = 11.sp)
+                    Text(photoButtonLabel, color = Color.White, fontSize = 10.sp)
                 }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { activity?.startMediaIndexing(MediaIndexScope.AUDIO) },
                     modifier = Modifier.weight(1f).heightIn(min = 40.dp),
                     colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D)),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Index Audio", color = Color.White, fontSize = 11.sp)
+                    Text(audioButtonLabel, color = Color.White, fontSize = 10.sp)
                 }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { activity?.startMediaIndexing(MediaIndexScope.VIDEO) },
                     modifier = Modifier.weight(1f).heightIn(min = 40.dp),
                     colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D)),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Index Videos", color = Color.White, fontSize = 11.sp)
-                }
-                Button(
-                    onClick = { activity?.startMediaIndexing(MediaIndexScope.ALL) },
-                    modifier = Modifier.weight(1f).heightIn(min = 40.dp),
-                    colors = ButtonDefaults.buttonColors(backgroundColor = RoninThemeTokens.PrimaryEmeraldDim),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Index All", color = RoninThemeTokens.PrimaryEmerald, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(videoButtonLabel, color = Color.White, fontSize = 10.sp)
                 }
             }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = { activity?.clearMediaSearchIndex() },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 38.dp),
-                border = BorderStroke(1.dp, RoninThemeTokens.Border),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = RoninThemeTokens.TextSecondary)
+            Button(
+                onClick = { activity?.startMediaIndexing(MediaIndexScope.ALL) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF25283D)),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                Icon(Icons.Default.DeleteSweep, null, modifier = Modifier.size(15.dp))
+                Icon(Icons.Default.AutoAwesome, null, tint = Color(0xFF00E5FF), modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Clear Media Index", fontSize = 11.sp)
+                Text("Index All Media (Photos, Audio & Videos)", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { chatViewModel.showIndexedMediaManager = true },
+                    modifier = Modifier.weight(1.3f).heightIn(min = 38.dp),
+                    border = BorderStroke(1.dp, Color(0xFF64B5F6).copy(alpha = 0.5f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF64B5F6))
+                ) {
+                    Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("Manage (${chatViewModel.totalIndexedMediaCount})", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(
+                    onClick = { activity?.clearMediaSearchIndex() },
+                    modifier = Modifier.weight(1f).heightIn(min = 38.dp),
+                    border = BorderStroke(1.dp, RoninThemeTokens.Border),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = RoninThemeTokens.TextSecondary)
+                ) {
+                    Icon(Icons.Default.DeleteSweep, null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Clear All", fontSize = 11.sp)
+                }
             }
         }
+    }
+}
+
+@Composable
+fun IndexedMediaManagerDialog(
+    chatViewModel: ChatViewModel,
+    nativeEngine: NativeEngine,
+    activity: MainActivity?,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var filter by remember { mutableStateOf(MediaModalityFilter.ALL) }
+    var entries by remember { mutableStateOf<List<IndexedMediaEntry>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var showManageMenu by remember { mutableStateOf(false) }
+    var showFilterMenu by remember { mutableStateOf(false) }
+    var selectionMode by remember { mutableStateOf(false) }
+    val selectedPaths = remember { mutableStateListOf<String>() }
+    var previewPhotoEntry by remember { mutableStateOf<MediaSearchResultItem?>(null) }
+
+    val targetPhotoCount = if (chatViewModel.excludeScreenshotsOnIndex) {
+        chatViewModel.deviceNonScreenshotPhotoCount
+    } else {
+        chatViewModel.devicePhotoCount
+    }
+
+    LaunchedEffect(filter, chatViewModel.mediaIndexVersion) {
+        isLoading = true
+        val loaded = withContext(Dispatchers.IO) {
+            MediaSearchEngine.listIndexedMedia(nativeEngine, filter = filter, limit = 500)
+        }
+        entries = loaded
+        val loadedSet = loaded.map { it.mediaPath }.toSet()
+        selectedPaths.removeAll { it !in loadedSet }
+        isLoading = false
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            color = RoninThemeTokens.Surface,
+            shape = RoninThemeTokens.RadiusLg,
+            border = BorderStroke(1.dp, RoninThemeTokens.Border),
+            modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.86f)
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.PhotoLibrary, null, tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Instant Media Search",
+                            color = RoninThemeTokens.TextPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, "Close", tint = Color.Gray)
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // Sub-header matching Google AI Edge Gallery's Manage + Filter controls
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircleOutline,
+                            null,
+                            tint = RoninThemeTokens.PrimaryEmerald,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "${entries.size} items",
+                            color = RoninThemeTokens.TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
+                    }
+
+                    Box {
+                        Surface(
+                            color = Color(0xFF1F4E79),
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier.clickable { showManageMenu = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.ArrowDropDown, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                Text("Manage", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showManageMenu,
+                            onDismissRequest = { showManageMenu = false },
+                            modifier = Modifier.background(Color(0xFF232635))
+                        ) {
+                            DropdownMenuItem(onClick = {
+                                showManageMenu = false
+                                activity?.launchManualMediaIndexPicker()
+                            }) {
+                                Text("Add more photos / videos", color = Color.White, fontSize = 13.sp)
+                            }
+                            DropdownMenuItem(onClick = {
+                                showManageMenu = false
+                                onDismiss()
+                                activity?.startMediaIndexing(MediaIndexScope.PHOTOS)
+                            }) {
+                                val lbl = if (targetPhotoCount > 0) "Index all $targetPhotoCount photos" else "Index all photos"
+                                Text(lbl, color = Color.White, fontSize = 13.sp)
+                            }
+                            DropdownMenuItem(onClick = {
+                                showManageMenu = false
+                                selectionMode = !selectionMode
+                                if (!selectionMode) selectedPaths.clear()
+                            }) {
+                                Text(
+                                    if (selectionMode) "Exit selection mode" else "Select items to remove",
+                                    color = Color.White,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            DropdownMenuItem(onClick = {
+                                showManageMenu = false
+                                selectionMode = false
+                                selectedPaths.clear()
+                                activity?.clearMediaSearchIndex()
+                            }) {
+                                Text("Remove all items", color = RoninThemeTokens.ErrorCrimson, fontSize = 13.sp)
+                            }
+                        }
+                    }
+
+                    Box {
+                        Surface(
+                            color = Color(0xFF2B2E3B),
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, RoninThemeTokens.Border),
+                            modifier = Modifier.clickable { showFilterMenu = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(filter.label, color = Color.White, fontSize = 12.sp)
+                                Icon(Icons.Default.ArrowDropDown, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showFilterMenu,
+                            onDismissRequest = { showFilterMenu = false },
+                            modifier = Modifier.background(Color(0xFF232635))
+                        ) {
+                            listOf(
+                                MediaModalityFilter.ALL,
+                                MediaModalityFilter.IMAGE,
+                                MediaModalityFilter.VIDEO,
+                                MediaModalityFilter.AUDIO
+                            ).forEach { opt ->
+                                DropdownMenuItem(onClick = {
+                                    filter = opt
+                                    showFilterMenu = false
+                                }) {
+                                    Text(opt.label, color = Color.White, fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (chatViewModel.isIndexingMedia) {
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = chatViewModel.mediaIndexFraction.coerceIn(0f, 1f),
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color(0xFF00E5FF),
+                        backgroundColor = Color(0xFF25283D)
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        chatViewModel.mediaIndexProgressText,
+                        color = Color(0xFF80DEEA),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    when {
+                        isLoading -> {
+                            CircularProgressIndicator(
+                                color = RoninThemeTokens.PrimaryEmerald,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        }
+                        entries.isEmpty() -> {
+                            Column(
+                                modifier = Modifier.align(Alignment.Center).padding(20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(Icons.Default.PhotoLibrary, null, tint = Color.Gray, modifier = Modifier.size(40.dp))
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "No indexed items in ${filter.label}",
+                                    color = RoninThemeTokens.TextSecondary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Button(
+                                    onClick = { activity?.launchManualMediaIndexPicker() },
+                                    colors = ButtonDefaults.buttonColors(backgroundColor = RoninThemeTokens.PrimaryEmeraldDim)
+                                ) {
+                                    Text("Add Photos / Videos", color = RoninThemeTokens.PrimaryEmerald, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        else -> {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                items(entries, key = { it.mediaPath }) { entry ->
+                                    val isSelected = entry.mediaPath in selectedPaths
+                                    val isVideo = entry.modality == "VIDEO"
+                                    val isAudio = entry.modality == "AUDIO"
+                                    var tileBmp by remember(entry.mediaPath, entry.mediaUri) { mutableStateOf<Bitmap?>(null) }
+                                    LaunchedEffect(entry.mediaPath, entry.mediaUri, entry.modality) {
+                                        if (!isAudio) {
+                                            tileBmp = loadMediaThumbnailBitmap(
+                                                context = context,
+                                                mediaPath = entry.mediaPath,
+                                                mediaUri = entry.mediaUri,
+                                                modality = if (isVideo) "VIDEO_FRAME" else "IMAGE",
+                                                startMs = 0L,
+                                                targetPx = 280
+                                            )
+                                        }
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF0E111A))
+                                            .border(
+                                                width = if (isSelected) 2.5.dp else 1.dp,
+                                                color = if (isSelected) RoninThemeTokens.PrimaryEmerald else RoninThemeTokens.Border,
+                                                shape = RoundedCornerShape(6.dp)
+                                            )
+                                            .clickable {
+                                                if (selectionMode) {
+                                                    if (isSelected) selectedPaths.remove(entry.mediaPath)
+                                                    else selectedPaths.add(entry.mediaPath)
+                                                } else if (entry.modality == "IMAGE") {
+                                                    previewPhotoEntry = MediaSearchResultItem(
+                                                        mediaPath = entry.mediaPath,
+                                                        mediaUri = entry.mediaUri,
+                                                        modality = "IMAGE",
+                                                        displayName = entry.displayName,
+                                                        startMs = 0L,
+                                                        endMs = 0L,
+                                                        durationMs = 0L,
+                                                        score = 1.0f,
+                                                        modelId = entry.modelId
+                                                    )
+                                                } else {
+                                                    val playItem = MediaSearchResultItem(
+                                                        mediaPath = entry.mediaPath,
+                                                        mediaUri = entry.mediaUri,
+                                                        modality = if (isVideo) "VIDEO_FRAME" else "AUDIO",
+                                                        displayName = entry.displayName,
+                                                        startMs = 0L,
+                                                        endMs = entry.durationMs,
+                                                        durationMs = entry.durationMs,
+                                                        score = 1.0f,
+                                                        modelId = entry.modelId
+                                                    )
+                                                    chatViewModel.activeMediaPlayerRequest = MediaMomentPlayerRequest(playItem, 0L)
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (tileBmp != null) {
+                                            Image(
+                                                bitmap = tileBmp!!.asImageBitmap(),
+                                                contentDescription = entry.displayName,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier.padding(6.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = when {
+                                                        isVideo -> Icons.Default.Movie
+                                                        isAudio -> Icons.Default.GraphicEq
+                                                        else -> Icons.Default.Image
+                                                    },
+                                                    contentDescription = entry.displayName,
+                                                    tint = if (isAudio) Color(0xFFCE93D8) else if (isVideo) Color(0xFF64B5F6) else RoninThemeTokens.PrimaryEmerald,
+                                                    modifier = Modifier.size(26.dp)
+                                                )
+                                                if (isAudio) {
+                                                    Spacer(Modifier.height(4.dp))
+                                                    Text(
+                                                        entry.displayName,
+                                                        color = Color.White,
+                                                        fontSize = 9.sp,
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(24.dp)
+                                                .align(Alignment.BottomCenter)
+                                                .background(
+                                                    Brush.verticalGradient(
+                                                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))
+                                                    )
+                                                )
+                                        )
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .align(Alignment.BottomCenter)
+                                                .padding(horizontal = 5.dp, vertical = 3.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                "Analyzed",
+                                                color = Color.White,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            if (entry.durationMs > 0L) {
+                                                Text(
+                                                    "▶ ${MediaSearchEngine.formatTimestampMs(entry.durationMs)}",
+                                                    color = Color.White,
+                                                    fontSize = 9.sp,
+                                                    fontFamily = FontFamily.Monospace
+                                                )
+                                            }
+                                        }
+
+                                        if (selectionMode) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .padding(4.dp)
+                                                    .size(20.dp)
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        if (isSelected) RoninThemeTokens.PrimaryEmerald
+                                                        else Color.Black.copy(alpha = 0.55f)
+                                                    )
+                                                    .border(1.dp, Color.White, CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (isSelected) {
+                                                    Icon(Icons.Default.Check, null, tint = Color.Black, modifier = Modifier.size(13.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (selectionMode) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val toRemove = selectedPaths.toList()
+                                activity?.removeIndexedMediaPaths(toRemove) {
+                                    selectionMode = false
+                                    selectedPaths.clear()
+                                }
+                            },
+                            enabled = selectedPaths.isNotEmpty(),
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(backgroundColor = RoninThemeTokens.ErrorCrimson)
+                        ) {
+                            Text("Remove Selected (${selectedPaths.size})", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                selectionMode = false
+                                selectedPaths.clear()
+                            },
+                            border = BorderStroke(1.dp, RoninThemeTokens.Border),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        ) {
+                            Text("Cancel", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (previewPhotoEntry != null) {
+        PhotoPreviewDialog(
+            item = previewPhotoEntry!!,
+            onDismiss = { previewPhotoEntry = null }
+        )
     }
 }

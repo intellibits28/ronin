@@ -377,6 +377,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun storeMediaEmbeddingsAtomicNative(mediaPath: String, mediaUri: String, displayName: String, metadataText: String, modifiedAt: Long, fileSize: Long, durationMs: Long, modelId: String, modalities: Array<String>, segmentIndices: IntArray, startMsList: LongArray, endMsList: LongArray, flatEmbeddings: FloatArray, dimension: Int): Boolean
     private external fun searchMediaEmbeddingsNative(queryEmbedding: FloatArray, modalityFilter: String, modelId: String, lexicalQuery: String, topK: Int): Array<String>
     private external fun getMediaIndexStatsNative(modelId: String): String
+    private external fun listIndexedMediaNative(modalityFilter: String, modelId: String, limit: Int): String
     private external fun deleteMediaEmbeddingsNative(mediaPath: String, modelId: String): Int
     private external fun clearMediaEmbeddingsNative(modelId: String): Int
 
@@ -686,6 +687,26 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         } catch (e: Exception) {
             Log.e(TAG, "getMediaIndexStatsSafe failed: ${e.message}")
             emptyStats()
+        }
+    }
+
+    fun listIndexedMediaSafe(
+        modalityFilter: String = "ALL",
+        modelId: String = "",
+        limit: Int = 500
+    ): List<JSONObject> {
+        if (!isLibLoaded) return emptyList()
+        return try {
+            val raw = listIndexedMediaNative(modalityFilter, modelId, limit)
+            val arr = JSONArray(raw)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    arr.optJSONObject(i)?.let { add(it) }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "listIndexedMediaSafe failed: ${e.message}")
+            emptyList()
         }
     }
 

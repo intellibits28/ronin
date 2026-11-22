@@ -128,6 +128,7 @@ JNIEXPORT jboolean JNICALL native_isMediaIndexed(JNIEnv* env, jobject thiz, jstr
 JNIEXPORT jboolean JNICALL native_storeMediaEmbeddingsAtomic(JNIEnv* env, jobject thiz, jstring mediaPath, jstring mediaUri, jstring displayName, jstring metadataText, jlong modifiedAt, jlong fileSize, jlong durationMs, jstring modelId, jobjectArray modalities, jintArray segmentIndices, jlongArray startMsList, jlongArray endMsList, jfloatArray flatEmbeddings, jint dimension);
 JNIEXPORT jobjectArray JNICALL native_searchMediaEmbeddings(JNIEnv* env, jobject thiz, jfloatArray queryEmbedding, jstring modalityFilter, jstring modelId, jstring lexicalQuery, jint topK);
 JNIEXPORT jstring JNICALL native_getMediaIndexStats(JNIEnv* env, jobject thiz, jstring modelId);
+JNIEXPORT jstring JNICALL native_listIndexedMedia(JNIEnv* env, jobject thiz, jstring modalityFilter, jstring modelId, jint limit);
 JNIEXPORT jint JNICALL native_deleteMediaEmbeddings(JNIEnv* env, jobject thiz, jstring mediaPath, jstring modelId);
 JNIEXPORT jint JNICALL native_clearMediaEmbeddings(JNIEnv* env, jobject thiz, jstring modelId);
 

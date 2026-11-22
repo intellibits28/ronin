@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "long_term_memory.h"
 #include <cstdio>
+#include <nlohmann/json.hpp>
 #include <sqlite3.h>
 #include <string>
 
@@ -417,6 +418,101 @@ TEST(LongTermMemoryMediaEmbeddings, AtomicStoreModalityFiltersTimestampsAndSafeM
 
     EXPECT_EQ(ltm.deleteMediaEmbeddings("/sdcard/DCIM/beach_dog.jpg", model_740m), 1);
     EXPECT_EQ(ltm.clearMediaEmbeddings(model_740m), 3);
+}
+
+TEST(LongTermMemoryMediaEmbeddings, ComputesPopulationZScoreAndListsDistinctIndexedMedia) {
+    LongTermMemory ltm(":memory:");
+    const std::string model_740m = "embeddinggemma-2-740m";
+
+    // Insert 15 background images clustered around (0.65, 0.76, 0, 0) with tiny jitter
+    for (int i = 0; i < 15; ++i) {
+        std::vector<LongTermMemory::MediaSegment> seg(1);
+        float jitter = (i % 3 - 1) * 0.015f;
+        seg[0] = {"IMAGE", 0, 0LL, 0LL, {0.65f + jitter, 0.76f, 0.0f, 0.0f}};
+        std::string p = "/sdcard/DCIM/Screenshots/screen_" + std::to_string(i) + ".png";
+        std::string n = "screen_" + std::to_string(i) + ".png";
+        ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(p, "", n, "Screenshots", 1700000000LL + i, 100000LL, 0LL, model_740m, seg));
+    }
+
+    // Insert 1 strong match along +X
+    {
+        std::vector<LongTermMemory::MediaSegment> seg(1);
+        seg[0] = {"IMAGE", 0, 0LL, 0LL, {0.99f, 0.14f, 0.0f, 0.0f}};
+        ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+            "/sdcard/DCIM/Camera/bougainvillea_01.jpg",
+            "content://media/external/images/media/999",
+            "bougainvillea_01.jpg",
+            "Camera",
+            1700000500LL,
+            350000LL,
+            0LL,
+            model_740m,
+            seg));
+    }
+
+    // Insert 1 multi-segment video and 1 audio file
+    {
+        std::vector<LongTermMemory::MediaSegment> vidSegs(2);
+        vidSegs[0] = {"VIDEO_FRAME", 0, 0LL, 4000LL, {0.3f, 0.3f, 0.9f, 0.0f}};
+        vidSegs[1] = {"VIDEO_AUDIO", 0, 0LL, 15000LL, {0.2f, 0.2f, 0.2f, 0.9f}};
+        ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+            "/sdcard/DCIM/Camera/garden_clip.mp4",
+            "",
+            "garden_clip.mp4",
+            "Camera",
+            1700000600LL,
+            2048000LL,
+            15000LL,
+            model_740m,
+            vidSegs));
+    }
+    {
+        std::vector<LongTermMemory::MediaSegment> audSeg(1);
+        audSeg[0] = {"AUDIO", 0, 0LL, 10000LL, {0.0f, 0.0f, 0.0f, 1.0f}};
+        ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+            "/sdcard/Recordings/memo.m4a",
+            "",
+            "memo.m4a",
+            "Recordings",
+            1700000700LL,
+            64000LL,
+            10000LL,
+            model_740m,
+            audSeg));
+    }
+
+    // Search along +X across IMAGE (16 images total: 15 background + 1 strong match)
+    auto matches = ltm.searchMediaEmbeddings({1.0f, 0.0f, 0.0f, 0.0f}, "IMAGE", model_740m, "bougainvillea", 8);
+    ASSERT_EQ(matches.size(), 8u);
+    EXPECT_EQ(matches[0].media_path, "/sdcard/DCIM/Camera/bougainvillea_01.jpg");
+    EXPECT_EQ(matches[0].corpus_size, 16);
+    EXPECT_NEAR(matches[0].corpus_mean, 0.67f, 0.05f);
+    EXPECT_GT(matches[0].corpus_std, 0.0f);
+    EXPECT_GT(matches[0].z_score, 3.0f);
+    EXPECT_GE(matches[0].lexical_hits, 1);
+    EXPECT_EQ(matches[1].lexical_hits, 0);
+    EXPECT_LT(matches[1].z_score, 1.0f);
+
+    // Flat orthogonal query along +Z over IMAGE -> std == 0 -> z_score == 0.0f
+    auto flatMatches = ltm.searchMediaEmbeddings({0.0f, 0.0f, 1.0f, 0.0f}, "IMAGE", model_740m, "", 5);
+    ASSERT_EQ(flatMatches.size(), 5u);
+    EXPECT_EQ(flatMatches[0].corpus_size, 16);
+    EXPECT_FLOAT_EQ(flatMatches[0].cosine_score, 0.0f);
+    EXPECT_FLOAT_EQ(flatMatches[0].z_score, 0.0f);
+
+    // Distinct indexed listing collapses multi-segment videos into 1 'VIDEO' entry
+    std::string allListJson = ltm.listIndexedMediaJson("ALL", model_740m, 100);
+    nlohmann::json allArr = nlohmann::json::parse(allListJson);
+    ASSERT_TRUE(allArr.is_array());
+    EXPECT_EQ(allArr.size(), 18u);
+
+    std::string videoListJson = ltm.listIndexedMediaJson("VIDEO", model_740m, 100);
+    nlohmann::json vidArr = nlohmann::json::parse(videoListJson);
+    ASSERT_TRUE(vidArr.is_array());
+    ASSERT_EQ(vidArr.size(), 1u);
+    EXPECT_EQ(vidArr[0]["media_path"].get<std::string>(), "/sdcard/DCIM/Camera/garden_clip.mp4");
+    EXPECT_EQ(vidArr[0]["modality"].get<std::string>(), "VIDEO");
+    EXPECT_EQ(vidArr[0]["segment_count"].get<int>(), 2);
 }
 
 

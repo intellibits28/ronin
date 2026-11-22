@@ -62,6 +62,7 @@ JNINativeMethod g_methods[] = {
     {"storeMediaEmbeddingsAtomicNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJJLjava/lang/String;[Ljava/lang/String;[I[J[J[FI)Z", (void*)native_storeMediaEmbeddingsAtomic},
     {"searchMediaEmbeddingsNative", "([FLjava/lang/String;Ljava/lang/String;Ljava/lang/String;I)[Ljava/lang/String;", (void*)native_searchMediaEmbeddings},
     {"getMediaIndexStatsNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_getMediaIndexStats},
+    {"listIndexedMediaNative", "(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;", (void*)native_listIndexedMedia},
     {"deleteMediaEmbeddingsNative", "(Ljava/lang/String;Ljava/lang/String;)I", (void*)native_deleteMediaEmbeddings},
     {"clearMediaEmbeddingsNative", "(Ljava/lang/String;)I", (void*)native_clearMediaEmbeddings}
 };

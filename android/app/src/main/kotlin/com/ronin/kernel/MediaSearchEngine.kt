@@ -17,6 +17,7 @@ import android.net.Uri
 import android.os.BatteryManager
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,6 +49,31 @@ enum class MediaModalityFilter(val sqlFilter: String, val label: String) {
     VIDEO("VIDEO", "Videos")
 }
 
+enum class MediaSearchQueryMode {
+    TEXT_TO_MEDIA,
+    IMAGE_TO_VISUAL
+}
+
+data class DeviceMediaCounts(
+    val totalPhotos: Int = 0,
+    val nonScreenshotPhotos: Int = 0,
+    val screenshots: Int = 0,
+    val audio: Int = 0,
+    val videos: Int = 0
+)
+
+data class IndexedMediaEntry(
+    val mediaPath: String,
+    val mediaUri: String,
+    val modality: String,
+    val displayName: String,
+    val durationMs: Long,
+    val modifiedAtSec: Long,
+    val segmentCount: Int,
+    val lastIndexedSec: Long,
+    val modelId: String = ""
+)
+
 data class DeviceMediaAsset(
     val mediaPath: String,
     val mediaUri: String,
@@ -69,7 +95,13 @@ data class MediaSearchResultItem(
     val durationMs: Long,
     val score: Float,
     val extraMomentsMs: List<Long> = emptyList(),
-    val modelId: String = ""
+    val modelId: String = "",
+    val cosineScore: Float = score,
+    val zScore: Float = 0f,
+    val corpusMean: Float = 0f,
+    val corpusStd: Float = 0f,
+    val corpusSize: Int = 0,
+    val lexicalHits: Int = 0
 )
 
 data class MediaIndexProgress(
@@ -101,7 +133,9 @@ data class MediaSearchOutcome(
     val modelId: String = "",
     val results: List<MediaSearchResultItem> = emptyList(),
     val indexEmpty: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val scannedCount: Int = 0,
+    val bestRejectedScore: Float = 0f
 )
 
 data class ParsedMediaQuery(
@@ -374,6 +408,115 @@ object MediaIntentParser {
     }
 }
 
+private val CAMERA_ALBUM_LABELS = setOf(
+    "camera", "dcim", "pictures", "photos", "100andro", "100media", "opencamera", "restored"
+)
+
+fun isScreenshotAsset(mediaPath: String, folderLabel: String, displayName: String): Boolean {
+    val pathLower = mediaPath.lowercase()
+    val folderLower = folderLabel.trim().lowercase()
+    val nameLower = displayName.trim().lowercase()
+    return folderLower.contains("screenshot") ||
+        pathLower.contains("/screenshots/") ||
+        pathLower.contains("/screenshot/") ||
+        nameLower.startsWith("screenshot_") ||
+        nameLower.startsWith("screen_shot")
+}
+
+fun isIgnoredMediaPath(mediaPath: String): Boolean {
+    val lower = mediaPath.lowercase()
+    return lower.contains("/android/data/") ||
+        lower.contains("/android/obb/") ||
+        lower.contains("/.thumbnails/") ||
+        lower.contains("/thumbnails/") ||
+        lower.contains("/cache/") ||
+        lower.contains("/.statuses/") ||
+        lower.contains("stickers/")
+}
+
+/**
+ * Orders discovered assets so Camera/Photo albums appear ahead of Downloads/Social folders
+ * and Screenshots appear last (or excluded when [excludeScreenshots] is enabled).
+ */
+fun prioritizeMediaAssets(
+    assets: List<DeviceMediaAsset>,
+    excludeScreenshots: Boolean = false
+): List<DeviceMediaAsset> {
+    return assets
+        .filter { asset ->
+            !(excludeScreenshots && asset.modality == "IMAGE" &&
+                isScreenshotAsset(asset.mediaPath, asset.folderLabel, asset.displayName))
+        }
+        .sortedWith(
+            compareBy<DeviceMediaAsset> { asset ->
+                if (asset.modality != "IMAGE") {
+                    1
+                } else if (isScreenshotAsset(asset.mediaPath, asset.folderLabel, asset.displayName)) {
+                    2
+                } else {
+                    val folderLower = asset.folderLabel.trim().lowercase()
+                    val pathLower = asset.mediaPath.lowercase()
+                    if (folderLower in CAMERA_ALBUM_LABELS || pathLower.contains("/dcim/camera/")) 0 else 1
+                }
+            }.thenByDescending { it.modifiedAtSec }
+        )
+}
+
+/**
+ * Filters out anisotropic background noise using C++ corpus-wide Z-score statistics
+ * combined with modality-aware cosine floors.
+ */
+fun filterRelevantMediaMatches(
+    candidates: List<MediaSearchResultItem>,
+    queryMode: MediaSearchQueryMode = MediaSearchQueryMode.TEXT_TO_MEDIA
+): List<MediaSearchResultItem> {
+    if (candidates.isEmpty()) return emptyList()
+    return candidates.filter { item ->
+        if (item.cosineScore <= 0f && item.lexicalHits > 0 && item.score > 0f) {
+            return@filter true
+        }
+        if (item.lexicalHits > 0 && item.cosineScore >= 0.62f) {
+            return@filter true
+        }
+
+        val isAudioSeg = item.modality == "AUDIO" || item.modality == "VIDEO_AUDIO"
+        val highFloor: Float
+        val adaptiveFloor: Float
+        val minZ: Float
+        val minMargin: Float
+        when {
+            queryMode == MediaSearchQueryMode.IMAGE_TO_VISUAL -> {
+                highFloor = 0.76f
+                adaptiveFloor = 0.71f
+                minZ = 1.4f
+                minMargin = 0.04f
+            }
+            isAudioSeg -> {
+                highFloor = 0.66f
+                adaptiveFloor = 0.58f
+                minZ = 1.3f
+                minMargin = 0.04f
+            }
+            else -> {
+                highFloor = 0.715f
+                adaptiveFloor = 0.692f
+                minZ = 1.15f
+                minMargin = 0.035f
+            }
+        }
+
+        when {
+            item.cosineScore >= highFloor -> true
+            item.cosineScore >= adaptiveFloor -> when {
+                item.corpusSize >= 12 -> item.zScore >= minZ && (item.cosineScore - item.corpusMean) >= minMargin
+                item.corpusSize >= 3 -> (item.cosineScore - item.corpusMean) >= (minMargin + 0.015f)
+                else -> true
+            }
+            else -> false
+        }
+    }
+}
+
 /**
  * Pure-Kotlin deduplicator grouping segment hits by media file while preserving primary and secondary timestamps.
  */
@@ -402,6 +545,11 @@ fun deduplicateAndRankMediaMatches(
 
 object MediaSearchEngine {
     private const val TAG = "RoninMediaSearch"
+    const val PHOTO_MAX_SIDE_PX = 448
+    const val PHOTO_VISION_TOKENS = 70
+    const val PHOTO_BATCH_SIZE = 4
+    const val VIDEO_FRAME_MAX_SIDE_PX = 448
+    const val VIDEO_FRAME_VISION_TOKENS = 70
 
     fun formatTimestampMs(ms: Long): String {
         val totalSec = (ms / 1000L).coerceAtLeast(0L)
@@ -415,10 +563,64 @@ object MediaSearchEngine {
         }
     }
 
+    suspend fun countDeviceMedia(context: Context): DeviceMediaCounts = withContext(Dispatchers.IO) {
+        var totalPhotos = 0
+        var nonScreenshotPhotos = 0
+        var screenshots = 0
+        var audio = 0
+        var videos = 0
+
+        fun countUri(contentUri: Uri, modality: String) {
+            val cols = arrayOf(
+                MediaStore.MediaColumns.DATA,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.SIZE
+            )
+            try {
+                context.contentResolver.query(contentUri, cols, null, null, null)?.use { cursor ->
+                    val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    val nameCol = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val sizeCol = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                    while (cursor.moveToNext()) {
+                        val size = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L
+                        if (size in 1L..2048L) continue
+                        val path = if (dataCol >= 0) cursor.getString(dataCol) ?: "" else ""
+                        if (path.isNotBlank() && isIgnoredMediaPath(path)) continue
+                        val name = if (nameCol >= 0) cursor.getString(nameCol) ?: "" else ""
+                        val folder = File(path).parentFile?.name ?: ""
+                        when (modality) {
+                            "IMAGE" -> {
+                                totalPhotos++
+                                if (isScreenshotAsset(path, folder, name)) screenshots++ else nonScreenshotPhotos++
+                            }
+                            "AUDIO" -> audio++
+                            "VIDEO" -> videos++
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "countDeviceMedia failed for $modality: ${e.message}")
+            }
+        }
+
+        countUri(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "IMAGE")
+        countUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, "AUDIO")
+        countUri(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "VIDEO")
+
+        DeviceMediaCounts(
+            totalPhotos = totalPhotos,
+            nonScreenshotPhotos = nonScreenshotPhotos,
+            screenshots = screenshots,
+            audio = audio,
+            videos = videos
+        )
+    }
+
     suspend fun discoverDeviceMedia(
         context: Context,
         scope: MediaIndexScope = MediaIndexScope.ALL,
-        maxPerModality: Int = 60
+        maxPerModality: Int = 5000,
+        excludeScreenshots: Boolean = false
     ): List<DeviceMediaAsset> = withContext(Dispatchers.IO) {
         val assets = mutableListOf<DeviceMediaAsset>()
         val seenPaths = mutableSetOf<String>()
@@ -455,7 +657,7 @@ object MediaSearchEngine {
                         val itemUri = if (id >= 0) ContentUris.withAppendedId(contentUri, id).toString() else ""
                         val path = if (dataCol >= 0) cursor.getString(dataCol) ?: "" else ""
                         val key = path.ifBlank { itemUri }
-                        if (key.isBlank() || !seenPaths.add(key)) continue
+                        if (key.isBlank() || isIgnoredMediaPath(key)) continue
 
                         val name = (if (nameCol >= 0) cursor.getString(nameCol) else null)
                             ?: File(path).name.ifBlank { "$modality-$id" }
@@ -466,6 +668,10 @@ object MediaSearchEngine {
                         // Filter out tiny UI icons or zero-byte artifacts
                         if (fileSize in 1L..2048L) continue
                         val folderLabel = File(path).parentFile?.name ?: ""
+                        if (excludeScreenshots && modality == "IMAGE" && isScreenshotAsset(key, folderLabel, name)) {
+                            continue
+                        }
+                        if (!seenPaths.add(key)) continue
                         assets.add(
                             DeviceMediaAsset(
                                 mediaPath = key,
@@ -511,13 +717,17 @@ object MediaSearchEngine {
 
                 for (dir in dirs) {
                     dir.walkTopDown().maxDepth(4).forEach { f ->
-                        if (!f.isFile || f.length() <= 2048L) return@forEach
+                        if (!f.isFile || f.length() <= 2048L || isIgnoredMediaPath(f.absolutePath)) return@forEach
                         val ext = f.extension.lowercase()
                         val modality = when {
                             ext in imgExts && (scope == MediaIndexScope.ALL || scope == MediaIndexScope.PHOTOS) -> "IMAGE"
                             ext in audExts && (scope == MediaIndexScope.ALL || scope == MediaIndexScope.AUDIO) -> "AUDIO"
                             ext in vidExts && (scope == MediaIndexScope.ALL || scope == MediaIndexScope.VIDEO) -> "VIDEO"
                             else -> return@forEach
+                        }
+                        val folderLabel = f.parentFile?.name ?: ""
+                        if (excludeScreenshots && modality == "IMAGE" && isScreenshotAsset(f.absolutePath, folderLabel, f.name)) {
+                            return@forEach
                         }
                         if (assets.count { it.modality == modality } >= maxPerModality) return@forEach
                         if (seenPaths.add(f.absolutePath)) {
@@ -527,7 +737,7 @@ object MediaSearchEngine {
                                     mediaUri = Uri.fromFile(f).toString(),
                                     modality = modality,
                                     displayName = f.name,
-                                    folderLabel = f.parentFile?.name ?: "",
+                                    folderLabel = folderLabel,
                                     modifiedAtSec = f.lastModified() / 1000L,
                                     fileSize = f.length(),
                                     durationMs = 0L
@@ -541,16 +751,172 @@ object MediaSearchEngine {
             }
         }
 
-        assets
+        prioritizeMediaAssets(assets, excludeScreenshots = excludeScreenshots)
     }
 
-    fun prepareImageForEmbedding(
+    /**
+     * Resolves user-selected photo/video/audio URIs (including temporary Photo Picker URIs)
+     * back to permanent MediaStore paths and URIs whenever available.
+     */
+    suspend fun resolvePickedUrisToAssets(
+        context: Context,
+        uris: List<Uri>
+    ): List<DeviceMediaAsset> = withContext(Dispatchers.IO) {
+        val resolved = mutableListOf<DeviceMediaAsset>()
+        val seenKeys = mutableSetOf<String>()
+
+        fun lookupPermanentMediaStoreEntry(
+            contentUri: Uri,
+            displayName: String,
+            sizeBytes: Long,
+            hasDuration: Boolean
+        ): DeviceMediaAsset? {
+            if (displayName.isBlank()) return null
+            val cols = buildList {
+                add(MediaStore.MediaColumns._ID)
+                add(MediaStore.MediaColumns.DATA)
+                add(MediaStore.MediaColumns.DISPLAY_NAME)
+                add(MediaStore.MediaColumns.DATE_MODIFIED)
+                add(MediaStore.MediaColumns.SIZE)
+                if (hasDuration) add(MediaStore.MediaColumns.DURATION)
+            }.toTypedArray()
+            val selection = if (sizeBytes > 0L) {
+                "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.SIZE} = ?"
+            } else {
+                "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+            }
+            val args = if (sizeBytes > 0L) arrayOf(displayName, sizeBytes.toString()) else arrayOf(displayName)
+            val modality = when (contentUri) {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI -> "VIDEO"
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI -> "AUDIO"
+                else -> "IMAGE"
+            }
+            return try {
+                context.contentResolver.query(
+                    contentUri,
+                    cols,
+                    selection,
+                    args,
+                    "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+                )?.use { c ->
+                    if (!c.moveToFirst()) return@use null
+                    val idCol = c.getColumnIndex(MediaStore.MediaColumns._ID)
+                    val dataCol = c.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    val nameCol = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val modCol = c.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                    val sizeCol = c.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                    val durCol = if (hasDuration) c.getColumnIndex(MediaStore.MediaColumns.DURATION) else -1
+                    val id = if (idCol >= 0) c.getLong(idCol) else -1L
+                    val itemUri = if (id >= 0) ContentUris.withAppendedId(contentUri, id).toString() else ""
+                    val path = if (dataCol >= 0) c.getString(dataCol) ?: "" else ""
+                    val name = (if (nameCol >= 0) c.getString(nameCol) else null) ?: displayName
+                    val modSec = if (modCol >= 0) c.getLong(modCol) else 0L
+                    val sz = if (sizeCol >= 0) c.getLong(sizeCol) else sizeBytes
+                    val dur = if (durCol >= 0) c.getLong(durCol).coerceAtLeast(0L) else 0L
+                    val key = path.ifBlank { itemUri }
+                    if (key.isBlank()) return@use null
+                    DeviceMediaAsset(
+                        mediaPath = key,
+                        mediaUri = itemUri,
+                        modality = modality,
+                        displayName = name,
+                        folderLabel = File(path).parentFile?.name ?: "",
+                        modifiedAtSec = modSec,
+                        fileSize = sz,
+                        durationMs = dur
+                    )
+                }
+            } catch (_: Throwable) {
+                null
+            }
+        }
+
+        for (uri in uris) {
+            var displayName = ""
+            var sizeBytes = 0L
+            var directPath = ""
+            var modifiedSec = 0L
+            var durationMs = 0L
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        val nameIdx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIdx = c.getColumnIndex(OpenableColumns.SIZE)
+                        val dataIdx = c.getColumnIndex(MediaStore.MediaColumns.DATA)
+                        val modIdx = c.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                        val durIdx = c.getColumnIndex(MediaStore.MediaColumns.DURATION)
+                        if (nameIdx >= 0) displayName = c.getString(nameIdx) ?: ""
+                        if (sizeIdx >= 0) sizeBytes = c.getLong(sizeIdx)
+                        if (dataIdx >= 0) directPath = c.getString(dataIdx) ?: ""
+                        if (modIdx >= 0) modifiedSec = c.getLong(modIdx)
+                        if (durIdx >= 0) durationMs = c.getLong(durIdx).coerceAtLeast(0L)
+                    }
+                }
+            } catch (_: Throwable) {}
+
+            val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull().orEmpty().lowercase()
+            val nameExt = displayName.substringAfterLast('.', "").lowercase()
+            val modality = when {
+                mime.startsWith("video/") || nameExt in setOf("mp4", "mkv", "mov", "webm", "3gp") -> "VIDEO"
+                mime.startsWith("audio/") || nameExt in setOf("m4a", "mp3", "wav", "ogg", "aac", "flac", "opus") -> "AUDIO"
+                else -> "IMAGE"
+            }
+
+            val directFile = if (directPath.isNotBlank()) File(directPath) else null
+            val candidateAsset: DeviceMediaAsset? = if (directFile != null && directFile.exists() && directFile.canRead()) {
+                DeviceMediaAsset(
+                    mediaPath = directFile.absolutePath,
+                    mediaUri = uri.toString(),
+                    modality = modality,
+                    displayName = displayName.ifBlank { directFile.name },
+                    folderLabel = directFile.parentFile?.name ?: "",
+                    modifiedAtSec = if (modifiedSec > 0L) modifiedSec else directFile.lastModified() / 1000L,
+                    fileSize = if (sizeBytes > 0L) sizeBytes else directFile.length(),
+                    durationMs = durationMs
+                )
+            } else {
+                val targetStoreUri = when (modality) {
+                    "VIDEO" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    "AUDIO" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                    else -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                }
+                lookupPermanentMediaStoreEntry(targetStoreUri, displayName, sizeBytes, modality != "IMAGE")
+                    ?: run {
+                        runCatching {
+                            context.contentResolver.takePersistableUriPermission(
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        }
+                        DeviceMediaAsset(
+                            mediaPath = uri.toString(),
+                            mediaUri = uri.toString(),
+                            modality = modality,
+                            displayName = displayName.ifBlank { uri.lastPathSegment ?: "$modality-item" },
+                            folderLabel = "Picked",
+                            modifiedAtSec = if (modifiedSec > 0L) modifiedSec else System.currentTimeMillis() / 1000L,
+                            fileSize = sizeBytes,
+                            durationMs = durationMs
+                        )
+                    }
+            }
+
+            if (candidateAsset != null && seenKeys.add(candidateAsset.mediaPath)) {
+                resolved.add(candidateAsset)
+            }
+        }
+        resolved
+    }
+
+    /**
+     * Decodes, EXIF-rotates, and downscales an image file or URI to fit within [maxSidePx].
+     */
+    fun decodeOrientedSampledBitmap(
         filePath: String,
         mediaUri: String,
         context: Context,
-        tmpDir: File,
-        maxSidePx: Int = 768
-    ): File? {
+        maxSidePx: Int = PHOTO_MAX_SIDE_PX
+    ): Bitmap? {
         return try {
             val file = File(filePath)
             val useFile = file.exists() && file.canRead()
@@ -623,17 +989,33 @@ object MediaSearchEngine {
                     working = scaled
                 }
             }
+            working
+        } catch (e: Exception) {
+            Log.w(TAG, "decodeOrientedSampledBitmap failed ($filePath): ${e.message}")
+            null
+        }
+    }
 
+    fun prepareImageForEmbedding(
+        filePath: String,
+        mediaUri: String,
+        context: Context,
+        tmpDir: File,
+        maxSidePx: Int = PHOTO_MAX_SIDE_PX
+    ): File? {
+        val working = decodeOrientedSampledBitmap(filePath, mediaUri, context, maxSidePx) ?: return null
+        return try {
             tmpDir.mkdirs()
             val outFile = File(tmpDir, "emb_img_${System.nanoTime()}.jpg")
             FileOutputStream(outFile).use { fos ->
                 working.compress(Bitmap.CompressFormat.JPEG, 85, fos)
             }
-            working.recycle()
             outFile
         } catch (e: Exception) {
-            Log.w(TAG, "prepareImageForEmbedding failed ($filePath): ${e.message}")
+            Log.w(TAG, "prepareImageForEmbedding compress failed ($filePath): ${e.message}")
             null
+        } finally {
+            if (!working.isRecycled) working.recycle()
         }
     }
 
@@ -871,7 +1253,47 @@ object MediaSearchEngine {
         context: Context,
         nativeEngine: NativeEngine,
         scope: MediaIndexScope = MediaIndexScope.ALL,
-        maxPerModality: Int = 60,
+        maxPerModality: Int = 5000,
+        excludeScreenshots: Boolean = false,
+        isCancelled: () -> Boolean = { false },
+        onProgress: (MediaIndexProgress) -> Unit = {}
+    ): MediaIndexSummary = withContext(Dispatchers.IO) {
+        val assets = discoverDeviceMedia(
+            context = context,
+            scope = scope,
+            maxPerModality = maxPerModality,
+            excludeScreenshots = excludeScreenshots
+        )
+        indexMediaAssets(
+            context = context,
+            nativeEngine = nativeEngine,
+            assets = assets,
+            isCancelled = isCancelled,
+            onProgress = onProgress
+        )
+    }
+
+    suspend fun indexSpecificMediaUris(
+        context: Context,
+        nativeEngine: NativeEngine,
+        uris: List<Uri>,
+        isCancelled: () -> Boolean = { false },
+        onProgress: (MediaIndexProgress) -> Unit = {}
+    ): MediaIndexSummary = withContext(Dispatchers.IO) {
+        val assets = resolvePickedUrisToAssets(context, uris)
+        indexMediaAssets(
+            context = context,
+            nativeEngine = nativeEngine,
+            assets = assets,
+            isCancelled = isCancelled,
+            onProgress = onProgress
+        )
+    }
+
+    suspend fun indexMediaAssets(
+        context: Context,
+        nativeEngine: NativeEngine,
+        assets: List<DeviceMediaAsset>,
         isCancelled: () -> Boolean = { false },
         onProgress: (MediaIndexProgress) -> Unit = {}
     ): MediaIndexSummary = withContext(Dispatchers.IO) {
@@ -903,7 +1325,6 @@ object MediaSearchEngine {
             )
         }
 
-        val assets = discoverDeviceMedia(context, scope, maxPerModality)
         if (assets.isEmpty()) {
             return@withContext MediaIndexSummary(
                 success = true,
@@ -926,25 +1347,158 @@ object MediaSearchEngine {
         var failed = 0
         var cancelled = false
         var stoppedReason: String? = null
+        var processedCount = 0
+        val totalAssets = assets.size
+
+        val imageAssets = assets.filter { it.modality == "IMAGE" }
+        val nonImageAssets = assets.filter { it.modality != "IMAGE" }
 
         try {
-            assets.forEachIndexed { idx, asset ->
+            // 1. Photos: fast pre-filter unchanged items, then mini-batch 4 photos/IPC at 448px & 70 vision tokens
+            if (imageAssets.isNotEmpty()) {
+                if (!supportsVision) {
+                    skipped += imageAssets.size
+                    processedCount += imageAssets.size
+                } else {
+                    val unindexedPhotos = mutableListOf<DeviceMediaAsset>()
+                    for (photo in imageAssets) {
+                        if (isCancelled()) {
+                            cancelled = true
+                            break
+                        }
+                        if (nativeEngine.isMediaIndexedSafe(photo.mediaPath, photo.modifiedAtSec, modelId)) {
+                            skipped++
+                            processedCount++
+                        } else {
+                            unindexedPhotos.add(photo)
+                        }
+                    }
+
+                    val photoBatches = unindexedPhotos.chunked(PHOTO_BATCH_SIZE)
+                    for (batch in photoBatches) {
+                        if (isCancelled()) {
+                            cancelled = true
+                            break
+                        }
+                        val guardrail = readGuardrailStatus(context)
+                        if (guardrail != null) {
+                            stoppedReason = guardrail
+                            break
+                        }
+
+                        val leadName = batch.first().displayName
+                        onProgress(
+                            MediaIndexProgress(
+                                currentIndex = processedCount + 1,
+                                totalCount = totalAssets,
+                                currentFileName = leadName,
+                                statusText = if (batch.size > 1) {
+                                    "Indexing photos (${processedCount + 1}..${min(totalAssets, processedCount + batch.size)}/$totalAssets): $leadName (+${batch.size - 1})"
+                                } else {
+                                    "Indexing (${processedCount + 1}/$totalAssets): $leadName"
+                                }
+                            )
+                        )
+
+                        val batchTmpFiles = mutableListOf<File>()
+                        try {
+                            val prepared = mutableListOf<Pair<DeviceMediaAsset, File>>()
+                            for (item in batch) {
+                                val imgFile = prepareImageForEmbedding(
+                                    filePath = item.mediaPath,
+                                    mediaUri = item.mediaUri,
+                                    context = context,
+                                    tmpDir = tmpDir,
+                                    maxSidePx = PHOTO_MAX_SIDE_PX
+                                )
+                                if (imgFile != null) {
+                                    batchTmpFiles.add(imgFile)
+                                    prepared.add(item to imgFile)
+                                } else {
+                                    failed++
+                                }
+                            }
+
+                            if (prepared.isNotEmpty()) {
+                                val vecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
+                                    items = prepared.map { NativeEngine.MultimodalEmbeddingInput("IMAGE_FILE", it.second.absolutePath) },
+                                    visionTokensPerImage = PHOTO_VISION_TOKENS,
+                                    customEmbPath = modelPath
+                                )
+
+                                fun storePhotoEmbedding(asset: DeviceMediaAsset, vec: FloatArray): Boolean {
+                                    return nativeEngine.storeMediaEmbeddingsAtomicSafe(
+                                        mediaPath = asset.mediaPath,
+                                        mediaUri = asset.mediaUri,
+                                        displayName = asset.displayName,
+                                        metadataText = "${asset.displayName} ${asset.folderLabel}".trim(),
+                                        modifiedAt = asset.modifiedAtSec,
+                                        fileSize = asset.fileSize,
+                                        durationMs = asset.durationMs,
+                                        modelId = modelId,
+                                        modalities = listOf("IMAGE"),
+                                        segmentIndices = listOf(0),
+                                        startMsList = listOf(0L),
+                                        endMsList = listOf(0L),
+                                        embeddings = listOf(vec)
+                                    )
+                                }
+
+                                if (vecs.size == prepared.size) {
+                                    prepared.forEachIndexed { pIdx, (asset, _) ->
+                                        if (storePhotoEmbedding(asset, vecs[pIdx])) indexedImages++ else failed++
+                                    }
+                                } else {
+                                    // Resilient fallback: retry each prepared photo individually if batch failed on one corrupt image
+                                    for ((asset, imgFile) in prepared) {
+                                        if (isCancelled()) {
+                                            cancelled = true
+                                            break
+                                        }
+                                        val singleVecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
+                                            items = listOf(NativeEngine.MultimodalEmbeddingInput("IMAGE_FILE", imgFile.absolutePath)),
+                                            visionTokensPerImage = PHOTO_VISION_TOKENS,
+                                            customEmbPath = modelPath
+                                        )
+                                        val sVec = singleVecs.firstOrNull()
+                                        if (sVec != null && storePhotoEmbedding(asset, sVec)) {
+                                            indexedImages++
+                                        } else {
+                                            failed++
+                                        }
+                                    }
+                                }
+                            }
+                        } finally {
+                            batchTmpFiles.forEach { runCatching { it.delete() } }
+                        }
+
+                        processedCount += batch.size
+                        yield()
+                    }
+                }
+            }
+
+            // 2. Audio & Video assets processed sequentially (multi-segment per file)
+            for (asset in nonImageAssets) {
+                if (cancelled || stoppedReason != null) break
                 if (isCancelled()) {
                     cancelled = true
-                    return@forEachIndexed
+                    break
                 }
                 val guardrail = readGuardrailStatus(context)
                 if (guardrail != null) {
                     stoppedReason = guardrail
-                    return@forEachIndexed
+                    break
                 }
 
+                processedCount++
                 onProgress(
                     MediaIndexProgress(
-                        currentIndex = idx + 1,
-                        totalCount = assets.size,
+                        currentIndex = processedCount,
+                        totalCount = totalAssets,
                         currentFileName = asset.displayName,
-                        statusText = "Indexing (${idx + 1}/${assets.size}): ${asset.displayName}"
+                        statusText = "Indexing ($processedCount/$totalAssets): ${asset.displayName}"
                     )
                 )
 
@@ -952,7 +1506,7 @@ object MediaSearchEngine {
                     nativeEngine.isMediaIndexedSafe(asset.mediaPath, asset.modifiedAtSec, modelId)
                 if (shouldSkipExisting) {
                     skipped++
-                    return@forEachIndexed
+                    continue
                 }
 
                 val tempFilesToDelete = mutableListOf<File>()
@@ -965,39 +1519,17 @@ object MediaSearchEngine {
                     var resolvedDurationMs = asset.durationMs
 
                     when (asset.modality) {
-                        "IMAGE" -> {
-                            if (!supportsVision) {
-                                skipped++
-                                return@forEachIndexed
-                            }
-                            val imgFile = prepareImageForEmbedding(asset.mediaPath, asset.mediaUri, context, tmpDir, maxSidePx = 768)
-                            if (imgFile != null) {
-                                tempFilesToDelete.add(imgFile)
-                                val vecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
-                                    items = listOf(NativeEngine.MultimodalEmbeddingInput("IMAGE_FILE", imgFile.absolutePath)),
-                                    visionTokensPerImage = 280,
-                                    customEmbPath = modelPath
-                                )
-                                if (vecs.size == 1) {
-                                    segModalities.add("IMAGE")
-                                    segIndices.add(0)
-                                    segStarts.add(0L)
-                                    segEnds.add(0L)
-                                    segEmbeddings.add(vecs[0])
-                                }
-                            }
-                        }
                         "AUDIO" -> {
                             if (!supportsAudio) {
                                 skipped++
-                                return@forEachIndexed
+                                continue
                             }
                             val audioSegs = extractAudioTrackToWavFiles(asset.mediaPath, asset.mediaUri, context, tmpDir, maxWindows = 10)
                             audioSegs.forEach { tempFilesToDelete.add(it.wavFile) }
                             if (audioSegs.isNotEmpty()) {
                                 val vecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
                                     items = audioSegs.map { NativeEngine.MultimodalEmbeddingInput("AUDIO_FILE", it.wavFile.absolutePath) },
-                                    visionTokensPerImage = 280,
+                                    visionTokensPerImage = PHOTO_VISION_TOKENS,
                                     customEmbPath = modelPath
                                 )
                                 if (vecs.size == audioSegs.size) {
@@ -1022,14 +1554,14 @@ object MediaSearchEngine {
                                     context,
                                     tmpDir,
                                     hintedDurationMs = asset.durationMs,
-                                    maxSidePx = 512
+                                    maxSidePx = VIDEO_FRAME_MAX_SIDE_PX
                                 )
                                 if (durMs > resolvedDurationMs) resolvedDurationMs = durMs
                                 frameSegs.forEach { tempFilesToDelete.add(it.jpegFile) }
                                 if (frameSegs.isNotEmpty()) {
                                     val fVecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
                                         items = frameSegs.map { NativeEngine.MultimodalEmbeddingInput("IMAGE_FILE", it.jpegFile.absolutePath) },
-                                        visionTokensPerImage = 140,
+                                        visionTokensPerImage = VIDEO_FRAME_VISION_TOKENS,
                                         customEmbPath = modelPath
                                     )
                                     if (fVecs.size == frameSegs.size) {
@@ -1049,7 +1581,7 @@ object MediaSearchEngine {
                                 if (vAudioSegs.isNotEmpty()) {
                                     val aVecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
                                         items = vAudioSegs.map { NativeEngine.MultimodalEmbeddingInput("AUDIO_FILE", it.wavFile.absolutePath) },
-                                        visionTokensPerImage = 140,
+                                        visionTokensPerImage = VIDEO_FRAME_VISION_TOKENS,
                                         customEmbPath = modelPath
                                     )
                                     if (aVecs.size == vAudioSegs.size) {
@@ -1084,7 +1616,6 @@ object MediaSearchEngine {
                         )
                         if (stored) {
                             when (asset.modality) {
-                                "IMAGE" -> indexedImages++
                                 "AUDIO" -> indexedAudio++
                                 "VIDEO" -> indexedVideos++
                             }
@@ -1119,18 +1650,64 @@ object MediaSearchEngine {
         )
     }
 
+    fun parseMediaSearchMatchJson(j: JSONObject): MediaSearchResultItem {
+        val cosine = j.optDouble("cosine_score", 0.0).toFloat()
+        val finalScore = j.optDouble("final_score", cosine.toDouble()).toFloat()
+        return MediaSearchResultItem(
+            mediaPath = j.optString("media_path", ""),
+            mediaUri = j.optString("media_uri", ""),
+            modality = j.optString("modality", ""),
+            displayName = j.optString("display_name", ""),
+            startMs = j.optLong("start_ms", 0L),
+            endMs = j.optLong("end_ms", 0L),
+            durationMs = j.optLong("duration_ms", 0L),
+            score = finalScore,
+            modelId = j.optString("model_id", ""),
+            cosineScore = cosine,
+            zScore = j.optDouble("z_score", 0.0).toFloat(),
+            corpusMean = j.optDouble("corpus_mean", 0.0).toFloat(),
+            corpusStd = j.optDouble("corpus_std", 0.0).toFloat(),
+            corpusSize = j.optInt("corpus_size", 0),
+            lexicalHits = j.optInt("lexical_hits", 0)
+        )
+    }
+
+    fun listIndexedMedia(
+        nativeEngine: NativeEngine,
+        filter: MediaModalityFilter = MediaModalityFilter.ALL,
+        modelId: String = "",
+        limit: Int = 500
+    ): List<IndexedMediaEntry> {
+        return nativeEngine.listIndexedMediaSafe(
+            modalityFilter = filter.sqlFilter,
+            modelId = modelId,
+            limit = limit
+        ).map { j ->
+            IndexedMediaEntry(
+                mediaPath = j.optString("media_path", ""),
+                mediaUri = j.optString("media_uri", ""),
+                modality = j.optString("modality", ""),
+                displayName = j.optString("display_name", ""),
+                durationMs = j.optLong("duration_ms", 0L),
+                modifiedAtSec = j.optLong("modified_at", 0L),
+                segmentCount = j.optInt("segment_count", 1),
+                lastIndexedSec = j.optLong("last_indexed", 0L),
+                modelId = j.optString("model_id", "")
+            )
+        }
+    }
+
     suspend fun searchMediaByText(
         nativeEngine: NativeEngine,
         query: String,
         filter: MediaModalityFilter = MediaModalityFilter.ALL,
-        topK: Int = 8
+        topK: Int = 24
     ): MediaSearchOutcome = withContext(Dispatchers.IO) {
         val modelPath = nativeEngine.resolveEmbeddingModelPath(requireMultimodal = true)
         val modelId = if (modelPath.isNotBlank()) nativeEngine.resolveActiveEmbeddingModelId(modelPath) else ""
         val stats = nativeEngine.getMediaIndexStatsSafe(modelId)
         val totalSegs = stats.optInt("total_segments", 0)
         if (totalSegs == 0) {
-            // Check global stats across any modelId before reporting index empty
             val anyStats = nativeEngine.getMediaIndexStatsSafe("")
             if (anyStats.optInt("total_segments", 0) == 0) {
                 return@withContext MediaSearchOutcome(
@@ -1144,7 +1721,7 @@ object MediaSearchEngine {
             }
         }
 
-        val effectiveModelId = if (stats.optInt("total_segments", 0) > 0) modelId else ""
+        val effectiveModelId = if (totalSegs > 0) modelId else ""
         val qVecs = if (modelPath.isNotBlank() && File(modelPath).exists()) {
             nativeEngine.generateEmbeddingsSubBatched(
                 texts = listOf(query),
@@ -1160,28 +1737,22 @@ object MediaSearchEngine {
             modalityFilter = filter.sqlFilter,
             modelId = effectiveModelId,
             lexicalQuery = query,
-            topK = topK * 3
+            topK = max(topK * 3, 40)
         )
-        val parsed = rawJson.map { j ->
-            MediaSearchResultItem(
-                mediaPath = j.optString("media_path", ""),
-                mediaUri = j.optString("media_uri", ""),
-                modality = j.optString("modality", ""),
-                displayName = j.optString("display_name", ""),
-                startMs = j.optLong("start_ms", 0L),
-                endMs = j.optLong("end_ms", 0L),
-                durationMs = j.optLong("duration_ms", 0L),
-                score = j.optDouble("final_score", j.optDouble("cosine_score", 0.0)).toFloat(),
-                modelId = j.optString("model_id", "")
-            )
-        }
+        val parsed = rawJson.map(::parseMediaSearchMatchJson)
+        val scannedCount = parsed.firstOrNull()?.corpusSize ?: parsed.size
+        val bestRawCosine = parsed.maxOfOrNull { it.cosineScore } ?: 0f
+        val relevant = filterRelevantMediaMatches(parsed, MediaSearchQueryMode.TEXT_TO_MEDIA)
+        val ranked = deduplicateAndRankMediaMatches(relevant, topK = topK)
         MediaSearchOutcome(
             success = true,
             query = query,
             filter = filter,
             modelId = effectiveModelId,
-            results = deduplicateAndRankMediaMatches(parsed, topK = topK),
-            indexEmpty = false
+            results = ranked,
+            indexEmpty = false,
+            scannedCount = scannedCount,
+            bestRejectedScore = if (ranked.isEmpty()) bestRawCosine else 0f
         )
     }
 
@@ -1190,7 +1761,7 @@ object MediaSearchEngine {
         nativeEngine: NativeEngine,
         imageFile: File,
         filter: MediaModalityFilter = MediaModalityFilter.VISUAL,
-        topK: Int = 8
+        topK: Int = 24
     ): MediaSearchOutcome = withContext(Dispatchers.IO) {
         val modelPath = nativeEngine.resolveEmbeddingModelPath(requireMultimodal = true)
         if (modelPath.isBlank() || !File(modelPath).exists()) {
@@ -1244,7 +1815,7 @@ object MediaSearchEngine {
         }
 
         val tmpDir = File(context.cacheDir, "media_emb_query_tmp").apply { mkdirs() }
-        val prepImg = prepareImageForEmbedding(imageFile.absolutePath, "", context, tmpDir, maxSidePx = 768)
+        val prepImg = prepareImageForEmbedding(imageFile.absolutePath, "", context, tmpDir, maxSidePx = PHOTO_MAX_SIDE_PX)
         if (prepImg == null) {
             return@withContext MediaSearchOutcome(
                 success = false,
@@ -1257,19 +1828,19 @@ object MediaSearchEngine {
         return@withContext try {
             val vecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
                 items = listOf(NativeEngine.MultimodalEmbeddingInput("IMAGE_FILE", prepImg.absolutePath)),
-                visionTokensPerImage = 280,
+                visionTokensPerImage = PHOTO_VISION_TOKENS,
                 customEmbPath = modelPath
             )
             val qVec = vecs.firstOrNull()
                 ?: run {
                     val workerDetail = nativeEngine.getLastEmbeddingErrorSafe()
-                    val reasonSuffix = if (workerDetail.isNotBlank()) "\n• Detail: `$workerDetail`" else ""
+                    val reasonSuffix = if (workerDetail.isNotBlank()) "\n• Detail: $workerDetail" else ""
                     return@withContext MediaSearchOutcome(
                         success = false,
                         query = imageFile.name,
                         filter = filter,
                         modelId = modelId,
-                        error = "Vision encoder failed on `$embFileName` while encoding `${imageFile.name}`.$reasonSuffix"
+                        error = "Vision encoder failed on $embFileName while encoding ${imageFile.name}.$reasonSuffix"
                     )
                 }
 
@@ -1278,28 +1849,22 @@ object MediaSearchEngine {
                 modalityFilter = filter.sqlFilter,
                 modelId = "",
                 lexicalQuery = "",
-                topK = topK * 3
+                topK = max(topK * 3, 40)
             )
-            val parsed = rawJson.map { j ->
-                MediaSearchResultItem(
-                    mediaPath = j.optString("media_path", ""),
-                    mediaUri = j.optString("media_uri", ""),
-                    modality = j.optString("modality", ""),
-                    displayName = j.optString("display_name", ""),
-                    startMs = j.optLong("start_ms", 0L),
-                    endMs = j.optLong("end_ms", 0L),
-                    durationMs = j.optLong("duration_ms", 0L),
-                    score = j.optDouble("final_score", j.optDouble("cosine_score", 0.0)).toFloat(),
-                    modelId = j.optString("model_id", "")
-                )
-            }
+            val parsed = rawJson.map(::parseMediaSearchMatchJson)
+            val scannedCount = parsed.firstOrNull()?.corpusSize ?: parsed.size
+            val bestRawCosine = parsed.maxOfOrNull { it.cosineScore } ?: 0f
+            val relevant = filterRelevantMediaMatches(parsed, MediaSearchQueryMode.IMAGE_TO_VISUAL)
+            val ranked = deduplicateAndRankMediaMatches(relevant, topK = topK)
             MediaSearchOutcome(
                 success = true,
                 query = "Similar to ${imageFile.name}",
                 filter = filter,
                 modelId = modelId,
-                results = deduplicateAndRankMediaMatches(parsed, topK = topK),
-                indexEmpty = false
+                results = ranked,
+                indexEmpty = false,
+                scannedCount = scannedCount,
+                bestRejectedScore = if (ranked.isEmpty()) bestRawCosine else 0f
             )
         } finally {
             runCatching { prepImg.delete() }

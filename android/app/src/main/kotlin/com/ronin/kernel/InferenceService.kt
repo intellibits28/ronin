@@ -669,10 +669,22 @@ class InferenceService : Service() {
                 normalize = true,
                 visionTokensPerImage = resolvedTokens
             )
+            val responses = if (preparedInputs.size > 1) {
+                try {
+                    engine.computeEmbeddingBatch(preparedInputs, opts)
+                } catch (batchErr: Throwable) {
+                    Log.w(TAG, "Multimodal computeEmbeddingBatch fallback to single calls: ${batchErr.message}")
+                    preparedInputs.map { single -> engine.computeEmbedding(single, opts) }
+                }
+            } else {
+                listOf(engine.computeEmbedding(preparedInputs[0], opts))
+            }
+            if (responses.size != preparedInputs.size) {
+                throw IllegalStateException("Multimodal batch response size mismatch: ${responses.size} != ${preparedInputs.size}")
+            }
             val out = FloatArray(preparedInputs.size * EMBEDDING_DIM)
-            for (i in preparedInputs.indices) {
-                val resp = engine.computeEmbedding(preparedInputs[i], opts)
-                val rawVec = resp.embedding
+            for (i in responses.indices) {
+                val rawVec = responses[i].embedding
                 if (rawVec.size != EMBEDDING_DIM) {
                     throw IllegalStateException("Multimodal embedding dim mismatch: ${rawVec.size} != $EMBEDDING_DIM")
                 }
