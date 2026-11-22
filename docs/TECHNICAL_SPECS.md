@@ -25,7 +25,7 @@ Major subsystems:
 - `ActiveInferenceCore`: hot-loop Level 1 Variational Free Energy ($F$) calculation (<1 µs latency) with dimensionless Mahalanobis prediction error and clamped precision regularization.
 - `ExpectedFreeEnergyRouter`: Level 2 event-driven Expected Free Energy ($G(\pi)$) policy router (~3 µs latency) over base candidate policies and extended subsystem primitives (`LEXICAL_ONLY`, `RESEARCH_HOP`, `ESCALATE_CLOUD`, `MCP_HITL_CONFIRM`), providing `evaluateRagWakeup`, `evaluateBrainRoute`, and `evaluateResearchHop`.
 - `IntentEngine`: command handling, intent classification, planner wiring, skill registry, and skill execution.
-- `LongTermMemory`: SQLite schema creation, memory APIs, write-time `surprise_score` tagging on `facts`, `computeLexicalFreeEnergy` (Dual-Gate BM25 entropy), FTS5 search, chat history, failure records, and file indexing.
+- `LongTermMemory`: SQLite schema creation, memory APIs, write-time `surprise_score` tagging on `facts`, `computeLexicalFreeEnergy` (Dual-Gate BM25 entropy), FTS5 search, `document_embeddings` Hybrid RRF retrieval, `media_embeddings` atomic storage & modality-filtered 16-byte aligned SIMD cosine search with SafeMode read-only enforcement, chat history, failure records, and file indexing.
 - `CapabilityPolicyEngine`: static capability manifest validator plus a 32-slot sliding-window MCP anomaly ring buffer (`evaluateMcpToolCall`) that escalates `ALLOW` tools to `MCP_HITL_CONFIRM` when contextual surprise $F_{\text{mcp}} > 0.70$.
 - `GraphExecutor`: capability graph execution, Thompson-sampling outcome updates, episode and prediction recording.
 - `AgentScheduler`: priority queue for multi-step agent sessions.
@@ -37,11 +37,13 @@ Major subsystems:
 
 Key Android classes:
 
-- `MainActivity.kt`: Compose UI, Developer HUD with live FEP telemetry, attachment pickers, and high-level interaction surface.
-- `NativeEngine.kt`: JNI facade, service binding, cloud inference, capability callbacks, memory APIs, and native lifecycle.
-- `InferenceService.kt`: foreground service running in `:inference_core`; owns LiteRT-LM engine/conversation lifecycle.
-- `OcrEngine.kt`: On-device text recognition utilizing Tesseract 5.x (`tesseract4android`) with bilingual Myanmar Unicode (`mya.traineddata`) and Latin (`eng.traineddata`) support.
-- `DocumentIntelligence.kt`: Plain text, markdown, and PDF document reader with sliding-window chunker and in-document search.
+- `MainActivity.kt`: Compose UI, Developer HUD with live FEP telemetry, attachment pickers, media search/indexing handlers, contact review flow, and high-level interaction surface.
+- `NativeEngine.kt`: JNI facade, service binding, cloud inference, capability callbacks, multimodal embedding IPC wrappers, memory/media vector APIs, and native lifecycle.
+- `InferenceService.kt`: foreground service running in `:inference_core`; owns LiteRT-LM `0.19.1` `Engine` (Gemma 4) and cached `EmbeddingEngine` (`EmbeddingGemma 2` with `InputData.Text / Image / Audio`, `ModelInfo.from(...)`, and asymmetric task formatting).
+- `MediaSearchEngine.kt` & `MediaSearchUiComponents.kt`: On-device Photo/Audio/Video discovery, EXIF image resize, `MediaExtractor`/`MediaCodec` 16 kHz mono WAV extraction, adaptive video keyframe sampling, thermal/RAM guardrails, `MediaSearchResultListCard`, timestamp-seeking `MediaMomentPlayerDialog`, and Settings Section `4.6`.
+- `OcrEngine.kt` & `OcrImagePreprocessor.kt`: On-device text recognition utilizing Tesseract 5.x (`tesseract4android`) with bilingual Myanmar Unicode (`mya.traineddata`) and Latin (`eng.traineddata`) support plus mobile screenshot preprocessing.
+- `ContactCardParser.kt`, `ContactManager.kt` & `ContactUiComponents.kt`: Bilingual business card / OCR contact parser, existing-contact duplicate matching, Privacy Shield PII biometric unlock, and biometric-confirmed save/update flow (`/contact`).
+- `DocumentIntelligence.kt`: Plain text, markdown, and PDF document reader with sliding-window chunker, task-prefixed `EmbeddingGemma 2` indexing (`TASK_DOCUMENT`/`TASK_QUERY`), and Hybrid RRF in-document search.
 - `PrivacyShield.kt`: Real-time on-device regex and token PII redactor (Myanmar NRC, phone, email, bank accounts).
 - `PrivacyVault.kt`: AES-GCM-256 encrypted sandbox storage for private documents.
 - `SecurityProvider.kt`: Android-side secret encryption/decryption provider.
@@ -55,17 +57,16 @@ android:process=":inference_core"
 
 ## Inference
 
-Current local inference path:
+Current local inference and embedding paths (`litertlm-android:0.19.1`):
 
-1. User selects/imports a `.litertlm` model.
+1. User selects/imports a `.litertlm` model or downloads from Hugging Face Model Hub (`Gemma 4` reasoning or `EmbeddingGemma 2` `270M`/`740M`).
 2. `NativeEngine.loadModel(path)` waits for `InferenceService`.
-3. `InferenceService.loadModel(path)` creates LiteRT-LM `EngineConfig`.
-4. Current source sets `maxNumTokens = 1536`.
-5. `NativeEngine.notifyModelLoadedNative(path)` notifies native state after successful worker hydration.
-6. Native planner or chat skill calls back into Kotlin through `runNeuralReasoning`.
-7. `NativeEngine` streams over AIDL and forwards token fragments to UI flow.
+3. `InferenceService.loadModel(path)` creates LiteRT-LM `EngineConfig` (currently `maxNumTokens = 1536`).
+4. `NativeEngine.notifyModelLoadedNative(path)` notifies native state after successful worker hydration.
+5. Native planner or chat skill calls back into Kotlin through `runNeuralReasoning`, streaming tokens over `IInferenceCallback` AIDL.
+6. For RAG and multimodal media search, `IInferenceService` (`generateEmbeddingsBatchWithTask`, `generateMultimodalEmbeddingsBatch`, `inspectEmbeddingModel`, `releaseEmbeddingEngine`, synthesized via `generateTermuxAidlStubs` on Termux builds) passes file paths rather than raw media buffers over Binder to the cached `EmbeddingEngine`.
 
-The service includes RAM-pressure guards, conversation reset, model auto-rehydration after unstable failures, and summarization/reset support.
+The service includes RAM-pressure guards (`< 2.2 GB` frees the active reasoning `Engine` before loading `EmbeddingGemma 2`), conversation reset, model auto-rehydration after unstable failures, and summarization/reset support.
 
 ## Persistence
 
@@ -78,13 +79,14 @@ Current native memory database schema is defined in `LongTermMemory::initSchema(
 - `vault`
 - `episodes` and `episodes_fts`
 - `document_embeddings` and `document_chunks_fts` (External-content FTS5 with `ai`/`ad`/`au` sync triggers and `UNIQUE(doc_path, model_id, chunk_index)` multi-model coexistence)
+- `media_embeddings` (768D BLOB segments keyed by `UNIQUE(media_path, model_id, modality, segment_index)` storing modality, `start_ms`/`end_ms`, `duration_ms`, `modified_at`, and lookup indexes `idx_media_emb_path_model`, `idx_media_emb_modality_model`)
 - `predictions`
 - `chat_history`
 - `file_index`
 - `audit`
 - `failures`
 
-Schema changes are managed through the native `schema_version` table (currently v3). Current migrations archive legacy tables safely, maintain compound indexes (`idx_doc_path_model`), rebuild FTS content, and keep notes, episodes, and document chunks FTS rows synchronized on insert, update, and delete.
+Schema changes are managed through the native `schema_version` table (currently v3, keeping backward compatibility with v3 installs while adding `media_embeddings` via `CREATE TABLE IF NOT EXISTS`). Current migrations archive legacy tables safely, maintain compound indexes (`idx_doc_path_model`, `idx_media_emb_path_model`, `idx_media_emb_modality_model`), rebuild FTS content, and keep notes, episodes, and document chunks FTS rows synchronized on insert, update, and delete.
 
 ## Capabilities And Safety
 

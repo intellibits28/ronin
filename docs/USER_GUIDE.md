@@ -6,7 +6,7 @@
 
 Welcome to the official user manual for **Ronin Kernel (v5.1.1 Sovereign Tactical Upgrade)** — a sovereign, on-device cognitive AI agent, Hybrid RAG document assistant, and Structural Health Monitoring (SHM) runtime for Android.
 
-Ronin Kernel ၏ အသုံးပြုသူလက်စွဲစာအုပ်မှ ကြိုဆိုပါသည်။ ဤလမ်းညွှန်တွင် Ronin APK ဒေါင်းလုဒ်ရယူထည့်သွင်းခြင်း၊ On-device Brain (Gemma 4 & EmbeddingGemma 2) တင်သွင်းခြင်း၊ Cloud Providers ချိတ်ဆက်ခြင်း၊ ဝဘ်သုတေသနပြုလုပ်ခြင်း (`/research`)၊ စာရွက်စာတမ်း Hybrid RRF ရှာဖွေခြင်း (`/docsearch`)၊ Termux MCP Bridge (`/mcp`) ချိတ်ဆက်ခြင်း၊ အဆောက်အအုံတုန်ခါမှု တိုင်းတာခြင်း (SHM) နှင့် လုံခြုံစိတ်ချရသော `.roninvault` Backup ရယူနည်းများကို အသေးစိတ် ရှင်းပြထားပါသည်။
+Ronin Kernel ၏ အသုံးပြုသူလက်စွဲစာအုပ်မှ ကြိုဆိုပါသည်။ ဤလမ်းညွှန်တွင် Ronin APK ဒေါင်းလုဒ်ရယူထည့်သွင်းခြင်း၊ On-device Brain (Gemma 4 & LiteRT-LM `0.19.1` Multimodal `EmbeddingGemma 2`) တင်သွင်းခြင်း၊ Cloud Providers ချိတ်ဆက်ခြင်း၊ ဝဘ်သုတေသနပြုလုပ်ခြင်း (`/research`)၊ စာရွက်စာတမ်း Hybrid RRF ရှာဖွေခြင်း (`/docsearch`)၊ ဓာတ်ပုံ/အသံ/ဗီဒီယို Multimodal ရှာဖွေခြင်း (`/mediaindex`, `/mediasearch`)၊ OCR Business Card မှ Contact သိမ်းဆည်းခြင်း (`/contact`)၊ Termux MCP Bridge (`/mcp`) ချိတ်ဆက်ခြင်း၊ အဆောက်အအုံတုန်ခါမှု တိုင်းတာခြင်း (SHM) နှင့် လုံခြုံစိတ်ချရသော `.roninvault` Backup ရယူနည်းများကို အသေးစိတ် ရှင်းပြထားပါသည်။
 
 ---
 
@@ -28,6 +28,7 @@ Ronin Kernel ၏ အသုံးပြုသူလက်စွဲစာအုပ
 14. [မကြာခဏမေးလေ့ရှိသော မေးခွန်းများနှင့် ဖြေရှင်းနည်းများ (FAQ & Troubleshooting)](#၁၄-မကြာခဏမေးလေ့ရှိသော-မေးခွန်းများနှင့်-ဖြေရှင်းနည်းများ-faq--troubleshooting)
 15. [လုံခြုံရေးနှင့် တည်ငြိမ်မှု အဆင့်မြှင့်တင်ချက်များ (Security & Stability Updates)](#၁၅-လုံခြုံရေးနှင့်-တည်ငြိမ်မှု-အဆင့်မြှင့်တင်ချက်များ-security--stability-updates)
 16. [Ronin v5.1.1 Sovereign Tactical Upgrade ပြည့်စုံသော လမ်းညွှန် (v5.1.1 Tactical Upgrade Manual)](#၁၆-ronin-v511-sovereign-tactical-upgrade-ပြည့်စုံသော-လမ်းညွှန်-v511-tactical-upgrade-manual)
+    - [၁၆.၅ ဖုန်းတွင်း ဓာတ်ပုံ၊ အသံနှင့် ဗီဒီယိုများကို Multimodal ရှာဖွေခြင်း (`/mediaindex` & `/mediasearch`)](#၁၆၅-ဖုန်းတွင်း-ဓာတ်ပုံ-အသံနှင့်-ဗီဒီယိုများကို-multimodal-ရှာဖွေခြင်း-mediaindex--mediasearch)
 
 ---
 
@@ -36,8 +37,10 @@ Ronin Kernel ၏ အသုံးပြုသူလက်စွဲစာအုပ
 Ronin သည် အင်တာနက်မလိုဘဲ ဖုန်းထဲတွင် သီးသန့်အလုပ်လုပ်နိုင်သော Native C++20 Cognitive Microkernel ဖြစ်ပြီး Android စနစ်နှင့် တိုက်ရိုက် ပေါင်းစပ်ထားပါသည်။
 
 ### အဓိက စွမ်းဆောင်ရည်များ (Core Capabilities):
-* **On-Device Local AI & EmbeddingGemma 2**: Google LiteRT-LM (Gemma 4 E2B & EmbeddingGemma 2) မော်ဒယ်များကို ဖုန်းထဲတွင် offline အပြည့်အဝ run နိုင်ခြင်း။
-* **Hybrid RRF Document RAG (`/docsearch`)**: SQLite FTS5 BM25 (Lexical) + 768D SIMD Cosine Similarity (Semantic) တို့ကို Reciprocal Rank Fusion ($k=60$) ဖြင့် ပေါင်းစပ်၍ စာအုပ်/စာတမ်းကြီးများထဲမှ အပိုဒ်များကို တိကျစွာ ရှာဖွေပေးနိုင်ခြင်း။
+* **On-Device Local AI & LiteRT-LM `0.19.1` Multimodal `EmbeddingGemma 2`**: Google LiteRT-LM `0.19.1` (`Gemma 4 E2B` + official `EmbeddingEngine` for `EmbeddingGemma 2`) မော်ဒယ်များကို ဖုန်းထဲတွင် offline အပြည့်အဝ run နိုင်ခြင်း။
+* **Hybrid RRF Document RAG (`/docsearch`)**: SQLite FTS5 BM25 (Lexical) + 768D SIMD Cosine Similarity (Semantic — `EmbeddingGemma 2` ၏ official `task: search result | query:` / `title: ... | text:` prefix များအသုံးပြု) တို့ကို Reciprocal Rank Fusion ($k=60$) ဖြင့် ပေါင်းစပ်၍ စာအုပ်/စာတမ်းကြီးများထဲမှ အပိုဒ်များကို တိကျစွာ ရှာဖွေပေးနိုင်ခြင်း။
+* **Multimodal Media Search (`/mediaindex`, `/mediasearch`)**: `EmbeddingGemma 2 740M (Omnimodal)` ဖြင့် ဖုန်းတွင်းရှိ ဓာတ်ပုံ၊ အသံဖိုင် (16 kHz mono WAV) နှင့် ဗီဒီယိုအခိုက်အတန့် (keyframes + soundtrack) များကို C++20 `media_embeddings` vector store ထဲတွင် Index လုပ်ပြီး မြန်မာ/အင်္ဂလိပ် စာသား သို့မဟုတ် 📎 ပုံတူရှာဖွေမှုဖြင့် Offline ရှာဖွေကာ သက်ဆိုင်ရာ Timestamp သို့ တိုက်ရိုက်ဖွင့်ကြည့်နိုင်ခြင်း။
+* **Business Card & Contact Card OCR (`/contact`)**: ဓာတ်ပုံ/Screenshot များကို Preprocessing + Tesseract OCR ဖြင့် ဖတ်ရှုပြီး နာမည်၊ ဖုန်းနံပါတ်များ၊ Email နှင့် ကုမ္ပဏီကို ထုတ်ယူကာ Privacy Shield PII Lock နှင့် Biometric အတည်ပြုချက်ဖြင့် New Contact ထည့်သွင်းခြင်း သို့မဟုတ် ရှိပြီးသား Contact ထဲ Update လုပ်ခြင်း။
 * **Privacy-Aware Local Research (`/research`)**: DuckDuckGo Lite (`POST`) မှ ရှာဖွေကာ ဖုန်းတွင်းရှိ Gemma 4 E2B ဖြင့် 100% Local Synthesis ပြုလုပ်ပြီး Inline Citations `[1][2][3]` ဖြင့် အစီရင်ခံစာ ထုတ်ပေးနိုင်ခြင်း။
 * **Authenticated Termux MCP Bridge (`/mcp`)**: HMAC-SHA256 + Timestamp + Nonce Anti-Replay လုံခြုံရေးဖြင့် Termux ရှိ Developer Tools များကို ချိတ်ဆက်အသုံးပြုနိုင်ခြင်း။
 * **Hybrid Cloud Fallback**: Gemini, OpenAI, OpenRouter နှင့် မိမိစိတ်ကြိုက် Cloud API များကို အချိန်မရွေး ပြောင်းလဲအသုံးပြုနိုင်ခြင်း။
@@ -63,7 +66,8 @@ App ကို ပထမဆုံးဖွင့်သည့်အခါ အေ�
 * **Location (GPS)**: အနီးအနား တည်နေရာနှင့် မြေပုံအချက်အလက် ရယူရန်။
 * **Camera / Flashlight**: ဓာတ်မီး အဖွင့်/အပိတ် ထိန်းချုပ်ရန်။
 * **Storage / All Files Access**: ဒေသတွင်း ဖိုင်များကို ရှာဖွေနိုင်ရန်နှင့် Brain Model (.litertlm) များ တင်သွင်းရန်။
-* **SMS / Contacts**: မက်ဆေ့ခ်ျပို့ခြင်းနှင့် ဖုန်းနံပါတ်ရှာဖွေရန် (ခွင့်ပြုချက်တောင်းခံသည့်အခါ အမြဲတမ်း အတည်ပြုချက် မေးမြန်းပါမည်)။
+* **Media Access (Android 13+ — `READ_MEDIA_IMAGES`, `READ_MEDIA_AUDIO`, `READ_MEDIA_VIDEO`)**: ဖုန်းတွင်းရှိ ဓာတ်ပုံ၊ အသံဖိုင်နှင့် ဗီဒီယိုများကို EmbeddingGemma 2 ဖြင့် Index/Search ပြုလုပ်လိုသည့်အခါ ခွင့်ပြုပေးရန် (Android 12 နှင့်အောက်တွင် `READ_EXTERNAL_STORAGE` ကို အသုံးပြုပါသည်)။
+* **SMS / Contacts (`READ_CONTACTS`, `WRITE_CONTACTS`)**: မက်ဆေ့ခ်ျပို့ခြင်း၊ ဖုန်းနံပါတ်ရှာဖွေခြင်းနှင့် OCR Business Card မှ New Contact ထည့်သွင်း/Update ပြုလုပ်ရန် (ပြင်ဆင်ရေးသွင်းမှုတိုင်းတွင် Biometric / HITL အတည်ပြုချက် အမြဲတောင်းခံပါမည်)။
 
 ---
 
@@ -190,12 +194,22 @@ Ronin အား ဖုန်းတွင်း လုပ်ဆောင်ချ
 Ronin သည် ဖုန်းတွင်းရှိ စာရွက်စာတမ်းများနှင့် ဓာတ်ပုံများကို ဖတ်ရှုနိုင်သော **Personal Document AI Assistant** အဖြစ် အဆင့်မြှင့်တင်ထားပါသည်။
 
 ### 📎 Attachment Picker ဖြင့် ဖိုင်နှင့် ဓာတ်ပုံ ရွေးချယ်ခြင်း
-Chat Input Bar ဘေးရှိ **📎 (Clip Icon)** ခလုတ်ကို နှိပ်လိုက်ပါက အောက်ပါ ရွေးချယ်စရာ ၂ ခု ပေါ်လာပါမည်-
+Chat Input Bar ဘေးရှိ **📎 (Clip Icon)** ခလုတ်ကို နှိပ်လိုက်ပါက အောက်ပါ ရွေးချယ်စရာ ၃ ခု ပေါ်လာပါမည်-
 1. **🖼️ Gallery / Photos (OCR)**:
-   - Android System Photo Picker (`PickVisualMedia`) ကို အသုံးပြုထားသဖြင့် `READ_MEDIA_IMAGES` သို့မဟုတ် Storage Permission ပေးစရာ မလိုဘဲ System Gallery မှ ဓာတ်ပုံများကို လုံခြုံစွာ ရွေးချယ်နိုင်ပါသည်။
-   - ဘောက်ချာ၊ ပြေစာ၊ မှတ်ပုံတင်၊ ဆိုင်းဘုတ် သို့မဟုတ် စာရွက်စာတမ်း ဓာတ်ပုံများကို ရွေးချယ်လိုက်သည်နှင့် **Tesseract 5.x OCR Engine (`tesseract4android` / `mya.traineddata` + `eng.traineddata`)** ဖြင့် မြန်မာစာ (Unicode) နှင့် အင်္ဂလိပ်စာသားများကို အလိုအလျောက် စက္ကန့်ပိုင်းအတွင်း ဖတ်ရှုထုတ်ယူ (OCR) ပေးပါမည်။
+   - Android System Photo Picker (`PickVisualMedia`) ကို အသုံးပြုထားသဖြင့် OCR စာသားဖတ်ရန်အတွက် Storage Permission ပေးစရာ မလိုဘဲ System Gallery မှ ဓာတ်ပုံများကို လုံခြုံစွာ ရွေးချယ်နိုင်ပါသည်။
+   - `OcrImagePreprocessor` ဖြင့် Dark-Mode UI Screenshot များကို အလိုအလျောက် အဖြူ/အမည်း ပြောင်းလဲခြင်း၊ Contrast မြှင့်ခြင်းနှင့် ကြည်လင်အောင် ချဲ့ပေးပြီးနောက် **Tesseract 5.x OCR Engine (`tesseract4android` / `mya.traineddata` + `eng.traineddata`)** ဖြင့် မြန်မာစာ (Unicode) နှင့် အင်္ဂလိပ်စာသားများကို အလိုအလျောက် ဖတ်ရှုထုတ်ယူပေးပါမည်။
 2. **📁 Browse Documents**:
    - Android Storage Access Framework (`OpenDocument`) ဖြင့် ဖုန်း၏ Internal Storage, SD Card, Download Folder သို့မဟုတ် Google Drive ထဲရှိ PDF, Markdown, Text, Code (`.pdf`, `.md`, `.txt`, `.json`, `.py`, `.doc`) စသည့် ဖိုင်များကို စိတ်ကြိုက် ရှာဖွေရွေးချယ်နိုင်ပါသည်။
+3. **🔍 Find Similar Photos / Videos (EmbeddingGemma 2)**:
+   - ဓာတ်ပုံတစ်ပုံကို ရွေးချယ်ပြီး Index လုပ်ထားသော ဖုန်းတွင်း ဓာတ်ပုံနှင့် ဗီဒီယိုအခိုက်အတန့်များထဲမှ အလားတူပုံများ (Reverse Visual Search) ကို Offline ရှာဖွေပေးပါသည်။
+
+---
+
+### Business Card & Contact Card OCR (`/contact`)
+Screenshot သို့မဟုတ် Business Card ဓာတ်ပုံကို OCR ဖတ်လိုက်သည့်အခါ ဖုန်းနံပါတ် သို့မဟုတ် Email ပါဝင်နေပါက Ronin က `ContactCardParser` ဖြင့် နာမည်၊ ဖုန်းနံပါတ်တစ်ခုထက်မက (Mobile/Work/Fax), Email, ကုမ္ပဏီနှင့် ရာထူးတို့ကို အလိုအလျောက် စုစည်းထုတ်ယူပေးပါသည်-
+* **Privacy Shield PII Unlock (`UNLOCK ORIGINAL TEXT`)**: Privacy Shield ဖွင့်ထားချိန် `[PHONE_REDACTED]` / `[EMAIL_REDACTED]` ဟု ဖုံးကွယ်ပြသနေသော်လည်း မူရင်း OCR စာသားကို ကြည့်လိုပါက Biometric (လက်ဗွေ/မျက်နှာ) အတည်ပြုချက်ဖြင့် ယာယီပြန်ဖွင့်ကြည့်နိုင်ပါသည်။
+* **New Contact ထည့်သွင်းခြင်း / ရှိပြီးသားထဲ Update လုပ်ခြင်း**: `ContactManager` သည် ဖုန်း Contact List ထဲတွင် အလားတူနာမည် သို့မဟုတ် ဖုန်းနံပါတ် ရှိပြီးသား ဟုတ်/မဟုတ် စစ်ဆေးပြီး Interactive `Save New Contact` / `Update Existing Contact` Review Card ကို ပြသပေးပါမည်။ အသုံးပြုသူက နာမည်နှင့် နံပါတ်များကို ပြင်ဆင်အတည်ပြုပြီး **Biometric Confirmation** အောင်မြင်မှသာ Contacts ထဲသို့ ရေးသွင်းပေးပါမည်။
+* **Slash Command ဖြင့်လည်း တိုက်ရိုက်သုံးနိုင်ခြင်း**: `/contact Ko Kyaw Zin 09799123456 09420987654` ဟု ရိုက်ထည့်၍လည်း Contact Review Card ကို တိုက်ရိုက် ဖွင့်နိုင်ပါသည်။
 
 ---
 
@@ -219,10 +233,13 @@ Chat Input Bar ဘေးရှိ **📎 (Clip Icon)** ခလုတ်ကို 
 
 ---
 
-### အမြန်သုံး စာရွက်စာတမ်း Command များ
+### အမြန်သုံး စာရွက်စာတမ်း၊ Media နှင့် Contact Command များ
 * `/files <keyword>` သို့မဟုတ် `/search <keyword>`: ဖုန်းထဲရှိ ဖိုင်အမည်များကို SQLite FTS5 စနစ်ဖြင့် အလွန်မြန်ဆန်စွာ ရှာဖွေပေးပြီး `FileResultCard` များအဖြစ် ပြသပေးခြင်း။
 * `/summarize <file_path>`: သတ်မှတ်ထားသော ဖိုင်ကို ဖတ်ရှုကာ အနှစ်ချုပ် ချက်ချင်း ပြုလုပ်ပေးခြင်း။
 * `/docsearch <file_path> <query>`: စာမျက်နှာ ရာချီရှိသော စာအုပ်/စာချုပ်ကြီးများထဲမှ မိမိသိလိုသော စကားလုံး/အကြောင်းအရာ ပါဝင်သည့် အပိုဒ်များကိုသာ ကွက်၍ ရှာဖွေပေးခြင်း။
+* `/mediaindex [all|photos|audio|video|status|clear]`: ဖုန်းတွင်းရှိ ဓာတ်ပုံ၊ အသံဖိုင်နှင့် ဗီဒီယိုများကို `EmbeddingGemma 2 740M` ဖြင့် Index လုပ်ခြင်း/စစ်ဆေးခြင်း။
+* `/mediasearch [photo|audio|video] <query>`: ဓာတ်ပုံ၊ အသံနှင့် ဗီဒီယိုအခိုက်အတန့်များကို စာသား (သို့မဟုတ် `--image <path>`) ဖြင့် ရှာဖွေခြင်း။
+* `/contact [info]`: OCR သို့မဟုတ် စာသားမှ Contact Card ထုတ်ယူပြီး New Contact ထည့်သွင်း/Update ပြုလုပ်ခြင်း။
 
 ---
 
@@ -381,6 +398,9 @@ Chat Box ထဲတွင် အောက်ပါ command များကို 
 * `/status`: စနစ်၏ လက်ရှိ ကျန်းမာရေးအခြေအနေ၊ CPU အပူချိန်နှင့် RAM အသုံးပြုမှုကို စစ်ဆေးခြင်း။
 * `/research <query>`: စက်တွင်း Local AI (Gemma 4 E2B) နှင့် DuckDuckGo Lite ကို အသုံးပြု၍ သီးသန့်လုံခြုံသော ဝဘ်သုတေသနပြုလုပ်ပြီး Source Citations ပါဝင်သည့် အနှစ်ချုပ် ထုတ်ယူပေးခြင်း။
 * `/docsearch <path> <query>`: စာမျက်နှာ ရာချီရှိသော စာအုပ်/စာချုပ်ကြီးများထဲမှ မိမိသိလိုသော အပိုဒ်များကို SQLite FTS5 (Lexical) + 768D Cosine Similarity (Semantic) ပေါင်းစပ်ထားသော **Hybrid RRF ($k=60$)** ဖြင့် ရှာဖွေပေးခြင်း။
+* `/mediaindex [all|photos|audio|video|status|clear]`: ဖုန်းတွင်းရှိ ဓာတ်ပုံ၊ အသံနှင့် ဗီဒီယိုများကို `EmbeddingGemma 2 740M` ဖြင့် Local Index ပြုလုပ်ခြင်း၊ Index အခြေအနေ (`status`) ကြည့်ရှုခြင်း သို့မဟုတ် ရှင်းလင်းခြင်း (`clear`)။
+* `/mediasearch [photo|audio|video] <query>`: Index လုပ်ထားသော ဓာတ်ပုံ၊ အသံနှင့် ဗီဒီယိုအခိုက်အတန့်များကို စာသားဖြင့် ရှာဖွေခြင်း (သို့မဟုတ် `/mediasearch --image <path>` ဖြင့် ပုံတူရှာဖွေခြင်း)။
+* `/contact [info]`: OCR သို့မဟုတ် စာသားမှ Contact Card ထုတ်ယူပြီး New Contact / Existing Contact Update Card ကို ဖွင့်လှစ်ခြင်း။
 * `/files <name>`: ဖုန်းထဲရှိ ဖိုင်အမည်များကို SQLite FTS5 အမြန်နှုန်းဖြင့် ရှာဖွေပြီး `FileResultCard` ပြသပေးခြင်း။
 * `/summarize <path>`: သတ်မှတ်ထားသော ဖိုင်ကို Gemma 4 ဖြင့် တိုက်ရိုက် အကျဉ်းချုပ်ခိုင်းခြင်း။
 * `/mcp status`: Termux Local MCP Bridge ချိတ်ဆက်မှု အခြေအနေ စစ်ဆေးခြင်း။
@@ -452,21 +472,22 @@ Ronin v5.1.1 သည် Native Kernel ၏ တည်ငြိမ်မှု၊ �
 
 ---
 
-### ၁၆.၂ On-Demand `EmbeddingGemma 2` & Hybrid RAG (`/docsearch`)
+### ၁၆.၂ On-Demand `EmbeddingGemma 2` & Hybrid RAG (`/docsearch`, LiteRT-LM `0.19.1`)
 
-Ronin v5.1.1 တွင် စာအုပ်များ၊ စာတမ်းများနှင့် စာချုပ်ကြီးများကို အင်တာနက်မလိုဘဲ ဖုန်းတွင်း၌ပင် အမြန်ဆုံး ရှာဖွေနိုင်ရန် **On-Demand EmbeddingGemma 2** နှင့် **Hybrid Reciprocal Rank Fusion (RRF)** စနစ်ကို တပ်ဆင်ထားပါသည်။
+Ronin တွင် **LiteRT-LM Android SDK `0.19.1`** (`EmbeddingEngine`, `ModelInfo.from(...)`, `InputData.Text / Image / Audio`) ကို အသုံးပြု၍ စာအုပ်များ၊ စာတမ်းများနှင့် စာချုပ်ကြီးများကို အင်တာနက်မလိုဘဲ ဖုန်းတွင်း၌ပင် အမြန်ဆုံး ရှာဖွေနိုင်ရန် **On-Demand EmbeddingGemma 2** နှင့် **Hybrid Reciprocal Rank Fusion (RRF)** စနစ်ကို တပ်ဆင်ထားပါသည်။
 
-#### (က) စိတ်ကြိုက် ရွေးချယ်နိုင်သော Model Tier ၃ မျိုး (3 Model Tiers):
-1. **Default Tier — `EmbeddingGemma-2-270M` (~165 MB)**:
-   - စာသားသက်သန့် (Text-only) Embedding Model ဖြစ်ပြီး 6GB မှ 8GB RAM ရှိသော ဖုန်းများအတွက် အထူးသင့်လျော်ပါသည်။
-   - RAM အသုံးပြုမှု အလွန်နည်းပါးပြီး စာမျက်နှာ ထောင်ချီရှိသော စာအုပ်များကို လျင်မြန်စွာ Vector Chunks အဖြစ် ပြောင်းလဲပေးနိုင်ပါသည်။
-2. **Optional Tier — `EmbeddingGemma-2-440M` (~280 MB)**:
-   - စာသားအပြင် ရုပ်ပုံနှင့် ပုံကြမ်းများ (Text + Vision) ပါဝင်သော စာတမ်းများအတွက် Multimodal Embedding Model ဖြစ်ပါသည်။
-3. **Optional Tier — `EmbeddingGemma-2-740M` (~460 MB)**:
-   - ရှုပ်ထွေးသော စာတမ်းကြီးများ၊ ဥပဒေစာအုပ်များနှင့် သုတေသနစာတမ်းများအတွက် တိကျမှု အမြင့်ဆုံး Full Multimodal Embedding Model ဖြစ်ပါသည်။
+#### (က) Model Hub ရှိ Curated EmbeddingGemma 2 Tiers နှင့် Official Prefixes:
+1. **`EmbeddingGemma-2-270M` (`embeddinggemma-2-text-270m.litertlm`, ~157 MB) — Text-Only RAG**:
+   - စာသားသက်သန့် (Text-only) 768D Embedding Model ဖြစ်ပြီး RAM 3GB–6GB ရှိသော ဖုန်းများတွင် `/docsearch` စာအုပ်နှင့် စာရွက်စာတမ်း ရှာဖွေမှုအတွက် အထူးသင့်လျော်ပါသည်။
+   - *(မှတ်ချက် - `270M` သည် Text-Only မော်ဒယ် ဖြစ်သောကြောင့် ဓာတ်ပုံ/အသံ/ဗီဒီယို ရှာဖွေမှုအတွက် `740M Omnimodal` ကို ဒေါင်းလုဒ်ရယူရပါမည်။)*
+2. **`EmbeddingGemma-2-740M` (`embeddinggemma-2-740m.litertlm`, ~462 MB) — Full Omnimodal (Recommended 6GB+ RAM)**:
+   - စာသားအပြင် ရုပ်ပုံ (Vision) နှင့် အသံ (Audio) Encoder များ အစုံအလင် ပါဝင်သည့် 768D Unified Vector Space မော်ဒယ်ဖြစ်ပြီး စာတမ်း RAG (`/docsearch`) သာမက ဖုန်းတွင်း ဓာတ်ပုံ/အသံ/ဗီဒီယို ရှာဖွေမှု (`/mediaindex`, `/mediasearch`) ကိုပါ တစ်ပြိုင်နက် လုပ်ဆောင်ပေးနိုင်ပါသည်။
+   - *(Optional `EmbeddingGemma-2-440M` `.litertlm` ဖိုင်များကိုလည်း Local Import ဖြင့် ထည့်သွင်းအသုံးပြုနိုင်ပါသည်။)*
+3. **Asymmetric Text Task Prefixes (`InferenceService.formatForEmbeddingGemma2`)**:
+   - `/docsearch` တွင် စာပိုဒ်များကို Index လုပ်သည့်အခါ official document prefix (`title: <file_name> | text: <chunk>`) ကိုလည်းကောင်း၊ မေးခွန်းရှာဖွေသည့်အခါ official query prefix (`task: search result | query: <query>`) ကိုလည်းကောင်း အလိုအလျောက် တပ်ဆင်ပေးသဖြင့် Retrieval တိကျမှု ပိုမိုမြင့်မားပါသည်။ *(ဓာတ်ပုံ၊ ဗီဒီယို frame နှင့် အသံဖိုင် input များအတွက်မူ Text prefix မတပ်ဘဲ Raw Vision/Audio Input များကို တိုက်ရိုက် ထည့်သွင်းတွက်ချက်ပါသည်။)*
 
 #### (ခ) Model တင်သွင်းခြင်းနှင့် အလိုအလျောက် ပူးတွဲတည်ရှိနိုင်မှု (Multi-Model Coexistence):
-* **တင်သွင်းနည်း**: Settings > Section 4 (Local Brain) သို့သွားပြီး **Import Brain (.litertlm)** မှတစ်ဆင့် `.litertlm` မော်ဒယ်ဖိုင်ကို ရွေးချယ်ပေးနိုင်ပါသည်။
+* **တင်သွင်းနည်း**: **Settings > Hugging Face Model Hub** မှ Download ဆွဲခြင်း သို့မဟုတ် **Settings > Section 4 (Local Brain) > Import Brain (.litertlm)** မှတစ်ဆင့် ဖုန်းတွင်းရှိ `.litertlm` မော်ဒယ်ဖိုင်ကို ရွေးချယ်တင်သွင်းနိုင်ပါသည်။
 * **Multi-Model Isolation**: SQLite Database တွင် `UNIQUE(doc_path, model_id, chunk_index)` စနစ် သုံးထားသောကြောင့် မော်ဒယ်တစ်ခုမှ တစ်ခုသို့ ပြောင်းလဲအသုံးပြုသော်လည်း ယခင်မော်ဒယ်ဖြင့် တွက်ထားသော Embeddings များ ပျက်စီးမသွားဘဲ သီးခြားစီ အတူတကွ တည်ရှိနေပါမည်။
 * **Automatic Fallback (Lexical + MyanmarSegmenter)**:
   - ဖုန်းတွင် Embedding Model မတင်ရသေးသည့်အခါ သို့မဟုတ် RAM ချွေတာလိုသည့်အခါ `/docsearch` သည် Native C++ `MyanmarSegmenter` စကားလုံးဖြတ်စနစ်နှင့် **SQLite FTS5 BM25 Lexical Ranking** သို့ အလိုအလျောက် (Zero Crash / Zero Error) ပြောင်းလဲအလုပ်လုပ်ပေးပါသည်။
@@ -476,8 +497,8 @@ Ronin v5.1.1 တွင် စာအုပ်များ၊ စာတမ်း�
   ```text
   /docsearch /sdcard/Documents/contract.pdf "လျှို့ဝှက်ချက် ထိန်းသိမ်းခြင်း စည်းမျဉ်း"
   ```
-* **16-Chunk Sub-Batching**: Binder IPC Buffer (1 MB Limit) မပြည့်စေရန် Android Service နှင့် C++ Kernel ကြားတွင် စာပိုဒ် (Chunks) များကို Mutex-guarded sub-batching စနစ်ဖြင့် တစ်ကြိမ်လျှင် ၁၆ ပိုဒ်စီသာ စနစ်တကျ ပို့ဆောင်တွက်ချက်ပါသည်။
-* **SIMD 16-Byte Aligned Dot Product**: ARM NEON အထူးပြု စနစ်ဖြင့် Vector Cosine Similarity ကို အမြန်ဆုံး တွက်ချက်ပြီး Lexical Score နှင့် ပေါင်းစပ်ကာ အသင့်တော်ဆုံး စာပိုဒ်များကို ထုတ်ပေးပါသည်။
+* **16-Chunk Sub-Batching & RAM Guard**: Binder IPC Buffer မပြည့်စေရန် Android Service နှင့် C++ Kernel ကြားတွင် စာပိုဒ် (Chunks) များကို Mutex-guarded sub-batching စနစ်ဖြင့် တစ်ကြိမ်လျှင် ၁၆ ပိုဒ် (128 KB UTF-8 budget) စီသာ ပို့ဆောင်တွက်ချက်ပြီး၊ Free RAM `< 2.2 GB` ဖြစ်နေပါက `EmbeddingEngine` မတင်မီ Active Reasoning `Engine` ကို အလိုအလျောက် ယာယီဖယ်ရှားပေးပါသည်။
+* **SIMD 16-Byte Aligned Dot Product**: ARM NEON/SIMD 16-byte aligned dot product စနစ်ဖြင့် 768D Vector Cosine Similarity ကို အမြန်ဆုံး တွက်ချက်ပြီး Lexical Score နှင့် ပေါင်းစပ်ကာ အသင့်တော်ဆုံး စာပိုဒ်များကို ထုတ်ပေးပါသည်။
 
 ---
 
@@ -561,3 +582,52 @@ Android ၏ စွမ်းအားကြီးမားသော Linux Environ
   /mcp call read_file {"path": "/data/data/com.termux/files/home/sample.txt"}
   /mcp call git_status {"repo_path": "/data/data/com.termux/files/home/play-ground/ronin"}
   ```
+
+---
+
+### ၁၆.၅ ဖုန်းတွင်း ဓာတ်ပုံ၊ အသံနှင့် ဗီဒီယိုများကို Multimodal ရှာဖွေခြင်း (`/mediaindex` & `/mediasearch`)
+
+Ronin သည် **LiteRT-LM `0.19.1`** နှင့် **`EmbeddingGemma 2 740M (Omnimodal)`** ကို အသုံးပြု၍ ဖုန်းထဲရှိ ဓာတ်ပုံများ၊ အသံဖိုင်များနှင့် ဗီဒီယိုအခိုက်အတန့်များကို Internet မလိုဘဲ **Unified 768D Vector Space** တစ်ခုတည်းထဲတွင် Offline Index ပြုလုပ်ကာ မြန်မာ/အင်္ဂလိပ် စာသား သို့မဟုတ် ဓာတ်ပုံတူများဖြင့် ရှာဖွေပေးနိုင်ပါသည်။
+
+#### (က) လိုအပ်ချက်များနှင့် မော်ဒယ်တပ်ဆင်ခြင်း (Prerequisites):
+1. **Multimodal Embedding Model**: **Settings > Hugging Face Model Hub** မှ `EmbeddingGemma 2 740M (Omnimodal 768D)` (~462 MB) ကို ဒေါင်းလုဒ်ရယူပါ (သို့မဟုတ် Section 4 မှ `embeddinggemma-2-740m.litertlm` ဖိုင်ကို Import လုပ်ပါ)။ `270M` Text-Only မော်ဒယ်သည် စာသားသက်သန့်ဖြစ်ပြီး Vision/Audio encoder မပါဝင်ပါ။
+2. **Android 13+ Media Permissions**: Index/Search စတင်သည့်အခါ Android 13+ စက်များတွင် `READ_MEDIA_IMAGES`, `READ_MEDIA_AUDIO`, `READ_MEDIA_VIDEO` (Android 12 နှင့်အောက်တွင် `READ_EXTERNAL_STORAGE`) ခွင့်ပြုချက်များ တောင်းခံပါမည်။
+
+#### (ခ) ဖုန်းတွင်း Media များကို Index ပြုလုပ်ခြင်း (`/mediaindex` & Settings Section 4.6):
+* **Settings မှတစ်ဆင့်**: **Menu (☰) > Settings > Section 4.6 Multimodal Media Search (EmbeddingGemma 2)** သို့ သွား၍ **Index Photos**, **Index Audio**, **Index Videos**, သို့မဟုတ် **Index All** ခလုတ်များကို နှိပ်နိုင်သကဲ့သို့ Live Progress bar နှင့် **Cancel Media Indexing** / **Clear Media Index** ခလုတ်များဖြင့်လည်း ထိန်းချုပ်နိုင်ပါသည်။
+* **Chat Command များဖြင့်**:
+  ```text
+  /mediaindex              # ဓာတ်ပုံ၊ အသံနှင့် ဗီဒီယိုအားလုံးကို Index လုပ်ရန်
+  /mediaindex photos       # ဓာတ်ပုံများသီးသန့် Index လုပ်ရန်
+  /mediaindex audio        # အသံဖိုင်/Voice memos များသီးသန့် Index လုပ်ရန်
+  /mediaindex video        # ဗီဒီယိုများသီးသန့် Index လုပ်ရန်
+  /mediaindex status       # Index လုပ်ပြီးသား အရေအတွက် ကြည့်ရှုရန်
+  /mediaindex clear        # Media vector index ကို ရှင်းလင်းရန်
+  ```
+* **အလုပ်လုပ်ပုံ နည်းပညာနှင့် Guardrails (`MediaSearchEngine.kt`)**:
+  - **Incremental Indexing**: မပြောင်းလဲသေးသော ဖိုင်များကို `(media_path, modified_at, model_id)` ဖြင့် စစ်ဆေးကျော်သွားပေးသဖြင့် ထပ်ခါတလဲလဲ အချိန်ကုန်ခြင်း မရှိပါ။
+  - **Photos**: EXIF Rotation ကို အလိုအလျောက် တည့်မတ်ပြီး `768px` (Video frame များအတွက် `512px`) ထိ ချုံ့၍ temp JPEG file path မှတစ်ဆင့် Vision Encoder သို့ ပို့ဆောင်ပါသည် (Binder IPC မှတစ်ဆင့် raw pixel byte buffer များ မပို့ပါ)။
+  - **Audio & Video Soundtrack**: Android `MediaExtractor` + `MediaCodec` ဖြင့် အသံလမ်းကြောင်းကို Mono 16 kHz PCM (`AudioPcmResampler`) သို့ ပြောင်းလဲကာ 20-second sliding windows (15-second step, RMS $< 25.0$ တိတ်ဆိတ်အပိုင်းများ စစ်ထုတ်) ကို canonical 44-byte WAV (`WavEncoder`) အဖြစ် Audio Encoder ဖြင့် တွက်ချက်ပါသည်။
+  - **Video Visual Moments**: `MediaMetadataRetriever` ဖြင့် ဗီဒီယိုကြာချိန်အလိုက် keyframes များ (`MediaFrameScheduler` — ≤30s တွင် 2s တစ်ခါ, ≤3m တွင် 5s တစ်ခါ, >3m တွင် 30 frames ညီတူညီမျှ) ကို ခွဲထုတ်၍ start/end timestamp များနှင့်အတူ C++20 `LongTermMemory` ၏ `media_embeddings` table (16-byte aligned SIMD cosine search) ထဲသို့ သိမ်းဆည်းပါသည်။
+  - **Thermal & RAM Safety Guardrails**: ဖုန်းဘက်ထရီ အပူချိန် $\ge 43.0^\circ\text{C}$ ကျော်လွန်ပါက သို့မဟုတ် Free RAM $< 0.9\text{ GB}$ အောက် လျော့နည်းသွားပါက Indexing ကို ဘေးကင်းစွာ အလိုအလျောက် ရပ်တန့်ပေးပါသည်။
+
+#### (ဂ) ဓာတ်ပုံ၊ အသံနှင့် ဗီဒီယိုများ ရှာဖွေခြင်း (`/mediasearch`, Natural Queries & Visual Search):
+* **Slash Commands**:
+  ```text
+  /mediasearch sunset beach family
+  /mediasearch photo receipt invoice
+  /mediasearch audio guitar chords meeting
+  /mediasearch video birthday cake candles
+  /mediasearch --image /sdcard/DCIM/Camera/reference.jpg
+  ```
+* **မြန်မာ/အင်္ဂလိပ် သဘာဝစကားဖြင့် မေးမြန်းခြင်း (`MediaIntentParser`)**:
+  - `"ကမ်းခြေမှာ ရိုက်ထားတဲ့ပုံ ရှာပေးပါ"`
+  - `"meeting အသံဖိုင် ရှာပေးပါ"`
+  - `"find videos of sunset"`
+  *(Contact, SMS, Vault, OCR, SHM နှင့် Guitar Tuner မေးခွန်းများနှင့် မရောထွေးစေရန် Exclusion filter ပါဝင်ပါသည်။)*
+* **Reverse Visual Search (`📎 > Find Similar Photos / Videos`)**:
+  - Chat Input ဘေးရှိ **📎 (Clip)** ခလုတ်မှ **Find Similar Photos / Videos (EmbeddingGemma 2)** ကို ရွေးချယ်ပြီး နမူနာပုံတစ်ပုံ ပေးလိုက်ရုံဖြင့် ဖုန်းထဲရှိ အလားတူဓာတ်ပုံနှင့် ဗီဒီယိုအခိုက်အတန့်များကို တိုက်ရိုက် ရှာဖွေပေးပါသည်။
+
+#### (ဃ) ရလဒ်များကြည့်ရှုခြင်းနှင့် Moment Timestamp ဖွင့်ကြည့်ခြင်း (`MediaSearchResultListCard` & `MediaMomentPlayerDialog`):
+* ရှာတွေ့သော ရလဒ်များကို Thumbnail၊ Match Score (%)၊ ဖိုင်အမျိုးအစား Badge နှင့် ဗီဒီယို/အသံဖိုင်များအတွက် နှိပ်နိုင်သော Timestamp Chips (`00:15`, `00:45` စသည်) များဖြင့် `MediaSearchResultListCard` တွင် ပြသပေးပါသည်။
+* Timestamp chip သို့မဟုတ် Play ခလုတ်ကို နှိပ်လိုက်ပါက Ronin ၏ In-app **`MediaMomentPlayerDialog`** (`VideoView` / `MediaPlayer`) ပွင့်လာပြီး ရှာတွေ့သည့် `startMs` စက္ကန့်နေရာတည့်တည့်သို့ တိုက်ရိုက် Seek လုပ်၍ ဖွင့်ပြပေးမည် ဖြစ်ပါသည်။

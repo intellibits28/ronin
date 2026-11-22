@@ -5,11 +5,11 @@ Welcome to the definitive technical reference for the Ronin Kernel. This manual 
 ## User Guides & Practical References
 
 * **[Ronin User Guide & Manual (အသုံးပြုသူ လမ်းညွှန်)](USER_GUIDE.md)**
-  * Comprehensive bilingual (English/Myanmar) end-user instructions covering APK download ([Latest Release](https://github.com/intellibits28/ronin/releases/latest)), On-Device model setup (`Gemma 4` & `EmbeddingGemma 2`), Hybrid RRF RAG (`/docsearch`), Local Research (`/research`), Termux MCP Bridge (`/mcp`), SHM vibration monitoring, Privacy Shield, and `.roninvault` encrypted backup/restore.
+  * Comprehensive bilingual (English/Myanmar) end-user instructions covering APK download ([Latest Release](https://github.com/intellibits28/ronin/releases/latest)), On-Device model setup (`Gemma 4` & `EmbeddingGemma 2` on LiteRT-LM `0.19.1`), Hybrid RRF RAG (`/docsearch`), Multimodal Media Search (`/mediaindex`, `/mediasearch`), OCR Contact Card save/update (`/contact`), Local Research (`/research`), Termux MCP Bridge (`/mcp`), SHM vibration monitoring, Privacy Shield, and `.roninvault` encrypted backup/restore.
 * **[Ronin v5.1.3 Release Notes](../RELEASE_NOTES_v5.1.3.md)**, **[Ronin v5.1.1 Release Notes](../RELEASE_NOTES_v5.1.1.md)** & **[Changelog](../CHANGELOG.md)**
-  * Complete executive summaries of the v5.1.3 Research-Grade SHM & Quality Gate Upgrade and v5.1.1 Sovereign Tactical Upgrade.
+  * Complete executive summaries of the v5.1.3 Research-Grade SHM & Quality Gate Upgrade, v5.1.1 Sovereign Tactical Upgrade, and recent multimodal media / OCR additions.
 * **[Current Architecture Specification](ARCHITECTURE_CURRENT.md)**
-  * Process model, `KernelRuntimeContext`, Active Inference Kernel (RAIK), Hybrid RRF Vector Store, Local Research Engine, Termux MCP Bridge, Privacy Shield, LiteRT-LM SDK, AIDL IPC, and security governance.
+  * Process model, `KernelRuntimeContext`, Active Inference Kernel (RAIK), Hybrid RRF Vector Store, Multimodal Media Search Pipeline, OCR Contact Extraction & Biometric Confirmation, Local Research Engine, Termux MCP Bridge, Privacy Shield, LiteRT-LM `0.19.1` SDK, AIDL IPC, and security governance.
 * **[SHM Pipeline v3.5 Architecture](SHM_PIPELINE_V3_ARCHITECTURE.md)**
   * Research-Grade 64-bit biquad filtering, Median+3*MAD Welch segment impulse gating, Nakamura H/V spectral ratio, 4-factor Quality Gate, and Anomaly-First baseline protection.
 * **[Documentation Archive (Historical Proposals & Phase Plans)](archive/README.md)**

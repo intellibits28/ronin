@@ -6,12 +6,12 @@ This is the source-of-truth architecture document for the active Ronin implement
 
 Ronin uses two Android processes:
 
-- **Main app process (`com.ronin.kernel`)**: Hosts the Compose UI, `NativeEngine`, JNI runtime initialization, Cloud Providers (Gemini, OpenAI, OpenRouter, Custom), and Android capability drivers.
-- **Inference worker process (`:inference_core`)**: Foreground `InferenceService` hosting LiteRT-LM (Gemma 4 Production SDK) engine, KV cache, and conversation state.
+- **Main app process (`com.ronin.kernel`)**: Hosts the Compose UI, `NativeEngine`, JNI runtime initialization, `MediaSearchEngine`, Cloud Providers (Gemini, OpenAI, OpenRouter, Custom), and Android capability drivers.
+- **Inference worker process (`:inference_core`)**: Foreground `InferenceService` hosting **LiteRT-LM Android SDK `0.19.1`** (`Engine` for Gemma 4 `.litertlm` generation and cached `EmbeddingEngine` for multimodal `EmbeddingGemma 2` with `InputData.Text / Image / Audio`), KV cache, and conversation state.
 
-Inference streaming crosses the process boundary through high-performance AIDL IPC:
+Inference streaming and embedding requests cross the process boundary through high-performance AIDL IPC:
 
-- `IInferenceService.aidl`: Loads models and triggers asynchronous token streaming.
+- `IInferenceService.aidl`: Loads models, triggers asynchronous token streaming, inspects `ModelInfo` capabilities (`inspectEmbeddingModel`), manages `EmbeddingEngine` lifetime (`releaseEmbeddingEngine`), and runs task-prefixed text or file-path multimodal embeddings (`generateEmbeddingsBatchWithTask`, `generateMultimodalEmbeddingsBatch`) without sending raw media buffers over Binder.
 - `IInferenceCallback.aidl`: Streams partial token fragments back to the UI in real-time.
 
 A custom Gradle compilation task (`generateTermuxAidlStubs`) synthesizes these AIDL interfaces natively, allowing full compilation on AArch64 / Termux as well as desktop CI.
@@ -21,19 +21,19 @@ A custom Gradle compilation task (`generateTermuxAidlStubs`) synthesizes these A
 1. User sends input via `MainActivity` Compose UI.
 2. `NativeEngine.processInputAsync()` assigns a unique `sessionId`, `execId`, and `corrId`.
 3. `processInputNative()` enters `JniExecutionGateway` which enforces governance and policy checks.
-4. Slash command handling intercepts built-in commands (`/help`, `/capabilities`, `/status`, `/skills`, `/model`, `/reset`, `/reflect`).
-5. `IntentEngine.process()` classifies the user request into an action or conversational reply.
+4. Slash command handling intercepts built-in commands (`/help`, `/capabilities`, `/status`, `/skills`, `/model`, `/reset`, `/reflect`, `/mediaindex`, `/mediasearch`, `/contact`).
+5. `IntentEngine.process()` and Kotlin fast-path parsers (`MediaIntentParser`) classify the user request into an action or conversational reply.
 6. If the request requires multi-step planning, `TaskPlanner` generates an execution plan.
-7. Sensitive actions (e.g. Vault access, SMS dispatch) trigger **Human-In-The-Loop (HITL)** biometric/confirmation dialogs.
+7. Sensitive actions (e.g. Vault access, SMS dispatch, Contact writes) trigger **Human-In-The-Loop (HITL)** biometric/confirmation dialogs.
 8. `AgentScheduler` executes approved multi-step capability sequences.
 9. `GraphExecutor` traverses capability nodes and executes functional or Android drivers.
-10. `LongTermMemory` persists cognitive notes, facts, episodes, audit logs, and updates SQLite FTS5 search indexes.
+10. `LongTermMemory` persists cognitive notes, facts, episodes, audit logs, 768D document/media vectors, and updates SQLite FTS5 search indexes.
 
 ## Inference Architecture (Hybrid Local + Cloud)
 
 Ronin employs an intelligent hybrid inference architecture:
 
-1. **On-Device Core (`InferenceService`)**: Powered by LiteRT-LM with Gemma 4 `.litertlm` models. Uses quantized KV cache, memory pressure guards (0.8GB RAM threshold), and reflection caching for rapid token streaming.
+1. **On-Device Core (`InferenceService`, LiteRT-LM `0.19.1`)**: Runs Gemma 4 `.litertlm` models via `Engine` (quantized KV cache, memory pressure guards, reflection caching) alongside an on-demand cached `EmbeddingEngine` configured via `EmbeddingEngineConfig` and `ModelInfo.from(...)` (`Backend.GPU()` for vision when supported with automatic fallback to `Backend.CPU()`, `Backend.CPU()` for audio/text). When free RAM drops below `2.2 GB`, the worker releases the reasoning `Engine` before hydrating `EmbeddingGemma 2`, and releases `EmbeddingEngine` on memory trim or `tryHydrate`.
 2. **Cloud Escalation**: When on-device inference is unavailable or Cloud-Only mode is enabled, `HardwareBridge` dispatches requests to user-configured cloud endpoints (Gemini, OpenAI, OpenRouter, Custom) with real-time latency measurement.
 
 ## State And Ownership (`KernelRuntimeContext`)
@@ -109,26 +109,48 @@ Ronin Kernel v5.1.x replaces brittle keyword/hash-based routing with a cascaded,
 - **Global Value-Based Secret Redaction Pipe**:
   - `CredentialSanitizer` (C++ & Kotlin) scans all text, JSON payloads, and DevHUD strings for Google API (`AIza[0-9A-Za-z\-_]{35}`), OpenAI (`sk-[A-Za-z0-9\-_]{20,}`), GitHub PATs (`ghp_...`), Bearer headers, and Burmese assignment markers (`<secret> အဖြစ် / လို့ / သို့`), replacing them in-place with `[REDACTED_SECRET]`.
 
-## Document Intelligence & Hybrid RRF RAG (`/docsearch`)
+## Document Intelligence, OCR Contact Flow & Hybrid RRF RAG (`/docsearch`, `/contact`)
 
 Ronin features an integrated on-device personal document intelligence and Hybrid RAG subsystem bridging Android OS pickers, native SQLite vector search, and local LLMs:
 
 - **Attachment Gateway (📎)**:
-  - **Photo Picker (`PickVisualMedia`)**: Privacy-first system photo picker that reads images without requiring `READ_MEDIA_IMAGES` permissions.
-  - **Document Picker (`OpenDocument`)**: SAF integration enabling universal browsing across device storage, SD cards, and cloud drives.
+  - **Gallery / Photos (OCR)**: Privacy-first system photo picker (`PickVisualMedia`) that preprocesses mobile screenshots and camera photos via `OcrImagePreprocessor` (dark-mode auto-inversion, percentile contrast stretching, target `1600px` upscaling, quiet-zone padding, EXIF rotation) before running Tesseract 5.x OCR (`mya.traineddata` + `eng.traineddata`).
+  - **Browse Documents (`OpenDocument`)**: SAF integration enabling universal browsing across device storage, SD cards, and cloud drives.
+  - **Find Similar Photos / Videos (`EmbeddingGemma 2`)**: Reverse visual search encoding the selected photo via LiteRT-LM `0.19.1` vision encoder and matching against indexed device photos and video frames.
+- **OCR Contact & Business Card Workflow (`/contact`)**:
+  - `ContactCardParser` extracts bilingual Myanmar/English display names, multiple mobile/work/landline/fax numbers (normalizing `၀–၉` Burmese digits), emails, companies, job titles, websites, and addresses.
+  - `ContactManager` checks existing Android Contacts for duplicates and executes atomic insert/update operations gated behind **Privacy Shield PII biometric reveal** and **biometric confirmation** (`ContactsNode`, `id: 13`, `CONTACTS_WRITE`).
 - **Interactive `FileResultCard`**:
   - Dispatches `FileProvider` intents for viewing and `ACTION_SEND` ShareSheet intents for email/app sharing.
   - Features one-tap clipboard path copy and on-device Gemma 4 sliding-window document summarization.
-  - Native Tesseract 5.x OCR engine (`tesseract4android` with `mya.traineddata` and `eng.traineddata`) extracting bilingual Myanmar Unicode and English text.
 - **Hybrid RRF Vector Store (`document_embeddings`)**:
-  - Supports 3 model tiers (`EmbeddingGemma-2-270M`, `440M`, `740M`) with multi-model coexistence (`UNIQUE(doc_path, model_id, chunk_index)`).
+  - Supports `EmbeddingGemma-2-270M` (Text-Only RAG) and `EmbeddingGemma-2-740M` (Omnimodal) with multi-model coexistence (`UNIQUE(doc_path, model_id, chunk_index)`).
+  - Applies official EmbeddingGemma 2 asymmetric text prefixes via `InferenceService.formatForEmbeddingGemma2`: `title: <doc> | text: <chunk>` (`TASK_DOCUMENT`) during chunk indexing and `task: search result | query: <query>` (`TASK_QUERY`) during search.
   - External-content SQLite FTS5 synchronization triggers (`document_embeddings_ai`, `document_embeddings_ad`, `document_embeddings_au`).
   - 16-byte aligned SIMD Cosine Similarity combined with SQLite FTS5 BM25 via Reciprocal Rank Fusion ($k=60$).
-  - Mutex-guarded 16-chunk Binder IPC sub-batching and clean fallback to `MyanmarSegmenter` + FTS5 BM25 when no embedding model is loaded.
+  - Mutex-guarded 16-chunk (128 KB budget) Binder IPC sub-batching and clean fallback to `MyanmarSegmenter` + FTS5 BM25 when no embedding model is loaded.
 - **Command Dispatch**:
   - `/files <query>`: Rapid FTS5 lexical file index search.
   - `/summarize <path>`: Direct chunked summarization.
   - `/docsearch <path> <query>`: Hybrid RRF semantic + lexical in-document chunk retrieval.
+
+## Multimodal Media Search Pipeline (`/mediaindex`, `/mediasearch`)
+
+Powered by LiteRT-LM `0.19.1` and `EmbeddingGemma 2 740M (Omnimodal 768D)`, Ronin indexes and searches local Photos, Audio, and Videos offline in a unified 768-dimensional embedding space:
+
+- **Native C++20 `media_embeddings` Vector Store & JNI**:
+  - `LongTermMemory` (`include/long_term_memory.h`, `src/long_term_memory.cpp`) adds the `media_embeddings` table (`UNIQUE(media_path, model_id, modality, segment_index)`) and two compound lookup indexes (`idx_media_emb_path_model`, `idx_media_emb_modality_model`) inside `initSchema()`, preserving `kCurrentSchemaVersion = 3` backward compatibility.
+  - Supports 16-byte aligned SIMD `alignedDotProduct`, modality filters (`ALL`, `IMAGE`, `AUDIO`, `VIDEO`), segment timestamps (`start_ms`, `end_ms`, `duration_ms`), optional lexical filename/metadata boosting, and SafeMode read-only enforcement across all mutating operations (`storeMediaEmbeddingsAtomic`, `deleteMediaEmbeddings`, `clearMediaEmbeddings`).
+  - Exposed via 6 JNI bindings in `src/jni/jni_memory_bindings.cpp` and `src/jni/jni_registration.cpp`: `isMediaIndexedNative`, `storeMediaEmbeddingsAtomicNative`, `searchMediaEmbeddingsNative`, `getMediaIndexStatsNative`, `deleteMediaEmbeddingsNative`, and `clearMediaEmbeddingsNative`.
+- **Media Discovery & Preprocessing (`MediaSearchEngine.kt`)**:
+  - Discovers device media via `MediaStore` and storage paths, skipping unchanged files via `(media_path, modified_at, model_id)` lookup (`isMediaIndexed`).
+  - **Images**: Decodes with power-of-two subsampling, applies EXIF orientation rotation, caps longest dimension (`768px` for photos, `512px` for video frames), and writes temporary JPEG payloads (never passing raw pixel buffers over Binder).
+  - **Audio & Video Soundtracks**: Decodes compressed audio via `MediaExtractor` + `MediaCodec`, downmixes and linearly resamples to mono 16 kHz PCM (`AudioPcmResampler`), slices `20s` sliding windows (`15s` step, filtering silent RMS $< 25.0$), and encodes canonical 44-byte RIFF/WAVE payloads (`WavEncoder`).
+  - **Video Visual Moments**: Samples keyframes adaptively (`MediaFrameScheduler`: every `2s` up to `30s`, `5s` up to `3m`, `30` uniform frames above `3m`) via `MediaMetadataRetriever`.
+  - **Guardrails & Natural Intent Routing**: Halts indexing when battery temperature $\ge 43.0^\circ\text{C}$ or available RAM $< 0.9\text{ GB}$; `MediaIntentParser` routes Burmese/English media queries cleanly while rejecting contact, SMS, vault, OCR, SHM, and tuner intents; `deduplicateAndRankMediaMatches` groups segment hits per asset and retains secondary timestamp chips ($\ge 4\text{s}$ apart).
+- **UI & Capability Governance**:
+  - `MediaSearchUiComponents.kt` provides `MediaSearchResultListCard`, in-app `MediaMomentPlayerDialog` (`VideoView` / `MediaPlayer` seeking directly to `startMs`), and Settings Section `4.6 Multimodal Media Search`.
+  - Governed by `MEDIA_SEARCH` policy (`CapabilityPolicyEngine.kt`, Android 13+ `READ_MEDIA_IMAGES` / `READ_MEDIA_AUDIO` / `READ_MEDIA_VIDEO` or legacy `READ_EXTERNAL_STORAGE`) and `MediaSearchNode` (`id: 14`) synchronized across `assets/capabilities.json` and `android/app/src/main/assets/capabilities.json`.
 
 ## Privacy-Aware Local Research Engine (`/research`)
 
@@ -166,7 +188,7 @@ Ronin features an integrated on-device personal document intelligence and Hybrid
 ## Persistence & Encrypted Disaster Recovery (`.roninvault`)
 
 - **Databases**:
-  - `ronin_cognitive.db`: SQLite database storing memories, facts, vector embeddings (`document_embeddings`), perception states, and FTS5 indexes.
+  - `ronin_cognitive.db`: SQLite database storing memories, facts, vector embeddings (`document_embeddings` and `media_embeddings`), perception states, and FTS5 indexes.
   - `ronin_graph.db`: Capability graph topology.
   - `checkpoint.bin`: Shadow buffer checkpointing for crash-consistent state recovery.
 - **Encrypted Cognitive Vault Backup (`.roninvault`)**: Eliminates cleartext database exports (`CWE-312`). Executes `PRAGMA wal_checkpoint(TRUNCATE)` for atomic consistency, encrypts the snapshot via `PrivacyVault` (AES-256-GCM), and exports/imports through Android Storage Access Framework (SAF).

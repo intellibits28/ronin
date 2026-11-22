@@ -12,9 +12,9 @@ The project is developed primarily on-device through Termux and Codex CLI. Full 
 
 - **Native core:** C++20, CMake, SQLite FTS5, FlatBuffers, nlohmann/json, PFFFT.
 - **Android app:** Kotlin/JVM 17, Jetpack Compose, AIDL, Android SDK 34.
-- **Inference:** LiteRT-LM Android SDK 0.12.0 in an isolated foreground service.
-- **Bridge:** JNI for native kernel APIs; AIDL for cross-process inference streaming.
-- **Memory:** SQLite-backed notes, facts, vault entries, episodes, predictions, failures, chat history, and file index.
+- **Inference:** LiteRT-LM Android SDK 0.19.1 (`Engine` for Gemma 4 + `EmbeddingEngine` for multimodal `EmbeddingGemma 2`) in an isolated foreground service.
+- **Bridge:** JNI for native kernel APIs and vector stores; AIDL for cross-process token streaming and file-path embedding IPC.
+- **Memory:** SQLite-backed notes, facts, vault entries, episodes, predictions, failures, chat history, file index, and 16-byte aligned SIMD vector stores (`document_embeddings`, `media_embeddings`).
 - **Capabilities:** Native skills plus Android drivers for hardware and OS integrations.
 - **CI/build authority:** GitHub Actions workflows under `.github/workflows/`.
 

@@ -5,6 +5,22 @@ All notable changes to the Ronin Kernel project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **LiteRT-LM `0.19.1` Upgrade & Official `EmbeddingEngine`**:
+  - Upgraded `com.google.ai.edge.litertlm:litertlm-android` from `0.12.0` to `0.19.1` (`android/app/build.gradle`) with `pickFirst` packaging for `liblitertlm_jni.so`.
+  - Replaced legacy reflection-based embedding invocation in `InferenceService.kt` with official `EmbeddingEngine`, `EmbeddingEngineConfig`, `EmbeddingOptions`, `ModelInfo.from(...)`, and `InputData.Text / Image / Audio`, supporting GPU/CPU backend selection, cached engine reuse, and automatic release on `< 2.2 GB` free RAM or memory trim events.
+  - Added official EmbeddingGemma 2 asymmetric text task prefixes (`task: search result | query: ...` via `TASK_QUERY` and `title: ... | text: ...` via `TASK_DOCUMENT`) in `InferenceService.formatForEmbeddingGemma2` and `DocumentIntelligence.hybridSearchInDocument`.
+  - Added 4 file-path-based embedding methods to `IInferenceService.aidl` and `generateTermuxAidlStubs` (`generateEmbeddingsBatchWithTask`, `generateMultimodalEmbeddingsBatch`, `inspectEmbeddingModel`, `releaseEmbeddingEngine`) to avoid passing raw media byte arrays over Binder IPC.
+- **Multimodal Media Search (`EmbeddingGemma 2` — Photos, Audio & Video Moments)**:
+  - Added `media_embeddings` table and two compound lookup indexes (`idx_media_emb_path_model`, `idx_media_emb_modality_model`) in `LongTermMemory` (`include/long_term_memory.h`, `src/long_term_memory.cpp`) with 16-byte aligned SIMD cosine similarity, modality filters (`ALL`, `IMAGE`, `AUDIO`, `VIDEO`), segment timestamps (`start_ms`, `end_ms`), optional lexical metadata boost, and SafeMode read-only guards, plus 6 JNI bindings in `jni_memory_bindings.cpp` and `jni_registration.cpp`.
+  - Implemented `MediaSearchEngine.kt` with `MediaStore` + storage media discovery, EXIF rotation-aware JPEG downscaling, `MediaExtractor`/`MediaCodec` 16 kHz mono WAV sliding-window extraction (`AudioPcmResampler`, `WavEncoder`), adaptive `MediaMetadataRetriever` video frame sampling (`MediaFrameScheduler`), thermal (`>= 43.0°C`) and free RAM (`< 0.9 GB`) guardrails, `/mediaindex`, `/mediasearch`, reverse visual search (`--image`), and Burmese/English natural-language query parsing (`MediaIntentParser`).
+  - Added `MediaSearchUiComponents.kt` (`MediaSearchResultListCard`, in-app `MediaMomentPlayerDialog` seeking directly to matched `startMs`, and Settings Section `4.6 Multimodal Media Search`), 📎 **Find Similar Photos / Videos** picker option, Android 13+ `READ_MEDIA_IMAGES` / `READ_MEDIA_AUDIO` / `READ_MEDIA_VIDEO` permissions, `MEDIA_SEARCH` policy (`CapabilityPolicyEngine.kt`), and `MediaSearchNode` (`id: 14`) synchronized across `assets/capabilities.json` and `android/app/src/main/assets/capabilities.json`.
+  - Added C++ unit test `LongTermMemoryMediaEmbeddings.AtomicStoreModalityFiltersTimestampsAndSafeMode` (`tests/ltm_schema_migration_test.cpp`) and 6 Android JVM tests in `MultimodalMediaSearchTest.kt`.
+- **OCR Screenshot Preprocessing & Biometric Contact Card Flow (`/contact`)**:
+  - Added `OcrImagePreprocessor.kt` (dark-mode auto-inversion, contrast stretching, resolution upscaling, quiet-zone padding, EXIF rotation), `ContactCardParser.kt` (Myanmar/English name, multiple phone numbers, email, company/address extraction), `ContactManager.kt` (existing contact matching & atomic insert/update), and `ContactUiComponents.kt` (Privacy Shield biometric unlock for redacted OCR text and biometric-gated Save/Update contact review workflow).
+
 ## [5.1.3] - 2026-11-11
 
 ### Added

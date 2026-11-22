@@ -13,10 +13,10 @@
 ## 🌐 Overview (English) | စနစ်မိတ်ဆက် (မြန်မာ)
 
 ### 🇬🇧 English Overview
-**Ronin** is a sovereign, privacy-first mobile AI runtime and cognitive agent for Android. It combines a **C++20 native microkernel**, Kotlin/JNI integration, isolated on-device **LiteRT-LM (`Gemma 4 E2B` & `EmbeddingGemma 2`)** inference, a **SQLite FTS5 + 16-byte aligned SIMD Vector Store**, and hardware/tool capabilities. Ronin is engineered for autonomous on-device intelligence: observe device state, minimize Variational Free Energy (RAIK), retrieve hybrid lexical/semantic memory, plan multi-step actions, execute capabilities with Human-In-The-Loop (HITL) governance, and analyze physical structural integrity via its **Structural Health Monitoring (SHM v3.0)** DSP subsystem.
+**Ronin** is a sovereign, privacy-first mobile AI runtime and cognitive agent for Android. It combines a **C++20 native microkernel**, Kotlin/JNI integration, isolated on-device **LiteRT-LM `0.19.1` (`Gemma 4 E2B` & multimodal `EmbeddingGemma 2`)** inference, a **SQLite FTS5 + 16-byte aligned SIMD Vector Store**, and hardware/tool capabilities. Ronin is engineered for autonomous on-device intelligence: observe device state, minimize Variational Free Energy (RAIK), retrieve hybrid lexical/semantic document and cross-modal media memory, plan multi-step actions, execute capabilities with Human-In-The-Loop (HITL) governance, and analyze physical structural integrity via its **Structural Health Monitoring (SHM v3.5)** DSP subsystem.
 
 ### 🇲🇲 မြန်မာဘာသာဖြင့် မိတ်ဆက်
-**Ronin Kernel** သည် အင်တာနက်မလိုဘဲ ဖုန်းထဲတွင် သီးသန့် လုံခြုံစွာ အလုပ်လုပ်နိုင်သော **On-Device Sovereign AI Agent** နှင့် **အဆောက်အအုံ ကြံ့ခိုင်မှု တိုင်းတာရေး (SHM) Runtime** ဖြစ်ပါသည်။ C++20 Native Cognitive Microkernel နှင့် Android (Kotlin/Jetpack Compose) တို့ကို တိုက်ရိုက် ပေါင်းစပ်ထားပြီး Google LiteRT-LM (`Gemma 4` နှင့် `EmbeddingGemma 2`) မော်ဒယ်များကို ဖုန်းထဲတွင် Offline အပြည့်အဝ သုံးစွဲနိုင်သကဲ့သို့၊ လိုအပ်ပါက Cloud AI (Gemini, OpenAI, OpenRouter) များနှင့်လည်း ချိတ်ဆက်အသုံးပြုနိုင်ပါသည်။
+**Ronin Kernel** သည် အင်တာနက်မလိုဘဲ ဖုန်းထဲတွင် သီးသန့် လုံခြုံစွာ အလုပ်လုပ်နိုင်သော **On-Device Sovereign AI Agent** နှင့် **အဆောက်အအုံ ကြံ့ခိုင်မှု တိုင်းတာရေး (SHM) Runtime** ဖြစ်ပါသည်။ C++20 Native Cognitive Microkernel နှင့် Android (Kotlin/Jetpack Compose) တို့ကို တိုက်ရိုက် ပေါင်းစပ်ထားပြီး Google LiteRT-LM `0.19.1` (`Gemma 4` နှင့် Multimodal `EmbeddingGemma 2`) မော်ဒယ်များကို ဖုန်းထဲတွင် Offline အပြည့်အဝ သုံးစွဲနိုင်သကဲ့သို့၊ လိုအပ်ပါက Cloud AI (Gemini, OpenAI, OpenRouter) များနှင့်လည်း ချိတ်ဆက်အသုံးပြုနိုင်ပါသည်။
 
 ---
 
@@ -25,7 +25,9 @@
 | Feature / စွမ်းဆောင်ရည် | English Description | မြန်မာဘာသာ ရှင်းလင်းချက် |
 | :--- | :--- | :--- |
 | **🎨 Tactical Brutalist UI & Myanmar Typography** | AMOLED pure black (`#0A0A0A`) theme, unified `8.dp` card geometry, diacritic-safe `21.sp` Myanmar dual-font system, and dismissible `/` command overlay. | AMOLED ဘက်ထရီချွေတာသည့် အနက်ရောင် ဒီဇိုင်း၊ မြန်မာစာ အပေါ်တင်/အောက်မြစ် မပြတ်တောက်သော `21.sp` စာလုံးစနစ်နှင့် အလွယ်တကူ ပိတ်နိုင်သော `/` Command list။ |
-| **📚 Hybrid RRF Document RAG (`/docsearch`)** | 3 configurable `EmbeddingGemma 2` tiers (`270M`, `440M`, `740M`), SQLite FTS5 BM25 + 768D SIMD Cosine Similarity fused via Reciprocal Rank Fusion ($k=60$), with `MyanmarSegmenter` fallback. | စာအုပ်နှင့် PDF စာတမ်းကြီးများကို `EmbeddingGemma 2` (Semantic) နှင့် SQLite FTS5 (Lexical) ပေါင်းစပ်ထားသော Hybrid RRF စနစ်ဖြင့် အပိုဒ်လိုက် တိကျစွာ ရှာဖွေပေးခြင်း။ |
+| **📚 Hybrid RRF Document RAG (`/docsearch`)** | `EmbeddingGemma 2` (`270M` Text-Only, `740M` Omnimodal) with official asymmetric query/document prompts, SQLite FTS5 BM25 + 768D SIMD Cosine Similarity fused via RRF ($k=60$), and `MyanmarSegmenter` fallback. | စာအုပ်နှင့် PDF စာတမ်းကြီးများကို `EmbeddingGemma 2` (Query/Document prompt prefixes) နှင့် SQLite FTS5 ပေါင်းစပ်ထားသော Hybrid RRF စနစ်ဖြင့် အပိုဒ်လိုက် တိကျစွာ ရှာဖွေပေးခြင်း။ |
+| **📸 Multimodal Media Search (`/mediaindex`, `/mediasearch`)** | Cross-modal photo, 16 kHz mono WAV audio, and keyframe/audio video search powered by LiteRT-LM `0.19.1` + `EmbeddingGemma 2 740M`, SQLite `media_embeddings`, reverse visual lookup (`📎`), and timestamp seeking. | ဖုန်းထဲရှိ ဓာတ်ပုံ၊ အသံဖိုင်နှင့် ဗီဒီယိုအခိုက်အတန့်များကို မြန်မာ/အင်္ဂလိပ် စာသား (သို့) ပုံတူရှာဖွေမှုဖြင့် Offline ရှာဖွေပြီး သက်ဆိုင်ရာ Timestamp သို့ တိုက်ရိုက်ဖွင့်ကြည့်နိုင်ခြင်း။ |
+| **📇 Smart OCR Business Card & Contact Flow (`/contact`)** | Mobile screenshot preprocessing (`OcrImagePreprocessor`), bilingual card parsing (`ContactCardParser`), existing-contact matching, biometric Privacy Shield PII unlock, and biometric contact save/update. | ဓာတ်ပုံ/Screenshot OCR မှ နာမည်၊ ဖုန်းနံပါတ်များ၊ Email နှင့် ကုမ္ပဏီကို ထုတ်ယူကာ လက်ဗွေအတည်ပြုချက်ဖြင့် New Contact ထည့်သွင်းခြင်း (သို့) ရှိပြီးသား Contact ထဲ Update လုပ်ခြင်း။ |
 | **🔎 Privacy-Aware Local Research (`/research`)** | Queries DuckDuckGo Lite via HTTP `POST` (256 KB stream cap, SSRF DNS-pinning) and synthesizes locally via **Gemma 4 E2B** with `[1][2][3]` citations & **"SAVE TO VAULT"**. | ပြင်ပ Paid API မလိုဘဲ DuckDuckGo Lite မှ ရှာဖွေကာ ဖုန်းတွင်းရှိ Gemma 4 ဖြင့် 100% Local အနှစ်ချုပ်ထုတ်ပေးပြီး Source Citations `[1][2]` များဖြင့် ပြသပေးခြင်း။ |
 | **🔌 Hardened Termux MCP Bridge (`/mcp`)** | Loopback `127.0.0.1:8765` bridge secured with HMAC-SHA256, `±30s` timestamp window, 16-byte Nonce LRU anti-replay cache, and strict Capability Policy (`ALLOW`/`CONFIRM`/`DENY`). | Termux ရှိ Developer Tools များနှင့် HMAC-SHA256 + Nonce Anti-Replay စနစ်ဖြင့် လုံခြုံစွာ ချိတ်ဆက်ပြီး ဖိုင်စစ်ဆေးခြင်းနှင့် Git လုပ်ငန်းများ ဆောင်ရွက်နိုင်ခြင်း။ |
 | **🏗️ Structural Health Monitoring (SHM v3.5)** | 100Hz 3-axis accelerometer ingestion, 64-bit IEEE 754 biquad filter, Median+3*MAD Welch segment impulse gating, Nakamura H/V spectral ratio sway validation, 4-factor Quality Gate (`RESEARCH_GRADE` to `UNRELIABLE`), Anomaly-First baseline protection, Eurocode 8/ASCE 7 building priors, and AI structural review. | 64-bit Biquad Filter နှင့် Median+3*MAD Impulse Gating ဖြင့် ခြေသံ/ဆူညံသံများကို ဖယ်ရှားကာ Nakamura H/V Spectral Ratio ဖြင့် အဆောက်အအုံ ယိမ်းခါမှု (Sway) နှင့် ကြမ်းခင်းတုန်ခါမှု (Bounce) ကို ခွဲခြားပြီး 4-Factor Research-Grade Quality Gate စနစ်ဖြင့် အင်ဂျင်နီယာအဆင့် တိကျစွာ တိုင်းတာစစ်ဆေးပေးခြင်း။ |
@@ -56,6 +58,9 @@
 | `/status` | Inspect kernel health, thermal state, and RAM | စနစ်၏ ကျန်းမာရေး၊ အပူချိန်နှင့် RAM အခြေအနေ စစ်ဆေးရန် |
 | `/research <query>` | Run privacy-aware web research with local Gemma 4 synthesis | DuckDuckGo Lite + Local Gemma 4 ဖြင့် ဝဘ်သုတေသန ပြုလုပ်ရန် |
 | `/docsearch <path> <query>` | Hybrid RRF (FTS5 + 768D SIMD Vector) in-document search | စာရွက်စာတမ်းကြီးများထဲမှ အပိုဒ်များကို Hybrid RRF ဖြင့် ရှာဖွေရန် |
+| `/mediaindex [all\|photos\|audio\|video\|status\|clear]` | Index phone Photos, Audio & Videos with `EmbeddingGemma 2 740M` | ဖုန်းတွင်းရှိ ဓာတ်ပုံ၊ အသံနှင့် ဗီဒီယိုများကို Index ပြုလုပ်ရန် |
+| `/mediasearch [photo\|audio\|video] <query>` | Cross-modal photo/audio/video moment search & `--image <path>` | ဓာတ်ပုံ၊ အသံနှင့် ဗီဒီယိုအခိုက်အတန့်များကို စာသား/ပုံဖြင့် ရှာဖွေရန် |
+| `/contact [info]` | Parse business card / inline text & save/update contact | Business Card / စာသားမှ Contact အသစ်ထည့်/ပြင်ဆင်ရန် |
 | `/summarize <path>` | Sliding-window document summarization | သတ်မှတ်ထားသော ဖိုင်ကို AI ဖြင့် အနှစ်ချုပ်ခိုင်းရန် |
 | `/files <keyword>` | Fast SQLite FTS5 file search with `FileResultCard` | ဖုန်းထဲရှိ ဖိုင်များကို အမြန်ရှာဖွေပြီး ကတ်ဖြင့် ပြသရန် |
 | `/mcp status\|token\|tools` | Manage and inspect authenticated Termux MCP Bridge | Termux MCP Server ချိတ်ဆက်မှု၊ Token နှင့် Tool စာရင်း စစ်ဆေးရန် |
@@ -71,10 +76,10 @@ At runtime, the Android application initializes the native C++20 kernel through 
 
 ```mermaid
 flowchart LR
-    UI["Compose UI\n(MainActivity / RoninUIComponents)"] --> Engine["NativeEngine (Kotlin)\nIPC Sub-Batching & Drivers"]
-    Engine <-->|AIDL Stream| Worker["InferenceService (:inference_core)\nLiteRT-LM (Gemma 4 / EmbeddingGemma 2)"]
+    UI["Compose UI\n(MainActivity / RoninUIComponents)"] --> Engine["NativeEngine (Kotlin)\nIPC Sub-Batching & Media Drivers"]
+    Engine <-->|AIDL Stream & Paths| Worker["InferenceService (:inference_core)\nLiteRT-LM 0.19.1 (Gemma 4 / EmbeddingGemma 2)"]
     Engine <-->|JNI Bridge| Kernel["C++20 Native Kernel (libronin_kernel.so)\nRAIK + IntentEngine + GraphExecutor"]
-    Kernel <--> LTM["SQLite + FTS5 + SIMD Vector Store\n(ronin_cognitive.db / .roninvault)"]
+    Kernel <--> LTM["SQLite + FTS5 + SIMD Vector Store\n(document_embeddings / media_embeddings / .roninvault)"]
     Engine <-->|HMAC-SHA256 + Nonce| MCP["Termux MCP Server\n(127.0.0.1:8765)"]
 ```
 
@@ -83,17 +88,19 @@ flowchart LR
 | Path | Purpose |
 | :--- | :--- |
 | `src/ronin_kernel.cpp`, `include/ronin_kernel.hpp` | Top-level observe/orient/decide/act kernel loop and world-state hooks. |
-| `src/ronin_jni.cpp`, `src/jni/jni_memory_bindings.cpp`, `src/jni/jni_registration.cpp` | Modular JNI registration, memory/vector/hybrid search bindings, governance, and lifecycle hooks. |
+| `src/ronin_jni.cpp`, `src/jni/jni_memory_bindings.cpp`, `src/jni/jni_registration.cpp` | Modular JNI registration, memory/document/media vector bindings, governance, and lifecycle hooks. |
 | `src/intent_engine.cpp`, `include/intent_engine.h` | Intent classification, slash commands, task planning, skill registry, and thread-safe cloud/model routing. |
-| `src/long_term_memory.cpp`, `include/long_term_memory.h` | SQLite v3 persistence, FTS5 sync triggers (`ai`/`ad`/`au`), multi-model vector store (`document_embeddings`), and 16-byte aligned SIMD Hybrid RRF search. |
-| `src/capability_policy_engine.cpp`, `assets/capabilities.json` | Centralized capability security policy enforcement and manifest governance. |
+| `src/long_term_memory.cpp`, `include/long_term_memory.h` | SQLite v3 persistence, FTS5 sync triggers (`ai`/`ad`/`au`), `document_embeddings` Hybrid RRF, and `media_embeddings` 16-byte aligned SIMD cosine search. |
+| `src/capability_policy_engine.cpp`, `assets/capabilities.json` | Centralized capability security policy enforcement and manifest governance (including `ContactsNode` & `MediaSearchNode`). |
 | `src/reasoning/`, `include/reasoning/` | Active Inference Kernel (RAIK), Variational Free Energy ($F$), and Expected Free Energy ($G(\pi)$) router. |
 | `src/dsp/vibe_monitor.cpp`, `src/dsp/resonance_analyzer.cpp` | Real-time sensor DSP analysis, Modal Validation Engine v3, Welch PSD, and Kalman NIS tracking. |
-| `android/app/src/main/kotlin/com/ronin/kernel/MainActivity.kt` | Compose UI host, SAF encrypted `.roninvault` backup/restore, model/traineddata import sanitization. |
+| `android/app/src/main/kotlin/com/ronin/kernel/MainActivity.kt` | Compose UI host, SAF encrypted `.roninvault` backup/restore, media/contact handlers, model/traineddata import sanitization. |
 | `android/app/src/main/kotlin/com/ronin/kernel/RoninUIComponents.kt` | Tactical Brutalist UI cards (`8.dp`), Myanmar-safe typography, `ResearchResultCard`, `FileResultCard`, and dismissible command overlay. |
+| `android/app/src/main/kotlin/com/ronin/kernel/MediaSearchEngine.kt`, `MediaSearchUiComponents.kt` | Photo/Audio/Video discovery, EXIF resize, `MediaExtractor`/`MediaCodec` 16 kHz mono WAV windowing, adaptive video frames, `MediaSearchResultListCard`, and `MediaMomentPlayerDialog`. |
+| `android/app/src/main/kotlin/com/ronin/kernel/OcrImagePreprocessor.kt`, `ContactCardParser.kt`, `ContactManager.kt`, `ContactUiComponents.kt` | Mobile screenshot preprocessing, bilingual business card extraction, duplicate matching, PII biometric unlock, and biometric contact save/update. |
 | `android/app/src/main/kotlin/com/ronin/kernel/LocalResearchEngine.kt` | DuckDuckGo Lite POST client, 256 KB stream cap, SSRF multi-hop DNS-pinning, and local citation synthesis. |
 | `android/app/src/main/kotlin/com/ronin/kernel/McpClientManager.kt`, `scripts/termux_mcp_server.py` | Authenticated Termux MCP client and server with HMAC-SHA256, timestamp, and 16-byte Nonce LRU anti-replay. |
-| `android/app/src/main/kotlin/com/ronin/kernel/DocumentIntelligence.kt`, `OcrEngine.kt`, `PrivacyShield.kt`, `PrivacyVault.kt` | Document chunking, 16-chunk IPC sub-batching, Tesseract 5.x bilingual OCR, PII redaction, and AES-256-GCM encryption. |
+| `android/app/src/main/kotlin/com/ronin/kernel/DocumentIntelligence.kt`, `OcrEngine.kt`, `PrivacyShield.kt`, `PrivacyVault.kt` | Task-prefixed document chunking, 16-chunk IPC sub-batching, Tesseract 5.x bilingual OCR, PII redaction, and AES-256-GCM encryption. |
 
 ---
 
