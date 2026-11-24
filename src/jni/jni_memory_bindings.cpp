@@ -278,6 +278,7 @@ JNIEXPORT jobjectArray JNICALL native_hybridSearchWithModel(JNIEnv* env, jobject
         j["lexical_hits"] = m.lexical_hits;
         j["fts_bm25_score"] = m.fts_bm25_score;
         j["model_id"] = m.model_id;
+        j["modality"] = m.modality;
         out.push_back(j.dump());
     }
     return toStringArray(env, out);
@@ -333,7 +334,7 @@ JNIEXPORT jboolean JNICALL native_storeMediaEmbeddingsAtomic(
     JNIEnv* env, jobject thiz,
     jstring mediaPath, jstring mediaUri, jstring displayName, jstring metadataText,
     jlong modifiedAt, jlong fileSize, jlong durationMs, jstring modelId,
-    jobjectArray modalities, jintArray segmentIndices, jlongArray startMsList, jlongArray endMsList,
+    jobjectArray modalities, jobjectArray assetTypes, jintArray segmentIndices, jlongArray startMsList, jlongArray endMsList,
     jfloatArray flatEmbeddings, jint dimension) {
     auto& runtime = runtimeContext();
     if (!runtime.ltm) return JNI_FALSE;
@@ -343,6 +344,7 @@ JNIEXPORT jboolean JNICALL native_storeMediaEmbeddingsAtomic(
 
     jsize n = env->GetArrayLength(modalities);
     if (n <= 0 ||
+        (assetTypes && env->GetArrayLength(assetTypes) != n) ||
         env->GetArrayLength(segmentIndices) != n ||
         env->GetArrayLength(startMsList) != n ||
         env->GetArrayLength(endMsList) != n ||
@@ -369,12 +371,20 @@ JNIEXPORT jboolean JNICALL native_storeMediaEmbeddingsAtomic(
         std::string mod = ConvertJStringToString(env, jMod);
         if (jMod) env->DeleteLocalRef(jMod);
 
+        std::string aType;
+        if (assetTypes) {
+            jstring jAsset = static_cast<jstring>(env->GetObjectArrayElement(assetTypes, i));
+            aType = ConvertJStringToString(env, jAsset);
+            if (jAsset) env->DeleteLocalRef(jAsset);
+        }
+
         LongTermMemory::MediaSegment seg;
         seg.modality = std::move(mod);
         seg.segment_index = idxPtr[i];
         seg.start_ms = static_cast<int64_t>(startPtr[i]);
         seg.end_ms = static_cast<int64_t>(endPtr[i]);
         seg.embedding.assign(embPtr + i * dimension, embPtr + (i + 1) * dimension);
+        seg.asset_type = std::move(aType);
         segments.push_back(std::move(seg));
     }
 
@@ -430,6 +440,7 @@ JNIEXPORT jobjectArray JNICALL native_searchMediaEmbeddings(
         j["media_path"] = m.media_path;
         j["media_uri"] = m.media_uri;
         j["modality"] = m.modality;
+        j["asset_type"] = m.asset_type;
         j["segment_index"] = m.segment_index;
         j["start_ms"] = m.start_ms;
         j["end_ms"] = m.end_ms;

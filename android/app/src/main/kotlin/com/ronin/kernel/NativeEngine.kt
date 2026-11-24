@@ -374,7 +374,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
     private external fun hybridSearchWithModelNative(queryText: String, queryEmbedding: FloatArray, docPathFilter: String, topK: Int, modelId: String): Array<String>
     private external fun evaluateRagWakeupNative(queryText: String, docPathFilter: String, topK: Int): String
     private external fun isMediaIndexedNative(mediaPath: String, modifiedAt: Long, modelId: String): Boolean
-    private external fun storeMediaEmbeddingsAtomicNative(mediaPath: String, mediaUri: String, displayName: String, metadataText: String, modifiedAt: Long, fileSize: Long, durationMs: Long, modelId: String, modalities: Array<String>, segmentIndices: IntArray, startMsList: LongArray, endMsList: LongArray, flatEmbeddings: FloatArray, dimension: Int): Boolean
+    private external fun storeMediaEmbeddingsAtomicNative(mediaPath: String, mediaUri: String, displayName: String, metadataText: String, modifiedAt: Long, fileSize: Long, durationMs: Long, modelId: String, modalities: Array<String>, assetTypes: Array<String>, segmentIndices: IntArray, startMsList: LongArray, endMsList: LongArray, flatEmbeddings: FloatArray, dimension: Int): Boolean
     private external fun searchMediaEmbeddingsNative(queryEmbedding: FloatArray, modalityFilter: String, modelId: String, lexicalQuery: String, topK: Int): Array<String>
     private external fun getMediaIndexStatsNative(modelId: String): String
     private external fun listIndexedMediaNative(modalityFilter: String, modelId: String, limit: Int): String
@@ -626,7 +626,8 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
         segmentIndices: List<Int>,
         startMsList: List<Long>,
         endMsList: List<Long>,
-        embeddings: List<FloatArray>
+        embeddings: List<FloatArray>,
+        assetTypes: List<String> = emptyList()
     ): Boolean {
         if (!isLibLoaded || modalities.isEmpty() || embeddings.size != modalities.size) return false
         return try {
@@ -635,6 +636,18 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             val flat = FloatArray(n * dim)
             for (i in 0 until n) {
                 System.arraycopy(embeddings[i], 0, flat, i * dim, dim)
+            }
+            val resolvedAssets = if (assetTypes.size == n) {
+                assetTypes.toTypedArray()
+            } else {
+                modalities.map { mod ->
+                    when (mod.lowercase()) {
+                        "video_frame", "video_audio" -> "video"
+                        "audio" -> "audio"
+                        "text" -> "text"
+                        else -> "image"
+                    }
+                }.toTypedArray()
             }
             storeMediaEmbeddingsAtomicNative(
                 mediaPath,
@@ -646,6 +659,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                 durationMs,
                 modelId,
                 modalities.toTypedArray(),
+                resolvedAssets,
                 segmentIndices.toIntArray(),
                 startMsList.toLongArray(),
                 endMsList.toLongArray(),
@@ -660,7 +674,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
 
     fun searchMediaEmbeddingsSafe(
         queryEmbedding: FloatArray,
-        modalityFilter: String = "ALL",
+        modalityFilter: String = "IMAGE",
         modelId: String = "",
         lexicalQuery: String = "",
         topK: Int = 8

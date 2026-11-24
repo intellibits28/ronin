@@ -112,6 +112,7 @@ public:
         int lexical_hits = 0;
         float fts_bm25_score = 0.0f;
         std::string model_id;
+        std::string modality = "text";
     };
 
     static void l2Normalize(std::vector<float>& vec);
@@ -128,17 +129,19 @@ public:
 
     // Multimodal Media Search Store (EmbeddingGemma 2: Photos, Audio, Video Frames & Tracks)
     struct MediaSegment {
-        std::string modality; // "IMAGE", "AUDIO", "VIDEO_FRAME", "VIDEO_AUDIO"
+        std::string modality; // Canonical: "image", "audio", "text"
         int segment_index = 0;
         int64_t start_ms = 0;
         int64_t end_ms = 0;
         std::vector<float> embedding;
+        std::string asset_type = ""; // Container/source: "image", "audio", "video", "text"
     };
 
     struct MediaSearchMatch {
         std::string media_path;
         std::string media_uri;
         std::string modality;
+        std::string asset_type;
         int segment_index = 0;
         int64_t start_ms = 0;
         int64_t end_ms = 0;

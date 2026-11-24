@@ -268,9 +268,46 @@ class InferenceService : Service() {
 
     companion object {
         const val EMBEDDING_DIM = 768
+        const val LITERT_LM_RUNTIME_VERSION = "0.19.1"
         const val TASK_QUERY = "QUERY"
         const val TASK_DOCUMENT = "DOCUMENT"
         const val TASK_RAW = "RAW"
+
+        /**
+         * Parses semantic version strings safely and returns true when [currentVersion]
+         * satisfies [minRequiredVersion]. Blank/missing requirements are treated as compatible.
+         */
+        fun isRuntimeVersionCompatible(currentVersion: String, minRequiredVersion: String): Boolean {
+            val required = minRequiredVersion.trim()
+            if (required.isEmpty()) return true
+            val current = currentVersion.trim()
+            if (current.isEmpty()) return false
+
+            fun parseSemVer(raw: String): Pair<List<Int>, Boolean>? {
+                val cleaned = raw.removePrefix("v").removePrefix("V").substringBefore('+').trim()
+                if (cleaned.isEmpty()) return null
+                val dashIdx = cleaned.indexOf('-')
+                val corePart = if (dashIdx >= 0) cleaned.substring(0, dashIdx) else cleaned
+                val hasPreRelease = dashIdx >= 0 && cleaned.substring(dashIdx + 1).isNotBlank()
+                if (corePart.isBlank()) return null
+                val segments = corePart.split('.').map { seg ->
+                    val digits = seg.takeWhile { it.isDigit() }
+                    digits.toIntOrNull() ?: return null
+                }
+                return segments to hasPreRelease
+            }
+
+            val (curNums, curPre) = parseSemVer(current) ?: return false
+            val (reqNums, reqPre) = parseSemVer(required) ?: return true
+            val maxLen = maxOf(curNums.size, reqNums.size, 3)
+            for (i in 0 until maxLen) {
+                val c = curNums.getOrElse(i) { 0 }
+                val r = reqNums.getOrElse(i) { 0 }
+                if (c > r) return true
+                if (c < r) return false
+            }
+            return !(curPre && !reqPre)
+        }
 
         /**
          * Formats text queries and corpus chunks with official EmbeddingGemma 2 asymmetric prefixes.
@@ -405,11 +442,21 @@ class InferenceService : Service() {
             ModelInfo.from(embFile.absolutePath).use { info ->
                 val mods = info.inputModalities()
                 val isEmb = info.modelType == ModelType.EMBEDDING
-                val dim = (info as? ModelInfo.Embedding)?.dimension() ?: EMBEDDING_DIM
+                val reportedDim = (info as? ModelInfo.Embedding)?.dimension() ?: 0
+                val dim = if (reportedDim > 0) reportedDim else EMBEDDING_DIM
+                val dimCompatible = reportedDim <= 0 || reportedDim == EMBEDDING_DIM
                 val visionSigs = runCatching { info.visionSignatureSelection() }.getOrNull() ?: IntArray(0)
                 val visionGpuSupported = mods.vision && runCatching {
                     info.supportedBackends(Modality.VISION).contains(BackendType.GPU)
                 }.getOrDefault(false)
+                val minRuntimeVer = runCatching { info.minRuntimeVersion() }.getOrDefault("") ?: ""
+                val runtimeCompatible = isRuntimeVersionCompatible(LITERT_LM_RUNTIME_VERSION, minRuntimeVer)
+                if (!runtimeCompatible) {
+                    Log.w(TAG, "Model ${embFile.name} requires LiteRT-LM >= $minRuntimeVer (runtime=$LITERT_LM_RUNTIME_VERSION)")
+                }
+                if (!dimCompatible) {
+                    Log.w(TAG, "Model ${embFile.name} embedding dim=$reportedDim differs from expected $EMBEDDING_DIM")
+                }
                 val sigArray = JSONArray()
                 for (sig in visionSigs) sigArray.put(sig)
 
@@ -419,6 +466,7 @@ class InferenceService : Service() {
                 out.put("is_embedding", isEmb)
                 out.put("model_type", info.modelType.name)
                 out.put("dimension", dim)
+                out.put("dimension_compatible", dimCompatible)
                 out.put("text", mods.text)
                 out.put("vision", mods.vision)
                 out.put("audio", mods.audio)
@@ -427,7 +475,9 @@ class InferenceService : Service() {
                 out.put("max_vision_token_budget", info.maxVisionTokenBudget())
                 out.put("vision_signatures", sigArray)
                 out.put("vision_gpu_supported", visionGpuSupported)
-                out.put("min_runtime_version", info.minRuntimeVersion())
+                out.put("min_runtime_version", minRuntimeVer)
+                out.put("runtime_version", LITERT_LM_RUNTIME_VERSION)
+                out.put("runtime_compatible", runtimeCompatible)
             }
             out.toString()
         } catch (t: Throwable) {
@@ -470,10 +520,21 @@ class InferenceService : Service() {
         var visionGpuSupported = false
         var visionSignatures = IntArray(0)
         var maxVisionBudget = 0
+        var compatibilityError: String? = null
         try {
             ModelInfo.from(embFile.absolutePath).use { info ->
                 if (info.modelType != ModelType.EMBEDDING) {
                     Log.w(TAG, "Model ${embFile.name} reported ModelType=${info.modelType} instead of EMBEDDING")
+                }
+                val minRuntimeVer = runCatching { info.minRuntimeVersion() }.getOrDefault("") ?: ""
+                if (!isRuntimeVersionCompatible(LITERT_LM_RUNTIME_VERSION, minRuntimeVer)) {
+                    compatibilityError =
+                        "Model '${embFile.name}' requires LiteRT-LM runtime >= $minRuntimeVer (installed: $LITERT_LM_RUNTIME_VERSION)."
+                }
+                val reportedDim = (info as? ModelInfo.Embedding)?.dimension() ?: 0
+                if (compatibilityError == null && reportedDim > 0 && reportedDim != EMBEDDING_DIM) {
+                    compatibilityError =
+                        "Model '${embFile.name}' embedding dimension $reportedDim is incompatible with expected $EMBEDDING_DIM."
                 }
                 val mods = info.inputModalities()
                 supportsVision = mods.vision
@@ -486,6 +547,13 @@ class InferenceService : Service() {
             }
         } catch (t: Throwable) {
             Log.w(TAG, "ModelInfo fallback for ${embFile.name}: ${t.message}")
+        }
+
+        val compatErr = compatibilityError
+        if (compatErr != null) {
+            lastEmbeddingError = compatErr
+            Log.w(TAG, lastEmbeddingError)
+            return null
         }
 
         if (requireVision && !supportsVision) {
@@ -581,7 +649,10 @@ class InferenceService : Service() {
             try {
                 val engine = getOrCreateEmbeddingEngineLocked(embFile!!, requireVision = false, requireAudio = false)
                     ?: return FloatArray(0)
-                val opts = EmbeddingOptions(normalize = true)
+                val opts = EmbeddingOptions(
+                    normalize = true,
+                    insertSpecialTokens = true
+                )
                 val inputsList = texts.map { raw ->
                     listOf(InputData.Text(formatForEmbeddingGemma2(raw, taskMode, titleHint)))
                 }
@@ -667,6 +738,7 @@ class InferenceService : Service() {
         fun runBatchOnce(engine: EmbeddingEngine, resolvedTokens: Int?): FloatArray {
             val opts = EmbeddingOptions(
                 normalize = true,
+                insertSpecialTokens = true,
                 visionTokensPerImage = resolvedTokens
             )
             val responses = if (preparedInputs.size > 1) {

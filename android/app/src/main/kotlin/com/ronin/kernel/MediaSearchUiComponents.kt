@@ -110,15 +110,19 @@ private suspend fun loadMediaThumbnailBitmap(
     mediaUri: String,
     modality: String,
     startMs: Long = 0L,
-    targetPx: Int = 320
+    targetPx: Int = 320,
+    assetType: String = ""
 ): Bitmap? = withContext(Dispatchers.IO) {
     val file = File(mediaPath)
     val useFile = file.exists() && file.canRead()
     val uri = if (!useFile && mediaUri.isNotBlank()) Uri.parse(mediaUri) else null
     if (!useFile && uri == null) return@withContext null
 
+    val isVideoAsset = modality.startsWith("VIDEO", ignoreCase = true) || assetType.equals("video", ignoreCase = true)
+    val isImageAsset = modality.equals("image", ignoreCase = true) && !isVideoAsset
+
     return@withContext try {
-        if (modality.startsWith("VIDEO")) {
+        if (isVideoAsset) {
             val retriever = MediaMetadataRetriever()
             try {
                 if (useFile) retriever.setDataSource(file.absolutePath)
@@ -139,7 +143,7 @@ private suspend fun loadMediaThumbnailBitmap(
             } finally {
                 try { retriever.release() } catch (_: Throwable) {}
             }
-        } else if (modality == "IMAGE") {
+        } else if (isImageAsset) {
             MediaSearchEngine.decodeOrientedSampledBitmap(mediaPath, mediaUri, context, maxSidePx = targetPx)
         } else {
             null
@@ -159,7 +163,8 @@ private suspend fun loadThumbnailBitmap(
     mediaUri = item.mediaUri,
     modality = item.modality,
     startMs = item.startMs,
-    targetPx = targetPx
+    targetPx = targetPx,
+    assetType = item.assetType
 )
 
 @Composable
@@ -283,8 +288,12 @@ fun MediaSearchResultListCard(
     onPlayMoment: (MediaSearchResultItem, Long) -> Unit
 ) {
     val context = LocalContext.current
-    val photoItems = remember(items.toList()) { items.filter { it.modality == "IMAGE" } }
-    val momentItems = remember(items.toList()) { items.filter { it.modality != "IMAGE" } }
+    val photoItems = remember(items.toList()) {
+        items.filter { it.modality.equals("image", ignoreCase = true) && !it.assetType.equals("video", ignoreCase = true) }
+    }
+    val momentItems = remember(items.toList()) {
+        items.filter { !(it.modality.equals("image", ignoreCase = true) && !it.assetType.equals("video", ignoreCase = true)) }
+    }
     var previewPhoto by remember { mutableStateOf<MediaSearchResultItem?>(null) }
     var showAllPhotos by remember(items.size) { mutableStateOf(false) }
 
@@ -383,21 +392,23 @@ fun MediaSearchResultListCard(
         }
 
         momentItems.forEach { item ->
+            val isVideo = item.assetType.equals("video", ignoreCase = true) || item.modality.startsWith("VIDEO", ignoreCase = true)
+            val isImageMod = item.modality.equals("image", ignoreCase = true) || item.modality.equals("VIDEO_FRAME", ignoreCase = true)
+            val isAudio = !isVideo && item.modality.equals("audio", ignoreCase = true)
+
             var thumbBmp by remember(item.mediaPath, item.startMs) { mutableStateOf<Bitmap?>(null) }
             LaunchedEffect(item.mediaPath, item.mediaUri, item.startMs) {
-                if (item.modality == "IMAGE" || item.modality.startsWith("VIDEO")) {
+                if (isImageMod || isVideo) {
                     thumbBmp = loadThumbnailBitmap(context, item, targetPx = 280)
                 }
             }
 
-            val isVideo = item.modality.startsWith("VIDEO")
-            val isAudio = item.modality == "AUDIO"
-            val modBadgeText = when (item.modality) {
-                "IMAGE" -> "PHOTO"
-                "AUDIO" -> "AUDIO"
-                "VIDEO_FRAME" -> "VIDEO FRAME"
-                "VIDEO_AUDIO" -> "VIDEO AUDIO"
-                else -> item.modality
+            val modBadgeText = when {
+                isVideo && isImageMod -> "VIDEO FRAME"
+                isVideo -> "VIDEO AUDIO"
+                isImageMod -> "PHOTO"
+                isAudio -> "AUDIO"
+                else -> item.modality.uppercase()
             }
             val badgeColor = when {
                 isVideo -> Color(0xFF64B5F6)
@@ -624,7 +635,7 @@ fun MediaMomentPlayerDialog(
 ) {
     val context = LocalContext.current
     val item = request.item
-    val isVideo = item.modality.startsWith("VIDEO")
+    val isVideo = item.assetType.equals("video", ignoreCase = true) || item.modality.startsWith("VIDEO", ignoreCase = true)
     var targetStartMs by remember(request) { mutableStateOf(request.startMs) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -1298,8 +1309,9 @@ fun IndexedMediaManagerDialog(
                             ) {
                                 items(entries, key = { it.mediaPath }) { entry ->
                                     val isSelected = entry.mediaPath in selectedPaths
-                                    val isVideo = entry.modality == "VIDEO"
-                                    val isAudio = entry.modality == "AUDIO"
+                                    val isVideo = entry.modality.equals("video", ignoreCase = true)
+                                    val isAudio = entry.modality.equals("audio", ignoreCase = true)
+                                    val isImage = entry.modality.equals("image", ignoreCase = true)
                                     var tileBmp by remember(entry.mediaPath, entry.mediaUri) { mutableStateOf<Bitmap?>(null) }
                                     LaunchedEffect(entry.mediaPath, entry.mediaUri, entry.modality) {
                                         if (!isAudio) {
@@ -1307,9 +1319,10 @@ fun IndexedMediaManagerDialog(
                                                 context = context,
                                                 mediaPath = entry.mediaPath,
                                                 mediaUri = entry.mediaUri,
-                                                modality = if (isVideo) "VIDEO_FRAME" else "IMAGE",
+                                                modality = if (isVideo) "image" else "image",
                                                 startMs = 0L,
-                                                targetPx = 280
+                                                targetPx = 280,
+                                                assetType = if (isVideo) "video" else "image"
                                             )
                                         }
                                     }
@@ -1329,29 +1342,31 @@ fun IndexedMediaManagerDialog(
                                                 if (selectionMode) {
                                                     if (isSelected) selectedPaths.remove(entry.mediaPath)
                                                     else selectedPaths.add(entry.mediaPath)
-                                                } else if (entry.modality == "IMAGE") {
+                                                } else if (isImage) {
                                                     previewPhotoEntry = MediaSearchResultItem(
                                                         mediaPath = entry.mediaPath,
                                                         mediaUri = entry.mediaUri,
-                                                        modality = "IMAGE",
+                                                        modality = "image",
                                                         displayName = entry.displayName,
                                                         startMs = 0L,
                                                         endMs = 0L,
                                                         durationMs = 0L,
                                                         score = 1.0f,
-                                                        modelId = entry.modelId
+                                                        modelId = entry.modelId,
+                                                        assetType = "image"
                                                     )
                                                 } else {
                                                     val playItem = MediaSearchResultItem(
                                                         mediaPath = entry.mediaPath,
                                                         mediaUri = entry.mediaUri,
-                                                        modality = if (isVideo) "VIDEO_FRAME" else "AUDIO",
+                                                        modality = if (isVideo) "image" else "audio",
                                                         displayName = entry.displayName,
                                                         startMs = 0L,
                                                         endMs = entry.durationMs,
                                                         durationMs = entry.durationMs,
                                                         score = 1.0f,
-                                                        modelId = entry.modelId
+                                                        modelId = entry.modelId,
+                                                        assetType = if (isVideo) "video" else "audio"
                                                     )
                                                     chatViewModel.activeMediaPlayerRequest = MediaMomentPlayerRequest(playItem, 0L)
                                                 }

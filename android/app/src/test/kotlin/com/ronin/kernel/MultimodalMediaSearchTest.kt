@@ -258,8 +258,46 @@ class MultimodalMediaSearchTest {
         assertEquals(listOf("/Recordings/meeting.m4a"), filterRelevantMediaMatches(audioMixed, MediaSearchQueryMode.TEXT_TO_MEDIA).map { it.mediaPath })
 
         val lexicalMatch = listOf(
-            MediaSearchResultItem("/DCIM/Camera/bougainvillea_2026.jpg", "", "IMAGE", "bougainvillea_2026.jpg", 0L, 0L, 0L, 0.71f, cosineScore = 0.63f, lexicalHits = 1, corpusSize = 30)
+            MediaSearchResultItem("/DCIM/Camera/bougainvillea_2026.jpg", "", "image", "bougainvillea_2026.jpg", 0L, 0L, 0L, 0.71f, cosineScore = 0.63f, lexicalHits = 1, corpusSize = 30, assetType = "image")
         )
         assertEquals(1, filterRelevantMediaMatches(lexicalMatch, MediaSearchQueryMode.TEXT_TO_MEDIA).size)
+    }
+
+    @Test
+    fun `isRuntimeVersionCompatible safely checks semver requirements`() {
+        assertTrue(InferenceService.isRuntimeVersionCompatible("0.19.1", ""))
+        assertTrue(InferenceService.isRuntimeVersionCompatible("0.19.1", "0.19.0"))
+        assertTrue(InferenceService.isRuntimeVersionCompatible("0.19.1", "v0.19.1"))
+        assertTrue(InferenceService.isRuntimeVersionCompatible("0.19.1", "0.19.1-rc1"))
+        assertTrue(InferenceService.isRuntimeVersionCompatible("0.19.1", "0.18.9+build5"))
+
+        assertFalse(InferenceService.isRuntimeVersionCompatible("0.19.1", "0.19.2"))
+        assertFalse(InferenceService.isRuntimeVersionCompatible("0.19.1", "0.20.0"))
+        assertFalse(InferenceService.isRuntimeVersionCompatible("0.19.1-alpha", "0.19.1"))
+        assertFalse(InferenceService.isRuntimeVersionCompatible("", "0.19.0"))
+    }
+
+    @Test
+    fun `enforceStrictModalityIsolation blocks video frames audio and text from image results`() {
+        val mixed = listOf(
+            MediaSearchResultItem("/DCIM/Camera/photo.jpg", "", "image", "photo.jpg", 0L, 0L, 0L, 0.85f, assetType = "image"),
+            MediaSearchResultItem("/Movies/clip.mp4", "", "image", "clip.mp4", 1000L, 5000L, 10000L, 0.99f, assetType = "video"),
+            MediaSearchResultItem("/Movies/clip.mp4", "", "audio", "clip.mp4", 0L, 10000L, 10000L, 0.92f, assetType = "video"),
+            MediaSearchResultItem("/Movies/legacy_clip.mp4", "", "VIDEO_FRAME", "legacy_clip.mp4", 0L, 5000L, 5000L, 0.98f),
+            MediaSearchResultItem("/Recordings/note.m4a", "", "audio", "note.m4a", 0L, 8000L, 8000L, 0.88f, assetType = "audio"),
+            MediaSearchResultItem("/Docs/spec.pdf", "", "text", "spec.pdf", 0L, 0L, 0L, 0.90f, assetType = "text")
+        )
+
+        val imagesOnly = enforceStrictModalityIsolation(mixed, allowedModality = "image", allowedAssetType = "image")
+        assertEquals(listOf("/DCIM/Camera/photo.jpg"), imagesOnly.map { it.mediaPath })
+
+        val audioOnly = enforceStrictModalityIsolation(mixed, allowedModality = "audio", allowedAssetType = "audio")
+        assertEquals(listOf("/Recordings/note.m4a"), audioOnly.map { it.mediaPath })
+
+        val videoFramesOnly = enforceStrictModalityIsolation(mixed, allowedModality = "image", allowedAssetType = "video")
+        assertEquals(listOf("/Movies/clip.mp4", "/Movies/legacy_clip.mp4"), videoFramesOnly.map { it.mediaPath })
+
+        val docsOnly = enforceStrictModalityIsolation(mixed, allowedModality = "text", allowedAssetType = "text")
+        assertEquals(listOf("/Docs/spec.pdf"), docsOnly.map { it.mediaPath })
     }
 }

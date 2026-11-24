@@ -59,7 +59,7 @@ JNINativeMethod g_methods[] = {
     {"hybridSearchWithModelNative", "(Ljava/lang/String;[FLjava/lang/String;ILjava/lang/String;)[Ljava/lang/String;", (void*)native_hybridSearchWithModel},
     {"evaluateRagWakeupNative", "(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;", (void*)native_evaluateRagWakeup},
     {"isMediaIndexedNative", "(Ljava/lang/String;JLjava/lang/String;)Z", (void*)native_isMediaIndexed},
-    {"storeMediaEmbeddingsAtomicNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJJLjava/lang/String;[Ljava/lang/String;[I[J[J[FI)Z", (void*)native_storeMediaEmbeddingsAtomic},
+    {"storeMediaEmbeddingsAtomicNative", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJJLjava/lang/String;[Ljava/lang/String;[Ljava/lang/String;[I[J[J[FI)Z", (void*)native_storeMediaEmbeddingsAtomic},
     {"searchMediaEmbeddingsNative", "([FLjava/lang/String;Ljava/lang/String;Ljava/lang/String;I)[Ljava/lang/String;", (void*)native_searchMediaEmbeddings},
     {"getMediaIndexStatsNative", "(Ljava/lang/String;)Ljava/lang/String;", (void*)native_getMediaIndexStats},
     {"listIndexedMediaNative", "(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;", (void*)native_listIndexedMedia},

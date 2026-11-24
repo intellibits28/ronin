@@ -21,3 +21,9 @@
 -keepclasseswithmembernames,includedescriptorclasses class * {
     native <methods>;
 }
+
+# Preserve LiteRT-LM reflection, JNI callbacks, and bundled embedding runtime classes
+-keep class com.google.ai.edge.litertlm.** { *; }
+-dontwarn com.google.ai.edge.litertlm.**
+-keep class com.ronin.kernel.InferenceService { *; }
+-keep class com.ronin.kernel.InferenceService$* { *; }

@@ -2902,18 +2902,18 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                         outcome.indexEmpty -> ChatMessage(
                             System.currentTimeMillis() + 1,
                             "Ronin",
-                            "📸 Indexed Photos / Video Frames မရှိသေးပါ။\n\nAudio ဖိုင်တွေသာ Index ဖြစ်နေသေးပါက ဓာတ်ပုံနှင့် ဗီဒီယိုများကို Index ထည့်ရန် /mediaindex ဟု ရိုက်ပို့ပါ (သို့မဟုတ် Menu > Settings > 4.6 Multimodal Media Search > Add Photos / Videos သို့မဟုတ် Index All Photos ကို နှိပ်ပါ)။"
+                            "📸 Indexed Photos မရှိသေးပါ။\n\nAudio နှင့် Video ဖိုင်တွေသာ Index ဖြစ်နေသေးပါက ဓာတ်ပုံများကို Index ထည့်ရန် /mediaindex ဟု ရိုက်ပို့ပါ (သို့မဟုတ် Menu > Settings > 4.6 Multimodal Media Search > Add Photos / Videos သို့မဟုတ် Index All Photos ကို နှိပ်ပါ)။"
                         )
                         outcome.results.isEmpty() -> {
                             val diag = if (outcome.scannedCount > 0) {
-                                "\n\n(Checked ${outcome.scannedCount} indexed visual segments; max similarity ${Math.round(outcome.bestRejectedScore.coerceIn(0f, 1f) * 100f)}% did not meet relevance threshold. Try indexing more albums in Settings > 4.6.)"
+                                "\n\n(Checked ${outcome.scannedCount} indexed image segments; max similarity ${Math.round(outcome.bestRejectedScore.coerceIn(0f, 1f) * 100f)}% did not meet relevance threshold. Try indexing more albums in Settings > 4.6.)"
                             } else ""
-                            ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🔍 Indexed Photos / Video Frames ထဲမှာ ${cachedFile.name} နဲ့ ဆင်တူတဲ့ ပုံ/Video မတွေ့သေးပါ။$diag")
+                            ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🔍 Indexed Photos ထဲမှာ ${cachedFile.name} နဲ့ ဆင်တူတဲ့ ပုံ မတွေ့သေးပါ။$diag")
                         }
                         else -> ChatMessage(
                             System.currentTimeMillis() + 1,
                             "Ronin",
-                            "🔍 Visual Similarity Results (EmbeddingGemma 2 • ${outcome.modelId})\nFound ${outcome.results.size} visual match(es) similar to ${cachedFile.name}:"
+                            "🔍 Similar Image Results (EmbeddingGemma 2 • ${outcome.modelId})\nFound ${outcome.results.size} photo match(es) similar to ${cachedFile.name}:"
                         ).apply {
                             mediaSearchResults.addAll(outcome.results)
                         }
@@ -3279,15 +3279,15 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
                                                         outcome.indexEmpty -> ChatMessage(
                                                             System.currentTimeMillis(),
                                                             "Ronin",
-                                                            "📸 Indexed Photos / Video Frames မရှိသေးပါ။\n\n/mediaindex ဟုရိုက်ပြီး (သို့) Settings > 4.6 Multimodal Media Search > Add Photos / Videos ကို နှိပ်၍ အရင် Index လုပ်ပေးပါ။"
+                                                            "📸 Indexed Photos မရှိသေးပါ။\n\n/mediaindex ဟုရိုက်ပြီး (သို့) Settings > 4.6 Multimodal Media Search > Add Photos / Videos ကို နှိပ်၍ အရင် Index လုပ်ပေးပါ။"
                                                         )
                                                         outcome.results.isEmpty() -> {
                                                             val diag = if (outcome.scannedCount > 0) {
-                                                                "\n\n(Scanned ${outcome.scannedCount} segments; max similarity ${Math.round(outcome.bestRejectedScore.coerceIn(0f, 1f) * 100f)}%)"
+                                                                "\n\n(Scanned ${outcome.scannedCount} image segments; max similarity ${Math.round(outcome.bestRejectedScore.coerceIn(0f, 1f) * 100f)}%)"
                                                             } else ""
-                                                            ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 Indexed Photos / Video Frames ထဲမှာ ${resolvedImg.name} နဲ့ ဆင်တူတဲ့ ပုံ/Video မတွေ့သေးပါ။$diag")
+                                                            ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 Indexed Photos ထဲမှာ ${resolvedImg.name} နဲ့ ဆင်တူတဲ့ ပုံ မတွေ့သေးပါ။$diag")
                                                         }
-                                                        else -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 Visual Similarity Results (EmbeddingGemma 2 • ${outcome.modelId})\nFound ${outcome.results.size} visual match(es) for ${resolvedImg.name}:").apply {
+                                                        else -> ChatMessage(System.currentTimeMillis(), "Ronin", "🔍 Similar Image Results (EmbeddingGemma 2 • ${outcome.modelId})\nFound ${outcome.results.size} photo match(es) for ${resolvedImg.name}:").apply {
                                                             mediaSearchResults.addAll(outcome.results)
                                                         }
                                                     }

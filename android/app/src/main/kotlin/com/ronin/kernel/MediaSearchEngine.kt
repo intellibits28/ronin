@@ -88,7 +88,7 @@ data class DeviceMediaAsset(
 data class MediaSearchResultItem(
     val mediaPath: String,
     val mediaUri: String,
-    val modality: String, // "IMAGE", "AUDIO", "VIDEO_FRAME", "VIDEO_AUDIO"
+    val modality: String, // Canonical: "image", "audio", "text"
     val displayName: String,
     val startMs: Long,
     val endMs: Long,
@@ -101,7 +101,8 @@ data class MediaSearchResultItem(
     val corpusMean: Float = 0f,
     val corpusStd: Float = 0f,
     val corpusSize: Int = 0,
-    val lexicalHits: Int = 0
+    val lexicalHits: Int = 0,
+    val assetType: String = "" // Source container: "image", "audio", "video", "text"
 )
 
 data class MediaIndexProgress(
@@ -463,6 +464,35 @@ fun prioritizeMediaAssets(
 }
 
 /**
+ * Defensive boundary filter ensuring zero cross-modal or cross-asset leakage in final results.
+ */
+fun enforceStrictModalityIsolation(
+    results: List<MediaSearchResultItem>,
+    allowedModality: String,
+    allowedAssetType: String? = null
+): List<MediaSearchResultItem> {
+    val normMod = allowedModality.trim().lowercase()
+    val normAsset = allowedAssetType?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+    if (normMod.isEmpty()) return emptyList()
+    return results.filter { item ->
+        val rawMod = item.modality.trim().lowercase()
+        val canonicalMod = when (rawMod) {
+            "video_frame" -> "image"
+            "video_audio" -> "audio"
+            else -> rawMod
+        }
+        val resolvedAsset = item.assetType.trim().lowercase().ifEmpty {
+            when (rawMod) {
+                "video_frame", "video_audio" -> "video"
+                "image", "audio", "text" -> rawMod
+                else -> ""
+            }
+        }
+        canonicalMod == normMod && (normAsset == null || resolvedAsset == normAsset)
+    }
+}
+
+/**
  * Filters out anisotropic background noise using C++ corpus-wide Z-score statistics
  * combined with modality-aware cosine floors.
  */
@@ -479,7 +509,8 @@ fun filterRelevantMediaMatches(
             return@filter true
         }
 
-        val isAudioSeg = item.modality == "AUDIO" || item.modality == "VIDEO_AUDIO"
+        val isAudioSeg = item.modality.equals("audio", ignoreCase = true) ||
+            item.modality.equals("VIDEO_AUDIO", ignoreCase = true)
         val highFloor: Float
         val adaptiveFloor: Float
         val minZ: Float
@@ -1436,11 +1467,12 @@ object MediaSearchEngine {
                                         fileSize = asset.fileSize,
                                         durationMs = asset.durationMs,
                                         modelId = modelId,
-                                        modalities = listOf("IMAGE"),
+                                        modalities = listOf("image"),
                                         segmentIndices = listOf(0),
                                         startMsList = listOf(0L),
                                         endMsList = listOf(0L),
-                                        embeddings = listOf(vec)
+                                        embeddings = listOf(vec),
+                                        assetTypes = listOf("image")
                                     )
                                 }
 
@@ -1512,6 +1544,7 @@ object MediaSearchEngine {
                 val tempFilesToDelete = mutableListOf<File>()
                 try {
                     val segModalities = mutableListOf<String>()
+                    val segAssetTypes = mutableListOf<String>()
                     val segIndices = mutableListOf<Int>()
                     val segStarts = mutableListOf<Long>()
                     val segEnds = mutableListOf<Long>()
@@ -1534,7 +1567,8 @@ object MediaSearchEngine {
                                 )
                                 if (vecs.size == audioSegs.size) {
                                     audioSegs.forEachIndexed { sIdx, seg ->
-                                        segModalities.add("AUDIO")
+                                        segModalities.add("audio")
+                                        segAssetTypes.add("audio")
                                         segIndices.add(seg.index)
                                         segStarts.add(seg.startMs)
                                         segEnds.add(seg.endMs)
@@ -1566,7 +1600,8 @@ object MediaSearchEngine {
                                     )
                                     if (fVecs.size == frameSegs.size) {
                                         frameSegs.forEachIndexed { fIdx, frame ->
-                                            segModalities.add("VIDEO_FRAME")
+                                            segModalities.add("image")
+                                            segAssetTypes.add("video")
                                             segIndices.add(frame.index)
                                             segStarts.add(frame.timestampMs)
                                             segEnds.add(frame.endMs)
@@ -1586,7 +1621,8 @@ object MediaSearchEngine {
                                     )
                                     if (aVecs.size == vAudioSegs.size) {
                                         vAudioSegs.forEachIndexed { aIdx, aSeg ->
-                                            segModalities.add("VIDEO_AUDIO")
+                                            segModalities.add("audio")
+                                            segAssetTypes.add("video")
                                             segIndices.add(aSeg.index)
                                             segStarts.add(aSeg.startMs)
                                             segEnds.add(aSeg.endMs)
@@ -1612,7 +1648,8 @@ object MediaSearchEngine {
                             segmentIndices = segIndices,
                             startMsList = segStarts,
                             endMsList = segEnds,
-                            embeddings = segEmbeddings
+                            embeddings = segEmbeddings,
+                            assetTypes = segAssetTypes
                         )
                         if (stored) {
                             when (asset.modality) {
@@ -1668,7 +1705,8 @@ object MediaSearchEngine {
             corpusMean = j.optDouble("corpus_mean", 0.0).toFloat(),
             corpusStd = j.optDouble("corpus_std", 0.0).toFloat(),
             corpusSize = j.optInt("corpus_size", 0),
-            lexicalHits = j.optInt("lexical_hits", 0)
+            lexicalHits = j.optInt("lexical_hits", 0),
+            assetType = j.optString("asset_type", "")
         )
     }
 
@@ -1722,6 +1760,7 @@ object MediaSearchEngine {
         }
 
         val effectiveModelId = if (totalSegs > 0) modelId else ""
+        val effectiveFilter = if (filter == MediaModalityFilter.VISUAL) MediaModalityFilter.IMAGE else filter
         val qVecs = if (modelPath.isNotBlank() && File(modelPath).exists()) {
             nativeEngine.generateEmbeddingsSubBatched(
                 texts = listOf(query),
@@ -1734,7 +1773,7 @@ object MediaSearchEngine {
         val queryVec = qVecs.firstOrNull() ?: FloatArray(0)
         val rawJson = nativeEngine.searchMediaEmbeddingsSafe(
             queryEmbedding = queryVec,
-            modalityFilter = filter.sqlFilter,
+            modalityFilter = effectiveFilter.sqlFilter,
             modelId = effectiveModelId,
             lexicalQuery = query,
             topK = max(topK * 3, 40)
@@ -1743,11 +1782,20 @@ object MediaSearchEngine {
         val scannedCount = parsed.firstOrNull()?.corpusSize ?: parsed.size
         val bestRawCosine = parsed.maxOfOrNull { it.cosineScore } ?: 0f
         val relevant = filterRelevantMediaMatches(parsed, MediaSearchQueryMode.TEXT_TO_MEDIA)
-        val ranked = deduplicateAndRankMediaMatches(relevant, topK = topK)
+        val isolated = when (effectiveFilter) {
+            MediaModalityFilter.IMAGE -> enforceStrictModalityIsolation(relevant, "image", "image")
+            MediaModalityFilter.AUDIO -> enforceStrictModalityIsolation(relevant, "audio", "audio")
+            MediaModalityFilter.VIDEO -> relevant.filter {
+                it.assetType.equals("video", ignoreCase = true) ||
+                    it.modality.startsWith("VIDEO", ignoreCase = true)
+            }
+            else -> relevant
+        }
+        val ranked = deduplicateAndRankMediaMatches(isolated, topK = topK)
         MediaSearchOutcome(
             success = true,
             query = query,
-            filter = filter,
+            filter = effectiveFilter,
             modelId = effectiveModelId,
             results = ranked,
             indexEmpty = false,
@@ -1760,15 +1808,20 @@ object MediaSearchEngine {
         context: Context,
         nativeEngine: NativeEngine,
         imageFile: File,
-        filter: MediaModalityFilter = MediaModalityFilter.VISUAL,
+        filter: MediaModalityFilter = MediaModalityFilter.IMAGE,
         topK: Int = 24
     ): MediaSearchOutcome = withContext(Dispatchers.IO) {
+        val effectiveFilter = if (filter == MediaModalityFilter.VISUAL || filter == MediaModalityFilter.ALL) {
+            MediaModalityFilter.IMAGE
+        } else {
+            filter
+        }
         val modelPath = nativeEngine.resolveEmbeddingModelPath(requireMultimodal = true)
         if (modelPath.isBlank() || !File(modelPath).exists()) {
             return@withContext MediaSearchOutcome(
                 success = false,
                 query = imageFile.name,
-                filter = filter,
+                filter = effectiveFilter,
                 error = "EmbeddingGemma 2 multimodal model not installed. Please download EmbeddingGemma 2 740M (~462 MB) from Settings > Hugging Face Model Hub (your Gemma 4 Chat Brain stays active)."
             )
         }
@@ -1778,7 +1831,7 @@ object MediaSearchEngine {
             ?: return@withContext MediaSearchOutcome(
                 success = false,
                 query = imageFile.name,
-                filter = filter,
+                filter = effectiveFilter,
                 modelId = modelId,
                 error = "Inference worker service unavailable while inspecting $embFileName. Please retry."
             )
@@ -1790,25 +1843,24 @@ object MediaSearchEngine {
             return@withContext MediaSearchOutcome(
                 success = false,
                 query = imageFile.name,
-                filter = filter,
+                filter = effectiveFilter,
                 modelId = modelId,
                 error = "Embedding model $embFileName does not support Vision inputs (text=$supportsText, vision=$supportsVision, audio=$supportsAudio).\n\nVisual Search အတွက် Settings > Hugging Face Model Hub မှ EmbeddingGemma 2 740M (Omnimodal) (~462 MB) ကို download လုပ်ပေးပါ (Active Brain က Gemma 4 ပဲ ဆက်ရှိနေမှာဖြစ်ပြီး EmbeddingGemma 2 က On-Demand အလိုအလျောက် တွဲအလုပ်လုပ်ပါမည်)။"
             )
         }
 
-        val anyStats = nativeEngine.getMediaIndexStatsSafe("")
-        val relevantSegments = when (filter) {
-            MediaModalityFilter.VISUAL -> anyStats.optInt("images", 0) + anyStats.optInt("video_frames", 0)
-            MediaModalityFilter.IMAGE -> anyStats.optInt("images", 0)
-            MediaModalityFilter.AUDIO -> anyStats.optInt("audio", 0)
-            MediaModalityFilter.VIDEO -> anyStats.optInt("videos", 0)
-            MediaModalityFilter.ALL -> anyStats.optInt("total_segments", 0)
+        val modelStats = nativeEngine.getMediaIndexStatsSafe(modelId)
+        val relevantSegments = when (effectiveFilter) {
+            MediaModalityFilter.IMAGE -> modelStats.optInt("images", 0)
+            MediaModalityFilter.AUDIO -> modelStats.optInt("audio", 0)
+            MediaModalityFilter.VIDEO -> modelStats.optInt("videos", 0)
+            else -> modelStats.optInt("images", 0)
         }
         if (relevantSegments == 0) {
             return@withContext MediaSearchOutcome(
                 success = true,
                 query = imageFile.name,
-                filter = filter,
+                filter = effectiveFilter,
                 modelId = modelId,
                 indexEmpty = true
             )
@@ -1820,7 +1872,7 @@ object MediaSearchEngine {
             return@withContext MediaSearchOutcome(
                 success = false,
                 query = imageFile.name,
-                filter = filter,
+                filter = effectiveFilter,
                 error = "Could not decode reference image ${imageFile.name}."
             )
         }
@@ -1838,7 +1890,7 @@ object MediaSearchEngine {
                     return@withContext MediaSearchOutcome(
                         success = false,
                         query = imageFile.name,
-                        filter = filter,
+                        filter = effectiveFilter,
                         modelId = modelId,
                         error = "Vision encoder failed on $embFileName while encoding ${imageFile.name}.$reasonSuffix"
                     )
@@ -1846,8 +1898,8 @@ object MediaSearchEngine {
 
             val rawJson = nativeEngine.searchMediaEmbeddingsSafe(
                 queryEmbedding = qVec,
-                modalityFilter = filter.sqlFilter,
-                modelId = "",
+                modalityFilter = effectiveFilter.sqlFilter,
+                modelId = modelId,
                 lexicalQuery = "",
                 topK = max(topK * 3, 40)
             )
@@ -1855,11 +1907,12 @@ object MediaSearchEngine {
             val scannedCount = parsed.firstOrNull()?.corpusSize ?: parsed.size
             val bestRawCosine = parsed.maxOfOrNull { it.cosineScore } ?: 0f
             val relevant = filterRelevantMediaMatches(parsed, MediaSearchQueryMode.IMAGE_TO_VISUAL)
-            val ranked = deduplicateAndRankMediaMatches(relevant, topK = topK)
+            val isolated = enforceStrictModalityIsolation(relevant, allowedModality = "image", allowedAssetType = "image")
+            val ranked = deduplicateAndRankMediaMatches(isolated, topK = topK)
             MediaSearchOutcome(
                 success = true,
                 query = "Similar to ${imageFile.name}",
-                filter = filter,
+                filter = effectiveFilter,
                 modelId = modelId,
                 results = ranked,
                 indexEmpty = false,

@@ -125,7 +125,7 @@ JNIEXPORT jobjectArray JNICALL native_hybridSearch(JNIEnv* env, jobject thiz, js
 JNIEXPORT jobjectArray JNICALL native_hybridSearchWithModel(JNIEnv* env, jobject thiz, jstring queryText, jfloatArray queryEmbedding, jstring docPathFilter, jint topK, jstring modelId);
 JNIEXPORT jstring JNICALL native_evaluateRagWakeup(JNIEnv* env, jobject thiz, jstring queryText, jstring docPathFilter, jint topK);
 JNIEXPORT jboolean JNICALL native_isMediaIndexed(JNIEnv* env, jobject thiz, jstring mediaPath, jlong modifiedAt, jstring modelId);
-JNIEXPORT jboolean JNICALL native_storeMediaEmbeddingsAtomic(JNIEnv* env, jobject thiz, jstring mediaPath, jstring mediaUri, jstring displayName, jstring metadataText, jlong modifiedAt, jlong fileSize, jlong durationMs, jstring modelId, jobjectArray modalities, jintArray segmentIndices, jlongArray startMsList, jlongArray endMsList, jfloatArray flatEmbeddings, jint dimension);
+JNIEXPORT jboolean JNICALL native_storeMediaEmbeddingsAtomic(JNIEnv* env, jobject thiz, jstring mediaPath, jstring mediaUri, jstring displayName, jstring metadataText, jlong modifiedAt, jlong fileSize, jlong durationMs, jstring modelId, jobjectArray modalities, jobjectArray assetTypes, jintArray segmentIndices, jlongArray startMsList, jlongArray endMsList, jfloatArray flatEmbeddings, jint dimension);
 JNIEXPORT jobjectArray JNICALL native_searchMediaEmbeddings(JNIEnv* env, jobject thiz, jfloatArray queryEmbedding, jstring modalityFilter, jstring modelId, jstring lexicalQuery, jint topK);
 JNIEXPORT jstring JNICALL native_getMediaIndexStats(JNIEnv* env, jobject thiz, jstring modelId);
 JNIEXPORT jstring JNICALL native_listIndexedMedia(JNIEnv* env, jobject thiz, jstring modalityFilter, jstring modelId, jint limit);

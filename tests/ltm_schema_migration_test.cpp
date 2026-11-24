@@ -59,7 +59,7 @@ TEST(LongTermMemorySchemaMigration, ArchivesLegacyFactsAndSetsSchemaVersion) {
     LongTermMemory ltm(path);
     ASSERT_NE(ltm.getDatabase(), nullptr);
 
-    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 3);
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 4);
     EXPECT_TRUE(tableExists(ltm.getDatabase(), "facts_legacy_v0"));
     EXPECT_TRUE(tableExists(ltm.getDatabase(), "facts"));
 
@@ -310,8 +310,9 @@ TEST(LongTermMemoryMediaEmbeddings, AtomicStoreModalityFiltersTimestampsAndSafeM
 
     // Photo embedding along +X axis
     std::vector<LongTermMemory::MediaSegment> imgSegs(1);
-    imgSegs[0].modality = "IMAGE";
-    imgSegs[0].segment_index = 0;
+    imgSegs[0].modality = "image";
+    imgSegs[0].asset_type = "image";
+    imgSegs[0].segment_index = 99; // Standalone photo must normalize deterministically to segment_index = 0
     imgSegs[0].start_ms = 0;
     imgSegs[0].end_ms = 0;
     imgSegs[0].embedding = {1.0f, 0.0f, 0.0f, 0.0f};
@@ -328,8 +329,8 @@ TEST(LongTermMemoryMediaEmbeddings, AtomicStoreModalityFiltersTimestampsAndSafeM
 
     // Audio voice memo along +Y axis
     std::vector<LongTermMemory::MediaSegment> audSegs(2);
-    audSegs[0] = {"AUDIO", 0, 0LL, 20000LL, {0.1f, 0.9f, 0.0f, 0.0f}};
-    audSegs[1] = {"AUDIO", 1, 15000LL, 35000LL, {0.0f, 1.0f, 0.0f, 0.0f}};
+    audSegs[0] = {"audio", 0, 0LL, 20000LL, {0.1f, 0.9f, 0.0f, 0.0f}, "audio"};
+    audSegs[1] = {"audio", 1, 15000LL, 35000LL, {0.0f, 1.0f, 0.0f, 0.0f}, "audio"};
     ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
         "/sdcard/Recordings/q4_budget.m4a",
         "content://media/external/audio/media/202",
@@ -343,9 +344,9 @@ TEST(LongTermMemoryMediaEmbeddings, AtomicStoreModalityFiltersTimestampsAndSafeM
 
     // Video with two frame segments (+Z and +X) and one audio segment (+W)
     std::vector<LongTermMemory::MediaSegment> vidSegs(3);
-    vidSegs[0] = {"VIDEO_FRAME", 0, 0LL, 5000LL, {0.2f, 0.0f, 0.8f, 0.0f}};
-    vidSegs[1] = {"VIDEO_FRAME", 1, 45000LL, 50000LL, {0.95f, 0.0f, 0.25f, 0.0f}};
-    vidSegs[2] = {"VIDEO_AUDIO", 0, 30000LL, 50000LL, {0.0f, 0.0f, 0.1f, 0.99f}};
+    vidSegs[0] = {"image", 0, 0LL, 5000LL, {0.2f, 0.0f, 0.8f, 0.0f}, "video"};
+    vidSegs[1] = {"image", 1, 45000LL, 50000LL, {0.95f, 0.0f, 0.25f, 0.0f}, "video"};
+    vidSegs[2] = {"audio", 0, 30000LL, 50000LL, {0.0f, 0.0f, 0.1f, 0.99f}, "video"};
     ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
         "/sdcard/Movies/holiday.mp4",
         "content://media/external/video/media/303",
@@ -359,36 +360,47 @@ TEST(LongTermMemoryMediaEmbeddings, AtomicStoreModalityFiltersTimestampsAndSafeM
 
     EXPECT_TRUE(ltm.isMediaIndexed("/sdcard/DCIM/beach_dog.jpg", 1700000100LL, model_740m));
     EXPECT_FALSE(ltm.isMediaIndexed("/sdcard/DCIM/beach_dog.jpg", 1700000999LL, model_740m));
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT segment_index FROM media_embeddings WHERE media_path='/sdcard/DCIM/beach_dog.jpg';"), 0);
 
     // Query near +X across ALL: image (1.0) should rank #1, video frame at 45000ms (~0.967) #2
     auto allMatches = ltm.searchMediaEmbeddings({1.0f, 0.0f, 0.0f, 0.0f}, "ALL", model_740m, "", 5);
     ASSERT_GE(allMatches.size(), 2u);
     EXPECT_EQ(allMatches[0].media_path, "/sdcard/DCIM/beach_dog.jpg");
-    EXPECT_EQ(allMatches[0].modality, "IMAGE");
+    EXPECT_EQ(allMatches[0].modality, "image");
+    EXPECT_EQ(allMatches[0].asset_type, "image");
     EXPECT_EQ(allMatches[1].media_path, "/sdcard/Movies/holiday.mp4");
+    EXPECT_EQ(allMatches[1].modality, "image");
+    EXPECT_EQ(allMatches[1].asset_type, "video");
     EXPECT_EQ(allMatches[1].start_ms, 45000LL);
 
-    // Query near +X across VISUAL: returns IMAGE and VIDEO_FRAME only (never AUDIO or VIDEO_AUDIO)
-    auto visualMatches = ltm.searchMediaEmbeddings({0.0f, 1.0f, 0.0f, 1.0f}, "VISUAL", model_740m, "", 10);
-    ASSERT_EQ(visualMatches.size(), 3u);
-    for (const auto& vm : visualMatches) {
-        EXPECT_TRUE(vm.modality == "IMAGE" || vm.modality == "VIDEO_FRAME");
-    }
+    // Unfiltered legacy VISUAL or empty filter is rejected (returns empty, zero leakage)
+    EXPECT_TRUE(ltm.searchMediaEmbeddings({0.0f, 1.0f, 0.0f, 1.0f}, "VISUAL", model_740m, "", 10).empty());
+    EXPECT_TRUE(ltm.searchMediaEmbeddings({0.0f, 1.0f, 0.0f, 1.0f}, "", model_740m, "", 10).empty());
 
-    // Filter VIDEO matches both VIDEO_FRAME and VIDEO_AUDIO
+    // Strict IMAGE filter returns standalone photos only (never video frames or audio)
+    auto imageOnlyMatches = ltm.searchMediaEmbeddings({1.0f, 0.0f, 0.0f, 0.0f}, "IMAGE", model_740m, "", 10);
+    ASSERT_EQ(imageOnlyMatches.size(), 1u);
+    EXPECT_EQ(imageOnlyMatches[0].modality, "image");
+    EXPECT_EQ(imageOnlyMatches[0].asset_type, "image");
+    EXPECT_EQ(imageOnlyMatches[0].media_path, "/sdcard/DCIM/beach_dog.jpg");
+
+    // Filter VIDEO matches both video image frames and video audio tracks
     auto videoAudioMatches = ltm.searchMediaEmbeddings({0.0f, 0.0f, 0.0f, 1.0f}, "VIDEO", model_740m, "", 5);
     ASSERT_FALSE(videoAudioMatches.empty());
-    EXPECT_EQ(videoAudioMatches[0].modality, "VIDEO_AUDIO");
+    EXPECT_EQ(videoAudioMatches[0].modality, "audio");
+    EXPECT_EQ(videoAudioMatches[0].asset_type, "video");
     EXPECT_EQ(videoAudioMatches[0].start_ms, 30000LL);
 
     // Filter AUDIO
     auto audioMatches = ltm.searchMediaEmbeddings({0.0f, 1.0f, 0.0f, 0.0f}, "AUDIO", model_740m, "", 5);
     ASSERT_EQ(audioMatches.size(), 2u);
+    EXPECT_EQ(audioMatches[0].modality, "audio");
+    EXPECT_EQ(audioMatches[0].asset_type, "audio");
     EXPECT_EQ(audioMatches[0].start_ms, 15000LL);
 
     // Atomic re-index purges stale segments (3 -> 1)
     std::vector<LongTermMemory::MediaSegment> vidUpdated(1);
-    vidUpdated[0] = {"VIDEO_FRAME", 0, 10000LL, 15000LL, {0.0f, 0.0f, 1.0f, 0.0f}};
+    vidUpdated[0] = {"image", 0, 10000LL, 15000LL, {0.0f, 0.0f, 1.0f, 0.0f}, "video"};
     ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
         "/sdcard/Movies/holiday.mp4",
         "content://media/external/video/media/303",
@@ -428,7 +440,7 @@ TEST(LongTermMemoryMediaEmbeddings, ComputesPopulationZScoreAndListsDistinctInde
     for (int i = 0; i < 15; ++i) {
         std::vector<LongTermMemory::MediaSegment> seg(1);
         float jitter = (i % 3 - 1) * 0.015f;
-        seg[0] = {"IMAGE", 0, 0LL, 0LL, {0.65f + jitter, 0.76f, 0.0f, 0.0f}};
+        seg[0] = {"image", 0, 0LL, 0LL, {0.65f + jitter, 0.76f, 0.0f, 0.0f}, "image"};
         std::string p = "/sdcard/DCIM/Screenshots/screen_" + std::to_string(i) + ".png";
         std::string n = "screen_" + std::to_string(i) + ".png";
         ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(p, "", n, "Screenshots", 1700000000LL + i, 100000LL, 0LL, model_740m, seg));
@@ -437,7 +449,7 @@ TEST(LongTermMemoryMediaEmbeddings, ComputesPopulationZScoreAndListsDistinctInde
     // Insert 1 strong match along +X
     {
         std::vector<LongTermMemory::MediaSegment> seg(1);
-        seg[0] = {"IMAGE", 0, 0LL, 0LL, {0.99f, 0.14f, 0.0f, 0.0f}};
+        seg[0] = {"image", 0, 0LL, 0LL, {0.99f, 0.14f, 0.0f, 0.0f}, "image"};
         ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
             "/sdcard/DCIM/Camera/bougainvillea_01.jpg",
             "content://media/external/images/media/999",
@@ -453,8 +465,8 @@ TEST(LongTermMemoryMediaEmbeddings, ComputesPopulationZScoreAndListsDistinctInde
     // Insert 1 multi-segment video and 1 audio file
     {
         std::vector<LongTermMemory::MediaSegment> vidSegs(2);
-        vidSegs[0] = {"VIDEO_FRAME", 0, 0LL, 4000LL, {0.3f, 0.3f, 0.9f, 0.0f}};
-        vidSegs[1] = {"VIDEO_AUDIO", 0, 0LL, 15000LL, {0.2f, 0.2f, 0.2f, 0.9f}};
+        vidSegs[0] = {"image", 0, 0LL, 4000LL, {0.3f, 0.3f, 0.9f, 0.0f}, "video"};
+        vidSegs[1] = {"audio", 0, 0LL, 15000LL, {0.2f, 0.2f, 0.2f, 0.9f}, "video"};
         ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
             "/sdcard/DCIM/Camera/garden_clip.mp4",
             "",
@@ -468,7 +480,7 @@ TEST(LongTermMemoryMediaEmbeddings, ComputesPopulationZScoreAndListsDistinctInde
     }
     {
         std::vector<LongTermMemory::MediaSegment> audSeg(1);
-        audSeg[0] = {"AUDIO", 0, 0LL, 10000LL, {0.0f, 0.0f, 0.0f, 1.0f}};
+        audSeg[0] = {"audio", 0, 0LL, 10000LL, {0.0f, 0.0f, 0.0f, 1.0f}, "audio"};
         ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
             "/sdcard/Recordings/memo.m4a",
             "",
@@ -485,6 +497,8 @@ TEST(LongTermMemoryMediaEmbeddings, ComputesPopulationZScoreAndListsDistinctInde
     auto matches = ltm.searchMediaEmbeddings({1.0f, 0.0f, 0.0f, 0.0f}, "IMAGE", model_740m, "bougainvillea", 8);
     ASSERT_EQ(matches.size(), 8u);
     EXPECT_EQ(matches[0].media_path, "/sdcard/DCIM/Camera/bougainvillea_01.jpg");
+    EXPECT_EQ(matches[0].modality, "image");
+    EXPECT_EQ(matches[0].asset_type, "image");
     EXPECT_EQ(matches[0].corpus_size, 16);
     EXPECT_NEAR(matches[0].corpus_mean, 0.67f, 0.05f);
     EXPECT_GT(matches[0].corpus_std, 0.0f);
@@ -500,7 +514,7 @@ TEST(LongTermMemoryMediaEmbeddings, ComputesPopulationZScoreAndListsDistinctInde
     EXPECT_FLOAT_EQ(flatMatches[0].cosine_score, 0.0f);
     EXPECT_FLOAT_EQ(flatMatches[0].z_score, 0.0f);
 
-    // Distinct indexed listing collapses multi-segment videos into 1 'VIDEO' entry
+    // Distinct indexed listing collapses multi-segment videos into 1 'video' entry
     std::string allListJson = ltm.listIndexedMediaJson("ALL", model_740m, 100);
     nlohmann::json allArr = nlohmann::json::parse(allListJson);
     ASSERT_TRUE(allArr.is_array());
@@ -511,8 +525,140 @@ TEST(LongTermMemoryMediaEmbeddings, ComputesPopulationZScoreAndListsDistinctInde
     ASSERT_TRUE(vidArr.is_array());
     ASSERT_EQ(vidArr.size(), 1u);
     EXPECT_EQ(vidArr[0]["media_path"].get<std::string>(), "/sdcard/DCIM/Camera/garden_clip.mp4");
-    EXPECT_EQ(vidArr[0]["modality"].get<std::string>(), "VIDEO");
+    EXPECT_EQ(vidArr[0]["modality"].get<std::string>(), "video");
     EXPECT_EQ(vidArr[0]["segment_count"].get<int>(), 2);
 }
+
+TEST(LongTermMemorySchemaMigration, SchemaV3ToV4MigratesModalityTagsAndPurgesStaleEntries) {
+    const std::string db_path = tempDbPath("schema_v3_to_v4_test");
+    std::remove(db_path.c_str());
+
+    // Build an explicit Schema v3 database before instantiating LongTermMemory.
+    sqlite3* raw_db = nullptr;
+    ASSERT_EQ(sqlite3_open(db_path.c_str(), &raw_db), SQLITE_OK);
+    execSql(raw_db, "CREATE TABLE schema_version (version INTEGER);");
+    execSql(raw_db, "INSERT INTO schema_version(version) VALUES (3);");
+    execSql(raw_db, "CREATE TABLE facts (id INTEGER PRIMARY KEY AUTOINCREMENT, entity TEXT NOT NULL, attribute TEXT NOT NULL, value TEXT NOT NULL, source INTEGER, confidence REAL, surprise_score REAL DEFAULT 0.0, created_at INTEGER, updated_at INTEGER, UNIQUE(entity, attribute));");
+    execSql(raw_db, "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, tags TEXT, created_at INTEGER, updated_at INTEGER);");
+    execSql(raw_db, "CREATE TABLE episodes (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, intent TEXT, goal_id TEXT, node_id TEXT, summary TEXT, payload_json TEXT, outcome_enum INTEGER, latency_ms INTEGER, confidence_before REAL, confidence_after REAL);");
+    execSql(raw_db, "CREATE TABLE document_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_path TEXT NOT NULL, doc_hash TEXT NOT NULL DEFAULT '', chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, embedding_blob BLOB NOT NULL, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-270m', dimension INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(doc_path, model_id, chunk_index) ON CONFLICT REPLACE);");
+    execSql(raw_db, "CREATE TABLE media_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, media_path TEXT NOT NULL, media_uri TEXT NOT NULL DEFAULT '', modality TEXT NOT NULL, segment_index INTEGER NOT NULL DEFAULT 0, start_ms INTEGER NOT NULL DEFAULT 0, end_ms INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, display_name TEXT NOT NULL DEFAULT '', metadata_text TEXT NOT NULL DEFAULT '', modified_at INTEGER NOT NULL DEFAULT 0, file_size INTEGER NOT NULL DEFAULT 0, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-740m', dimension INTEGER NOT NULL, embedding_blob BLOB NOT NULL, created_at INTEGER NOT NULL, UNIQUE(media_path, model_id, modality, segment_index) ON CONFLICT REPLACE);");
+
+    auto insertMediaRow = [&](const char* path, const char* mod, int seg_idx, const std::vector<float>& vec, int declared_dim) {
+        sqlite3_stmt* s = nullptr;
+        ASSERT_EQ(sqlite3_prepare_v2(
+            raw_db,
+            "INSERT INTO media_embeddings (media_path, modality, segment_index, model_id, dimension, embedding_blob, created_at) VALUES (?, ?, ?, 'embeddinggemma-2-740m', ?, ?, 100);",
+            -1, &s, nullptr), SQLITE_OK);
+        sqlite3_bind_text(s, 1, path, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(s, 2, mod, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(s, 3, seg_idx);
+        sqlite3_bind_int(s, 4, declared_dim);
+        sqlite3_bind_blob(s, 5, vec.data(), static_cast<int>(vec.size() * sizeof(float)), SQLITE_TRANSIENT);
+        ASSERT_EQ(sqlite3_step(s), SQLITE_DONE);
+        sqlite3_finalize(s);
+    };
+
+    const std::vector<float> v4{1.0f, 0.0f, 0.0f, 0.0f};
+    {
+        sqlite3_stmt* ds = nullptr;
+        ASSERT_EQ(sqlite3_prepare_v2(
+            raw_db,
+            "INSERT INTO document_embeddings (doc_path, doc_hash, chunk_index, chunk_text, model_id, dimension, embedding_blob, created_at) VALUES ('/docs/spec.md', 'h1', 0, 'spec text', 'embeddinggemma-2-270m', 4, ?, 100);",
+            -1, &ds, nullptr), SQLITE_OK);
+        sqlite3_bind_blob(ds, 1, v4.data(), static_cast<int>(v4.size() * sizeof(float)), SQLITE_TRANSIENT);
+        ASSERT_EQ(sqlite3_step(ds), SQLITE_DONE);
+        sqlite3_finalize(ds);
+    }
+
+    insertMediaRow("/DCIM/photo_v3.jpg", "IMAGE", 3, {0.9f, 0.1f, 0.0f, 0.0f}, 4);
+    insertMediaRow("/Recordings/aud_v3.m4a", "AUDIO", 0, {0.0f, 1.0f, 0.0f, 0.0f}, 4);
+    insertMediaRow("/Movies/vid_v3.mp4", "VIDEO_FRAME", 0, {0.0f, 0.0f, 1.0f, 0.0f}, 4);
+    insertMediaRow("/Movies/vid_v3.mp4", "VIDEO_AUDIO", 0, {0.0f, 0.0f, 0.0f, 1.0f}, 4);
+    // Stale/corrupt entries that v4 migration must purge atomically:
+    insertMediaRow("/tmp/unknown_mod.bin", "UNKNOWN_MOD", 0, {1.0f, 0.0f, 0.0f, 0.0f}, 4);
+    insertMediaRow("/tmp/corrupt_dim.jpg", "IMAGE", 0, {1.0f, 0.0f}, 4);
+    sqlite3_close(raw_db);
+
+    {
+        LongTermMemory ltm(db_path);
+        ASSERT_NE(ltm.getDatabase(), nullptr);
+        ASSERT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 4);
+
+        // Stale unknown modality & mismatched blob length were purged; valid rows normalized to lowercase.
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings;"), 4);
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings WHERE media_path='/tmp/unknown_mod.bin' OR media_path='/tmp/corrupt_dim.jpg';"), 0);
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT segment_index FROM media_embeddings WHERE media_path='/DCIM/photo_v3.jpg' AND modality='image' AND asset_type='image';"), 0);
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings WHERE media_path='/Movies/vid_v3.mp4' AND modality='image' AND asset_type='video';"), 1);
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings WHERE media_path='/Movies/vid_v3.mp4' AND modality='audio' AND asset_type='video';"), 1);
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM document_embeddings WHERE modality='text';"), 1);
+
+        execSql(ltm.getDatabase(), "PRAGMA integrity_check;");
+    }
+    std::remove(db_path.c_str());
+}
+
+TEST(LongTermMemoryMediaEmbeddings, StrictModalityIsolationZeroCrossModalLeakage) {
+    LongTermMemory ltm(":memory:");
+    const std::string model_id = "embeddinggemma-2-740m";
+
+    // Photo aligned at ~0.90 to +X
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/DCIM/Camera/flower.jpg", "", "flower.jpg", "Camera", 100, 1000, 0, model_id,
+        {{"image", 0, 0, 0, {0.90f, 0.435f, 0.0f, 0.0f}, "image"}}));
+
+    // Two video clips with distinct video frame and video audio distributions
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/Movies/clip.mp4", "", "clip.mp4", "Movies", 101, 5000, 10000, model_id,
+        {{"image", 0, 0, 5000, {1.0f, 0.0f, 0.0f, 0.0f}, "video"},
+         {"audio", 0, 0, 10000, {0.0f, 1.0f, 0.0f, 0.0f}, "video"}}));
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/Movies/clip2.mp4", "", "clip2.mp4", "Movies", 102, 5000, 10000, model_id,
+        {{"image", 0, 0, 5000, {0.6f, 0.8f, 0.0f, 0.0f}, "video"},
+         {"audio", 0, 0, 10000, {0.6f, 0.8f, 0.0f, 0.0f}, "video"}}));
+
+    // Standalone audio aligned at 1.0 to +X (must NEVER leak into IMAGE search!)
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/Recordings/voice.m4a", "", "voice.m4a", "Recordings", 103, 2000, 8000, model_id,
+        {{"audio", 0, 0, 8000, {1.0f, 0.0f, 0.0f, 0.0f}, "audio"}}));
+
+    // Document chunk aligned at 1.0 to +X (stored strictly in document_embeddings with modality='text')
+    ASSERT_TRUE(ltm.storeDocumentChunksAtomic(
+        "/Docs/notes.txt", "hash1", model_id, {{0, "bougainvillea flower notes", {1.0f, 0.0f, 0.0f, 0.0f}}}));
+
+    // Reject invalid modality writes
+    EXPECT_FALSE(ltm.storeMediaEmbeddingsAtomic(
+        "/DCIM/bad.jpg", "", "bad.jpg", "", 104, 100, 0, model_id,
+        {{"INVALID_MOD", 0, 0, 0, {1.0f, 0.0f, 0.0f, 0.0f}, "image"}}));
+
+    // Strict IMAGE query along +X returns ONLY standalone photo
+    auto imgMatches = ltm.searchMediaEmbeddings({1.0f, 0.0f, 0.0f, 0.0f}, "IMAGE", model_id, "", 10);
+    ASSERT_EQ(imgMatches.size(), 1u);
+    EXPECT_EQ(imgMatches[0].media_path, "/DCIM/Camera/flower.jpg");
+    EXPECT_EQ(imgMatches[0].modality, "image");
+    EXPECT_EQ(imgMatches[0].asset_type, "image");
+    EXPECT_EQ(imgMatches[0].corpus_size, 1);
+
+    // VIDEO query normalizes Z-scores independently per ('image','video') and ('audio','video') bucket
+    auto vidMatches = ltm.searchMediaEmbeddings({1.0f, 0.0f, 0.0f, 0.0f}, "VIDEO", model_id, "", 10);
+    ASSERT_EQ(vidMatches.size(), 4u);
+    for (const auto& vm : vidMatches) {
+        EXPECT_EQ(vm.asset_type, "video");
+        EXPECT_EQ(vm.corpus_size, 2); // 2 items in each video sub-bucket (image vs audio), not 4
+    }
+
+    // Strict AUDIO query returns ONLY standalone audio
+    auto audMatches = ltm.searchMediaEmbeddings({1.0f, 0.0f, 0.0f, 0.0f}, "AUDIO", model_id, "", 10);
+    ASSERT_EQ(audMatches.size(), 1u);
+    EXPECT_EQ(audMatches[0].media_path, "/Recordings/voice.m4a");
+    EXPECT_EQ(audMatches[0].modality, "audio");
+    EXPECT_EQ(audMatches[0].asset_type, "audio");
+
+    // Document search returns ONLY text docs
+    auto docMatches = ltm.hybridSearch("bougainvillea", {1.0f, 0.0f, 0.0f, 0.0f}, "", 5, model_id);
+    ASSERT_EQ(docMatches.size(), 1u);
+    EXPECT_EQ(docMatches[0].modality, "text");
+}
+
 
 
