@@ -45,6 +45,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="Ronin Kernel"
+        android:largeHeap="true"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config"

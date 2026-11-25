@@ -44,11 +44,13 @@ class InferenceService : Service() {
     private var cachedEmbeddingModelPath: String = ""
     private var cachedEmbVisionEnabled: Boolean = false
     private var cachedEmbAudioEnabled: Boolean = false
+    private var cachedEmbMainIsGpu: Boolean = false
     private var cachedEmbVisionIsGpu: Boolean = false
     private var cachedEmbVisionSignatures: IntArray = IntArray(0)
     private var cachedEmbMaxVisionBudget: Int = 0
     private var cachedEmbConfigVisionTokens: Int? = null
     private var cachedEmbMaxInputLength: Int? = null
+    private val verifiedVisionProfiles = HashSet<String>()
     
     private var currentTemp = 0.7f
     private var currentTopK = 40
@@ -288,7 +290,8 @@ class InferenceService : Service() {
             visionIsGpu: Boolean,
             hasAudio: Boolean,
             visionTokensPerImage: Int?,
-            maxInputLength: Int?
+            maxInputLength: Int?,
+            mainIsGpu: Boolean = false
         ): String {
             val safeModel = modelName
                 .trim()
@@ -303,7 +306,8 @@ class InferenceService : Service() {
             val audioTag = if (hasAudio) "a1" else "a0"
             val vtTag = "vt${visionTokensPerImage?.takeIf { it > 0 }?.toString() ?: "def"}"
             val lenTag = "len${maxInputLength?.takeIf { it > 0 }?.toString() ?: "def"}"
-            return "emb_cache_${safeModel}_${visionTag}_${audioTag}_${vtTag}_${lenTag}"
+            val mainSuffix = if (mainIsGpu) "_mgpu" else ""
+            return "emb_cache_${safeModel}_${visionTag}_${audioTag}_${vtTag}_${lenTag}${mainSuffix}"
         }
 
         /**
@@ -321,9 +325,13 @@ class InferenceService : Service() {
             cachedConfigVisionTokens: Int?,
             cachedMaxInputLength: Int?,
             requestedVisionTokens: Int?,
-            requestedMaxInputLength: Int?
+            requestedMaxInputLength: Int?,
+            cachedMainIsGpu: Boolean = cachedVisionIsGpu
         ): Boolean {
             if (!sameModelPath) return false
+            if (cachedVisionEnabled && cachedVisionIsGpu != cachedMainIsGpu) return false
+            if (forceVisionCpu && (cachedVisionIsGpu || cachedMainIsGpu)) return false
+            if (requireAudio && cachedMainIsGpu) return false
             val visionOk = !requireVision || (cachedVisionEnabled && (!forceVisionCpu || !cachedVisionIsGpu))
             val audioOk = !requireAudio || cachedAudioEnabled
             val maxLenOk = cachedMaxInputLength == requestedMaxInputLength
@@ -331,6 +339,97 @@ class InferenceService : Service() {
                 requestedVisionTokens == null ||
                 cachedConfigVisionTokens == requestedVisionTokens
             return visionOk && audioOk && maxLenOk && tokensOk
+        }
+
+        /**
+         * Returns true when [vec] is non-empty, contains only finite floats, and has squared L2 norm > 1e-8f.
+         */
+        internal fun isValidNonZeroFiniteVector(vec: FloatArray): Boolean {
+            if (vec.isEmpty()) return false
+            var sumSq = 0.0
+            for (v in vec) {
+                if (!v.isFinite()) return false
+                sumSq += v.toDouble() * v.toDouble()
+            }
+            return sumSq.isFinite() && sumSq > 1e-8f
+        }
+
+        /**
+         * Computes cosine similarity between [a] and [b], returning 0f if either vector is invalid or sizes differ.
+         */
+        internal fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
+            if (a.size != b.size || !isValidNonZeroFiniteVector(a) || !isValidNonZeroFiniteVector(b)) {
+                return 0f
+            }
+            var dot = 0.0
+            var normA = 0.0
+            var normB = 0.0
+            for (i in a.indices) {
+                val va = a[i].toDouble()
+                val vb = b[i].toDouble()
+                dot += va * vb
+                normA += va * va
+                normB += vb * vb
+            }
+            val denom = kotlin.math.sqrt(normA * normB)
+            if (!denom.isFinite() || denom <= 0.0) return 0f
+            return (dot / denom).toFloat().coerceIn(-1f, 1f)
+        }
+
+        /**
+         * Returns true when either vision embedding is invalid, dimensions differ, or |cosine| >= [maxAllowedCosine].
+         */
+        internal fun isVisionPairCollapsed(
+            vecA: FloatArray,
+            vecB: FloatArray,
+            maxAllowedCosine: Float = 0.995f
+        ): Boolean {
+            if (vecA.size != vecB.size || !isValidNonZeroFiniteVector(vecA) || !isValidNonZeroFiniteVector(vecB)) {
+                return true
+            }
+            return kotlin.math.abs(cosineSimilarity(vecA, vecB)) >= maxAllowedCosine
+        }
+
+        /**
+         * Generates deterministic high-contrast synthetic BGRA TGA probes for vision backend self-tests.
+         */
+        internal fun buildSyntheticContrastProbeTga(variant: Boolean, size: Int = 64): ByteArray {
+            require(size > 0) { "Probe size must be positive: $size" }
+            val pixels = IntArray(size * size)
+            if (!variant) {
+                val darkBlue = 0xFF050814.toInt()
+                val cyan = 0xFF00D8FF.toInt()
+                val maxX = (size - 1).coerceAtLeast(1)
+                for (y in 0 until size) {
+                    for (x in 0 until size) {
+                        val base = if ((x / 8) % 2 == 0) darkBlue else cyan
+                        val grad = (x * 255) / maxX
+                        val r = (((base ushr 16) and 0xFF) + grad / 4).coerceIn(0, 255)
+                        val g = (base ushr 8) and 0xFF
+                        val b = ((base and 0xFF) - grad / 8).coerceIn(0, 255)
+                        pixels[y * size + x] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+                    }
+                }
+            } else {
+                val redOrange = 0xFFFF2A00.toInt()
+                val yellow = 0xFFFFE600.toInt()
+                val white = 0xFFFFFFFF.toInt()
+                val centerStart = size / 4
+                val centerEnd = (size * 3) / 4
+                for (y in 0 until size) {
+                    for (x in 0 until size) {
+                        val inCenter = x in centerStart until centerEnd && y in centerStart until centerEnd
+                        pixels[y * size + x] = if (inCenter) {
+                            white
+                        } else if (((x / 8) + (y / 8)) % 2 == 0) {
+                            redOrange
+                        } else {
+                            yellow
+                        }
+                    }
+                }
+            }
+            return TgaImageCodec.encodeArgbPixelsToBgraTga(pixels, size, size)
         }
 
         /**
@@ -478,6 +577,7 @@ class InferenceService : Service() {
             cachedEmbeddingModelPath = ""
             cachedEmbVisionEnabled = false
             cachedEmbAudioEnabled = false
+            cachedEmbMainIsGpu = false
             cachedEmbVisionIsGpu = false
             cachedEmbVisionSignatures = IntArray(0)
             cachedEmbMaxVisionBudget = 0
@@ -574,7 +674,8 @@ class InferenceService : Service() {
                 cachedConfigVisionTokens = cachedEmbConfigVisionTokens,
                 cachedMaxInputLength = cachedEmbMaxInputLength,
                 requestedVisionTokens = visionTokensPerImage,
-                requestedMaxInputLength = maxInputLength
+                requestedMaxInputLength = maxInputLength,
+                cachedMainIsGpu = cachedEmbMainIsGpu
             )
         ) {
             return existing
@@ -593,6 +694,7 @@ class InferenceService : Service() {
 
         var supportsVision = requireVision
         var supportsAudio = requireAudio
+        var mainGpuSupported = false
         var visionGpuSupported = false
         var visionSignatures = IntArray(0)
         var maxVisionBudget = 0
@@ -617,6 +719,9 @@ class InferenceService : Service() {
                 supportsAudio = mods.audio
                 visionSignatures = runCatching { info.visionSignatureSelection() }.getOrNull() ?: IntArray(0)
                 maxVisionBudget = runCatching { info.maxVisionTokenBudget() }.getOrDefault(0)
+                mainGpuSupported = runCatching {
+                    info.supportedBackends(Modality.TEXT).contains(BackendType.GPU)
+                }.getOrDefault(false)
                 visionGpuSupported = mods.vision && runCatching {
                     info.supportedBackends(Modality.VISION).contains(BackendType.GPU)
                 }.getOrDefault(false)
@@ -655,23 +760,26 @@ class InferenceService : Service() {
         var activeMaxInputLen: Int? = effectiveMaxInputLen
 
         fun tryInitEngine(
+            mBackend: Backend,
             vBackend: Backend?,
             aBackend: Backend?,
             cfgVisionTokens: Int?,
             cfgMaxInputLen: Int?
         ): EmbeddingEngine {
+            val useMainGpu = mBackend is Backend.GPU
             val subDir = buildEmbeddingCacheSubdirName(
                 modelName = embFile.name,
                 hasVision = vBackend != null,
                 visionIsGpu = vBackend is Backend.GPU,
                 hasAudio = aBackend != null,
                 visionTokensPerImage = cfgVisionTokens,
-                maxInputLength = cfgMaxInputLen
+                maxInputLength = cfgMaxInputLen,
+                mainIsGpu = useMainGpu
             )
             val isolatedCacheDir = File(cacheDir, subDir).apply { mkdirs() }
             val cfg = EmbeddingEngineConfig(
                 modelPath = embFile.absolutePath,
-                backend = Backend.CPU(),
+                backend = mBackend,
                 visionBackend = vBackend,
                 audioBackend = aBackend,
                 cacheDir = isolatedCacheDir.absolutePath,
@@ -690,11 +798,15 @@ class InferenceService : Service() {
             }
         }
 
-        fun tryInitWithOptionalProfileFallback(vBackend: Backend?, aBackend: Backend?): EmbeddingEngine {
+        fun tryInitWithOptionalProfileFallback(
+            mBackend: Backend,
+            vBackend: Backend?,
+            aBackend: Backend?
+        ): EmbeddingEngine {
             return try {
                 activeConfigVisionTokens = effectiveConfigVisionTokens
                 activeMaxInputLen = effectiveMaxInputLen
-                tryInitEngine(vBackend, aBackend, effectiveConfigVisionTokens, effectiveMaxInputLen)
+                tryInitEngine(mBackend, vBackend, aBackend, effectiveConfigVisionTokens, effectiveMaxInputLen)
             } catch (cfgErr: Throwable) {
                 if (effectiveConfigVisionTokens != null || effectiveMaxInputLen != null) {
                     Log.w(
@@ -703,30 +815,88 @@ class InferenceService : Service() {
                     )
                     activeConfigVisionTokens = null
                     activeMaxInputLen = null
-                    tryInitEngine(vBackend, aBackend, null, null)
+                    tryInitEngine(mBackend, vBackend, aBackend, null, null)
                 } else {
                     throw cfgErr
                 }
             }
         }
 
-        val audioBackend = if (enableAudio) Backend.CPU() else null
-        val useVisionGpu = enableVision && visionGpuSupported && !forceVisionCpu && !visionGpuBlocked
-        var actualVisionIsGpu = false
-        val initializedEngine: EmbeddingEngine? = try {
-            if (useVisionGpu) {
+        fun verifyVisionContrastIfNeeded(
+            eng: EmbeddingEngine,
+            actualMainGpu: Boolean,
+            actualVisGpu: Boolean
+        ) {
+            if (!enableVision) return
+            val profileKey = "${embFile.absolutePath}|m=$actualMainGpu|v=$actualVisGpu|t=$activeConfigVisionTokens|l=$activeMaxInputLen"
+            if (verifiedVisionProfiles.contains(profileKey)) return
+
+            val probeA = buildSyntheticContrastProbeTga(variant = false)
+            val probeB = buildSyntheticContrastProbeTga(variant = true)
+            val opts = EmbeddingOptions(
+                normalize = true,
+                insertSpecialTokens = true,
+                visionTokensPerImage = activeConfigVisionTokens
+            )
+            val vecA = eng.computeEmbedding(listOf(InputData.Image(probeA)), opts).embedding
+            val vecB = eng.computeEmbedding(listOf(InputData.Image(probeB)), opts).embedding
+            val cos = cosineSimilarity(vecA, vecB)
+            Log.i(
+                TAG,
+                "Vision contrast self-test ($profileKey): cos=${"%.5f".format(cos)} (dimA=${vecA.size}, dimB=${vecB.size})"
+            )
+            if (isVisionPairCollapsed(vecA, vecB, 0.995f)) {
+                throw IllegalStateException(
+                    "Vision backend collapsed synthetic contrast probe (cos=${"%.5f".format(cos)}, mainGpu=$actualMainGpu, visGpu=$actualVisGpu)"
+                )
+            }
+            verifiedVisionProfiles.add(profileKey)
+        }
+
+        fun initAndVerifyEngine(
+            mBackend: Backend,
+            vBackend: Backend?,
+            aBackend: Backend?
+        ): EmbeddingEngine {
+            val eng = tryInitWithOptionalProfileFallback(mBackend, vBackend, aBackend)
+            return try {
+                verifyVisionContrastIfNeeded(
+                    eng = eng,
+                    actualMainGpu = mBackend is Backend.GPU,
+                    actualVisGpu = vBackend is Backend.GPU
+                )
+                eng
+            } catch (t: Throwable) {
                 try {
-                    val eng = tryInitWithOptionalProfileFallback(Backend.GPU(), audioBackend)
-                    actualVisionIsGpu = true
+                    if (eng.isInitialized()) eng.close()
+                } catch (_: Throwable) {}
+                throw t
+            }
+        }
+
+        val audioBackend = if (enableAudio) Backend.CPU() else null
+        val useMatchedGpu = enableVision && !enableAudio && mainGpuSupported && visionGpuSupported && !forceVisionCpu && !visionGpuBlocked
+        var actualMainGpu = false
+        var actualVisGpu = false
+        val initializedEngine: EmbeddingEngine? = try {
+            if (useMatchedGpu) {
+                try {
+                    val eng = initAndVerifyEngine(Backend.GPU(), Backend.GPU(), audioBackend)
+                    actualMainGpu = true
+                    actualVisGpu = true
                     eng
                 } catch (gpuErr: Throwable) {
                     visionGpuBlocked = true
-                    Log.w(TAG, "Vision GPU backend init failed (${gpuErr.message}); retrying on CPU")
-                    tryInitWithOptionalProfileFallback(Backend.CPU(), audioBackend)
+                    Log.w(TAG, "Matched GPU vision backend failed/collapsed (${gpuErr.message}); retrying on CPU")
+                    actualMainGpu = false
+                    actualVisGpu = false
+                    initAndVerifyEngine(Backend.CPU(), Backend.CPU(), audioBackend)
                 }
             } else {
                 val visionBackend = if (enableVision) Backend.CPU() else null
-                tryInitWithOptionalProfileFallback(visionBackend, audioBackend)
+                actualMainGpu = false
+                actualVisGpu = false
+                initAndVerifyEngine(Backend.CPU(), visionBackend, audioBackend)
             }
         } catch (cpuErr: Throwable) {
             lastEmbeddingError = "Failed to initialize ${embFile.name}: ${cpuErr.javaClass.simpleName}: ${cpuErr.message}"
@@ -739,14 +909,15 @@ class InferenceService : Service() {
             cachedEmbeddingModelPath = embFile.absolutePath
             cachedEmbVisionEnabled = enableVision
             cachedEmbAudioEnabled = enableAudio
-            cachedEmbVisionIsGpu = actualVisionIsGpu
+            cachedEmbMainIsGpu = actualMainGpu
+            cachedEmbVisionIsGpu = actualVisGpu
             cachedEmbVisionSignatures = visionSignatures
             cachedEmbMaxVisionBudget = maxVisionBudget
             cachedEmbConfigVisionTokens = activeConfigVisionTokens
             cachedEmbMaxInputLength = activeMaxInputLen
             Log.i(
                 TAG,
-                "EmbeddingGemma 2 initialized: ${embFile.name} (vision=$enableVision gpu=$actualVisionIsGpu audio=$enableAudio sigs=${visionSignatures.contentToString()} maxVision=$maxVisionBudget cfgTokens=$activeConfigVisionTokens maxInputLen=$activeMaxInputLen)"
+                "EmbeddingGemma 2 initialized: ${embFile.name} (vision=$enableVision mainGpu=$actualMainGpu visionGpu=$actualVisGpu audio=$enableAudio sigs=${visionSignatures.contentToString()} maxVision=$maxVisionBudget cfgTokens=$activeConfigVisionTokens maxInputLen=$activeMaxInputLen)"
             )
         }
         return initializedEngine
@@ -833,9 +1004,11 @@ class InferenceService : Service() {
         val needAudio = mediaTypes.any { it.equals("AUDIO_FILE", ignoreCase = true) }
 
         val preparedInputs = ArrayList<List<InputData>>(mediaTypes.size)
+        val imagePayloadBytes = ArrayList<ByteArray?>(mediaTypes.size)
         for (i in mediaTypes.indices) {
             val mType = mediaTypes[i].uppercase()
             val payload = payloads[i]
+            var rawImgBytes: ByteArray? = null
             val itemInputs: List<InputData> = when (mType) {
                 "TEXT" -> listOf(InputData.Text(payload))
                 "IMAGE_FILE" -> {
@@ -845,7 +1018,9 @@ class InferenceService : Service() {
                         Log.w(TAG, lastEmbeddingError)
                         return FloatArray(0)
                     }
-                    listOf(InputData.Image(imgFile.readBytes()))
+                    val bytes = imgFile.readBytes()
+                    rawImgBytes = bytes
+                    listOf(InputData.Image(bytes))
                 }
                 "AUDIO_FILE" -> {
                     val audFile = File(payload)
@@ -863,6 +1038,7 @@ class InferenceService : Service() {
                 }
             }
             preparedInputs.add(itemInputs)
+            imagePayloadBytes.add(rawImgBytes)
         }
 
         fun runBatchOnce(engine: EmbeddingEngine, resolvedTokens: Int?): FloatArray {
@@ -871,7 +1047,9 @@ class InferenceService : Service() {
                 insertSpecialTokens = true,
                 visionTokensPerImage = resolvedTokens
             )
-            val responses = if (preparedInputs.size > 1) {
+            val responses = if (needVision || needAudio) {
+                preparedInputs.map { single -> engine.computeEmbedding(single, opts) }
+            } else if (preparedInputs.size > 1) {
                 try {
                     engine.computeEmbeddingBatch(preparedInputs, opts)
                 } catch (batchErr: Throwable) {
@@ -885,13 +1063,40 @@ class InferenceService : Service() {
                 throw IllegalStateException("Multimodal batch response size mismatch: ${responses.size} != ${preparedInputs.size}")
             }
             val out = FloatArray(preparedInputs.size * EMBEDDING_DIM)
+            var firstImgIdx = -1
+            var secondImgIdx = -1
+            var firstImgVec: FloatArray? = null
+            var secondImgVec: FloatArray? = null
             for (i in responses.indices) {
                 val rawVec = responses[i].embedding
                 if (rawVec.size != EMBEDDING_DIM) {
                     throw IllegalStateException("Multimodal embedding dim mismatch: ${rawVec.size} != $EMBEDDING_DIM")
                 }
+                if (!isValidNonZeroFiniteVector(rawVec)) {
+                    throw IllegalStateException("Multimodal embedding at index $i is zero or non-finite")
+                }
                 val normalized = l2NormalizeCopy(rawVec)
+                if (imagePayloadBytes[i] != null) {
+                    if (firstImgIdx < 0) {
+                        firstImgIdx = i
+                        firstImgVec = normalized
+                    } else if (secondImgIdx < 0) {
+                        secondImgIdx = i
+                        secondImgVec = normalized
+                    }
+                }
                 System.arraycopy(normalized, 0, out, i * EMBEDDING_DIM, EMBEDDING_DIM)
+            }
+            if (needVision && preparedInputs.size >= 2 &&
+                firstImgIdx >= 0 && secondImgIdx >= 0 &&
+                !imagePayloadBytes[firstImgIdx]!!.contentEquals(imagePayloadBytes[secondImgIdx]!!)
+            ) {
+                val pairCos = cosineSimilarity(firstImgVec!!, secondImgVec!!)
+                if (pairCos >= 0.9995f) {
+                    throw IllegalStateException(
+                        "Vision batch collapsed distinct images to identical vector (cos=${"%.5f".format(pairCos)})"
+                    )
+                }
             }
             return out
         }
@@ -924,10 +1129,11 @@ class InferenceService : Service() {
                 return runBatchOnce(firstEngine, firstTokens)
             } catch (t: Throwable) {
                 lastErr = t
-                Log.w(TAG, "Multimodal pass failed (gpu=$cachedEmbVisionIsGpu tokens=$firstTokens): ${t.message}")
+                Log.w(TAG, "Multimodal pass failed (mainGpu=$cachedEmbMainIsGpu visionGpu=$cachedEmbVisionIsGpu tokens=$firstTokens): ${t.message}")
             }
 
-            if (needVision && cachedEmbVisionIsGpu) {
+            val firstUsedGpu = cachedEmbVisionIsGpu || cachedEmbMainIsGpu
+            if (needVision && firstUsedGpu) {
                 visionGpuBlocked = true
                 releaseEmbeddingEngineLocked()
                 val cpuEngine = getOrCreateEmbeddingEngineLocked(
@@ -939,7 +1145,11 @@ class InferenceService : Service() {
                     maxInputLength = MEDIA_MAX_INPUT_LENGTH
                 )
                 if (cpuEngine != null) {
-                    val cpuTokens = selectVisionTokensPerImage(visionTokensPerImage, cachedEmbVisionSignatures, cachedEmbMaxVisionBudget)
+                    val cpuTokens = selectVisionTokensPerImage(
+                        requestedCfgTokens ?: MEDIA_VISION_TOKENS_PER_IMAGE,
+                        cachedEmbVisionSignatures,
+                        cachedEmbMaxVisionBudget
+                    )
                     try {
                         return runBatchOnce(cpuEngine, cpuTokens)
                     } catch (cpuErr: Throwable) {
@@ -964,8 +1174,10 @@ class InferenceService : Service() {
                 }
             }
 
-            val backendLabel = if (cachedEmbVisionIsGpu) "GPU" else "CPU"
-            lastEmbeddingError = "${embFile.name} ($backendLabel): ${lastErr?.javaClass?.simpleName}: ${lastErr?.message ?: "Unknown error"}"
+            val backendLabel = if (cachedEmbVisionIsGpu || cachedEmbMainIsGpu) "GPU" else "CPU"
+            if (lastEmbeddingError.isBlank()) {
+                lastEmbeddingError = "${embFile.name} ($backendLabel): ${lastErr?.javaClass?.simpleName}: ${lastErr?.message ?: "Unknown error"}"
+            }
             Log.w(TAG, "EmbeddingGemma 2 multimodal pass failed completely: $lastEmbeddingError")
             releaseEmbeddingEngineLocked()
             return FloatArray(0)

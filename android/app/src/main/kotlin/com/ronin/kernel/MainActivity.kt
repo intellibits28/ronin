@@ -725,18 +725,34 @@ class MainActivity : FragmentActivity() {
         }
 
         setContent {
-            LaunchedEffect(Unit) {
-                while(true) {
-                    val loaded = nativeEngine.isLoaded()
-                    if (chatViewModel.isGemmaReady != loaded) {
-                        chatViewModel.isGemmaReady = loaded
-                        chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
-                        chatViewModel.kernelStatus = if (loaded) "Kernel Ready" else "Bridge Active"
+            MaterialTheme(
+                colors = darkColors(
+                    primary = RoninThemeTokens.PrimaryEmerald,
+                    primaryVariant = RoninThemeTokens.PrimaryEmerald,
+                    secondary = RoninThemeTokens.PrimaryEmerald,
+                    background = RoninThemeTokens.Background,
+                    surface = RoninThemeTokens.Surface,
+                    error = RoninThemeTokens.ErrorCrimson,
+                    onPrimary = Color.Black,
+                    onSecondary = Color.Black,
+                    onBackground = RoninThemeTokens.TextPrimary,
+                    onSurface = RoninThemeTokens.TextPrimary,
+                    onError = Color.White
+                )
+            ) {
+                LaunchedEffect(Unit) {
+                    while(true) {
+                        val loaded = nativeEngine.isLoaded()
+                        if (chatViewModel.isGemmaReady != loaded) {
+                            chatViewModel.isGemmaReady = loaded
+                            chatViewModel.localModelPath = nativeEngine.getActiveModelPath()
+                            chatViewModel.kernelStatus = if (loaded) "Kernel Ready" else "Bridge Active"
+                        }
+                        delay(3000)
                     }
-                    delay(3000)
                 }
+                RoninChatUI(nativeEngine, chatViewModel, brainPicker, { saveOfflineMode(it) })
             }
-            RoninChatUI(nativeEngine, chatViewModel, brainPicker, { saveOfflineMode(it) })
         }
     }
 
@@ -954,26 +970,38 @@ class MainActivity : FragmentActivity() {
         vm.mediaIndexProgressText = initialStatus
 
         mediaIndexJob = lifecycleScope.launch {
-            val summary = block { prog ->
-                lifecycleScope.launch(Dispatchers.Main) {
-                    vm.mediaIndexFraction = if (prog.totalCount > 0) prog.currentIndex.toFloat() / prog.totalCount.toFloat() else 0f
-                    vm.mediaIndexProgressText = prog.statusText
+            try {
+                val summary = block { prog ->
+                    lifecycleScope.launch(Dispatchers.Main) {
+                        vm.mediaIndexFraction = if (prog.totalCount > 0) prog.currentIndex.toFloat() / prog.totalCount.toFloat() else 0f
+                        vm.mediaIndexProgressText = prog.statusText
+                    }
                 }
+                vm.isIndexingMedia = false
+                vm.mediaIndexFraction = if (summary.success) 1f else 0f
+                vm.mediaIndexProgressText = summary.error ?: summary.stoppedForGuardrail ?: "Done"
+                refreshMediaIndexInfo()
+                if (summary.error != null) {
+                    Toast.makeText(this@MainActivity, summary.error, Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Indexed +${summary.indexedImages} photos, +${summary.indexedAudio} audio, +${summary.indexedVideos} videos",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                onComplete?.invoke(summary)
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                vm.isIndexingMedia = false
+                throw ce
+            } catch (t: Throwable) {
+                Log.e("RoninMedia", "Media indexing crashed", t)
+                System.gc()
+                vm.isIndexingMedia = false
+                vm.mediaIndexFraction = 0f
+                vm.mediaIndexProgressText = "Indexing error: ${t.javaClass.simpleName}: ${t.message ?: "Out of memory"}"
+                Toast.makeText(this@MainActivity, vm.mediaIndexProgressText, Toast.LENGTH_LONG).show()
             }
-            vm.isIndexingMedia = false
-            vm.mediaIndexFraction = if (summary.success) 1f else 0f
-            vm.mediaIndexProgressText = summary.error ?: summary.stoppedForGuardrail ?: "Done"
-            refreshMediaIndexInfo()
-            if (summary.error != null) {
-                Toast.makeText(this@MainActivity, summary.error, Toast.LENGTH_LONG).show()
-            } else {
-                Toast.makeText(
-                    this@MainActivity,
-                    "Indexed +${summary.indexedImages} photos, +${summary.indexedAudio} audio, +${summary.indexedVideos} videos",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-            onComplete?.invoke(summary)
         }
     }
 

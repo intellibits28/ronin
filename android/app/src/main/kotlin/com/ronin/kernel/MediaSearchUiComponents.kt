@@ -254,21 +254,27 @@ fun PhotoPreviewDialog(
                         onClick = { openMediaItemExternally(context, item) },
                         modifier = Modifier.weight(1f),
                         border = BorderStroke(1.dp, RoninThemeTokens.Border),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            backgroundColor = RoninThemeTokens.SurfaceLight,
+                            contentColor = Color.White
+                        )
                     ) {
-                        Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Default.OpenInNew, null, tint = Color.White, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Open", fontSize = 11.sp)
+                        Text("Open", color = Color.White, fontSize = 11.sp)
                     }
                     OutlinedButton(
                         onClick = { shareMediaItem(context, item) },
                         modifier = Modifier.weight(1f),
                         border = BorderStroke(1.dp, RoninThemeTokens.Border),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            backgroundColor = RoninThemeTokens.SurfaceLight,
+                            contentColor = Color.White
+                        )
                     ) {
-                        Icon(Icons.Default.Share, null, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Default.Share, null, tint = Color.White, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Share", fontSize = 11.sp)
+                        Text("Share", color = Color.White, fontSize = 11.sp)
                     }
                     Button(
                         onClick = onDismiss,
@@ -874,11 +880,14 @@ fun MediaMomentPlayerDialog(
                     OutlinedButton(
                         onClick = { openMediaItemExternally(context, item) },
                         border = BorderStroke(1.dp, RoninThemeTokens.Border),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            backgroundColor = RoninThemeTokens.SurfaceLight,
+                            contentColor = Color.White
+                        )
                     ) {
-                        Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Default.OpenInNew, null, tint = Color.White, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Open Externally", fontSize = 11.sp)
+                        Text("Open Externally", color = Color.White, fontSize = 11.sp)
                     }
                     Button(
                         onClick = onDismiss,
@@ -981,9 +990,12 @@ fun MediaIndexerSettingsSection(
                 onClick = { activity?.cancelMediaIndexing() },
                 modifier = Modifier.fillMaxWidth(),
                 border = BorderStroke(1.dp, RoninThemeTokens.ErrorCrimson.copy(alpha = 0.6f)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = RoninThemeTokens.ErrorCrimson)
+                colors = ButtonDefaults.outlinedButtonColors(
+                    backgroundColor = RoninThemeTokens.ErrorCrimson.copy(alpha = 0.12f),
+                    contentColor = RoninThemeTokens.ErrorCrimson
+                )
             ) {
-                Text("Cancel Media Indexing", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Cancel Media Indexing", color = RoninThemeTokens.ErrorCrimson, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         } else {
             Spacer(Modifier.height(8.dp))
@@ -1043,21 +1055,27 @@ fun MediaIndexerSettingsSection(
                     onClick = { chatViewModel.showIndexedMediaManager = true },
                     modifier = Modifier.weight(1.3f).heightIn(min = 38.dp),
                     border = BorderStroke(1.dp, Color(0xFF64B5F6).copy(alpha = 0.5f)),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF64B5F6))
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        backgroundColor = Color(0xFF64B5F6).copy(alpha = 0.12f),
+                        contentColor = Color(0xFF64B5F6)
+                    )
                 ) {
-                    Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(15.dp))
+                    Icon(Icons.Default.PhotoLibrary, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(5.dp))
-                    Text("Manage (${chatViewModel.totalIndexedMediaCount})", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Manage (${chatViewModel.totalIndexedMediaCount})", color = Color(0xFF64B5F6), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
                 OutlinedButton(
                     onClick = { activity?.clearMediaSearchIndex() },
                     modifier = Modifier.weight(1f).heightIn(min = 38.dp),
                     border = BorderStroke(1.dp, RoninThemeTokens.Border),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = RoninThemeTokens.TextSecondary)
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        backgroundColor = RoninThemeTokens.SurfaceLight,
+                        contentColor = RoninThemeTokens.TextSecondary
+                    )
                 ) {
-                    Icon(Icons.Default.DeleteSweep, null, modifier = Modifier.size(15.dp))
+                    Icon(Icons.Default.DeleteSweep, null, tint = RoninThemeTokens.TextSecondary, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Clear All", fontSize = 11.sp)
+                    Text("Clear All", color = RoninThemeTokens.TextSecondary, fontSize = 11.sp)
                 }
             }
         }
@@ -1496,9 +1514,12 @@ fun IndexedMediaManagerDialog(
                                 selectedPaths.clear()
                             },
                             border = BorderStroke(1.dp, RoninThemeTokens.Border),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                backgroundColor = RoninThemeTokens.SurfaceLight,
+                                contentColor = Color.White
+                            )
                         ) {
-                            Text("Cancel", fontSize = 12.sp)
+                            Text("Cancel", color = Color.White, fontSize = 12.sp)
                         }
                     }
                 }

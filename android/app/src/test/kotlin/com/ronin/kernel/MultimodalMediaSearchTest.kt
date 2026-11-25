@@ -480,5 +480,179 @@ class MultimodalMediaSearchTest {
                 requestedMaxInputLength = null
             )
         )
+
+        // 5. Split backend (cachedVisionIsGpu != cachedMainIsGpu) is rejected; matched GPU+GPU is allowed
+        assertFalse(
+            InferenceService.shouldReuseCachedEmbeddingEngine(
+                sameModelPath = true,
+                requireVision = true,
+                requireAudio = false,
+                forceVisionCpu = false,
+                cachedVisionEnabled = true,
+                cachedAudioEnabled = false,
+                cachedVisionIsGpu = true,
+                cachedConfigVisionTokens = 70,
+                cachedMaxInputLength = 256,
+                requestedVisionTokens = 70,
+                requestedMaxInputLength = 256,
+                cachedMainIsGpu = false
+            )
+        )
+        assertTrue(
+            InferenceService.shouldReuseCachedEmbeddingEngine(
+                sameModelPath = true,
+                requireVision = true,
+                requireAudio = false,
+                forceVisionCpu = false,
+                cachedVisionEnabled = true,
+                cachedAudioEnabled = false,
+                cachedVisionIsGpu = true,
+                cachedConfigVisionTokens = 70,
+                cachedMaxInputLength = 256,
+                requestedVisionTokens = 70,
+                requestedMaxInputLength = 256,
+                cachedMainIsGpu = true
+            )
+        )
+    }
+
+    @Test
+    fun `MediaIntentParser strips include and contain stopwords from English media queries`() {
+        val dogQuery = MediaIntentParser.parseNaturalMediaSearchIntent("search image include dog")
+        assertNotNull(dogQuery)
+        assertEquals(MediaModalityFilter.IMAGE, dogQuery!!.filter)
+        assertEquals("dog", dogQuery.query)
+
+        val flowerQuery = MediaIntentParser.parseNaturalMediaSearchIntent("find photos containing bougainvillea")
+        assertNotNull(flowerQuery)
+        assertEquals(MediaModalityFilter.IMAGE, flowerQuery!!.filter)
+        assertEquals("bougainvillea", flowerQuery.query)
+    }
+
+    @Test
+    fun `StreamingMono16kAccumulator matches resampleAndDownmixToMono16k across odd byte chunks and respects maxOutputSamples`() {
+        val srcRate = 48000
+        val channels = 2
+        val totalFrames = 24001 // ~0.5s stereo 48kHz
+        val interleaved = ShortArray(totalFrames * channels)
+        for (f in 0 until totalFrames) {
+            val left = (((f * 137) % 30000) - 15000).toShort()
+            val right = (((f * 251) % 30000) - 15000).toShort()
+            interleaved[f * 2] = left
+            interleaved[f * 2 + 1] = right
+        }
+
+        val expected = AudioPcmResampler.resampleAndDownmixToMono16k(
+            interleavedPcm = interleaved,
+            sampleCount = interleaved.size,
+            sourceSampleRate = srcRate,
+            channelCount = channels
+        )
+
+        val pcmByteBuf = ByteBuffer.allocate(interleaved.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+        pcmByteBuf.asShortBuffer().put(interleaved)
+        val pcmBytes = pcmByteBuf.array()
+
+        val acc = AudioPcmResampler.StreamingMono16kAccumulator(
+            sourceSampleRate = srcRate,
+            channelCount = channels
+        )
+        val chunkSize = 13 // odd chunk size crossing sample & stereo frame boundaries
+        var offset = 0
+        while (offset < pcmBytes.size) {
+            val len = kotlin.math.min(chunkSize, pcmBytes.size - offset)
+            assertTrue(acc.appendPcm16Le(pcmBytes, offset, len))
+            offset += len
+        }
+        val actual = acc.finish()
+        assertEquals(expected.size, actual.size)
+        for (i in expected.indices) {
+            val diff = kotlin.math.abs(expected[i].toInt() - actual[i].toInt())
+            assertTrue("Sample $i mismatch: expected=${expected[i]}, actual=${actual[i]}", diff <= 1)
+        }
+
+        // Respect maxOutputSamples cap
+        val maxCap = 500
+        val cappedAcc = AudioPcmResampler.StreamingMono16kAccumulator(
+            sourceSampleRate = srcRate,
+            channelCount = channels,
+            maxOutputSamples = maxCap
+        )
+        var capOffset = 0
+        var continued = true
+        while (capOffset < pcmBytes.size && continued) {
+            val len = kotlin.math.min(13, pcmBytes.size - capOffset)
+            continued = cappedAcc.appendPcm16Le(pcmBytes, capOffset, len)
+            capOffset += len
+        }
+        assertFalse(continued)
+        val cappedOut = cappedAcc.finish()
+        assertEquals(maxCap, cappedOut.size)
+        for (i in 0 until maxCap) {
+            val diff = kotlin.math.abs(expected[i].toInt() - cappedOut[i].toInt())
+            assertTrue("Capped sample $i mismatch: expected=${expected[i]}, actual=${cappedOut[i]}", diff <= 1)
+        }
+
+        // Also verify non-integer 44.1 kHz stereo ratio in 7-byte chunks
+        val rate441 = 44100
+        val expected441 = AudioPcmResampler.resampleAndDownmixToMono16k(
+            interleavedPcm = interleaved,
+            sampleCount = interleaved.size,
+            sourceSampleRate = rate441,
+            channelCount = channels
+        )
+        val acc441 = AudioPcmResampler.StreamingMono16kAccumulator(
+            sourceSampleRate = rate441,
+            channelCount = channels
+        )
+        var off441 = 0
+        while (off441 < pcmBytes.size) {
+            val len = kotlin.math.min(7, pcmBytes.size - off441)
+            assertTrue(acc441.appendPcm16Le(pcmBytes, off441, len))
+            off441 += len
+        }
+        val actual441 = acc441.finish()
+        assertEquals(expected441.size, actual441.size)
+        for (i in expected441.indices) {
+            val diff = kotlin.math.abs(expected441[i].toInt() - actual441[i].toInt())
+            assertTrue("44.1kHz sample $i mismatch: expected=${expected441[i]}, actual=${actual441[i]}", diff <= 1)
+        }
+    }
+
+    @Test
+    fun `InferenceService vision contrast probes collapse detection and cache subdir isolation work as expected`() {
+        val probeA = InferenceService.buildSyntheticContrastProbeTga(false)
+        val probeB = InferenceService.buildSyntheticContrastProbeTga(true)
+        assertEquals(18 + 64 * 64 * 4, probeA.size)
+        assertEquals(18 + 64 * 64 * 4, probeB.size)
+        assertFalse(probeA.contentEquals(probeB))
+
+        val vecX = floatArrayOf(1f, 0f, 0f)
+        val vecY = floatArrayOf(0f, 1f, 0f)
+        assertFalse(InferenceService.isVisionPairCollapsed(vecX, vecY))
+        assertTrue(InferenceService.isVisionPairCollapsed(vecX, vecX))
+        assertTrue(InferenceService.isVisionPairCollapsed(FloatArray(3), vecX))
+
+        val gpuSubdir = InferenceService.buildEmbeddingCacheSubdirName(
+            modelName = "embeddinggemma-2-740m.litertlm",
+            hasVision = true,
+            visionIsGpu = true,
+            hasAudio = false,
+            visionTokensPerImage = 70,
+            maxInputLength = 256,
+            mainIsGpu = true
+        )
+        assertTrue(gpuSubdir.endsWith("_mgpu"))
+        val cpuSubdir = InferenceService.buildEmbeddingCacheSubdirName(
+            modelName = "embeddinggemma-2-740m.litertlm",
+            hasVision = true,
+            visionIsGpu = false,
+            hasAudio = false,
+            visionTokensPerImage = 70,
+            maxInputLength = 256,
+            mainIsGpu = false
+        )
+        assertFalse(cpuSubdir.endsWith("_mgpu"))
+        assertNotEquals(gpuSubdir, cpuSubdir)
     }
 }

@@ -22,11 +22,12 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -294,6 +295,150 @@ object AudioPcmResampler {
             else -> emptyList()
         }
     }
+
+    /**
+     * Incrementally downmixes and linearly resamples interleaved 16-bit LE PCM chunks to 16 kHz mono
+     * without buffering the full decoded raw track in heap.
+     */
+    class StreamingMono16kAccumulator(
+        private val sourceSampleRate: Int,
+        private val channelCount: Int,
+        private val maxOutputSamples: Int = 185 * 16000
+    ) {
+        private val frameByteSize = if (channelCount > 0) channelCount * 2 else 0
+        private val pendingFrameBytes = ByteArray(max(2, frameByteSize))
+        private var pendingByteCount = 0
+
+        private var outBuffer = ShortArray(min(max(1, maxOutputSamples), 16000))
+        private var computedCount = 0
+
+        private val ratio = if (sourceSampleRate > 0) sourceSampleRate.toDouble() / 16000.0 else 0.0
+        private var totalFramesRead = 0L
+        private var prevMono: Short = 0
+        private var currMono: Short = 0
+
+        private fun isCapReached(): Boolean {
+            if (computedCount >= maxOutputSamples) {
+                if (sourceSampleRate == 16000) return true
+                val confirmedCount = ((totalFramesRead * 16000L) / sourceSampleRate.toLong()).toInt()
+                return confirmedCount >= maxOutputSamples
+            }
+            return false
+        }
+
+        private fun appendOutputSample(sample: Short) {
+            if (computedCount >= maxOutputSamples) return
+            if (computedCount == outBuffer.size) {
+                val newCap = min(maxOutputSamples, max(outBuffer.size * 2, computedCount + 4096))
+                if (newCap <= outBuffer.size) return
+                outBuffer = outBuffer.copyOf(newCap)
+            }
+            outBuffer[computedCount++] = sample
+        }
+
+        private fun onMonoFrame(mono: Short): Boolean {
+            if (isCapReached()) return false
+
+            val currFrameIdx = totalFramesRead
+            prevMono = currMono
+            currMono = mono
+            totalFramesRead++
+
+            if (sourceSampleRate == 16000) {
+                appendOutputSample(mono)
+                return computedCount < maxOutputSamples
+            }
+
+            if (currFrameIdx >= 1L) {
+                while (computedCount < maxOutputSamples) {
+                    val srcPos = computedCount * ratio
+                    val idx0 = srcPos.toInt()
+                    if (idx0 >= currFrameIdx) break
+                    val frac = srcPos - idx0
+                    val interp = prevMono * (1.0 - frac) + currMono * frac
+                    appendOutputSample(interp.roundToInt().coerceIn(-32768, 32767).toShort())
+                }
+            }
+            val confirmedCount = ((totalFramesRead * 16000L) / sourceSampleRate.toLong()).toInt()
+            return confirmedCount < maxOutputSamples
+        }
+
+        fun appendPcm16Le(bytes: ByteArray, offset: Int = 0, length: Int = bytes.size - offset): Boolean {
+            if (sourceSampleRate <= 0 || channelCount <= 0 || maxOutputSamples <= 0) return false
+            if (isCapReached()) return false
+            if (length <= 0 || offset < 0 || offset >= bytes.size) return true
+
+            val safeLen = min(length, bytes.size - offset)
+            if (safeLen <= 0) return true
+
+            var pos = offset
+            val end = offset + safeLen
+
+            if (pendingByteCount > 0) {
+                val need = min(frameByteSize - pendingByteCount, end - pos)
+                System.arraycopy(bytes, pos, pendingFrameBytes, pendingByteCount, need)
+                pendingByteCount += need
+                pos += need
+                if (pendingByteCount == frameByteSize) {
+                    var sum = 0L
+                    var p = 0
+                    for (ch in 0 until channelCount) {
+                        val lo = pendingFrameBytes[p].toInt() and 0xFF
+                        val hi = pendingFrameBytes[p + 1].toInt()
+                        sum += ((hi shl 8) or lo).toShort()
+                        p += 2
+                    }
+                    pendingByteCount = 0
+                    val mono = (sum / channelCount).toInt().coerceIn(-32768, 32767).toShort()
+                    if (!onMonoFrame(mono)) return false
+                }
+            }
+
+            while (pos + frameByteSize <= end) {
+                var sum = 0L
+                var p = pos
+                for (ch in 0 until channelCount) {
+                    val lo = bytes[p].toInt() and 0xFF
+                    val hi = bytes[p + 1].toInt()
+                    sum += ((hi shl 8) or lo).toShort()
+                    p += 2
+                }
+                pos += frameByteSize
+                val mono = (sum / channelCount).toInt().coerceIn(-32768, 32767).toShort()
+                if (!onMonoFrame(mono)) return false
+            }
+
+            val rem = end - pos
+            if (rem > 0) {
+                System.arraycopy(bytes, pos, pendingFrameBytes, 0, rem)
+                pendingByteCount = rem
+            }
+            return !isCapReached()
+        }
+
+        fun finish(): ShortArray {
+            if (sourceSampleRate <= 0 || channelCount <= 0 || maxOutputSamples <= 0 || totalFramesRead <= 0L) {
+                return ShortArray(0)
+            }
+            if (sourceSampleRate == 16000) {
+                return outBuffer.copyOf(computedCount)
+            }
+            val targetCount = min(
+                maxOutputSamples,
+                max(1, ((totalFramesRead * 16000L) / sourceSampleRate.toLong()).toInt())
+            )
+            val lastIdx = (totalFramesRead - 1L).toInt()
+            while (computedCount < targetCount) {
+                val srcPos = computedCount * ratio
+                val idx0 = srcPos.toInt().coerceIn(0, lastIdx)
+                val frac = srcPos - idx0
+                val s0 = if (idx0 < lastIdx) prevMono else currMono
+                val interp = s0 * (1.0 - frac) + currMono * frac
+                appendOutputSample(interp.roundToInt().coerceIn(-32768, 32767).toShort())
+            }
+            return outBuffer.copyOf(targetCount)
+        }
+    }
 }
 
 /**
@@ -396,7 +541,7 @@ object MediaIntentParser {
         }
 
         var query = trimmed
-            .replace(Regex("""(?i)\b(?:please|kindly|can\s+you|find|search|show|locate|look\s+for|get|me|my|all|on|in|from|the|phone|device|gallery|of|with|about|where|moment|moments|clip|clips|part)\b"""), " ")
+            .replace(Regex("""(?i)\b(?:please|kindly|can\s+you|find|search|show|locate|look\s+for|get|me|my|all|on|in|from|the|phone|device|gallery|of|with|about|where|moment|moments|clip|clips|part|include|includes|including|contain|contains|containing|having|has|have|that|which)\b"""), " ")
             .replace(Regex("""(?i)\b(?:photos?|images?|pictures?|pics?|screenshots?|videos?|movies?|audio|voice\s*(?:memo|note)s?|recordings?|sounds?|songs?|files?)\b"""), " ")
             .replace(Regex("""(?:ဖုန်းထဲက|ဖုန်းထဲမှာ|ဖုန်းထဲ|gallery\s*ထဲက|ဗီဒီယိုထဲက|ဗွီဒီယိုထဲက|video\s*ထဲက|အသံထဲက|ပုံထဲက)"""), " ")
             .replace(Regex("""(?:ရှာပေးပါ|ရှာပေး|ရှာကြည့်|ရှာပါ|ပြပေးပါ|ပြပေး|ပြပါ|ဖွင့်ပေးပါ|ပေးပါ)"""), " ")
@@ -580,11 +725,30 @@ object TgaImageCodec {
         try {
             val w = rgbaBmp.width
             val h = rgbaBmp.height
-            val pixels = IntArray(w * h)
-            rgbaBmp.getPixels(pixels, 0, w, 0, 0, w, h)
-            val tgaBytes = encodeArgbPixelsToBgraTga(pixels, w, h)
-            FileOutputStream(outFile).use { fos ->
-                fos.write(tgaBytes)
+            require(w > 0 && h > 0) { "Invalid TGA image dimensions: ${w}x${h}" }
+            val header = ByteArray(TGA_HEADER_SIZE)
+            header[2] = 2 // Uncompressed true-color
+            header[12] = (w and 0xFF).toByte()
+            header[13] = ((w ushr 8) and 0xFF).toByte()
+            header[14] = (h and 0xFF).toByte()
+            header[15] = ((h ushr 8) and 0xFF).toByte()
+            header[16] = 32 // 32 bits per pixel (BGRA)
+            header[17] = 0x28 // Top-left origin (bit 5) + 8 alpha bits
+
+            val rowPixels = IntArray(w)
+            val rowBuffer = ByteBuffer.allocate(w * 4).order(ByteOrder.LITTLE_ENDIAN)
+            val rowIntBuffer = rowBuffer.asIntBuffer()
+            val rowBytes = rowBuffer.array()
+
+            BufferedOutputStream(FileOutputStream(outFile), 64 * 1024).use { bos ->
+                bos.write(header)
+                for (y in 0 until h) {
+                    rgbaBmp.getPixels(rowPixels, 0, w, 0, y, w, 1)
+                    rowIntBuffer.clear()
+                    rowIntBuffer.put(rowPixels)
+                    bos.write(rowBytes)
+                }
+                bos.flush()
             }
         } finally {
             if (rgbaBmp !== bitmap && !rgbaBmp.isRecycled) {
@@ -715,6 +879,8 @@ object MediaSearchEngine {
     const val PHOTO_BATCH_SIZE = 2
     const val VIDEO_FRAME_MAX_SIDE_PX = 1024
     const val VIDEO_FRAME_VISION_TOKENS = 70
+    const val VIDEO_FRAME_BATCH_SIZE = 2
+    const val AUDIO_SEGMENT_BATCH_SIZE = 4
     const val MIN_RELEVANCE_COSINE_FLOOR = 0.40f
     const val RELATIVE_COSINE_WINDOW_DELTA = 0.20f
 
@@ -1170,6 +1336,10 @@ object MediaSearchEngine {
                 }
             }
             working
+        } catch (oom: OutOfMemoryError) {
+            System.gc()
+            Log.e(TAG, "decodeOrientedSampledBitmap OOM ($filePath)", oom)
+            null
         } catch (e: Exception) {
             Log.w(TAG, "decodeOrientedSampledBitmap failed ($filePath): ${e.message}")
             null
@@ -1184,12 +1354,20 @@ object MediaSearchEngine {
         maxSidePx: Int = PHOTO_MAX_SIDE_PX
     ): File? {
         val working = decodeOrientedSampledBitmap(filePath, mediaUri, context, maxSidePx) ?: return null
+        var outFile: File? = null
         return try {
             tmpDir.mkdirs()
-            val outFile = File(tmpDir, "emb_img_${System.nanoTime()}.tga")
-            TgaImageCodec.writeBitmapAsTga(working, outFile)
-            outFile
+            val target = File(tmpDir, "emb_img_${System.nanoTime()}.tga")
+            outFile = target
+            TgaImageCodec.writeBitmapAsTga(working, target)
+            target
+        } catch (oom: OutOfMemoryError) {
+            runCatching { outFile?.delete() }
+            System.gc()
+            Log.e(TAG, "prepareImageForEmbedding OOM ($filePath)", oom)
+            null
         } catch (e: Exception) {
+            runCatching { outFile?.delete() }
             Log.w(TAG, "prepareImageForEmbedding TGA encode failed ($filePath): ${e.message}")
             null
         } finally {
@@ -1213,6 +1391,7 @@ object MediaSearchEngine {
     ): List<ExtractedAudioSegmentFile> {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
+        val createdFiles = mutableListOf<File>()
         try {
             val file = File(filePath)
             if (file.exists() && file.canRead()) {
@@ -1246,9 +1425,15 @@ object MediaSearchEngine {
             codec.start()
 
             val bufferInfo = MediaCodec.BufferInfo()
-            val decodedBytes = ByteArrayOutputStream()
-            // Cap decoded raw PCM to ~185s of 48kHz stereo 16-bit (~35MB raw, or ~10MB after resampling guard)
-            val maxRawBytes = max(sampleRate * channelCount * 2 * 185, 16000 * 2 * 185)
+            val maxOutputSamples = 185 * 16000
+            var accumulator = AudioPcmResampler.StreamingMono16kAccumulator(
+                sourceSampleRate = sampleRate,
+                channelCount = channelCount,
+                maxOutputSamples = maxOutputSamples
+            )
+            val scratch = ByteArray(16 * 1024)
+            var hasWrittenSamples = false
+            var reachedLimit = false
             var sawInputEOS = false
             var sawOutputEOS = false
             val maxDecodeIterations = 25000
@@ -1274,44 +1459,58 @@ object MediaSearchEngine {
                 when {
                     outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         val newFmt = codec.outputFormat
+                        var fmtChanged = false
                         if (newFmt.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
-                            sampleRate = newFmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                            val newRate = newFmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                            if (newRate > 0 && newRate != sampleRate) {
+                                sampleRate = newRate
+                                fmtChanged = true
+                            }
                         }
                         if (newFmt.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
-                            channelCount = newFmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                            val newChannels = newFmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                            if (newChannels > 0 && newChannels != channelCount) {
+                                channelCount = newChannels
+                                fmtChanged = true
+                            }
+                        }
+                        if (fmtChanged && !hasWrittenSamples) {
+                            accumulator = AudioPcmResampler.StreamingMono16kAccumulator(
+                                sourceSampleRate = sampleRate,
+                                channelCount = channelCount,
+                                maxOutputSamples = maxOutputSamples
+                            )
                         }
                     }
                     outIdx >= 0 -> {
                         val outBuf = codec.getOutputBuffer(outIdx)
                         if (outBuf != null && bufferInfo.size > 0) {
-                            val chunk = ByteArray(bufferInfo.size)
                             outBuf.position(bufferInfo.offset)
                             outBuf.limit(bufferInfo.offset + bufferInfo.size)
-                            outBuf.get(chunk)
-                            decodedBytes.write(chunk)
+                            hasWrittenSamples = true
+                            var remaining = bufferInfo.size
+                            var keepGoing = true
+                            while (remaining > 0 && keepGoing) {
+                                val toRead = min(remaining, scratch.size)
+                                outBuf.get(scratch, 0, toRead)
+                                keepGoing = accumulator.appendPcm16Le(scratch, 0, toRead)
+                                remaining -= toRead
+                            }
+                            if (!keepGoing) {
+                                reachedLimit = true
+                            }
                         }
                         codec.releaseOutputBuffer(outIdx, false)
-                        if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0 ||
-                            decodedBytes.size() >= maxRawBytes
-                        ) {
+                        if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0 || reachedLimit) {
                             sawOutputEOS = true
                         }
                     }
                 }
             }
 
-            val rawByteArr = decodedBytes.toByteArray()
-            if (rawByteArr.size < 2) return emptyList()
-            val totalShorts = rawByteArr.size / 2
-            val interleaved = ShortArray(totalShorts)
-            ByteBuffer.wrap(rawByteArr, 0, totalShorts * 2).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(interleaved)
+            val mono16k = accumulator.finish()
+            if (mono16k.isEmpty()) return emptyList()
 
-            val mono16k = AudioPcmResampler.resampleAndDownmixToMono16k(
-                interleavedPcm = interleaved,
-                sampleCount = totalShorts,
-                sourceSampleRate = sampleRate,
-                channelCount = channelCount
-            )
             val windows = AudioPcmResampler.sliceAudioWindows(
                 mono16k = mono16k,
                 windowSec = 20,
@@ -1326,9 +1525,16 @@ object MediaSearchEngine {
                 val wavBytes = WavEncoder.encodeMono16kWav(w.samples, 16000)
                 val outFile = File(tmpDir, "emb_aud_${w.index}_${System.nanoTime()}.wav")
                 outFile.writeBytes(wavBytes)
+                createdFiles.add(outFile)
                 ExtractedAudioSegmentFile(w.index, w.startMs, w.endMs, outFile)
             }
+        } catch (oom: OutOfMemoryError) {
+            createdFiles.forEach { runCatching { it.delete() } }
+            System.gc()
+            Log.e(TAG, "extractAudioTrackToWavFiles OOM ($filePath)", oom)
+            return emptyList()
         } catch (e: Exception) {
+            createdFiles.forEach { runCatching { it.delete() } }
             Log.w(TAG, "extractAudioTrackToWavFiles failed ($filePath): ${e.message}")
             return emptyList()
         } finally {
@@ -1345,6 +1551,88 @@ object MediaSearchEngine {
         val jpegFile: File
     )
 
+    private fun openRetrieverForAsset(
+        retriever: MediaMetadataRetriever,
+        filePath: String,
+        mediaUri: String,
+        context: Context
+    ): Boolean {
+        val file = File(filePath)
+        return when {
+            file.exists() && file.canRead() -> {
+                retriever.setDataSource(file.absolutePath)
+                true
+            }
+            mediaUri.isNotBlank() -> {
+                retriever.setDataSource(context, Uri.parse(mediaUri))
+                true
+            }
+            else -> false
+        }
+    }
+
+    private fun computeRetrieverScaledDims(
+        retriever: MediaMetadataRetriever,
+        maxSidePx: Int
+    ): Pair<Int, Int> {
+        val rawWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+        val rawHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+        val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+        val (orientedW, orientedH) = if (rotation == 90 || rotation == 270) {
+            rawHeight to rawWidth
+        } else {
+            rawWidth to rawHeight
+        }
+        return ExifOrientationHelper.computeAspectPreservingSize(orientedW, orientedH, maxSidePx)
+    }
+
+    private fun extractScaledVideoFrameTga(
+        retriever: MediaMetadataRetriever,
+        idx: Int,
+        tsMs: Long,
+        endMs: Long,
+        scaledDstW: Int,
+        scaledDstH: Int,
+        maxSidePx: Int,
+        tmpDir: File
+    ): ExtractedVideoFrameFile? {
+        val bmp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && scaledDstW > 0 && scaledDstH > 0) {
+            retriever.getScaledFrameAtTime(tsMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, scaledDstW, scaledDstH)
+                ?: retriever.getScaledFrameAtTime(tsMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST, scaledDstW, scaledDstH)
+                ?: retriever.getFrameAtTime(tsMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.getFrameAtTime(tsMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
+        } else {
+            retriever.getFrameAtTime(tsMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.getFrameAtTime(tsMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
+        } ?: return null
+        try {
+            val (targetW, targetH) = ExifOrientationHelper.computeAspectPreservingSize(
+                bmp.width,
+                bmp.height,
+                maxSidePx
+            )
+            val finalBmp = if (targetW > 0 && targetH > 0 && (targetW != bmp.width || targetH != bmp.height)) {
+                Bitmap.createScaledBitmap(bmp, targetW, targetH, true)
+            } else {
+                bmp
+            }
+            var outFile: File? = null
+            try {
+                val target = File(tmpDir, "emb_vframe_${idx}_${System.nanoTime()}.tga")
+                outFile = target
+                TgaImageCodec.writeBitmapAsTga(finalBmp, target)
+                return ExtractedVideoFrameFile(idx, tsMs, endMs, target)
+            } catch (t: Throwable) {
+                runCatching { outFile?.delete() }
+                throw t
+            } finally {
+                if (finalBmp !== bmp && !finalBmp.isRecycled) finalBmp.recycle()
+            }
+        } finally {
+            if (!bmp.isRecycled) bmp.recycle()
+        }
+    }
+
     fun extractVideoFramesToJpegFiles(
         filePath: String,
         mediaUri: String,
@@ -1354,48 +1642,42 @@ object MediaSearchEngine {
         maxSidePx: Int = VIDEO_FRAME_MAX_SIDE_PX
     ): Pair<Long, List<ExtractedVideoFrameFile>> {
         val retriever = MediaMetadataRetriever()
+        val frames = mutableListOf<ExtractedVideoFrameFile>()
         try {
-            val file = File(filePath)
-            if (file.exists() && file.canRead()) {
-                retriever.setDataSource(file.absolutePath)
-            } else if (mediaUri.isNotBlank()) {
-                retriever.setDataSource(context, Uri.parse(mediaUri))
-            } else {
+            if (!openRetrieverForAsset(retriever, filePath, mediaUri, context)) {
                 return hintedDurationMs to emptyList()
             }
 
             val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
             val durationMs = durStr?.toLongOrNull()?.takeIf { it > 0L } ?: hintedDurationMs
+            val (scaledDstW, scaledDstH) = computeRetrieverScaledDims(retriever, maxSidePx)
             val timestamps = MediaFrameScheduler.computeSampleTimestampsMs(durationMs)
-            val frames = mutableListOf<ExtractedVideoFrameFile>()
             tmpDir.mkdirs()
 
             timestamps.forEachIndexed { idx, tsMs ->
-                val bmp = retriever.getFrameAtTime(tsMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    ?: retriever.getFrameAtTime(tsMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
-                    ?: return@forEachIndexed
-                try {
-                    val (targetW, targetH) = ExifOrientationHelper.computeAspectPreservingSize(
-                        bmp.width,
-                        bmp.height,
-                        maxSidePx
-                    )
-                    val finalBmp = if (targetW > 0 && targetH > 0 && (targetW != bmp.width || targetH != bmp.height)) {
-                        Bitmap.createScaledBitmap(bmp, targetW, targetH, true)
-                    } else {
-                        bmp
-                    }
-                    val outFile = File(tmpDir, "emb_vframe_${idx}_${System.nanoTime()}.tga")
-                    TgaImageCodec.writeBitmapAsTga(finalBmp, outFile)
-                    if (finalBmp !== bmp) finalBmp.recycle()
-                    val endMs = timestamps.getOrNull(idx + 1) ?: max(tsMs + 2000L, durationMs)
-                    frames.add(ExtractedVideoFrameFile(idx, tsMs, endMs, outFile))
-                } finally {
-                    if (!bmp.isRecycled) bmp.recycle()
+                val endMs = timestamps.getOrNull(idx + 1) ?: max(tsMs + 2000L, durationMs)
+                val frame = extractScaledVideoFrameTga(
+                    retriever = retriever,
+                    idx = idx,
+                    tsMs = tsMs,
+                    endMs = endMs,
+                    scaledDstW = scaledDstW,
+                    scaledDstH = scaledDstH,
+                    maxSidePx = maxSidePx,
+                    tmpDir = tmpDir
+                )
+                if (frame != null) {
+                    frames.add(frame)
                 }
             }
             return durationMs to frames
+        } catch (oom: OutOfMemoryError) {
+            frames.forEach { runCatching { it.jpegFile.delete() } }
+            System.gc()
+            Log.e(TAG, "extractVideoFramesToJpegFiles OOM ($filePath)", oom)
+            return hintedDurationMs to emptyList()
         } catch (e: Exception) {
+            frames.forEach { runCatching { it.jpegFile.delete() } }
             Log.w(TAG, "extractVideoFramesToJpegFiles failed ($filePath): ${e.message}")
             return hintedDurationMs to emptyList()
         } finally {
@@ -1575,6 +1857,8 @@ object MediaSearchEngine {
                         )
 
                         val batchTmpFiles = mutableListOf<File>()
+                        val startIndexed = indexedImages
+                        val startFailed = failed
                         try {
                             val prepared = mutableListOf<Pair<DeviceMediaAsset, File>>()
                             for (item in batch) {
@@ -1644,6 +1928,17 @@ object MediaSearchEngine {
                                     }
                                 }
                             }
+                        } catch (ce: CancellationException) {
+                            throw ce
+                        } catch (oom: OutOfMemoryError) {
+                            System.gc()
+                            Log.e(TAG, "Photo batch OOM ($leadName)", oom)
+                            val accounted = (indexedImages - startIndexed) + (failed - startFailed)
+                            failed += (batch.size - accounted).coerceAtLeast(0)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Photo batch failed ($leadName): ${e.message}")
+                            val accounted = (indexedImages - startIndexed) + (failed - startFailed)
+                            failed += (batch.size - accounted).coerceAtLeast(0)
                         } finally {
                             batchTmpFiles.forEach { runCatching { it.delete() } }
                         }
@@ -1694,6 +1989,47 @@ object MediaSearchEngine {
                     val segEmbeddings = mutableListOf<FloatArray>()
                     var resolvedDurationMs = asset.durationMs
 
+                    suspend fun embedAudioSegmentsChunked(
+                        audioSegs: List<ExtractedAudioSegmentFile>,
+                        assetType: String,
+                        visionTokensPerImage: Int
+                    ) {
+                        try {
+                            for (batch in audioSegs.chunked(AUDIO_SEGMENT_BATCH_SIZE)) {
+                                if (isCancelled()) {
+                                    cancelled = true
+                                    break
+                                }
+                                val batchGuardrail = readGuardrailStatus(context)
+                                if (batchGuardrail != null) {
+                                    stoppedReason = batchGuardrail
+                                    break
+                                }
+                                try {
+                                    val aVecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
+                                        items = batch.map { NativeEngine.MultimodalEmbeddingInput("AUDIO_FILE", it.wavFile.absolutePath) },
+                                        visionTokensPerImage = visionTokensPerImage,
+                                        customEmbPath = modelPath
+                                    )
+                                    if (aVecs.size == batch.size) {
+                                        batch.forEachIndexed { bIdx, aSeg ->
+                                            segModalities.add("audio")
+                                            segAssetTypes.add(assetType)
+                                            segIndices.add(aSeg.index)
+                                            segStarts.add(aSeg.startMs)
+                                            segEnds.add(aSeg.endMs)
+                                            segEmbeddings.add(aVecs[bIdx])
+                                        }
+                                    }
+                                } finally {
+                                    batch.forEach { runCatching { it.wavFile.delete() } }
+                                }
+                            }
+                        } finally {
+                            audioSegs.forEach { runCatching { it.wavFile.delete() } }
+                        }
+                    }
+
                     when (asset.modality) {
                         "AUDIO" -> {
                             if (!supportsAudio) {
@@ -1703,108 +2039,138 @@ object MediaSearchEngine {
                             val audioSegs = extractAudioTrackToWavFiles(asset.mediaPath, asset.mediaUri, context, tmpDir, maxWindows = 10)
                             audioSegs.forEach { tempFilesToDelete.add(it.wavFile) }
                             if (audioSegs.isNotEmpty()) {
-                                val vecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
-                                    items = audioSegs.map { NativeEngine.MultimodalEmbeddingInput("AUDIO_FILE", it.wavFile.absolutePath) },
-                                    visionTokensPerImage = PHOTO_VISION_TOKENS,
-                                    customEmbPath = modelPath
-                                )
-                                if (vecs.size == audioSegs.size) {
-                                    audioSegs.forEachIndexed { sIdx, seg ->
-                                        segModalities.add("audio")
-                                        segAssetTypes.add("audio")
-                                        segIndices.add(seg.index)
-                                        segStarts.add(seg.startMs)
-                                        segEnds.add(seg.endMs)
-                                        segEmbeddings.add(vecs[sIdx])
-                                    }
-                                    if (resolvedDurationMs <= 0L) {
-                                        resolvedDurationMs = audioSegs.maxOf { it.endMs }
-                                    }
+                                if (resolvedDurationMs <= 0L) {
+                                    resolvedDurationMs = audioSegs.maxOf { it.endMs }
                                 }
+                                embedAudioSegmentsChunked(audioSegs, "audio", PHOTO_VISION_TOKENS)
                             }
                         }
                         "VIDEO" -> {
                             if (supportsVision) {
-                                val (durMs, frameSegs) = extractVideoFramesToJpegFiles(
-                                    asset.mediaPath,
-                                    asset.mediaUri,
-                                    context,
-                                    tmpDir,
-                                    hintedDurationMs = asset.durationMs,
-                                    maxSidePx = VIDEO_FRAME_MAX_SIDE_PX
-                                )
-                                if (durMs > resolvedDurationMs) resolvedDurationMs = durMs
-                                frameSegs.forEach { tempFilesToDelete.add(it.jpegFile) }
-                                if (frameSegs.isNotEmpty()) {
-                                    val fVecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
-                                        items = frameSegs.map { NativeEngine.MultimodalEmbeddingInput("IMAGE_FILE", it.jpegFile.absolutePath) },
-                                        visionTokensPerImage = VIDEO_FRAME_VISION_TOKENS,
-                                        customEmbPath = modelPath
-                                    )
-                                    if (fVecs.size == frameSegs.size) {
-                                        frameSegs.forEachIndexed { fIdx, frame ->
-                                            segModalities.add("image")
-                                            segAssetTypes.add("video")
-                                            segIndices.add(frame.index)
-                                            segStarts.add(frame.timestampMs)
-                                            segEnds.add(frame.endMs)
-                                            segEmbeddings.add(fVecs[fIdx])
+                                val retriever = MediaMetadataRetriever()
+                                try {
+                                    if (openRetrieverForAsset(retriever, asset.mediaPath, asset.mediaUri, context)) {
+                                        val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                        val durMs = durStr?.toLongOrNull()?.takeIf { it > 0L } ?: asset.durationMs
+                                        if (durMs > resolvedDurationMs) resolvedDurationMs = durMs
+                                        val (scaledDstW, scaledDstH) = computeRetrieverScaledDims(retriever, VIDEO_FRAME_MAX_SIDE_PX)
+                                        val timestamps = MediaFrameScheduler.computeSampleTimestampsMs(durMs)
+                                        tmpDir.mkdirs()
+
+                                        val indexedTimestamps = timestamps.mapIndexed { idx, tsMs ->
+                                            val endMs = timestamps.getOrNull(idx + 1) ?: max(tsMs + 2000L, durMs)
+                                            Triple(idx, tsMs, endMs)
+                                        }
+                                        for (frameBatch in indexedTimestamps.chunked(VIDEO_FRAME_BATCH_SIZE)) {
+                                            if (isCancelled()) {
+                                                cancelled = true
+                                                break
+                                            }
+                                            val batchGuardrail = readGuardrailStatus(context)
+                                            if (batchGuardrail != null) {
+                                                stoppedReason = batchGuardrail
+                                                break
+                                            }
+                                            val batchFrames = mutableListOf<ExtractedVideoFrameFile>()
+                                            try {
+                                                for ((idx, tsMs, endMs) in frameBatch) {
+                                                    val frame = extractScaledVideoFrameTga(
+                                                        retriever = retriever,
+                                                        idx = idx,
+                                                        tsMs = tsMs,
+                                                        endMs = endMs,
+                                                        scaledDstW = scaledDstW,
+                                                        scaledDstH = scaledDstH,
+                                                        maxSidePx = VIDEO_FRAME_MAX_SIDE_PX,
+                                                        tmpDir = tmpDir
+                                                    )
+                                                    if (frame != null) {
+                                                        batchFrames.add(frame)
+                                                        tempFilesToDelete.add(frame.jpegFile)
+                                                    }
+                                                }
+                                                if (batchFrames.isNotEmpty()) {
+                                                    val fVecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
+                                                        items = batchFrames.map { NativeEngine.MultimodalEmbeddingInput("IMAGE_FILE", it.jpegFile.absolutePath) },
+                                                        visionTokensPerImage = VIDEO_FRAME_VISION_TOKENS,
+                                                        customEmbPath = modelPath
+                                                    )
+                                                    if (fVecs.size == batchFrames.size) {
+                                                        batchFrames.forEachIndexed { fIdx, frame ->
+                                                            segModalities.add("image")
+                                                            segAssetTypes.add("video")
+                                                            segIndices.add(frame.index)
+                                                            segStarts.add(frame.timestampMs)
+                                                            segEnds.add(frame.endMs)
+                                                            segEmbeddings.add(fVecs[fIdx])
+                                                        }
+                                                    }
+                                                }
+                                            } finally {
+                                                batchFrames.forEach { runCatching { it.jpegFile.delete() } }
+                                            }
                                         }
                                     }
+                                } catch (ce: CancellationException) {
+                                    throw ce
+                                } catch (oom: OutOfMemoryError) {
+                                    System.gc()
+                                    Log.e(TAG, "Video frame indexing OOM (${asset.displayName})", oom)
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Video frame indexing failed (${asset.displayName}): ${e.message}")
+                                } finally {
+                                    try { retriever.release() } catch (_: Throwable) {}
                                 }
                             }
-                            if (supportsAudio && !isCancelled()) {
+                            if (supportsAudio && !cancelled && stoppedReason == null && !isCancelled()) {
                                 val vAudioSegs = extractAudioTrackToWavFiles(asset.mediaPath, asset.mediaUri, context, tmpDir, maxWindows = 8)
                                 vAudioSegs.forEach { tempFilesToDelete.add(it.wavFile) }
                                 if (vAudioSegs.isNotEmpty()) {
-                                    val aVecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
-                                        items = vAudioSegs.map { NativeEngine.MultimodalEmbeddingInput("AUDIO_FILE", it.wavFile.absolutePath) },
-                                        visionTokensPerImage = VIDEO_FRAME_VISION_TOKENS,
-                                        customEmbPath = modelPath
-                                    )
-                                    if (aVecs.size == vAudioSegs.size) {
-                                        vAudioSegs.forEachIndexed { aIdx, aSeg ->
-                                            segModalities.add("audio")
-                                            segAssetTypes.add("video")
-                                            segIndices.add(aSeg.index)
-                                            segStarts.add(aSeg.startMs)
-                                            segEnds.add(aSeg.endMs)
-                                            segEmbeddings.add(aVecs[aIdx])
-                                        }
-                                    }
+                                    embedAudioSegmentsChunked(vAudioSegs, "video", VIDEO_FRAME_VISION_TOKENS)
                                 }
                             }
                         }
                     }
 
-                    if (segEmbeddings.isNotEmpty()) {
-                        val stored = nativeEngine.storeMediaEmbeddingsAtomicSafe(
-                            mediaPath = asset.mediaPath,
-                            mediaUri = asset.mediaUri,
-                            displayName = asset.displayName,
-                            metadataText = "${asset.displayName} ${asset.folderLabel}".trim(),
-                            modifiedAt = asset.modifiedAtSec,
-                            fileSize = asset.fileSize,
-                            durationMs = resolvedDurationMs,
-                            modelId = modelId,
-                            modalities = segModalities,
-                            segmentIndices = segIndices,
-                            startMsList = segStarts,
-                            endMsList = segEnds,
-                            embeddings = segEmbeddings,
-                            assetTypes = segAssetTypes
-                        )
-                        if (stored) {
-                            when (asset.modality) {
-                                "AUDIO" -> indexedAudio++
-                                "VIDEO" -> indexedVideos++
+                    if (!cancelled && stoppedReason == null) {
+                        if (segEmbeddings.isNotEmpty()) {
+                            val stored = nativeEngine.storeMediaEmbeddingsAtomicSafe(
+                                mediaPath = asset.mediaPath,
+                                mediaUri = asset.mediaUri,
+                                displayName = asset.displayName,
+                                metadataText = "${asset.displayName} ${asset.folderLabel}".trim(),
+                                modifiedAt = asset.modifiedAtSec,
+                                fileSize = asset.fileSize,
+                                durationMs = resolvedDurationMs,
+                                modelId = modelId,
+                                modalities = segModalities,
+                                segmentIndices = segIndices,
+                                startMsList = segStarts,
+                                endMsList = segEnds,
+                                embeddings = segEmbeddings,
+                                assetTypes = segAssetTypes
+                            )
+                            if (stored) {
+                                when (asset.modality) {
+                                    "AUDIO" -> indexedAudio++
+                                    "VIDEO" -> indexedVideos++
+                                }
+                            } else {
+                                failed++
                             }
                         } else {
                             failed++
                         }
-                    } else {
-                        failed++
                     }
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (oom: OutOfMemoryError) {
+                    System.gc()
+                    Log.e(TAG, "Non-image media indexing OOM (${asset.displayName})", oom)
+                    failed++
+                } catch (e: Exception) {
+                    Log.w(TAG, "Non-image media indexing failed (${asset.displayName}): ${e.message}")
+                    failed++
                 } finally {
                     tempFilesToDelete.forEach { runCatching { it.delete() } }
                 }

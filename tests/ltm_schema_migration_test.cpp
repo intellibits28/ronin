@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "long_term_memory.h"
 #include <cstdio>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <sqlite3.h>
 #include <string>
@@ -59,7 +60,7 @@ TEST(LongTermMemorySchemaMigration, ArchivesLegacyFactsAndSetsSchemaVersion) {
     LongTermMemory ltm(path);
     ASSERT_NE(ltm.getDatabase(), nullptr);
 
-    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 5);
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 6);
     EXPECT_TRUE(tableExists(ltm.getDatabase(), "facts_legacy_v0"));
     EXPECT_TRUE(tableExists(ltm.getDatabase(), "facts"));
 
@@ -583,7 +584,7 @@ TEST(LongTermMemorySchemaMigration, SchemaV3ToV4MigratesModalityTagsAndPurgesSta
     {
         LongTermMemory ltm(db_path);
         ASSERT_NE(ltm.getDatabase(), nullptr);
-        ASSERT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 5);
+        ASSERT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 6);
 
         // v4 normalizes tags while v5 purges legacy pipeline_version < 2 media vectors;
         // document_embeddings MUST remain intact across media pipeline invalidation.
@@ -697,7 +698,7 @@ TEST(LongTermMemorySchemaMigration, SchemaV4ToV5PurgesStaleMediaPreservesDocumen
     {
         LongTermMemory ltm(db_path);
         ASSERT_NE(ltm.getDatabase(), nullptr);
-        ASSERT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 5);
+        ASSERT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 6);
 
         // Legacy v4 448px JPEG-85 vector purged; document_embeddings & notes preserved.
         EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings;"), 0);
@@ -780,6 +781,83 @@ TEST(LongTermMemoryMediaEmbeddings, StrictModalityIsolationZeroCrossModalLeakage
     auto docMatches = ltm.hybridSearch("bougainvillea", {1.0f, 0.0f, 0.0f, 0.0f}, "", 5, model_id);
     ASSERT_EQ(docMatches.size(), 1u);
     EXPECT_EQ(docMatches[0].modality, "text");
+}
+
+TEST(LongTermMemorySchemaMigration, SchemaV5ToV6PurgesCollapsedPipelineV2MediaPreservesDocsAndRejectsZeroVectors) {
+    const std::string db_path = tempDbPath("v5_to_v6_media");
+    std::remove(db_path.c_str());
+
+    sqlite3* raw_db = nullptr;
+    ASSERT_EQ(sqlite3_open(db_path.c_str(), &raw_db), SQLITE_OK);
+    execSql(raw_db, "CREATE TABLE schema_version (version INTEGER);");
+    execSql(raw_db, "INSERT INTO schema_version(version) VALUES (5);");
+    execSql(raw_db, "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, tags TEXT, created_at INTEGER, updated_at INTEGER);");
+    execSql(raw_db, "INSERT INTO notes(title, content, tags, created_at, updated_at) VALUES ('keep_v5_note', 'preserved note body', 'tag', 1, 1);");
+    execSql(raw_db, "CREATE TABLE document_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_path TEXT NOT NULL, doc_hash TEXT NOT NULL DEFAULT '', model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-270m', modality TEXT NOT NULL DEFAULT 'text', chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, dimension INTEGER NOT NULL, embedding_blob BLOB NOT NULL, created_at INTEGER NOT NULL, UNIQUE(doc_path, model_id, chunk_index) ON CONFLICT REPLACE);");
+    execSql(raw_db,
+        "CREATE TABLE media_embeddings ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, media_path TEXT NOT NULL, media_uri TEXT NOT NULL DEFAULT '', "
+        "modality TEXT NOT NULL, asset_type TEXT NOT NULL DEFAULT 'image', segment_index INTEGER NOT NULL DEFAULT 0, "
+        "start_ms INTEGER NOT NULL DEFAULT 0, end_ms INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, "
+        "display_name TEXT NOT NULL DEFAULT '', metadata_text TEXT NOT NULL DEFAULT '', modified_at INTEGER NOT NULL DEFAULT 0, "
+        "file_size INTEGER NOT NULL DEFAULT 0, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-740m', "
+        "pipeline_version INTEGER NOT NULL DEFAULT 2, dimension INTEGER NOT NULL, embedding_blob BLOB NOT NULL, created_at INTEGER NOT NULL, "
+        "UNIQUE(media_path, model_id, modality, asset_type, segment_index) ON CONFLICT REPLACE);"
+    );
+
+    const std::vector<float> dummy = {1.0f, 0.0f, 0.0f, 0.0f};
+    {
+        sqlite3_stmt* ds = nullptr;
+        ASSERT_EQ(sqlite3_prepare_v2(raw_db, "INSERT INTO document_embeddings(doc_path, doc_hash, model_id, modality, chunk_index, chunk_text, dimension, embedding_blob, created_at) VALUES ('/Docs/keep_v5.txt', 'hv5', 'embeddinggemma-2-270m', 'text', 0, 'doc chunk text', 4, ?, 1);", -1, &ds, nullptr), SQLITE_OK);
+        sqlite3_bind_blob(ds, 1, dummy.data(), 16, SQLITE_TRANSIENT);
+        ASSERT_EQ(sqlite3_step(ds), SQLITE_DONE);
+        sqlite3_finalize(ds);
+
+        sqlite3_stmt* ms = nullptr;
+        ASSERT_EQ(sqlite3_prepare_v2(raw_db, "INSERT INTO media_embeddings(media_path, media_uri, modality, asset_type, segment_index, display_name, modified_at, model_id, pipeline_version, dimension, embedding_blob, created_at) VALUES ('/DCIM/Camera/collapsed_v2.jpg', '', 'image', 'image', 0, 'collapsed_v2.jpg', 777, 'embeddinggemma-2-740m', 2, 4, ?, 1);", -1, &ms, nullptr), SQLITE_OK);
+        sqlite3_bind_blob(ms, 1, dummy.data(), 16, SQLITE_TRANSIENT);
+        ASSERT_EQ(sqlite3_step(ms), SQLITE_DONE);
+        sqlite3_finalize(ms);
+    }
+    sqlite3_close(raw_db);
+
+    {
+        LongTermMemory ltm(db_path);
+        ASSERT_NE(ltm.getDatabase(), nullptr);
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 6);
+
+        // (a) pipeline_version=2 media_embeddings purged, document_embeddings and notes preserved
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings;"), 0);
+        EXPECT_FALSE(ltm.isMediaIndexed("/DCIM/Camera/collapsed_v2.jpg", 777, "embeddinggemma-2-740m"));
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM document_embeddings WHERE doc_path='/Docs/keep_v5.txt';"), 1);
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM notes WHERE title='keep_v5_note';"), 1);
+
+        // (b) storeMediaEmbeddingsAtomic rejects zero and NaN vectors without touching DB
+        EXPECT_FALSE(ltm.storeMediaEmbeddingsAtomic(
+            "/DCIM/Camera/zero.jpg", "", "zero.jpg", "Camera", 800, 1024, 0, "embeddinggemma-2-740m",
+            {{"image", 0, 0, 0, {0.0f, 0.0f, 0.0f, 0.0f}, "image"}}));
+
+        const float qnan = std::numeric_limits<float>::quiet_NaN();
+        EXPECT_FALSE(ltm.storeMediaEmbeddingsAtomic(
+            "/DCIM/Camera/nan.jpg", "", "nan.jpg", "Camera", 801, 1024, 0, "embeddinggemma-2-740m",
+            {{"image", 0, 0, 0, {1.0f, qnan, 0.0f, 0.0f}, "image"}}));
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings;"), 0);
+
+        // (c) storing a valid vector writes pipeline_version == 3, and subsequent invalid store preserves it
+        ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+            "/DCIM/Camera/valid_v3.jpg", "content://media/external/images/media/301", "valid_v3.jpg", "Camera", 900, 2048, 0, "embeddinggemma-2-740m",
+            {{"image", 0, 0, 0, {0.6f, 0.8f, 0.0f, 0.0f}, "image"}}));
+        EXPECT_TRUE(ltm.isMediaIndexed("/DCIM/Camera/valid_v3.jpg", 900, "embeddinggemma-2-740m"));
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT pipeline_version FROM media_embeddings WHERE media_path='/DCIM/Camera/valid_v3.jpg';"), 3);
+
+        // Rejecting zero vector on an existing path must not delete the existing valid row
+        EXPECT_FALSE(ltm.storeMediaEmbeddingsAtomic(
+            "/DCIM/Camera/valid_v3.jpg", "content://media/external/images/media/301", "valid_v3.jpg", "Camera", 901, 2048, 0, "embeddinggemma-2-740m",
+            {{"image", 0, 0, 0, {0.0f, 0.0f, 0.0f, 0.0f}, "image"}}));
+        EXPECT_TRUE(ltm.isMediaIndexed("/DCIM/Camera/valid_v3.jpg", 900, "embeddinggemma-2-740m"));
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings WHERE media_path='/DCIM/Camera/valid_v3.jpg';"), 1);
+    }
+    std::remove(db_path.c_str());
 }
 
 
