@@ -311,14 +311,6 @@ int main() {
     };
     report["all_scenarios_passed"] = (metrics.scenario1_pass && metrics.scenario2_pass && metrics.scenario3_pass && metrics.scenario4_pass && metrics.scenario5_pass);
 
-    std::string report_path = "/data/data/com.termux/files/home/play-ground/ronin/shm_benchmark_report.json";
-    std::ofstream out(report_path);
-    if (out.is_open()) {
-        out << report.dump(4);
-        out.close();
-        std::cout << "JSON report written to: " << report_path << std::endl;
-    }
-    
     std::string local_report_path = "shm_benchmark_report.json";
     std::ofstream out_local(local_report_path);
     if (out_local.is_open()) {

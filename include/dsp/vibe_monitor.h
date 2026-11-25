@@ -426,7 +426,7 @@ public:
     float getDynamicNoiseFloor() const;
 
     // SHM: Historical baseline tracking with multi-window convergence
-    bool accumulateBaselineCandidate(float f0);  // returns true when baseline is locked
+    bool accumulateBaselineCandidate(float f0, bool kalman_accepted = true);  // returns true when baseline is locked
     void captureBaseline(float f0);  // legacy: force-set baseline (for tests)
     float getBaseline() const;
     bool isBaselineValid() const;
@@ -644,6 +644,8 @@ public:
         m_controller.resetMetrics();
         m_controller.resetBaseline();
         m_controller.resetPostImpulseSettle();
+        m_current_gaze_state = Ronin::Kernel::Reasoning::SensoryGazeState::QUIESCENT;
+        m_quiescent_hysteresis_cycles = 0;
     }
 
 private:

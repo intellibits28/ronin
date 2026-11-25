@@ -381,7 +381,7 @@ void SamplerController::captureBaseline(float f0) {
     LOGI(TAG, "SHM: Baseline f0 FORCE-SET: %.4f Hz (confidence: %.1f%%)", f0, m_baseline_confidence_pct);
 }
 
-bool SamplerController::accumulateBaselineCandidate(float f0) {
+bool SamplerController::accumulateBaselineCandidate(float f0, bool kalman_accepted) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_baseline_valid) {
         // Phase 3: Anomaly-First Baseline Verification Gate
@@ -393,6 +393,9 @@ bool SamplerController::accumulateBaselineCandidate(float f0) {
             m_baseline_anomaly_blocked = true;
             LOGI(TAG, "SHM Anomaly-First Gate: Structural shift %.2f%% detected (f0=%.4f vs baseline=%.4f). Baseline update BLOCKED to prevent contamination.",
                  shift_pct, f0, m_baseline_f0);
+            return false;
+        }
+        if (!kalman_accepted) {
             return false;
         }
 
@@ -1229,22 +1232,32 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
             addOrMerge(cand_y, 2);
             addOrMerge(cand_z, 4);
 
-            // Phase 1: Nakamura Horizontal-to-Vertical (H/V) Spectral Ratio & Superstructure Sway
+            // Phase 1: Energy-bounded Nakamura Horizontal-to-Vertical (H/V) Spectral Ratio & Superstructure Sway
+            float global_max_psd_db = -120.0f;
+            float max_horiz_psd_db = -120.0f;
             for (auto& mc : merged_pool) {
                 uint32_t k = mc.bin_index;
                 float psd_x_val = (k < avg_psd_x.size()) ? avg_psd_x[k] : 0.0f;
                 float psd_y_val = (k < avg_psd_y.size()) ? avg_psd_y[k] : 0.0f;
                 float psd_z_val = (k < avg_psd_z.size()) ? avg_psd_z[k] : 0.0f;
                 mc.hv_ratio = (psd_x_val + psd_y_val) / (2.0f * std::max(psd_z_val, 1e-12f));
+                mc.is_horizontal_sway = (mc.hv_ratio >= 2.0f);
+                global_max_psd_db = std::max(global_max_psd_db, mc.psd_db);
+                if (mc.is_horizontal_sway) {
+                    max_horiz_psd_db = std::max(max_horiz_psd_db, mc.psd_db);
+                }
+            }
+            for (auto& mc : merged_pool) {
+                uint32_t k = mc.bin_index;
+                float psd_x_val = (k < avg_psd_x.size()) ? avg_psd_x[k] : 0.0f;
+                float psd_y_val = (k < avg_psd_y.size()) ? avg_psd_y[k] : 0.0f;
+                float psd_z_val = (k < avg_psd_z.size()) ? avg_psd_z[k] : 0.0f;
 
-                if (mc.hv_ratio >= 2.0f) {
-                    mc.is_horizontal_sway = true;
+                if (mc.is_horizontal_sway && (global_max_psd_db - mc.psd_db) <= 6.0f) {
                     mc.stage1_score = std::min(100.0f, mc.stage1_score + 10.0f); // +10% bonus for superstructure sway
-                } else if (mc.hv_ratio < 0.8f && psd_z_val > (psd_x_val + psd_y_val)) {
-                    mc.is_horizontal_sway = false;
+                } else if (mc.hv_ratio < 0.8f && psd_z_val > (psd_x_val + psd_y_val) &&
+                           (mc.psd_db - max_horiz_psd_db) <= 6.0f) {
                     mc.stage1_score = std::max(0.0f, mc.stage1_score - 15.0f); // -15% penalty for floor slab bounce
-                } else {
-                    mc.is_horizontal_sway = false;
                 }
             }
 
@@ -1479,7 +1492,7 @@ VibeMonitorResult VibeMonitorEngine::analyzePipeline(const std::vector<float>& x
 
         // SHM: Multi-window baseline accumulation & Anomaly-First Protection Gate (Quality >= 50 Required)
         if (resonance_freq > 0.0f && m_filter_samples_processed >= SETTLING_SAMPLES && res.quality_report.total_score_pct >= 50) {
-            bool locked = m_controller.accumulateBaselineCandidate(resonance_freq);
+            bool locked = m_controller.accumulateBaselineCandidate(resonance_freq, res.selection_accepted);
             if (!m_controller.isBaselineValid() && locked) {
                 m_bayesian_scorer.reset();
                 m_bayesian_scorer.activate();
