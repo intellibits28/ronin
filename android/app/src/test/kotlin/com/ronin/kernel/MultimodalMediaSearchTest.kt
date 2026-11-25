@@ -655,4 +655,120 @@ class MultimodalMediaSearchTest {
         assertFalse(cpuSubdir.endsWith("_mgpu"))
         assertNotEquals(gpuSubdir, cpuSubdir)
     }
+
+    @Test
+    fun `MyanmarVisualQueryBridge resolves botanical compounds and suppresses literal raw Myanmar`() {
+        val bare = MyanmarVisualQueryBridge.resolveCrossModalQueries("စက္ကူပန်း")
+        assertEquals("bougainvillea", bare.primaryQuery)
+        assertNull(bare.secondaryQuery)
+        assertEquals(0f, bare.secondaryWeight, 1e-6f)
+        assertTrue(bare.suppressedRawMyanmar)
+
+        val withSuffix = MyanmarVisualQueryBridge.resolveCrossModalQueries("စက္ကူပန်းပုံ")
+        assertEquals("bougainvillea", withSuffix.primaryQuery)
+        assertNull(withSuffix.secondaryQuery)
+        assertTrue(withSuffix.suppressedRawMyanmar)
+
+        val withTypo = MyanmarVisualQueryBridge.resolveCrossModalQueries("စကွကူပန်း")
+        assertEquals("bougainvillea", withTypo.primaryQuery)
+        assertNull(withTypo.secondaryQuery)
+        assertTrue(withTypo.suppressedRawMyanmar)
+
+        val parsed = MediaIntentParser.parseNaturalMediaSearchIntent("စက္ကူပန်းပါတဲ့ပုံ ရှာပေးပါ")
+        assertNotNull(parsed)
+        assertEquals(MediaModalityFilter.IMAGE, parsed!!.filter)
+        assertEquals("စက္ကူပန်း", parsed.query)
+        val resolvedFromIntent = MyanmarVisualQueryBridge.resolveCrossModalQueries(parsed.query)
+        assertEquals("bougainvillea", resolvedFromIntent.primaryQuery)
+        assertNull(resolvedFromIntent.secondaryQuery)
+        assertTrue(resolvedFromIntent.suppressedRawMyanmar)
+
+        val rose = MyanmarVisualQueryBridge.resolveCrossModalQueries("နှင်းဆီပန်း")
+        assertEquals("rose flower", rose.primaryQuery)
+        assertNull(rose.secondaryQuery)
+        assertTrue(rose.suppressedRawMyanmar)
+
+        val sunflower = MyanmarVisualQueryBridge.resolveCrossModalQueries("နေကြာပန်း")
+        assertEquals("sunflower", sunflower.primaryQuery)
+        assertNull(sunflower.secondaryQuery)
+        assertTrue(sunflower.suppressedRawMyanmar)
+
+        val butterfly = MyanmarVisualQueryBridge.resolveCrossModalQueries("လိပ်ပြာ")
+        assertEquals("butterfly", butterfly.primaryQuery)
+        assertNull(butterfly.secondaryQuery)
+        assertTrue(butterfly.suppressedRawMyanmar)
+    }
+
+    @Test
+    fun `MyanmarVisualQueryBridge places modifiers before nouns and preserves compound words in MediaIntentParser`() {
+        val pinkFirst = MyanmarVisualQueryBridge.resolveCrossModalQueries("ပန်းရောင် စက္ကူပန်း")
+        assertEquals("pink bougainvillea", pinkFirst.primaryQuery)
+        assertNull(pinkFirst.secondaryQuery)
+        assertTrue(pinkFirst.suppressedRawMyanmar)
+
+        val redAfter = MyanmarVisualQueryBridge.resolveCrossModalQueries("စက္ကူပန်း အနီ")
+        assertEquals("red bougainvillea", redAfter.primaryQuery)
+        assertNull(redAfter.secondaryQuery)
+        assertTrue(redAfter.suppressedRawMyanmar)
+
+        val parsedId = MediaIntentParser.parseNaturalMediaSearchIntent("မှတ်ပုံတင်ပုံ ရှာပေးပါ")
+        assertNotNull(parsedId)
+        assertEquals(MediaModalityFilter.IMAGE, parsedId!!.filter)
+        assertEquals("မှတ်ပုံတင်", parsedId.query)
+        val resolvedId = MyanmarVisualQueryBridge.resolveCrossModalQueries(parsedId.query)
+        assertEquals("national id card", resolvedId.primaryQuery)
+        assertNull(resolvedId.secondaryQuery)
+        assertTrue(resolvedId.suppressedRawMyanmar)
+    }
+
+    @Test
+    fun `MyanmarVisualQueryBridge keeps secondary fusion for simple nouns and passes English through unchanged`() {
+        val dog = MyanmarVisualQueryBridge.resolveCrossModalQueries("ခွေး")
+        assertEquals("dog", dog.primaryQuery)
+        assertEquals("ခွေး", dog.secondaryQuery)
+        assertEquals(0.35f, dog.secondaryWeight, 1e-6f)
+        assertFalse(dog.suppressedRawMyanmar)
+
+        val parsedDogVideo = MediaIntentParser.parseNaturalMediaSearchIntent("ခွေးပြေးနေတဲ့ video ရှာပေး")
+        assertNotNull(parsedDogVideo)
+        assertEquals(MediaModalityFilter.VIDEO, parsedDogVideo!!.filter)
+        assertEquals("ခွေးပြေးနေတဲ့", parsedDogVideo.query)
+        val resolvedDogVideo = MyanmarVisualQueryBridge.resolveCrossModalQueries(parsedDogVideo.query)
+        assertEquals("dog running", resolvedDogVideo.primaryQuery)
+        assertEquals("ခွေးပြေးနေတဲ့", resolvedDogVideo.secondaryQuery)
+        assertEquals(0.35f, resolvedDogVideo.secondaryWeight, 1e-6f)
+        assertFalse(resolvedDogVideo.suppressedRawMyanmar)
+
+        val engFlower = MyanmarVisualQueryBridge.resolveCrossModalQueries("  bougainvillea  ")
+        assertEquals("bougainvillea", engFlower.primaryQuery)
+        assertNull(engFlower.secondaryQuery)
+        assertEquals(0f, engFlower.secondaryWeight, 1e-6f)
+        assertFalse(engFlower.suppressedRawMyanmar)
+
+        val engDog = MyanmarVisualQueryBridge.resolveCrossModalQueries("dog")
+        assertEquals("dog", engDog.primaryQuery)
+        assertNull(engDog.secondaryQuery)
+        assertEquals(0f, engDog.secondaryWeight, 1e-6f)
+        assertFalse(engDog.suppressedRawMyanmar)
+    }
+
+    @Test
+    fun `MediaSearchEngine fuseQueryEmbeddings blends with L2 unit normalization`() {
+        val primary = floatArrayOf(1f, 0f, 0f)
+        val secondary = floatArrayOf(0f, 1f, 0f)
+
+        val fused = MediaSearchEngine.fuseQueryEmbeddings(primary, secondary, 0.35f)
+        assertEquals(3, fused.size)
+        val norm = kotlin.math.sqrt(fused.fold(0f) { acc, v -> acc + v * v })
+        assertEquals(1f, norm, 1e-5f)
+
+        val dotPrimary = fused[0] * primary[0] + fused[1] * primary[1] + fused[2] * primary[2]
+        val dotSecondary = fused[0] * secondary[0] + fused[1] * secondary[1] + fused[2] * secondary[2]
+        assertTrue(dotPrimary > dotSecondary)
+        assertTrue(dotPrimary > 0.8f)
+        assertTrue(dotSecondary > 0.4f)
+
+        val unchanged = MediaSearchEngine.fuseQueryEmbeddings(primary, null, 0.35f)
+        assertArrayEquals(primary, unchanged, 1e-6f)
+    }
 }

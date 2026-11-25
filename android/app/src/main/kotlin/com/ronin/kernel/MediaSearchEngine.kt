@@ -545,7 +545,7 @@ object MediaIntentParser {
             .replace(Regex("""(?i)\b(?:photos?|images?|pictures?|pics?|screenshots?|videos?|movies?|audio|voice\s*(?:memo|note)s?|recordings?|sounds?|songs?|files?)\b"""), " ")
             .replace(Regex("""(?:ဖုန်းထဲက|ဖုန်းထဲမှာ|ဖုန်းထဲ|gallery\s*ထဲက|ဗီဒီယိုထဲက|ဗွီဒီယိုထဲက|video\s*ထဲက|အသံထဲက|ပုံထဲက)"""), " ")
             .replace(Regex("""(?:ရှာပေးပါ|ရှာပေး|ရှာကြည့်|ရှာပါ|ပြပေးပါ|ပြပေး|ပြပါ|ဖွင့်ပေးပါ|ပေးပါ)"""), " ")
-            .replace(Regex("""(?:ဓာတ်ပုံတွေ|ဓာတ်ပုံ|ပုံတွေ|ပုံ|ဗီဒီယိုတွေ|ဗီဒီယို|ဗွီဒီယို|အသံဖိုင်တွေ|အသံဖိုင်|အသံတွေ|အသံ|သီချင်းတွေ|သီချင်း|ဟာတွေ|ဟာ|တွေ)"""), " ")
+            .replace(Regex("""(?:ဓာတ်ပုံတွေ|ဓာတ်ပုံများ|ဓာတ်ပုံ|(?<!မှတ်)ပုံတွေ(?!့)|(?<!မှတ်)ပုံများ|(?<!မှတ်)ပုံ(?!း|စံ|တင်|ပြင်|ဆွဲ|နှိပ်)|ဗီဒီယိုတွေ|ဗီဒီယို|ဗွီဒီယို|အသံဖိုင်တွေ|အသံဖိုင်|အသံတွေ|အသံ|သီချင်းတွေ|သီချင်း|ပါဝင်တဲ့|ပါဝင်သော|ပါတဲ့|ပါသော|(?<=\A|\s)ဟာ(?:တွေ(?!့))?(?=\s|\z)|တွေ(?!့))"""), " ")
             .replace(Regex("""(?<=\A|\s)(?:ပါ|က|ကို|မှာ|ထဲ|နဲ့)(?=\s|\z)"""), " ")
             .replace(Regex("""\s+"""), " ")
             .trim(' ', '.', ',', '?', '!', '။', '၊')
@@ -554,6 +554,412 @@ object MediaIntentParser {
             query = trimmed
         }
         return ParsedMediaQuery(query = query, filter = filter)
+    }
+}
+
+/**
+ * Resolves Myanmar natural-language visual media queries into English visual anchor phrases
+ * (with optional raw Myanmar fusion for non-metaphorical concepts) so EmbeddingGemma 2's
+ * SentencePiece tokenizer does not misinterpret compound idioms literally.
+ */
+object MyanmarVisualQueryBridge {
+    enum class LexiconRole {
+        MODIFIER,
+        NOUN,
+        ACTION
+    }
+
+    data class ResolvedMediaQuery(
+        val originalQuery: String,
+        val primaryQuery: String,
+        val secondaryQuery: String? = null,
+        val secondaryWeight: Float = 0f,
+        val suppressedRawMyanmar: Boolean = false
+    )
+
+    private data class LexiconEntry(
+        val myanmar: String,
+        val english: String,
+        val role: LexiconRole = LexiconRole.NOUN,
+        val suppressRawMyanmar: Boolean = false,
+        val singleWordOrSpaceBounded: Boolean = false
+    )
+
+    private const val SECONDARY_MYANMAR_WEIGHT = 0.35f
+
+    private val ZERO_WIDTH_REGEX = Regex("""[\u200B\u200C\u200D\uFEFF]""")
+    private val WHITESPACE_REGEX = Regex("""\s+""")
+    private val QUERY_FILLER_REGEX = Regex(
+        """(?:ဓာတ်ပုံတွေ|ဓာတ်ပုံများ|ဓာတ်ပုံ|(?<!မှတ်)ပုံတွေ(?!့)|(?<!မှတ်)ပုံများ|(?<!မှတ်)ပုံ(?!း|စံ|တင်|ပြင်|ဆွဲ|နှိပ်)|ပါဝင်တဲ့|ပါဝင်သော|ပါတဲ့|ပါသော)"""
+    )
+    private val ASCII_TOKEN_REGEX = Regex("""[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*""")
+    private val MYANMAR_CHUNK_REGEX = Regex("""[\u1000-\u109F]+""")
+
+    private val LIGHTWEIGHT_PARTICLES = listOf(
+        "နှင့်", "က", "ကို", "မှာ", "ထဲ", "နဲ့", "ရဲ့", "သော", "တဲ့", "လေး", "များ", "တွေ"
+    ).sortedByDescending { it.length }
+
+    private val LEXICON: List<LexiconEntry> = listOf(
+        // Botanical (metaphorical / specific names suppress raw Myanmar compound splitting)
+        LexiconEntry("စက္ကူပန်းပင်", "bougainvillea plant", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("စက္ကူပန်းပွင့်", "bougainvillea", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("စက္ကူပန်း", "bougainvillea", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("နှင်းဆီပန်း", "rose flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("နှင်းဆီ", "rose flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("နေကြာပန်း", "sunflower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("နေကြာ", "sunflower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ပဒုမ္မာကြာ", "lotus flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ကြာပန်း", "lotus flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("စိန်ပန်းပြာ", "purple jacaranda flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("စိန်ပန်းနီ", "red flame tree flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("စိန်ပန်း", "red flame tree flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("သစ်ခွပန်း", "orchid flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("သစ်ခွ", "orchid flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ပိတောက်ပန်း", "yellow padauk flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ပိတောက်", "yellow padauk flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ငုဝါပန်း", "yellow cassia flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ငုဝါ", "yellow cassia flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("စံပယ်ပန်း", "white jasmine flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("စံပယ်", "white jasmine flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ခေါင်ရမ်းပန်း", "hibiscus flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ခေါင်ရမ်း", "hibiscus flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ချယ်ရီပန်း", "cherry blossom flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ချယ်ရီ", "cherry blossom flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ဂန္ဓမာပန်း", "chrysanthemum flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ဂန္ဓမာ", "chrysanthemum flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("သစ္စာပန်း", "gladiolus flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ဒေလီယာပန်း", "dahlia flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ဒေလီယာ", "dahlia flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ကံ့ကော်ပန်း", "ironwood flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ကံ့ကော်", "ironwood flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ဇီဇဝါပန်း", "white gardenia flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ဇီဇဝါ", "white gardenia flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ခရေပန်း", "star flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ခရေ", "star flower", LexiconRole.NOUN, suppressRawMyanmar = true),
+
+        // Generic plant
+        LexiconEntry("ပန်းစည်း", "flower bouquet", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ပန်းအိုး", "flower vase", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ပန်းခင်း", "flower field", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ပန်းခြံ", "park garden", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ပန်းပွင့်", "flower", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ပန်း", "flower", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("သစ်ပင်", "tree", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("မြက်ခင်း", "green grass", LexiconRole.NOUN, suppressRawMyanmar = false),
+
+        // Animals
+        LexiconEntry("လိပ်ပြာ", "butterfly", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ခွေးပေါက်", "puppy dog", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ခွေးလေး", "puppy dog", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ခွေး", "dog", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ကြောင်ပေါက်", "kitten cat", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ကြောင်လေး", "kitten cat", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ကြောင်", "cat", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ငှက်", "bird", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ငါး", "fish", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ဆင်", "elephant", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("မြင်း", "horse", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("နွား", "cow", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ယုန်", "rabbit", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("မျောက်", "monkey", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("လိပ်", "turtle", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("မြွေ", "snake", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ကြက်", "chicken", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ဘဲ", "duck", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ပိတုန်း", "bee", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ပျား", "bee", LexiconRole.NOUN, suppressRawMyanmar = false),
+
+        // Nature & Landmarks
+        LexiconEntry("ရွှေတိဂုံ", "golden buddhist pagoda stupa", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("စေတီတော်", "golden buddhist pagoda stupa", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("စေတီ", "golden buddhist pagoda stupa", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ဘုရား", "golden buddhist pagoda stupa", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ဘုန်းကြီးကျောင်း", "buddhist monastery temple", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ရေတံခွန်", "waterfall", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ပင်လယ်ကမ်းခြေ", "beach ocean seashore", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ကမ်းခြေ", "beach ocean seashore", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ပင်လယ်", "sea ocean", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("တောင်တန်း", "mountain hills", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("တောင်", "mountain hills", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("မြစ်", "river water", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ချောင်း", "river water", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ရေကန်", "lake water", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("အင်း", "lake water", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("နေဝင်ဆည်းဆာ", "sunset sky", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("နေဝင်ချိန်", "sunset sky", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("နေထွက်ချိန်", "sunrise sky", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("သက်တန့်", "rainbow sky", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("သက်တံ", "rainbow sky", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("မီးရှူးမီးပန်း", "fireworks night sky", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("မီးပုံးပျံ", "hot air balloon", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("မိုးရွာ", "rain", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("မိုး", "rain", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("တိမ်", "clouds", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ကောင်းကင်", "sky", LexiconRole.NOUN, suppressRawMyanmar = false),
+
+        // Food
+        LexiconEntry("မုန့်ဟင်းခါး", "mohinga noodle soup bowl", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ရှမ်းခေါက်ဆွဲ", "noodles bowl", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ခေါက်ဆွဲ", "noodles bowl", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("လက်ဖက်သုပ်", "tea leaf salad plate", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("လက်ဖက်ရည်", "milk tea cup", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("မွေးနေ့ကိတ်", "birthday cake", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ကိတ်မုန့်", "birthday cake", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ရေခဲမုန့်", "ice cream", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ထမင်းဟင်း", "rice meal plate", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ထမင်း", "rice meal plate", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ကော်ဖီ", "coffee cup", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("သစ်သီး", "fruit", LexiconRole.NOUN, suppressRawMyanmar = false),
+
+        // Documents, Objects, Vehicles & People
+        LexiconEntry("မှတ်ပုံတင်", "national id card", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("နိုင်ငံကူးလက်မှတ်", "passport", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ပြေစာ", "receipt invoice", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("ဘောင်ချာ", "receipt invoice", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("နေကာမျက်မှန်", "sunglasses", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("မျက်မှန်", "eyeglasses", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("မင်္ဂလာဆောင်", "wedding couple", LexiconRole.NOUN, suppressRawMyanmar = true),
+        LexiconEntry("စာရွက်စာတမ်း", "paper document", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("စာရွက်", "paper document", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("စက္ကူ", "paper document", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("စာအုပ်", "book", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("လက်ပတ်နာရီ", "wristwatch clock", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("နာရီ", "wristwatch clock", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ထီး", "umbrella", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ဖိနပ်", "shoes", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ကျောပိုးအိတ်", "backpack", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("အိတ်", "bag", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("မော်တော်ဆိုင်ကယ်", "motorcycle scooter", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ဆိုင်ကယ်", "motorcycle scooter", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("စက်ဘီး", "bicycle", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ဘတ်စ်ကား", "bus", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ကား", "car", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ရထား", "train", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("လေယာဉ်ပျံ", "airplane", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("လေယာဉ်", "airplane", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("သင်္ဘော", "boat ship", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("လှေ", "boat ship", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ကလေးငယ်", "child baby", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ကလေး", "child baby", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("မိသားစု", "family people", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("မွေးနေ့ပွဲ", "birthday party", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("မွေးနေ့", "birthday party", LexiconRole.NOUN, suppressRawMyanmar = false),
+        LexiconEntry("ဆယ်လ်ဖီ", "selfie portrait", LexiconRole.NOUN, suppressRawMyanmar = false),
+
+        // Modifiers
+        LexiconEntry("ပန်းရောင်", "pink", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("ခရမ်းရောင်", "purple", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အနီရောင်", "red", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အနီ", "red", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အဝါရောင်", "yellow", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အဝါ", "yellow", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အဖြူရောင်", "white", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အဖြူ", "white", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အပြာရောင်", "blue", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အပြာ", "blue", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အစိမ်းရောင်", "green", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အစိမ်း", "green", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("လိမ္မော်ရောင်", "orange", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("ရွှေရောင်", "golden", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အမည်းရောင်", "black", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အနက်ရောင်", "black", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အမည်း", "black", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အနက်", "black", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အကြီး", "big", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("အသေး", "small", LexiconRole.MODIFIER, suppressRawMyanmar = false),
+        LexiconEntry("ဖြူ", "white", LexiconRole.MODIFIER, suppressRawMyanmar = false, singleWordOrSpaceBounded = true),
+        LexiconEntry("နီ", "red", LexiconRole.MODIFIER, suppressRawMyanmar = false, singleWordOrSpaceBounded = true),
+        LexiconEntry("ဝါ", "yellow", LexiconRole.MODIFIER, suppressRawMyanmar = false, singleWordOrSpaceBounded = true),
+        LexiconEntry("ပြာ", "blue", LexiconRole.MODIFIER, suppressRawMyanmar = false, singleWordOrSpaceBounded = true),
+
+        // Actions
+        LexiconEntry("ပြေးနေတဲ့", "running", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("ပြေးနေ", "running", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("ပြေး", "running", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("အိပ်နေတဲ့", "sleeping", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("အိပ်နေ", "sleeping", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("စားနေတဲ့", "eating", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("စားနေ", "eating", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("ပျံနေတဲ့", "flying", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("ပျံနေ", "flying", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("ရေကူးနေတဲ့", "swimming", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("ရေကူး", "swimming", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("ရယ်နေတဲ့", "smiling", LexiconRole.ACTION, suppressRawMyanmar = false),
+        LexiconEntry("ပြုံးနေတဲ့", "smiling", LexiconRole.ACTION, suppressRawMyanmar = false)
+    ).sortedByDescending { it.myanmar.length }
+
+    fun normalizeMyanmarQuery(raw: String): String {
+        val cleaned = raw
+            .replace(ZERO_WIDTH_REGEX, "")
+            .replace("\u103A\u1037", "\u1037\u103A")
+            .replace("\u1036\u102F", "\u102F\u1036")
+            .replace("\u1038\u103A", "\u103A\u1038")
+            .replace("\u1025\u103A", "\u1009\u103A")
+            .replace("စကွကူပန်း", "စက္ကူပန်း")
+            .replace("စကူပန်း", "စက္ကူပန်း")
+            .replace(WHITESPACE_REGEX, " ")
+            .trim(' ', '.', ',', '?', '!', '။', '၊')
+
+        if (cleaned.isEmpty()) return ""
+        val stripped = cleaned
+            .replace(QUERY_FILLER_REGEX, " ")
+            .replace(WHITESPACE_REGEX, " ")
+            .trim(' ', '.', ',', '?', '!', '။', '၊')
+        return if (stripped.isNotBlank()) stripped else cleaned
+    }
+
+    private fun isOnlyLightweightParticles(chunk: String): Boolean {
+        if (chunk.isEmpty()) return true
+        val dp = BooleanArray(chunk.length + 1)
+        dp[0] = true
+        for (i in 0 until chunk.length) {
+            if (!dp[i]) continue
+            for (particle in LIGHTWEIGHT_PARTICLES) {
+                val end = i + particle.length
+                if (end <= chunk.length && chunk.startsWith(particle, startIndex = i)) {
+                    dp[end] = true
+                }
+            }
+        }
+        return dp[chunk.length]
+    }
+
+    private fun isBoundedAt(text: String, start: Int, length: Int): Boolean {
+        val beforeOk = start == 0 || text[start - 1].isWhitespace()
+        val end = start + length
+        val afterOk = end == text.length || text[end].isWhitespace()
+        return beforeOk && afterOk
+    }
+
+    private fun collectUnmappedTokens(
+        segment: String,
+        preservedLatin: MutableList<String>,
+        unmappedMyanmar: MutableList<String>
+    ) {
+        if (segment.isBlank()) return
+        for (match in ASCII_TOKEN_REGEX.findAll(segment)) {
+            preservedLatin.add(match.value)
+        }
+        for (match in MYANMAR_CHUNK_REGEX.findAll(segment)) {
+            val chunk = match.value.trim('။', '၊')
+            if (chunk.isNotEmpty() && !isOnlyLightweightParticles(chunk)) {
+                unmappedMyanmar.add(chunk)
+            }
+        }
+    }
+
+    private fun appendUniqueTokens(target: MutableList<String>, seenLower: MutableSet<String>, phrase: String) {
+        for (token in phrase.split(WHITESPACE_REGEX)) {
+            if (token.isBlank()) continue
+            if (seenLower.add(token.lowercase())) {
+                target.add(token)
+            }
+        }
+    }
+
+    fun resolveCrossModalQueries(rawQuery: String): ResolvedMediaQuery {
+        if (rawQuery.none { it in '\u1000'..'\u109F' }) {
+            return ResolvedMediaQuery(
+                originalQuery = rawQuery,
+                primaryQuery = rawQuery.trim(),
+                secondaryQuery = null,
+                secondaryWeight = 0f,
+                suppressedRawMyanmar = false
+            )
+        }
+
+        val normalized = normalizeMyanmarQuery(rawQuery)
+        if (normalized.isEmpty()) {
+            return ResolvedMediaQuery(
+                originalQuery = rawQuery,
+                primaryQuery = "",
+                secondaryQuery = null,
+                secondaryWeight = 0f,
+                suppressedRawMyanmar = false
+            )
+        }
+
+        val matchedEntries = mutableListOf<LexiconEntry>()
+        val preservedLatin = mutableListOf<String>()
+        val unmappedMyanmar = mutableListOf<String>()
+
+        var index = 0
+        var unmappedStart = 0
+        while (index < normalized.length) {
+            if (normalized[index].isWhitespace()) {
+                index++
+                continue
+            }
+            val matched = LEXICON.firstOrNull { entry ->
+                normalized.startsWith(entry.myanmar, startIndex = index) &&
+                    (!entry.singleWordOrSpaceBounded || isBoundedAt(normalized, index, entry.myanmar.length))
+            }
+            if (matched != null) {
+                if (index > unmappedStart) {
+                    collectUnmappedTokens(
+                        normalized.substring(unmappedStart, index),
+                        preservedLatin,
+                        unmappedMyanmar
+                    )
+                }
+                matchedEntries.add(matched)
+                index += matched.myanmar.length
+                unmappedStart = index
+            } else {
+                index++
+            }
+        }
+        if (unmappedStart < normalized.length) {
+            collectUnmappedTokens(normalized.substring(unmappedStart), preservedLatin, unmappedMyanmar)
+        }
+
+        if (matchedEntries.isEmpty()) {
+            return ResolvedMediaQuery(
+                originalQuery = rawQuery,
+                primaryQuery = normalized,
+                secondaryQuery = null,
+                secondaryWeight = 0f,
+                suppressedRawMyanmar = false
+            )
+        }
+
+        val orderedTokens = mutableListOf<String>()
+        val seenLower = mutableSetOf<String>()
+        matchedEntries.filter { it.role == LexiconRole.MODIFIER }.forEach {
+            appendUniqueTokens(orderedTokens, seenLower, it.english)
+        }
+        preservedLatin.forEach {
+            appendUniqueTokens(orderedTokens, seenLower, it)
+        }
+        matchedEntries.filter { it.role == LexiconRole.NOUN }.forEach {
+            appendUniqueTokens(orderedTokens, seenLower, it.english)
+        }
+        matchedEntries.filter { it.role == LexiconRole.ACTION }.forEach {
+            appendUniqueTokens(orderedTokens, seenLower, it.english)
+        }
+        unmappedMyanmar.forEach {
+            appendUniqueTokens(orderedTokens, seenLower, it)
+        }
+
+        val assembledQuery = orderedTokens.joinToString(" ").ifBlank { normalized }
+        val suppressRaw = matchedEntries.any { it.suppressRawMyanmar }
+        return if (suppressRaw) {
+            ResolvedMediaQuery(
+                originalQuery = rawQuery,
+                primaryQuery = assembledQuery,
+                secondaryQuery = null,
+                secondaryWeight = 0f,
+                suppressedRawMyanmar = true
+            )
+        } else {
+            ResolvedMediaQuery(
+                originalQuery = rawQuery,
+                primaryQuery = assembledQuery,
+                secondaryQuery = normalized,
+                secondaryWeight = SECONDARY_MYANMAR_WEIGHT,
+                suppressedRawMyanmar = false
+            )
+        }
     }
 }
 
@@ -883,6 +1289,35 @@ object MediaSearchEngine {
     const val AUDIO_SEGMENT_BATCH_SIZE = 4
     const val MIN_RELEVANCE_COSINE_FLOOR = 0.40f
     const val RELATIVE_COSINE_WINDOW_DELTA = 0.20f
+
+    fun fuseQueryEmbeddings(
+        primary: FloatArray,
+        secondary: FloatArray?,
+        secondaryWeight: Float
+    ): FloatArray {
+        if (primary.isEmpty()) return primary
+        if (secondary == null || secondary.size != primary.size || secondaryWeight <= 0f) {
+            return primary
+        }
+        val w2 = secondaryWeight.coerceIn(0f, 1f)
+        val w1 = 1f - w2
+        val blended = FloatArray(primary.size)
+        var normSq = 0.0
+        for (i in primary.indices) {
+            val v = w1 * primary[i] + w2 * secondary[i]
+            blended[i] = v
+            normSq += (v * v).toDouble()
+        }
+        val norm = sqrt(normSq)
+        if (norm > 1e-12) {
+            val invNorm = (1.0 / norm).toFloat()
+            for (i in blended.indices) {
+                blended[i] = blended[i] * invNorm
+            }
+            return blended
+        }
+        return primary
+    }
 
     fun formatTimestampMs(ms: Long): String {
         val totalSec = (ms / 1000L).coerceAtLeast(0L)
@@ -2299,13 +2734,28 @@ object MediaSearchEngine {
             )
         }
 
+        val resolved = MyanmarVisualQueryBridge.resolveCrossModalQueries(query)
+        val secondaryDistinct = resolved.secondaryQuery?.takeIf {
+            it.isNotBlank() && it != resolved.primaryQuery && resolved.secondaryWeight > 0f
+        }
+        val textsToEmbed = if (secondaryDistinct != null) {
+            listOf(resolved.primaryQuery, secondaryDistinct)
+        } else {
+            listOf(resolved.primaryQuery)
+        }
+        Log.i(
+            TAG,
+            "searchMediaByText query=\"$query\" -> primary=\"${resolved.primaryQuery}\", " +
+                "secondary=\"${secondaryDistinct ?: ""}\", weight=${resolved.secondaryWeight}, " +
+                "suppressedRawMyanmar=${resolved.suppressedRawMyanmar}"
+        )
         val qVecs = nativeEngine.generateEmbeddingsSubBatched(
-            texts = listOf(query),
+            texts = textsToEmbed,
             customEmbPath = modelPath,
             taskMode = InferenceService.TASK_NONE
         )
-        val queryVec = qVecs.firstOrNull()
-        if (queryVec == null || queryVec.isEmpty()) {
+        val primaryVec = qVecs.getOrNull(0)
+        if (primaryVec == null || primaryVec.isEmpty()) {
             val workerDetail = nativeEngine.getLastEmbeddingErrorSafe()
             val detailSuffix = if (workerDetail.isNotBlank()) " ($workerDetail)" else ""
             return@withContext MediaSearchOutcome(
@@ -2316,6 +2766,12 @@ object MediaSearchEngine {
                 error = "Failed to embed media query with $embFileName.$detailSuffix"
             )
         }
+        val secondaryVec = if (secondaryDistinct != null) qVecs.getOrNull(1)?.takeIf { it.isNotEmpty() } else null
+        val queryVec = fuseQueryEmbeddings(
+            primary = primaryVec,
+            secondary = secondaryVec,
+            secondaryWeight = if (secondaryVec != null) resolved.secondaryWeight else 0f
+        )
 
         val rawJson = nativeEngine.searchMediaEmbeddingsSafe(
             queryEmbedding = queryVec,
