@@ -47,6 +47,8 @@ class InferenceService : Service() {
     private var cachedEmbVisionIsGpu: Boolean = false
     private var cachedEmbVisionSignatures: IntArray = IntArray(0)
     private var cachedEmbMaxVisionBudget: Int = 0
+    private var cachedEmbConfigVisionTokens: Int? = null
+    private var cachedEmbMaxInputLength: Int? = null
     
     private var currentTemp = 0.7f
     private var currentTopK = 40
@@ -271,7 +273,65 @@ class InferenceService : Service() {
         const val LITERT_LM_RUNTIME_VERSION = "0.19.1"
         const val TASK_QUERY = "QUERY"
         const val TASK_DOCUMENT = "DOCUMENT"
+        const val TASK_NONE = "NONE"
         const val TASK_RAW = "RAW"
+        const val MEDIA_VISION_TOKENS_PER_IMAGE = 70
+        const val MEDIA_MAX_INPUT_LENGTH = 256
+
+        /**
+         * Builds an isolated LiteRT-LM cache subdirectory name partitioned by model filename,
+         * active modality backends, configured vision tokens per image, and max input sequence length.
+         */
+        fun buildEmbeddingCacheSubdirName(
+            modelName: String,
+            hasVision: Boolean,
+            visionIsGpu: Boolean,
+            hasAudio: Boolean,
+            visionTokensPerImage: Int?,
+            maxInputLength: Int?
+        ): String {
+            val safeModel = modelName
+                .trim()
+                .lowercase()
+                .replace(Regex("[^a-z0-9._-]+"), "_")
+                .ifEmpty { "embedding_model" }
+            val visionTag = when {
+                !hasVision -> "v0"
+                visionIsGpu -> "vgpu"
+                else -> "vcpu"
+            }
+            val audioTag = if (hasAudio) "a1" else "a0"
+            val vtTag = "vt${visionTokensPerImage?.takeIf { it > 0 }?.toString() ?: "def"}"
+            val lenTag = "len${maxInputLength?.takeIf { it > 0 }?.toString() ?: "def"}"
+            return "emb_cache_${safeModel}_${visionTag}_${audioTag}_${vtTag}_${lenTag}"
+        }
+
+        /**
+         * Determines whether a cached [EmbeddingEngine] instance satisfies a new request profile
+         * without reloading the model weights or mixing incompatible sequence/vision budgets.
+         */
+        fun shouldReuseCachedEmbeddingEngine(
+            sameModelPath: Boolean,
+            requireVision: Boolean,
+            requireAudio: Boolean,
+            forceVisionCpu: Boolean,
+            cachedVisionEnabled: Boolean,
+            cachedAudioEnabled: Boolean,
+            cachedVisionIsGpu: Boolean,
+            cachedConfigVisionTokens: Int?,
+            cachedMaxInputLength: Int?,
+            requestedVisionTokens: Int?,
+            requestedMaxInputLength: Int?
+        ): Boolean {
+            if (!sameModelPath) return false
+            val visionOk = !requireVision || (cachedVisionEnabled && (!forceVisionCpu || !cachedVisionIsGpu))
+            val audioOk = !requireAudio || cachedAudioEnabled
+            val maxLenOk = cachedMaxInputLength == requestedMaxInputLength
+            val tokensOk = (!requireVision && !cachedVisionEnabled) ||
+                requestedVisionTokens == null ||
+                cachedConfigVisionTokens == requestedVisionTokens
+            return visionOk && audioOk && maxLenOk && tokensOk
+        }
 
         /**
          * Parses semantic version strings safely and returns true when [currentVersion]
@@ -311,7 +371,8 @@ class InferenceService : Service() {
 
         /**
          * Formats text queries and corpus chunks with official EmbeddingGemma 2 asymmetric prefixes.
-         * Note: Non-text modalities (images, video frames, audio) must NOT use text task prefixes.
+         * Note: Cross-modal media queries (TASK_NONE) and raw inputs (TASK_RAW) must pass raw trimmed text
+         * without text-retrieval prefixes so text queries align directly with image/video/audio embeddings.
          */
         fun formatForEmbeddingGemma2(text: String, taskMode: String, titleHint: String = ""): String {
             val clean = text.trim()
@@ -321,7 +382,8 @@ class InferenceService : Service() {
                     val safeTitle = titleHint.trim().ifEmpty { "none" }
                     "title: $safeTitle | text: $clean"
                 }
-                else -> text
+                TASK_NONE, TASK_RAW -> clean
+                else -> clean
             }
         }
 
@@ -419,6 +481,8 @@ class InferenceService : Service() {
             cachedEmbVisionIsGpu = false
             cachedEmbVisionSignatures = IntArray(0)
             cachedEmbMaxVisionBudget = 0
+            cachedEmbConfigVisionTokens = null
+            cachedEmbMaxInputLength = null
             if (eng != null) {
                 try {
                     if (eng.isInitialized()) eng.close()
@@ -493,15 +557,27 @@ class InferenceService : Service() {
         embFile: File,
         requireVision: Boolean,
         requireAudio: Boolean,
-        forceVisionCpu: Boolean = false
+        forceVisionCpu: Boolean = false,
+        visionTokensPerImage: Int? = null,
+        maxInputLength: Int? = null
     ): EmbeddingEngine? {
         val existing = cachedEmbeddingEngine
-        if (existing != null && existing.isInitialized() && cachedEmbeddingModelPath == embFile.absolutePath) {
-            val visionOk = !requireVision || (cachedEmbVisionEnabled && (!forceVisionCpu || !cachedEmbVisionIsGpu))
-            val audioOk = !requireAudio || cachedEmbAudioEnabled
-            if (visionOk && audioOk) {
-                return existing
-            }
+        if (existing != null && existing.isInitialized() &&
+            shouldReuseCachedEmbeddingEngine(
+                sameModelPath = cachedEmbeddingModelPath == embFile.absolutePath,
+                requireVision = requireVision,
+                requireAudio = requireAudio,
+                forceVisionCpu = forceVisionCpu,
+                cachedVisionEnabled = cachedEmbVisionEnabled,
+                cachedAudioEnabled = cachedEmbAudioEnabled,
+                cachedVisionIsGpu = cachedEmbVisionIsGpu,
+                cachedConfigVisionTokens = cachedEmbConfigVisionTokens,
+                cachedMaxInputLength = cachedEmbMaxInputLength,
+                requestedVisionTokens = visionTokensPerImage,
+                requestedMaxInputLength = maxInputLength
+            )
+        ) {
+            return existing
         }
 
         val prevSameModel = cachedEmbeddingModelPath == embFile.absolutePath
@@ -567,16 +643,40 @@ class InferenceService : Service() {
             return null
         }
 
-        val enableVision = requireVision || (prevVision && supportsVision)
-        val enableAudio = requireAudio || (prevAudio && supportsAudio)
+        val enableVision = requireVision || (prevVision && supportsVision && maxInputLength == null)
+        val enableAudio = requireAudio || (prevAudio && supportsAudio && maxInputLength == null)
+        val requestedVisionTokens = visionTokensPerImage?.takeIf { it > 0 }?.let { req ->
+            selectVisionTokensPerImage(req, visionSignatures, maxVisionBudget) ?: req
+        }
+        val effectiveConfigVisionTokens = if (enableVision) requestedVisionTokens else null
+        val effectiveMaxInputLen = maxInputLength?.takeIf { it > 0 }
 
-        fun tryInitEngine(vBackend: Backend?, aBackend: Backend?): EmbeddingEngine {
+        var activeConfigVisionTokens: Int? = effectiveConfigVisionTokens
+        var activeMaxInputLen: Int? = effectiveMaxInputLen
+
+        fun tryInitEngine(
+            vBackend: Backend?,
+            aBackend: Backend?,
+            cfgVisionTokens: Int?,
+            cfgMaxInputLen: Int?
+        ): EmbeddingEngine {
+            val subDir = buildEmbeddingCacheSubdirName(
+                modelName = embFile.name,
+                hasVision = vBackend != null,
+                visionIsGpu = vBackend is Backend.GPU,
+                hasAudio = aBackend != null,
+                visionTokensPerImage = cfgVisionTokens,
+                maxInputLength = cfgMaxInputLen
+            )
+            val isolatedCacheDir = File(cacheDir, subDir).apply { mkdirs() }
             val cfg = EmbeddingEngineConfig(
                 modelPath = embFile.absolutePath,
                 backend = Backend.CPU(),
                 visionBackend = vBackend,
                 audioBackend = aBackend,
-                cacheDir = cacheDir.absolutePath
+                cacheDir = isolatedCacheDir.absolutePath,
+                maxInputLength = cfgMaxInputLen,
+                visionTokensPerImage = cfgVisionTokens
             )
             val eng = EmbeddingEngine(cfg)
             return try {
@@ -590,23 +690,43 @@ class InferenceService : Service() {
             }
         }
 
+        fun tryInitWithOptionalProfileFallback(vBackend: Backend?, aBackend: Backend?): EmbeddingEngine {
+            return try {
+                activeConfigVisionTokens = effectiveConfigVisionTokens
+                activeMaxInputLen = effectiveMaxInputLen
+                tryInitEngine(vBackend, aBackend, effectiveConfigVisionTokens, effectiveMaxInputLen)
+            } catch (cfgErr: Throwable) {
+                if (effectiveConfigVisionTokens != null || effectiveMaxInputLen != null) {
+                    Log.w(
+                        TAG,
+                        "Engine init rejected explicit profile (visionTokens=$effectiveConfigVisionTokens, maxInputLen=$effectiveMaxInputLen): ${cfgErr.message}; retrying defaults"
+                    )
+                    activeConfigVisionTokens = null
+                    activeMaxInputLen = null
+                    tryInitEngine(vBackend, aBackend, null, null)
+                } else {
+                    throw cfgErr
+                }
+            }
+        }
+
         val audioBackend = if (enableAudio) Backend.CPU() else null
         val useVisionGpu = enableVision && visionGpuSupported && !forceVisionCpu && !visionGpuBlocked
         var actualVisionIsGpu = false
         val initializedEngine: EmbeddingEngine? = try {
             if (useVisionGpu) {
                 try {
-                    val eng = tryInitEngine(Backend.GPU(), audioBackend)
+                    val eng = tryInitWithOptionalProfileFallback(Backend.GPU(), audioBackend)
                     actualVisionIsGpu = true
                     eng
                 } catch (gpuErr: Throwable) {
                     visionGpuBlocked = true
                     Log.w(TAG, "Vision GPU backend init failed (${gpuErr.message}); retrying on CPU")
-                    tryInitEngine(Backend.CPU(), audioBackend)
+                    tryInitWithOptionalProfileFallback(Backend.CPU(), audioBackend)
                 }
             } else {
                 val visionBackend = if (enableVision) Backend.CPU() else null
-                tryInitEngine(visionBackend, audioBackend)
+                tryInitWithOptionalProfileFallback(visionBackend, audioBackend)
             }
         } catch (cpuErr: Throwable) {
             lastEmbeddingError = "Failed to initialize ${embFile.name}: ${cpuErr.javaClass.simpleName}: ${cpuErr.message}"
@@ -622,9 +742,11 @@ class InferenceService : Service() {
             cachedEmbVisionIsGpu = actualVisionIsGpu
             cachedEmbVisionSignatures = visionSignatures
             cachedEmbMaxVisionBudget = maxVisionBudget
+            cachedEmbConfigVisionTokens = activeConfigVisionTokens
+            cachedEmbMaxInputLength = activeMaxInputLen
             Log.i(
                 TAG,
-                "EmbeddingGemma 2 initialized: ${embFile.name} (vision=$enableVision gpu=$actualVisionIsGpu audio=$enableAudio sigs=${visionSignatures.contentToString()} maxVision=$maxVisionBudget)"
+                "EmbeddingGemma 2 initialized: ${embFile.name} (vision=$enableVision gpu=$actualVisionIsGpu audio=$enableAudio sigs=${visionSignatures.contentToString()} maxVision=$maxVisionBudget cfgTokens=$activeConfigVisionTokens maxInputLen=$activeMaxInputLen)"
             )
         }
         return initializedEngine
@@ -644,11 +766,19 @@ class InferenceService : Service() {
         }
 
         lastEmbeddingError = ""
+        val isMediaQueryProfile = taskMode.equals(TASK_NONE, ignoreCase = true) || taskMode.equals(TASK_RAW, ignoreCase = true)
+        val reqMaxInputLength = if (isMediaQueryProfile) MEDIA_MAX_INPUT_LENGTH else null
+        val reqVisionTokens = if (isMediaQueryProfile) MEDIA_VISION_TOKENS_PER_IMAGE else null
         val result = FloatArray(texts.size * EMBEDDING_DIM)
         inferenceMutex.withLock {
             try {
-                val engine = getOrCreateEmbeddingEngineLocked(embFile!!, requireVision = false, requireAudio = false)
-                    ?: return FloatArray(0)
+                val engine = getOrCreateEmbeddingEngineLocked(
+                    embFile = embFile!!,
+                    requireVision = false,
+                    requireAudio = false,
+                    visionTokensPerImage = reqVisionTokens,
+                    maxInputLength = reqMaxInputLength
+                ) ?: return FloatArray(0)
                 val opts = EmbeddingOptions(
                     normalize = true,
                     insertSpecialTokens = true
@@ -767,12 +897,27 @@ class InferenceService : Service() {
         }
 
         lastEmbeddingError = ""
+        val requestedCfgTokens = if (needVision) {
+            if (visionTokensPerImage > 0) visionTokensPerImage else MEDIA_VISION_TOKENS_PER_IMAGE
+        } else {
+            null
+        }
         inferenceMutex.withLock {
             var lastErr: Throwable? = null
-            val firstEngine = getOrCreateEmbeddingEngineLocked(embFile, requireVision = needVision, requireAudio = needAudio, forceVisionCpu = false)
-                ?: return FloatArray(0)
+            val firstEngine = getOrCreateEmbeddingEngineLocked(
+                embFile = embFile,
+                requireVision = needVision,
+                requireAudio = needAudio,
+                forceVisionCpu = false,
+                visionTokensPerImage = requestedCfgTokens,
+                maxInputLength = MEDIA_MAX_INPUT_LENGTH
+            ) ?: return FloatArray(0)
             val firstTokens = if (needVision) {
-                selectVisionTokensPerImage(visionTokensPerImage, cachedEmbVisionSignatures, cachedEmbMaxVisionBudget)
+                selectVisionTokensPerImage(
+                    requestedCfgTokens ?: MEDIA_VISION_TOKENS_PER_IMAGE,
+                    cachedEmbVisionSignatures,
+                    cachedEmbMaxVisionBudget
+                )
             } else null
 
             try {
@@ -785,7 +930,14 @@ class InferenceService : Service() {
             if (needVision && cachedEmbVisionIsGpu) {
                 visionGpuBlocked = true
                 releaseEmbeddingEngineLocked()
-                val cpuEngine = getOrCreateEmbeddingEngineLocked(embFile, requireVision = true, requireAudio = needAudio, forceVisionCpu = true)
+                val cpuEngine = getOrCreateEmbeddingEngineLocked(
+                    embFile = embFile,
+                    requireVision = true,
+                    requireAudio = needAudio,
+                    forceVisionCpu = true,
+                    visionTokensPerImage = requestedCfgTokens,
+                    maxInputLength = MEDIA_MAX_INPUT_LENGTH
+                )
                 if (cpuEngine != null) {
                     val cpuTokens = selectVisionTokensPerImage(visionTokensPerImage, cachedEmbVisionSignatures, cachedEmbMaxVisionBudget)
                     try {

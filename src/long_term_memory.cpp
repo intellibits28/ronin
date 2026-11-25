@@ -17,7 +17,7 @@
 namespace Ronin::Kernel::Memory {
 
 namespace {
-constexpr int kCurrentSchemaVersion = 4;
+constexpr int kCurrentSchemaVersion = 5;
 
 std::string columnText(sqlite3_stmt* stmt, int column) {
     const unsigned char* text = sqlite3_column_text(stmt, column);
@@ -104,8 +104,9 @@ bool LongTermMemory::initSchema() {
         "CREATE INDEX IF NOT EXISTS idx_doc_path_model ON document_embeddings(doc_path, model_id);",
         "CREATE INDEX IF NOT EXISTS idx_doc_modality_model ON document_embeddings(modality, model_id);",
         "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks_fts USING fts5(chunk_text, content='document_embeddings', content_rowid='id');",
-        "CREATE TABLE IF NOT EXISTS media_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, media_path TEXT NOT NULL, media_uri TEXT NOT NULL DEFAULT '', modality TEXT NOT NULL, asset_type TEXT NOT NULL DEFAULT 'image', segment_index INTEGER NOT NULL DEFAULT 0, start_ms INTEGER NOT NULL DEFAULT 0, end_ms INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, display_name TEXT NOT NULL DEFAULT '', metadata_text TEXT NOT NULL DEFAULT '', modified_at INTEGER NOT NULL DEFAULT 0, file_size INTEGER NOT NULL DEFAULT 0, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-740m', dimension INTEGER NOT NULL, embedding_blob BLOB NOT NULL, created_at INTEGER NOT NULL, UNIQUE(media_path, model_id, modality, asset_type, segment_index) ON CONFLICT REPLACE);",
+        "CREATE TABLE IF NOT EXISTS media_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, media_path TEXT NOT NULL, media_uri TEXT NOT NULL DEFAULT '', modality TEXT NOT NULL, asset_type TEXT NOT NULL DEFAULT 'image', segment_index INTEGER NOT NULL DEFAULT 0, start_ms INTEGER NOT NULL DEFAULT 0, end_ms INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, display_name TEXT NOT NULL DEFAULT '', metadata_text TEXT NOT NULL DEFAULT '', modified_at INTEGER NOT NULL DEFAULT 0, file_size INTEGER NOT NULL DEFAULT 0, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-740m', pipeline_version INTEGER NOT NULL DEFAULT 2, dimension INTEGER NOT NULL, embedding_blob BLOB NOT NULL, created_at INTEGER NOT NULL, UNIQUE(media_path, model_id, modality, asset_type, segment_index) ON CONFLICT REPLACE);",
         "CREATE INDEX IF NOT EXISTS idx_media_emb_path_model ON media_embeddings(media_path, model_id);",
+        "CREATE INDEX IF NOT EXISTS idx_media_emb_path_model_pipe ON media_embeddings(media_path, model_id, pipeline_version);",
         "CREATE INDEX IF NOT EXISTS idx_media_emb_modality_model ON media_embeddings(modality, model_id);",
         "CREATE INDEX IF NOT EXISTS idx_media_emb_modality_asset_model ON media_embeddings(modality, asset_type, model_id);"
     };
@@ -281,6 +282,26 @@ bool LongTermMemory::runMigrations(int current_version) {
                 LOGE(TAG, "v4 migration failed rebuilding media_embeddings: %s", sqlite3_errmsg(m_db));
                 return false;
             }
+        }
+    }
+    if (current_version < 5 && tableHasColumn(m_db, "media_embeddings", "media_path")) {
+        // Pipeline v2 switches preprocessing from 448px JPEG-85 to 1024px lossless TGA
+        // and aligns text-query prompts to raw TASK_NONE; legacy media vectors are
+        // incompatible and must be purged while preserving document_embeddings.
+        if (!tableHasColumn(m_db, "media_embeddings", "pipeline_version")) {
+            if (sqlite3_exec(m_db, "ALTER TABLE media_embeddings ADD COLUMN pipeline_version INTEGER NOT NULL DEFAULT 1;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+                LOGE(TAG, "v5 migration failed adding pipeline_version: %s", sqlite3_errmsg(m_db));
+                return false;
+            }
+        }
+        std::string purge_sql =
+            "DELETE FROM media_embeddings WHERE pipeline_version < " + std::to_string(kMediaPipelineVersion) + ";";
+        if (!executeStatements({
+                purge_sql.c_str(),
+                "CREATE INDEX IF NOT EXISTS idx_media_emb_path_model_pipe ON media_embeddings(media_path, model_id, pipeline_version);"
+            })) {
+            LOGE(TAG, "v5 migration failed purging stale media_embeddings: %s", sqlite3_errmsg(m_db));
+            return false;
         }
     }
     return true;
@@ -1505,12 +1526,13 @@ LongTermMemory::LexicalFreeEnergyResult LongTermMemory::computeLexicalFreeEnergy
 bool LongTermMemory::isMediaIndexed(const std::string& media_path, int64_t modified_at, const std::string& model_id) {
     if (!m_db || media_path.empty()) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
-    const char* sql = "SELECT id FROM media_embeddings WHERE media_path = ? AND modified_at = ? AND model_id = ? LIMIT 1;";
+    const char* sql = "SELECT id FROM media_embeddings WHERE media_path = ? AND modified_at = ? AND model_id = ? AND pipeline_version = ? LIMIT 1;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
     sqlite3_bind_text(stmt, 1, media_path.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 2, modified_at);
     sqlite3_bind_text(stmt, 3, model_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 4, kMediaPipelineVersion);
     bool exists = (sqlite3_step(stmt) == SQLITE_ROW);
     sqlite3_finalize(stmt);
     return exists;
@@ -1688,8 +1710,8 @@ bool LongTermMemory::storeMediaEmbeddingsAtomic(
     const char* ins_sql =
         "INSERT INTO media_embeddings ("
         "media_path, media_uri, modality, asset_type, segment_index, start_ms, end_ms, duration_ms, "
-        "display_name, metadata_text, modified_at, file_size, model_id, dimension, embedding_blob, created_at"
-        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+        "display_name, metadata_text, modified_at, file_size, model_id, pipeline_version, dimension, embedding_blob, created_at"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
     sqlite3_stmt* ins_stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, ins_sql, -1, &ins_stmt, nullptr) != SQLITE_OK) {
         LOGE(TAG, "storeMediaEmbeddingsAtomic prepare insert failed: %s", sqlite3_errmsg(m_db));
@@ -1729,9 +1751,10 @@ bool LongTermMemory::storeMediaEmbeddingsAtomic(
         sqlite3_bind_int64(ins_stmt, 11, modified_at);
         sqlite3_bind_int64(ins_stmt, 12, file_size);
         sqlite3_bind_text(ins_stmt, 13, model_id.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int(ins_stmt, 14, static_cast<int>(normalized.size()));
-        sqlite3_bind_blob(ins_stmt, 15, normalized.data(), static_cast<int>(normalized.size() * sizeof(float)), SQLITE_TRANSIENT);
-        sqlite3_bind_int64(ins_stmt, 16, now);
+        sqlite3_bind_int(ins_stmt, 14, kMediaPipelineVersion);
+        sqlite3_bind_int(ins_stmt, 15, static_cast<int>(normalized.size()));
+        sqlite3_bind_blob(ins_stmt, 16, normalized.data(), static_cast<int>(normalized.size() * sizeof(float)), SQLITE_TRANSIENT);
+        sqlite3_bind_int64(ins_stmt, 17, now);
 
         if (sqlite3_step(ins_stmt) != SQLITE_DONE) {
             LOGE(TAG, "storeMediaEmbeddingsAtomic insert failed: %s", sqlite3_errmsg(m_db));
@@ -1803,7 +1826,8 @@ std::vector<LongTermMemory::MediaSearchMatch> LongTermMemory::searchMediaEmbeddi
     std::string sql =
         "SELECT media_path, media_uri, modality, asset_type, segment_index, start_ms, end_ms, duration_ms, "
         "display_name, metadata_text, embedding_blob, dimension, model_id "
-        "FROM media_embeddings WHERE modality = ? AND asset_type = ?";
+        "FROM media_embeddings WHERE modality = ? AND asset_type = ? AND pipeline_version = " +
+        std::to_string(kMediaPipelineVersion);
     if (!model_id.empty()) {
         sql += " AND model_id = ?";
     }
@@ -1870,8 +1894,10 @@ std::vector<LongTermMemory::MediaSearchMatch> LongTermMemory::searchMediaEmbeddi
                 }
             }
 
+            // Keep semantic cosine ranking strictly independent from filename/folder metadata.
+            // Lexical scoring is reserved exclusively for explicit lexical fallback (q_dim == 0).
             float final_score = (q_dim > 0)
-                ? (cos_sim + std::min(0.08f, static_cast<float>(lex_hits) * 0.04f))
+                ? cos_sim
                 : (static_cast<float>(lex_hits) * 0.25f);
 
             if (q_dim == 0 && lex_hits <= 0) {
@@ -1919,7 +1945,13 @@ std::vector<LongTermMemory::MediaSearchMatch> LongTermMemory::searchMediaEmbeddi
     }
     sqlite3_finalize(stmt);
 
-    std::sort(all_candidates.begin(), all_candidates.end(), [](const MediaSearchMatch& a, const MediaSearchMatch& b) {
+    std::sort(all_candidates.begin(), all_candidates.end(), [q_dim](const MediaSearchMatch& a, const MediaSearchMatch& b) {
+        if (q_dim > 0) {
+            if (std::abs(a.cosine_score - b.cosine_score) > 1e-6f) {
+                return a.cosine_score > b.cosine_score;
+            }
+            return a.final_score > b.final_score;
+        }
         if (std::abs(a.final_score - b.final_score) > 1e-6f) {
             return a.final_score > b.final_score;
         }
@@ -1946,6 +1978,7 @@ std::string LongTermMemory::getMediaIndexStatsJson(const std::string& model_id) 
     std::lock_guard<std::mutex> lock(m_mutex);
     auto countQuery = [&](const char* base_sql) -> int {
         std::string sql = base_sql;
+        sql += " AND pipeline_version = " + std::to_string(kMediaPipelineVersion);
         if (!model_id.empty()) sql += " AND model_id = ?";
         sql += ";";
         sqlite3_stmt* stmt = nullptr;
@@ -1985,7 +2018,7 @@ std::string LongTermMemory::listIndexedMediaJson(
         "COUNT(*) AS segment_count, "
         "MAX(created_at) AS last_indexed, "
         "MAX(model_id) "
-        "FROM media_embeddings WHERE 1=1";
+        "FROM media_embeddings WHERE pipeline_version = " + std::to_string(kMediaPipelineVersion);
     const bool bind_custom_modality = appendListMediaFilterWhere(sql, norm_filter, model_id);
     sql += " GROUP BY media_path ORDER BY last_indexed DESC, MAX(modified_at) DESC LIMIT ?;";
 

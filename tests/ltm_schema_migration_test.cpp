@@ -59,7 +59,7 @@ TEST(LongTermMemorySchemaMigration, ArchivesLegacyFactsAndSetsSchemaVersion) {
     LongTermMemory ltm(path);
     ASSERT_NE(ltm.getDatabase(), nullptr);
 
-    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 4);
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 5);
     EXPECT_TRUE(tableExists(ltm.getDatabase(), "facts_legacy_v0"));
     EXPECT_TRUE(tableExists(ltm.getDatabase(), "facts"));
 
@@ -583,17 +583,139 @@ TEST(LongTermMemorySchemaMigration, SchemaV3ToV4MigratesModalityTagsAndPurgesSta
     {
         LongTermMemory ltm(db_path);
         ASSERT_NE(ltm.getDatabase(), nullptr);
-        ASSERT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 4);
+        ASSERT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 5);
 
-        // Stale unknown modality & mismatched blob length were purged; valid rows normalized to lowercase.
-        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings;"), 4);
+        // v4 normalizes tags while v5 purges legacy pipeline_version < 2 media vectors;
+        // document_embeddings MUST remain intact across media pipeline invalidation.
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings;"), 0);
         EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings WHERE media_path='/tmp/unknown_mod.bin' OR media_path='/tmp/corrupt_dim.jpg';"), 0);
-        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT segment_index FROM media_embeddings WHERE media_path='/DCIM/photo_v3.jpg' AND modality='image' AND asset_type='image';"), 0);
-        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings WHERE media_path='/Movies/vid_v3.mp4' AND modality='image' AND asset_type='video';"), 1);
-        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings WHERE media_path='/Movies/vid_v3.mp4' AND modality='audio' AND asset_type='video';"), 1);
         EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM document_embeddings WHERE modality='text';"), 1);
 
         execSql(ltm.getDatabase(), "PRAGMA integrity_check;");
+    }
+    std::remove(db_path.c_str());
+}
+
+TEST(LongTermMemoryMediaEmbeddings, Stores768DFloat32LosslesslyAndReturnsUnitSelfSimilarity) {
+    LongTermMemory ltm(":memory:");
+    const std::string model_id = "embeddinggemma-2-740m";
+
+    std::vector<float> vec(768, 0.0f);
+    for (size_t i = 0; i < vec.size(); ++i) {
+        vec[i] = static_cast<float>((static_cast<int>(i % 19) - 9)) * 0.05f + 0.01f;
+    }
+
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/DCIM/Camera/bougainvillea_768.jpg",
+        "content://media/external/images/media/768",
+        "bougainvillea_768.jpg",
+        "Camera",
+        1732000000,
+        420000,
+        0,
+        model_id,
+        {{"image", 0, 0, 0, vec, "image"}}));
+
+    EXPECT_TRUE(ltm.isMediaIndexed("/DCIM/Camera/bougainvillea_768.jpg", 1732000000, model_id));
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT length(embedding_blob) FROM media_embeddings LIMIT 1;"), 768 * 4);
+    EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT pipeline_version FROM media_embeddings LIMIT 1;"), LongTermMemory::kMediaPipelineVersion);
+
+    auto matches = ltm.searchMediaEmbeddings(vec, "IMAGE", model_id, "", 5);
+    ASSERT_EQ(matches.size(), 1u);
+    EXPECT_NEAR(matches[0].cosine_score, 1.0f, 1e-4f);
+    EXPECT_NEAR(matches[0].final_score, matches[0].cosine_score, 1e-6f);
+}
+
+TEST(LongTermMemoryMediaEmbeddings, SemanticSearchDoesNotBoostFilenameMetadataAndPreservesLexicalFallback) {
+    LongTermMemory ltm(":memory:");
+    const std::string model_id = "embeddinggemma-2-740m";
+
+    // Orthogonal distractor whose filename matches "bougainvillea", cosine = 0.0
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/DCIM/Camera/bougainvillea.jpg", "", "bougainvillea.jpg", "Camera", 101, 1000, 0, model_id,
+        {{"image", 0, 0, 0, {0.0f, 1.0f, 0.0f, 0.0f}, "image"}}));
+
+    // Strong semantic visual match with opaque filename IMG_001.jpg, cosine = 0.65
+    ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+        "/DCIM/Camera/IMG_001.jpg", "", "IMG_001.jpg", "Camera", 102, 1000, 0, model_id,
+        {{"image", 0, 0, 0, {0.65f, 0.7599342f, 0.0f, 0.0f}, "image"}}));
+
+    // 1. Semantic search: even if lexical_query is passed, final_score equals cosine_score (zero +0.04..0.08 boost)
+    auto semMatches = ltm.searchMediaEmbeddings({1.0f, 0.0f, 0.0f, 0.0f}, "IMAGE", model_id, "bougainvillea", 10);
+    ASSERT_EQ(semMatches.size(), 2u);
+    EXPECT_EQ(semMatches[0].media_path, "/DCIM/Camera/IMG_001.jpg");
+    EXPECT_NEAR(semMatches[0].cosine_score, 0.65f, 1e-4f);
+    EXPECT_NEAR(semMatches[0].final_score, semMatches[0].cosine_score, 1e-6f);
+    EXPECT_NEAR(semMatches[1].cosine_score, 0.0f, 1e-4f);
+    EXPECT_NEAR(semMatches[1].final_score, 0.0f, 1e-6f);
+
+    // 2. Explicit lexical fallback (empty query vector {}): matches filename cleanly
+    auto lexMatches = ltm.searchMediaEmbeddings({}, "IMAGE", model_id, "bougainvillea", 10);
+    ASSERT_EQ(lexMatches.size(), 1u);
+    EXPECT_EQ(lexMatches[0].media_path, "/DCIM/Camera/bougainvillea.jpg");
+    EXPECT_GT(lexMatches[0].final_score, 0.0f);
+}
+
+TEST(LongTermMemorySchemaMigration, SchemaV4ToV5PurgesStaleMediaPreservesDocumentsAndReindexesCleanly) {
+    const std::string db_path = tempDbPath("v4_to_v5_media");
+    std::remove(db_path.c_str());
+
+    sqlite3* raw_db = nullptr;
+    ASSERT_EQ(sqlite3_open(db_path.c_str(), &raw_db), SQLITE_OK);
+    execSql(raw_db, "CREATE TABLE schema_version (version INTEGER);");
+    execSql(raw_db, "INSERT INTO schema_version(version) VALUES (4);");
+    execSql(raw_db, "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE, content TEXT NOT NULL, tags TEXT DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);");
+    execSql(raw_db, "INSERT INTO notes(title, content, tags, created_at, updated_at) VALUES ('keep_note', 'important text', '', 1, 1);");
+    execSql(raw_db, "CREATE TABLE document_embeddings (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_path TEXT NOT NULL, doc_hash TEXT NOT NULL DEFAULT '', model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-270m', modality TEXT NOT NULL DEFAULT 'text', chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, dimension INTEGER NOT NULL, embedding_blob BLOB NOT NULL, created_at INTEGER NOT NULL, UNIQUE(doc_path, model_id, chunk_index) ON CONFLICT REPLACE);");
+    execSql(raw_db,
+        "CREATE TABLE media_embeddings ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, media_path TEXT NOT NULL, media_uri TEXT NOT NULL DEFAULT '', "
+        "modality TEXT NOT NULL, asset_type TEXT NOT NULL DEFAULT 'image', segment_index INTEGER NOT NULL DEFAULT 0, "
+        "start_ms INTEGER NOT NULL DEFAULT 0, end_ms INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, "
+        "display_name TEXT NOT NULL DEFAULT '', metadata_text TEXT NOT NULL DEFAULT '', modified_at INTEGER NOT NULL DEFAULT 0, "
+        "file_size INTEGER NOT NULL DEFAULT 0, model_id TEXT NOT NULL DEFAULT 'embeddinggemma-2-740m', "
+        "dimension INTEGER NOT NULL, embedding_blob BLOB NOT NULL, created_at INTEGER NOT NULL, "
+        "UNIQUE(media_path, model_id, modality, asset_type, segment_index) ON CONFLICT REPLACE);"
+    );
+
+    const std::vector<float> dummy = {1.0f, 0.0f, 0.0f, 0.0f};
+    {
+        sqlite3_stmt* ds = nullptr;
+        ASSERT_EQ(sqlite3_prepare_v2(raw_db, "INSERT INTO document_embeddings(doc_path, doc_hash, model_id, modality, chunk_index, chunk_text, dimension, embedding_blob, created_at) VALUES ('/Docs/keep.txt', 'h', 'embeddinggemma-2-270m', 'text', 0, 'flower doc', 4, ?, 1);", -1, &ds, nullptr), SQLITE_OK);
+        sqlite3_bind_blob(ds, 1, dummy.data(), 16, SQLITE_TRANSIENT);
+        ASSERT_EQ(sqlite3_step(ds), SQLITE_DONE);
+        sqlite3_finalize(ds);
+
+        sqlite3_stmt* ms = nullptr;
+        ASSERT_EQ(sqlite3_prepare_v2(raw_db, "INSERT INTO media_embeddings(media_path, media_uri, modality, asset_type, segment_index, display_name, modified_at, model_id, dimension, embedding_blob, created_at) VALUES ('/DCIM/Camera/stale_448.jpg', '', 'image', 'image', 0, 'stale_448.jpg', 555, 'embeddinggemma-2-740m', 4, ?, 1);", -1, &ms, nullptr), SQLITE_OK);
+        sqlite3_bind_blob(ms, 1, dummy.data(), 16, SQLITE_TRANSIENT);
+        ASSERT_EQ(sqlite3_step(ms), SQLITE_DONE);
+        sqlite3_finalize(ms);
+    }
+    sqlite3_close(raw_db);
+
+    {
+        LongTermMemory ltm(db_path);
+        ASSERT_NE(ltm.getDatabase(), nullptr);
+        ASSERT_EQ(scalarInt(ltm.getDatabase(), "SELECT version FROM schema_version LIMIT 1;"), 5);
+
+        // Legacy v4 448px JPEG-85 vector purged; document_embeddings & notes preserved.
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings;"), 0);
+        EXPECT_FALSE(ltm.isMediaIndexed("/DCIM/Camera/stale_448.jpg", 555, "embeddinggemma-2-740m"));
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM document_embeddings WHERE doc_path='/Docs/keep.txt';"), 1);
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM notes WHERE title='keep_note';"), 1);
+
+        // Re-indexing writes pipeline_version = 2 without duplicate rows on repeat stores.
+        ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+            "/DCIM/Camera/stale_448.jpg", "content://media/external/images/media/99", "stale_448.jpg", "Camera", 555, 2048, 0, "embeddinggemma-2-740m",
+            {{"image", 0, 0, 0, dummy, "image"}}));
+        ASSERT_TRUE(ltm.storeMediaEmbeddingsAtomic(
+            "/DCIM/Camera/stale_448.jpg", "content://media/external/images/media/99", "stale_448.jpg", "Camera", 555, 2048, 0, "embeddinggemma-2-740m",
+            {{"image", 0, 0, 0, dummy, "image"}}));
+
+        EXPECT_TRUE(ltm.isMediaIndexed("/DCIM/Camera/stale_448.jpg", 555, "embeddinggemma-2-740m"));
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT COUNT(*) FROM media_embeddings WHERE media_path='/DCIM/Camera/stale_448.jpg';"), 1);
+        EXPECT_EQ(scalarInt(ltm.getDatabase(), "SELECT pipeline_version FROM media_embeddings WHERE media_path='/DCIM/Camera/stale_448.jpg';"), LongTermMemory::kMediaPipelineVersion);
     }
     std::remove(db_path.c_str());
 }

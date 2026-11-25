@@ -1,5 +1,6 @@
 package com.ronin.kernel
 
+import android.media.ExifInterface
 import org.junit.Assert.*
 import org.junit.Test
 import java.nio.ByteBuffer
@@ -23,7 +24,11 @@ class MultimodalMediaSearchTest {
         )
         assertEquals(
             "raw passthrough",
-            InferenceService.formatForEmbeddingGemma2("raw passthrough", InferenceService.TASK_RAW)
+            InferenceService.formatForEmbeddingGemma2("  raw passthrough ", InferenceService.TASK_RAW)
+        )
+        assertEquals(
+            "စက္ကူပန်း bougainvillea",
+            InferenceService.formatForEmbeddingGemma2("  စက္ကူပန်း bougainvillea  ", InferenceService.TASK_NONE)
         )
     }
 
@@ -206,61 +211,166 @@ class MultimodalMediaSearchTest {
     }
 
     @Test
-    fun `filterRelevantMediaMatches rejects flat 0_68 background noise while keeping real matches`() {
-        // 1. Flat 68% screenshot noise across 60 scanned photos -> all rejected
-        val flatNoise = (1..8).map { idx ->
-            MediaSearchResultItem(
-                mediaPath = "/DCIM/Screenshots/s$idx.png",
-                mediaUri = "",
-                modality = "IMAGE",
-                displayName = "s$idx.png",
-                startMs = 0L,
-                endMs = 0L,
-                durationMs = 0L,
-                score = 0.68f - idx * 0.002f,
-                cosineScore = 0.68f - idx * 0.002f,
-                zScore = 1.6f - idx * 0.2f,
-                corpusMean = 0.655f,
-                corpusStd = 0.015f,
-                corpusSize = 60
-            )
-        }
-        assertTrue(filterRelevantMediaMatches(flatNoise, MediaSearchQueryMode.TEXT_TO_MEDIA).isEmpty())
-
-        // 2. Real gallery with 488 items: 0.75..0.70 bougainvillea hits pass while 0.665 background fails
-        val galleryHits = listOf(
-            MediaSearchResultItem("/DCIM/Camera/flower1.jpg", "", "IMAGE", "flower1.jpg", 0L, 0L, 0L, 0.75f, cosineScore = 0.75f, zScore = 2.54f, corpusMean = 0.656f, corpusStd = 0.037f, corpusSize = 488),
-            MediaSearchResultItem("/DCIM/Camera/flower2.jpg", "", "IMAGE", "flower2.jpg", 0L, 0L, 0L, 0.70f, cosineScore = 0.70f, zScore = 1.19f, corpusMean = 0.656f, corpusStd = 0.037f, corpusSize = 488),
-            MediaSearchResultItem("/DCIM/Screenshots/bg.png", "", "IMAGE", "bg.png", 0L, 0L, 0L, 0.665f, cosineScore = 0.665f, zScore = 0.24f, corpusMean = 0.656f, corpusStd = 0.037f, corpusSize = 488)
+    fun `filterRelevantMediaMatches uses pure cosine ranking with relative top window and supports small corpora`() {
+        // 1. Natural cross-modal matches (0.58..0.42) pass without destructive 0.692/0.71 cutoffs
+        val flowerGallery = listOf(
+            MediaSearchResultItem("/DCIM/Camera/flower1.jpg", "", "image", "flower1.jpg", 0L, 0L, 0L, 0.58f, cosineScore = 0.58f, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/flower2.jpg", "", "image", "flower2.jpg", 0L, 0L, 0L, 0.49f, cosineScore = 0.49f, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/flower3.jpg", "", "image", "flower3.jpg", 0L, 0L, 0L, 0.41f, cosineScore = 0.41f, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/unrelated.jpg", "", "image", "unrelated.jpg", 0L, 0L, 0L, 0.35f, cosineScore = 0.35f, assetType = "image")
         )
-        val filteredGallery = filterRelevantMediaMatches(galleryHits, MediaSearchQueryMode.TEXT_TO_MEDIA)
-        assertEquals(2, filteredGallery.size)
-        assertEquals(listOf("/DCIM/Camera/flower1.jpg", "/DCIM/Camera/flower2.jpg"), filteredGallery.map { it.mediaPath })
+        // topCosine = 0.58 -> threshold = max(0.40, 0.58 - 0.20) = 0.40 -> top 3 kept, 0.35 dropped
+        val filtered = filterRelevantMediaMatches(flowerGallery, MediaSearchQueryMode.TEXT_TO_MEDIA)
+        assertEquals(
+            listOf("/DCIM/Camera/flower1.jpg", "/DCIM/Camera/flower2.jpg", "/DCIM/Camera/flower3.jpg"),
+            filtered.map { it.mediaPath }
+        )
 
-        // 3. Small homogeneous manually-picked set (6 photos all strong matches >= highFloor)
+        // 2. Strong top result narrows relative window: top = 0.72 -> threshold = max(0.40, 0.52) = 0.52
+        val tightWindow = listOf(
+            MediaSearchResultItem("/DCIM/Camera/sim.jpg", "", "image", "sim.jpg", 0L, 0L, 0L, 0.72f, cosineScore = 0.72f, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/close.jpg", "", "image", "close.jpg", 0L, 0L, 0L, 0.54f, cosineScore = 0.54f, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/far.jpg", "", "image", "far.jpg", 0L, 0L, 0L, 0.48f, cosineScore = 0.48f, assetType = "image")
+        )
+        assertEquals(
+            listOf("/DCIM/Camera/sim.jpg", "/DCIM/Camera/close.jpg"),
+            filterRelevantMediaMatches(tightWindow, MediaSearchQueryMode.IMAGE_TO_VISUAL).map { it.mediaPath }
+        )
+
+        // 3. Small homogeneous manually-indexed set (N = 3) preserves all relevant matches even when Z-score <= 0
         val smallManualSet = listOf(
-            MediaSearchResultItem("/DCIM/Camera/b1.jpg", "", "IMAGE", "b1.jpg", 0L, 0L, 0L, 0.74f, cosineScore = 0.74f, zScore = 0.6f, corpusMean = 0.73f, corpusStd = 0.01f, corpusSize = 6),
-            MediaSearchResultItem("/DCIM/Camera/b2.jpg", "", "IMAGE", "b2.jpg", 0L, 0L, 0L, 0.72f, cosineScore = 0.72f, zScore = -0.9f, corpusMean = 0.73f, corpusStd = 0.01f, corpusSize = 6)
+            MediaSearchResultItem("/DCIM/Camera/b1.jpg", "", "image", "b1.jpg", 0L, 0L, 0L, 0.56f, cosineScore = 0.56f, zScore = 0.6f, corpusMean = 0.54f, corpusStd = 0.02f, corpusSize = 3, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/b2.jpg", "", "image", "b2.jpg", 0L, 0L, 0L, 0.53f, cosineScore = 0.53f, zScore = -0.5f, corpusMean = 0.54f, corpusStd = 0.02f, corpusSize = 3, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/b3.jpg", "", "image", "b3.jpg", 0L, 0L, 0L, 0.51f, cosineScore = 0.51f, zScore = -1.5f, corpusMean = 0.54f, corpusStd = 0.02f, corpusSize = 3, assetType = "image")
         )
-        assertEquals(2, filterRelevantMediaMatches(smallManualSet, MediaSearchQueryMode.TEXT_TO_MEDIA).size)
+        assertEquals(3, filterRelevantMediaMatches(smallManualSet, MediaSearchQueryMode.TEXT_TO_MEDIA).size)
 
-        // 4. Visual similarity uses higher threshold, audio uses lower cross-modal threshold, lexical matches kept
-        val visualMixed = listOf(
-            MediaSearchResultItem("/DCIM/Camera/sim.jpg", "", "IMAGE", "sim.jpg", 0L, 0L, 0L, 0.84f, cosineScore = 0.84f, zScore = 2.0f, corpusMean = 0.68f, corpusStd = 0.08f, corpusSize = 40),
-            MediaSearchResultItem("/DCIM/Camera/weak.jpg", "", "IMAGE", "weak.jpg", 0L, 0L, 0L, 0.70f, cosineScore = 0.70f, zScore = 0.25f, corpusMean = 0.68f, corpusStd = 0.08f, corpusSize = 40)
+        // 4. Filename lexicalHits cannot bypass the semantic window
+        val lexicalTrap = listOf(
+            MediaSearchResultItem("/DCIM/Camera/true_match.jpg", "", "image", "IMG_1001.jpg", 0L, 0L, 0L, 0.65f, cosineScore = 0.65f, lexicalHits = 0, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/bougainvillea_fake.jpg", "", "image", "bougainvillea_fake.jpg", 0L, 0L, 0L, 0.35f, cosineScore = 0.35f, lexicalHits = 2, assetType = "image")
         )
-        assertEquals(listOf("/DCIM/Camera/sim.jpg"), filterRelevantMediaMatches(visualMixed, MediaSearchQueryMode.IMAGE_TO_VISUAL).map { it.mediaPath })
+        assertEquals(
+            listOf("/DCIM/Camera/true_match.jpg"),
+            filterRelevantMediaMatches(lexicalTrap, MediaSearchQueryMode.TEXT_TO_MEDIA).map { it.mediaPath }
+        )
 
-        val audioMixed = listOf(
-            MediaSearchResultItem("/Recordings/meeting.m4a", "", "AUDIO", "meeting.m4a", 0L, 20000L, 20000L, 0.67f, cosineScore = 0.67f, zScore = 1.8f, corpusMean = 0.52f, corpusStd = 0.05f, corpusSize = 15),
-            MediaSearchResultItem("/Recordings/other.m4a", "", "AUDIO", "other.m4a", 0L, 20000L, 20000L, 0.54f, cosineScore = 0.54f, zScore = 0.4f, corpusMean = 0.52f, corpusStd = 0.05f, corpusSize = 15)
+        // 5. Explicit lexical-only fallback (when query vector unavailable: cosineScore == 0f) still works
+        val lexicalFallbackOnly = listOf(
+            MediaSearchResultItem("/DCIM/Camera/bougainvillea_2026.jpg", "", "image", "bougainvillea_2026.jpg", 0L, 0L, 0L, 0.25f, cosineScore = 0f, lexicalHits = 1, assetType = "image")
         )
-        assertEquals(listOf("/Recordings/meeting.m4a"), filterRelevantMediaMatches(audioMixed, MediaSearchQueryMode.TEXT_TO_MEDIA).map { it.mediaPath })
+        assertEquals(1, filterRelevantMediaMatches(lexicalFallbackOnly, MediaSearchQueryMode.TEXT_TO_MEDIA).size)
 
-        val lexicalMatch = listOf(
-            MediaSearchResultItem("/DCIM/Camera/bougainvillea_2026.jpg", "", "image", "bougainvillea_2026.jpg", 0L, 0L, 0L, 0.71f, cosineScore = 0.63f, lexicalHits = 1, corpusSize = 30, assetType = "image")
+        // 6. Deduplication & final ranking order strictly follows cosineScore descending
+        val distortedScores = listOf(
+            MediaSearchResultItem("/DCIM/Camera/low_cos_boosted.jpg", "", "image", "low.jpg", 0L, 0L, 0L, 0.99f, cosineScore = 0.46f, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/high_cos.jpg", "", "image", "high.jpg", 0L, 0L, 0L, 0.64f, cosineScore = 0.64f, assetType = "image")
         )
-        assertEquals(1, filterRelevantMediaMatches(lexicalMatch, MediaSearchQueryMode.TEXT_TO_MEDIA).size)
+        assertEquals(
+            listOf("/DCIM/Camera/high_cos.jpg", "/DCIM/Camera/low_cos_boosted.jpg"),
+            deduplicateAndRankMediaMatches(distortedScores, topK = 5).map { it.mediaPath }
+        )
+    }
+
+    @Test
+    fun `TgaImageCodec writes uncompressed 32-bit BGRA Truevision TGA with top-left origin`() {
+        val pixels = intArrayOf(
+            0xFF112233.toInt(), // A=FF, R=11, G=22, B=33 -> BGRA bytes [33, 22, 11, FF]
+            0x80AABBCC.toInt()  // A=80, R=AA, G=BB, B=CC -> BGRA bytes [CC, BB, AA, 80]
+        )
+        val tga = TgaImageCodec.encodeArgbPixelsToBgraTga(pixels, width = 2, height = 1)
+        assertEquals(18 + 2 * 4, tga.size)
+        assertEquals(2.toByte(), tga[2]) // uncompressed true-color
+        assertEquals(2.toByte(), tga[12])
+        assertEquals(0.toByte(), tga[13])
+        assertEquals(1.toByte(), tga[14])
+        assertEquals(0.toByte(), tga[15])
+        assertEquals(32.toByte(), tga[16])
+        assertEquals(0x28.toByte(), tga[17])
+
+        // Pixel 0: B=0x33, G=0x22, R=0x11, A=0xFF
+        assertEquals(0x33.toByte(), tga[18])
+        assertEquals(0x22.toByte(), tga[19])
+        assertEquals(0x11.toByte(), tga[20])
+        assertEquals(0xFF.toByte(), tga[21])
+        // Pixel 1: B=0xCC, G=0xBB, R=0xAA, A=0x80
+        assertEquals(0xCC.toByte(), tga[22])
+        assertEquals(0xBB.toByte(), tga[23])
+        assertEquals(0xAA.toByte(), tga[24])
+        assertEquals(0x80.toByte(), tga[25])
+    }
+
+    @Test
+    fun `ExifOrientationHelper handles all 8 EXIF orientations and preserves aspect ratio up to 1024px`() {
+        assertEquals(ExifTransformSpec(0f, false), ExifOrientationHelper.computeTransformSpec(ExifInterface.ORIENTATION_NORMAL))
+        assertEquals(ExifTransformSpec(0f, true), ExifOrientationHelper.computeTransformSpec(ExifInterface.ORIENTATION_FLIP_HORIZONTAL))
+        assertEquals(ExifTransformSpec(180f, false), ExifOrientationHelper.computeTransformSpec(ExifInterface.ORIENTATION_ROTATE_180))
+        assertEquals(ExifTransformSpec(180f, true), ExifOrientationHelper.computeTransformSpec(ExifInterface.ORIENTATION_FLIP_VERTICAL))
+        assertEquals(ExifTransformSpec(90f, true), ExifOrientationHelper.computeTransformSpec(ExifInterface.ORIENTATION_TRANSPOSE))
+        assertEquals(ExifTransformSpec(90f, false), ExifOrientationHelper.computeTransformSpec(ExifInterface.ORIENTATION_ROTATE_90))
+        assertEquals(ExifTransformSpec(270f, true), ExifOrientationHelper.computeTransformSpec(ExifInterface.ORIENTATION_TRANSVERSE))
+        assertEquals(ExifTransformSpec(270f, false), ExifOrientationHelper.computeTransformSpec(ExifInterface.ORIENTATION_ROTATE_270))
+
+        assertEquals(1024 to 768, ExifOrientationHelper.computeAspectPreservingSize(4000, 3000, MediaSearchEngine.PHOTO_MAX_SIDE_PX))
+        assertEquals(768 to 1024, ExifOrientationHelper.computeAspectPreservingSize(3000, 4000, MediaSearchEngine.PHOTO_MAX_SIDE_PX))
+        assertEquals(1024 to 1024, ExifOrientationHelper.computeAspectPreservingSize(2048, 2048, MediaSearchEngine.PHOTO_MAX_SIDE_PX))
+        assertEquals(800 to 600, ExifOrientationHelper.computeAspectPreservingSize(800, 600, MediaSearchEngine.PHOTO_MAX_SIDE_PX))
+    }
+
+    @Test
+    fun `excludeSeedMediaMatches removes query seed before ranking window so similar matches survive`() {
+        val candidates = listOf(
+            MediaSearchResultItem("/DCIM/Camera/seed.jpg", "content://media/external/images/media/42", "image", "seed.jpg", 0L, 0L, 0L, 1.0f, cosineScore = 1.0f, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/match_a.jpg", "content://media/external/images/media/43", "image", "match_a.jpg", 0L, 0L, 0L, 0.68f, cosineScore = 0.68f, assetType = "image"),
+            MediaSearchResultItem("/DCIM/Camera/match_b.jpg", "content://media/external/images/media/44", "image", "match_b.jpg", 0L, 0L, 0L, 0.55f, cosineScore = 0.55f, assetType = "image")
+        )
+
+        val withoutSeedByPath = excludeSeedMediaMatches(candidates, seedPath = "/DCIM/Camera/seed.jpg", seedUri = "")
+        assertEquals(listOf("/DCIM/Camera/match_a.jpg", "/DCIM/Camera/match_b.jpg"), withoutSeedByPath.map { it.mediaPath })
+
+        val withoutSeedByUri = excludeSeedMediaMatches(
+            candidates,
+            seedPath = "",
+            seedUri = "content://media/external/images/media/42"
+        )
+        assertEquals(listOf("/DCIM/Camera/match_a.jpg", "/DCIM/Camera/match_b.jpg"), withoutSeedByUri.map { it.mediaPath })
+
+        // Because seed (1.0) was stripped first, topCosine = 0.68 -> threshold = 0.48 -> both similar matches pass
+        val filtered = filterRelevantMediaMatches(withoutSeedByUri, MediaSearchQueryMode.IMAGE_TO_VISUAL)
+        assertEquals(listOf("/DCIM/Camera/match_a.jpg", "/DCIM/Camera/match_b.jpg"), filtered.map { it.mediaPath })
+    }
+
+    @Test
+    fun `buildEmbeddingCacheSubdirName isolates caches per backend tokens and maxInputLength`() {
+        val mediaGpu = InferenceService.buildEmbeddingCacheSubdirName(
+            "embeddinggemma-2-740m.litertlm",
+            hasVision = true,
+            visionIsGpu = true,
+            hasAudio = true,
+            visionTokensPerImage = InferenceService.MEDIA_VISION_TOKENS_PER_IMAGE,
+            maxInputLength = InferenceService.MEDIA_MAX_INPUT_LENGTH
+        )
+        val mediaTextOnly = InferenceService.buildEmbeddingCacheSubdirName(
+            "embeddinggemma-2-740m.litertlm",
+            hasVision = false,
+            visionIsGpu = false,
+            hasAudio = false,
+            visionTokensPerImage = null,
+            maxInputLength = InferenceService.MEDIA_MAX_INPUT_LENGTH
+        )
+        val docDefault = InferenceService.buildEmbeddingCacheSubdirName(
+            "embeddinggemma-2-740m.litertlm",
+            hasVision = false,
+            visionIsGpu = false,
+            hasAudio = false,
+            visionTokensPerImage = null,
+            maxInputLength = null
+        )
+        assertNotEquals(mediaGpu, mediaTextOnly)
+        assertNotEquals(mediaTextOnly, docDefault)
+        assertTrue(mediaGpu.contains("vt70"))
+        assertTrue(mediaGpu.contains("len256"))
+        assertTrue(docDefault.contains("lendef"))
     }
 
     @Test
@@ -299,5 +409,76 @@ class MultimodalMediaSearchTest {
 
         val docsOnly = enforceStrictModalityIsolation(mixed, allowedModality = "text", allowedAssetType = "text")
         assertEquals(listOf("/Docs/spec.pdf"), docsOnly.map { it.mediaPath })
+    }
+
+    @Test
+    fun `shouldReuseCachedEmbeddingEngine reuses matching media and doc profiles while isolating mismatched budgets`() {
+        // 1. Consecutive cold TASK_NONE text queries reuse text-only engine with maxInputLength=256
+        assertTrue(
+            InferenceService.shouldReuseCachedEmbeddingEngine(
+                sameModelPath = true,
+                requireVision = false,
+                requireAudio = false,
+                forceVisionCpu = false,
+                cachedVisionEnabled = false,
+                cachedAudioEnabled = false,
+                cachedVisionIsGpu = false,
+                cachedConfigVisionTokens = null,
+                cachedMaxInputLength = 256,
+                requestedVisionTokens = 70,
+                requestedMaxInputLength = 256
+            )
+        )
+
+        // 2. Warm multimodal engine (vision=70, len=256) serves subsequent TASK_NONE text & image queries
+        assertTrue(
+            InferenceService.shouldReuseCachedEmbeddingEngine(
+                sameModelPath = true,
+                requireVision = false,
+                requireAudio = false,
+                forceVisionCpu = false,
+                cachedVisionEnabled = true,
+                cachedAudioEnabled = true,
+                cachedVisionIsGpu = true,
+                cachedConfigVisionTokens = 70,
+                cachedMaxInputLength = 256,
+                requestedVisionTokens = 70,
+                requestedMaxInputLength = 256
+            )
+        )
+
+        // 3. GPU -> CPU vision fallback invalidates cached GPU vision engine
+        assertFalse(
+            InferenceService.shouldReuseCachedEmbeddingEngine(
+                sameModelPath = true,
+                requireVision = true,
+                requireAudio = false,
+                forceVisionCpu = true,
+                cachedVisionEnabled = true,
+                cachedAudioEnabled = false,
+                cachedVisionIsGpu = true,
+                cachedConfigVisionTokens = 70,
+                cachedMaxInputLength = 256,
+                requestedVisionTokens = 70,
+                requestedMaxInputLength = 256
+            )
+        )
+
+        // 4. Document RAG (maxInputLength=null) never reuses truncated media engine (maxInputLength=256)
+        assertFalse(
+            InferenceService.shouldReuseCachedEmbeddingEngine(
+                sameModelPath = true,
+                requireVision = false,
+                requireAudio = false,
+                forceVisionCpu = false,
+                cachedVisionEnabled = true,
+                cachedAudioEnabled = false,
+                cachedVisionIsGpu = false,
+                cachedConfigVisionTokens = 70,
+                cachedMaxInputLength = 256,
+                requestedVisionTokens = null,
+                requestedMaxInputLength = null
+            )
+        )
     }
 }

@@ -158,6 +158,8 @@ public:
         std::string model_id;
     };
 
+    static constexpr int kMediaPipelineVersion = 2;
+
     bool isMediaIndexed(const std::string& media_path, int64_t modified_at, const std::string& model_id = "embeddinggemma-2-740m");
     bool storeMediaEmbeddingsAtomic(
         const std::string& media_path,

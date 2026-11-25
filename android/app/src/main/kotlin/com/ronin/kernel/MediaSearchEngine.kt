@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ColorSpace
+import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.media.MediaCodec
@@ -15,6 +17,7 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -493,59 +496,181 @@ fun enforceStrictModalityIsolation(
 }
 
 /**
- * Filters out anisotropic background noise using C++ corpus-wide Z-score statistics
- * combined with modality-aware cosine floors.
+ * Pure-JVM helpers for EXIF orientation transforms, aspect-ratio sizing, and lossless TGA encoding.
+ */
+data class ExifTransformSpec(
+    val rotationDegrees: Float,
+    val flipHorizontal: Boolean
+)
+
+object ExifOrientationHelper {
+    fun computeTransformSpec(orientation: Int): ExifTransformSpec {
+        return when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> ExifTransformSpec(0f, flipHorizontal = true)
+            ExifInterface.ORIENTATION_ROTATE_180 -> ExifTransformSpec(180f, flipHorizontal = false)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> ExifTransformSpec(180f, flipHorizontal = true)
+            ExifInterface.ORIENTATION_TRANSPOSE -> ExifTransformSpec(90f, flipHorizontal = true)
+            ExifInterface.ORIENTATION_ROTATE_90 -> ExifTransformSpec(90f, flipHorizontal = false)
+            ExifInterface.ORIENTATION_TRANSVERSE -> ExifTransformSpec(270f, flipHorizontal = true)
+            ExifInterface.ORIENTATION_ROTATE_270 -> ExifTransformSpec(270f, flipHorizontal = false)
+            else -> ExifTransformSpec(0f, flipHorizontal = false)
+        }
+    }
+
+    fun applyOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+        val spec = computeTransformSpec(orientation)
+        if (spec.rotationDegrees == 0f && !spec.flipHorizontal) return bitmap
+        val matrix = Matrix().apply {
+            if (spec.rotationDegrees != 0f) {
+                postRotate(spec.rotationDegrees)
+            }
+            if (spec.flipHorizontal) {
+                postScale(-1f, 1f)
+            }
+        }
+        val transformed = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (transformed !== bitmap) {
+            bitmap.recycle()
+        }
+        return transformed
+    }
+
+    fun computeAspectPreservingSize(width: Int, height: Int, maxSidePx: Int): Pair<Int, Int> {
+        if (width <= 0 || height <= 0 || maxSidePx <= 0) return 0 to 0
+        val longest = max(width, height)
+        if (longest <= maxSidePx) return width to height
+        val scale = maxSidePx.toDouble() / longest.toDouble()
+        return max(1, (width * scale).roundToInt()) to max(1, (height * scale).roundToInt())
+    }
+}
+
+/**
+ * Uncompressed 32-bit BGRA Truevision TGA encoder matching AI Edge Gallery and LiteRT-LM's stbi loader.
+ */
+object TgaImageCodec {
+    private const val TGA_HEADER_SIZE = 18
+
+    fun encodeArgbPixelsToBgraTga(argbPixels: IntArray, width: Int, height: Int): ByteArray {
+        require(width > 0 && height > 0) { "Invalid TGA image dimensions: ${width}x${height}" }
+        require(argbPixels.size == width * height) {
+            "Pixel count ${argbPixels.size} does not match ${width}x${height}"
+        }
+        val out = ByteArray(TGA_HEADER_SIZE + argbPixels.size * 4)
+        out[2] = 2 // Uncompressed true-color
+        out[12] = (width and 0xFF).toByte()
+        out[13] = ((width ushr 8) and 0xFF).toByte()
+        out[14] = (height and 0xFF).toByte()
+        out[15] = ((height ushr 8) and 0xFF).toByte()
+        out[16] = 32 // 32 bits per pixel (BGRA)
+        out[17] = 0x28 // Top-left origin (bit 5) + 8 alpha bits
+
+        val bb = ByteBuffer.wrap(out, TGA_HEADER_SIZE, argbPixels.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+        // Little-endian write of 0xAARRGGBB outputs byte sequence [B, G, R, A].
+        bb.asIntBuffer().put(argbPixels)
+        return out
+    }
+
+    fun writeBitmapAsTga(bitmap: Bitmap, outFile: File) {
+        val rgbaBmp = if (bitmap.config == Bitmap.Config.ARGB_8888) {
+            bitmap
+        } else {
+            bitmap.copy(Bitmap.Config.ARGB_8888, false)
+                ?: throw IllegalStateException("Failed to convert bitmap config ${bitmap.config} to ARGB_8888")
+        }
+        try {
+            val w = rgbaBmp.width
+            val h = rgbaBmp.height
+            val pixels = IntArray(w * h)
+            rgbaBmp.getPixels(pixels, 0, w, 0, 0, w, h)
+            val tgaBytes = encodeArgbPixelsToBgraTga(pixels, w, h)
+            FileOutputStream(outFile).use { fos ->
+                fos.write(tgaBytes)
+            }
+        } finally {
+            if (rgbaBmp !== bitmap && !rgbaBmp.isRecycled) {
+                rgbaBmp.recycle()
+            }
+        }
+    }
+}
+
+/**
+ * Extracts a MediaStore numeric item ID when [uriString] points to an indexed MediaStore item.
+ */
+fun extractMediaStoreNumericId(uriString: String): String? {
+    val trimmed = uriString.trim()
+    if (!trimmed.startsWith("content://media/", ignoreCase = true)) return null
+    val pathPart = trimmed.substringBefore('?').substringBefore('#')
+    if (!pathPart.contains("/images/media/", ignoreCase = true) &&
+        !pathPart.contains("/video/media/", ignoreCase = true) &&
+        !pathPart.contains("/audio/media/", ignoreCase = true) &&
+        !pathPart.contains("/file/", ignoreCase = true)
+    ) {
+        return null
+    }
+    val tail = pathPart.substringAfterLast('/')
+    return if (tail.isNotEmpty() && tail.all { it.isDigit() }) tail else null
+}
+
+fun isSameMediaIdentity(
+    candidatePath: String,
+    candidateUri: String,
+    seedPath: String,
+    seedUri: String
+): Boolean {
+    val cPath = candidatePath.trim()
+    val sPath = seedPath.trim()
+    if (cPath.isNotEmpty() && sPath.isNotEmpty()) {
+        if (cPath == sPath) return true
+        val cCanon = runCatching { File(cPath).canonicalPath }.getOrNull()
+        val sCanon = runCatching { File(sPath).canonicalPath }.getOrNull()
+        if (!cCanon.isNullOrEmpty() && cCanon == sCanon) return true
+    }
+    val cUri = candidateUri.trim()
+    val sUri = seedUri.trim()
+    if (cUri.isNotEmpty() && sUri.isNotEmpty()) {
+        if (cUri == sUri) return true
+        val cId = extractMediaStoreNumericId(cUri)
+        val sId = extractMediaStoreNumericId(sUri)
+        if (cId != null && cId == sId) return true
+    }
+    return false
+}
+
+/**
+ * Excludes the seed media asset before corpus statistics or relevance filtering run,
+ * preventing the seed (cosine ~ 1.0) from appearing in results or inflating topCosine.
+ */
+fun excludeSeedMediaMatches(
+    candidates: List<MediaSearchResultItem>,
+    seedPath: String,
+    seedUri: String
+): List<MediaSearchResultItem> {
+    if (seedPath.isBlank() && seedUri.isBlank()) return candidates
+    return candidates.filterNot { item ->
+        isSameMediaIdentity(item.mediaPath, item.mediaUri, seedPath, seedUri)
+    }
+}
+
+/**
+ * Ranks and filters semantic media results using pure cosine similarity and a relative
+ * top-result window `max(MIN_RELEVANCE_COSINE_FLOOR, topCosine - RELATIVE_COSINE_WINDOW_DELTA)`.
  */
 fun filterRelevantMediaMatches(
     candidates: List<MediaSearchResultItem>,
-    queryMode: MediaSearchQueryMode = MediaSearchQueryMode.TEXT_TO_MEDIA
+    @Suppress("UNUSED_PARAMETER") queryMode: MediaSearchQueryMode = MediaSearchQueryMode.TEXT_TO_MEDIA
 ): List<MediaSearchResultItem> {
     if (candidates.isEmpty()) return emptyList()
-    return candidates.filter { item ->
-        if (item.cosineScore <= 0f && item.lexicalHits > 0 && item.score > 0f) {
-            return@filter true
-        }
-        if (item.lexicalHits > 0 && item.cosineScore >= 0.62f) {
-            return@filter true
-        }
-
-        val isAudioSeg = item.modality.equals("audio", ignoreCase = true) ||
-            item.modality.equals("VIDEO_AUDIO", ignoreCase = true)
-        val highFloor: Float
-        val adaptiveFloor: Float
-        val minZ: Float
-        val minMargin: Float
-        when {
-            queryMode == MediaSearchQueryMode.IMAGE_TO_VISUAL -> {
-                highFloor = 0.76f
-                adaptiveFloor = 0.71f
-                minZ = 1.4f
-                minMargin = 0.04f
-            }
-            isAudioSeg -> {
-                highFloor = 0.66f
-                adaptiveFloor = 0.58f
-                minZ = 1.3f
-                minMargin = 0.04f
-            }
-            else -> {
-                highFloor = 0.715f
-                adaptiveFloor = 0.692f
-                minZ = 1.15f
-                minMargin = 0.035f
-            }
-        }
-
-        when {
-            item.cosineScore >= highFloor -> true
-            item.cosineScore >= adaptiveFloor -> when {
-                item.corpusSize >= 12 -> item.zScore >= minZ && (item.cosineScore - item.corpusMean) >= minMargin
-                item.corpusSize >= 3 -> (item.cosineScore - item.corpusMean) >= (minMargin + 0.015f)
-                else -> true
-            }
-            else -> false
-        }
+    val semanticTop = candidates.maxOfOrNull { it.cosineScore } ?: 0f
+    if (semanticTop <= 0f) {
+        // Explicit lexical-only fallback when query embedding was unavailable (q_dim == 0).
+        return candidates.filter { it.cosineScore <= 0f && it.lexicalHits > 0 && it.score > 0f }
     }
+    val threshold = max(
+        MediaSearchEngine.MIN_RELEVANCE_COSINE_FLOOR,
+        semanticTop - MediaSearchEngine.RELATIVE_COSINE_WINDOW_DELTA
+    )
+    return candidates.filter { it.cosineScore > 0f && it.cosineScore >= threshold }
 }
 
 /**
@@ -556,9 +681,18 @@ fun deduplicateAndRankMediaMatches(
     topK: Int = 8
 ): List<MediaSearchResultItem> {
     if (rawMatches.isEmpty() || topK <= 0) return emptyList()
+    val primaryScoreComparator = Comparator<MediaSearchResultItem> { a, b ->
+        val aMetric = if (a.cosineScore > 0f || b.cosineScore > 0f) a.cosineScore else a.score
+        val bMetric = if (a.cosineScore > 0f || b.cosineScore > 0f) b.cosineScore else b.score
+        when {
+            abs(bMetric - aMetric) > 1e-6f -> bMetric.compareTo(aMetric)
+            abs(b.score - a.score) > 1e-6f -> b.score.compareTo(a.score)
+            else -> a.startMs.compareTo(b.startMs)
+        }
+    }
     val grouped = rawMatches.groupBy { it.mediaPath }
     val collapsed = grouped.values.map { segs ->
-        val sorted = segs.sortedByDescending { it.score }
+        val sorted = segs.sortedWith(primaryScoreComparator)
         val best = sorted.first()
         val extras = mutableListOf<Long>()
         for (cand in sorted.drop(1)) {
@@ -571,16 +705,18 @@ fun deduplicateAndRankMediaMatches(
         }
         best.copy(extraMomentsMs = extras)
     }
-    return collapsed.sortedByDescending { it.score }.take(topK)
+    return collapsed.sortedWith(primaryScoreComparator).take(topK)
 }
 
 object MediaSearchEngine {
     private const val TAG = "RoninMediaSearch"
-    const val PHOTO_MAX_SIDE_PX = 448
+    const val PHOTO_MAX_SIDE_PX = 1024
     const val PHOTO_VISION_TOKENS = 70
-    const val PHOTO_BATCH_SIZE = 4
-    const val VIDEO_FRAME_MAX_SIDE_PX = 448
+    const val PHOTO_BATCH_SIZE = 2
+    const val VIDEO_FRAME_MAX_SIDE_PX = 1024
     const val VIDEO_FRAME_VISION_TOKENS = 70
+    const val MIN_RELEVANCE_COSINE_FLOOR = 0.40f
+    const val RELATIVE_COSINE_WINDOW_DELTA = 0.20f
 
     fun formatTimestampMs(ms: Long): String {
         val totalSec = (ms / 1000L).coerceAtLeast(0L)
@@ -940,7 +1076,9 @@ object MediaSearchEngine {
     }
 
     /**
-     * Decodes, EXIF-rotates, and downscales an image file or URI to fit within [maxSidePx].
+     * Decodes, EXIF-orients, and downscales an image file or URI to fit within [maxSidePx]
+     * while preserving aspect ratio. Prefers Android 9+ ImageDecoder in software SRGB ARGB_8888,
+     * falling back cleanly to BitmapFactory + ExifOrientationHelper.
      */
     fun decodeOrientedSampledBitmap(
         filePath: String,
@@ -951,8 +1089,32 @@ object MediaSearchEngine {
         return try {
             val file = File(filePath)
             val useFile = file.exists() && file.canRead()
-            val uri = if (!useFile && mediaUri.isNotBlank()) Uri.parse(mediaUri) else null
+            val uri = if (mediaUri.isNotBlank()) Uri.parse(mediaUri) else null
             if (!useFile && uri == null) return null
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val decoded = runCatching {
+                    val source = if (useFile) {
+                        ImageDecoder.createSource(file)
+                    } else {
+                        ImageDecoder.createSource(context.contentResolver, uri!!)
+                    }
+                    ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                        decoder.isMutableRequired = false
+                        decoder.setTargetColorSpace(ColorSpace.get(ColorSpace.Named.SRGB))
+                        val (targetW, targetH) = ExifOrientationHelper.computeAspectPreservingSize(
+                            info.size.width,
+                            info.size.height,
+                            maxSidePx
+                        )
+                        if (targetW > 0 && targetH > 0) {
+                            decoder.setTargetSize(targetW, targetH)
+                        }
+                    }
+                }.getOrNull()
+                if (decoded != null) return decoded
+            }
 
             val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             if (useFile) {
@@ -982,39 +1144,26 @@ object MediaSearchEngine {
                 }
             } ?: return null
 
-            val rotationDeg = try {
+            val exifOrientation = try {
                 val exif = if (useFile) {
                     ExifInterface(file.absolutePath)
                 } else {
                     context.contentResolver.openInputStream(uri!!)?.use { ExifInterface(it) }
                 }
-                when (exif?.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-                    ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-                    ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-                    ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-                    else -> 0f
-                }
-            } catch (_: Throwable) { 0f }
-
-            var working = rawBmp
-            if (rotationDeg != 0f) {
-                val matrix = Matrix().apply { postRotate(rotationDeg) }
-                val rotated = Bitmap.createBitmap(working, 0, 0, working.width, working.height, matrix, true)
-                if (rotated !== working) {
-                    working.recycle()
-                    working = rotated
-                }
+                exif?.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                    ?: ExifInterface.ORIENTATION_NORMAL
+            } catch (_: Throwable) {
+                ExifInterface.ORIENTATION_NORMAL
             }
 
-            val curMax = max(working.width, working.height)
-            if (curMax > maxSidePx) {
-                val scale = maxSidePx.toFloat() / curMax.toFloat()
-                val scaled = Bitmap.createScaledBitmap(
-                    working,
-                    max(1, (working.width * scale).roundToInt()),
-                    max(1, (working.height * scale).roundToInt()),
-                    true
-                )
+            var working = ExifOrientationHelper.applyOrientation(rawBmp, exifOrientation)
+            val (targetW, targetH) = ExifOrientationHelper.computeAspectPreservingSize(
+                working.width,
+                working.height,
+                maxSidePx
+            )
+            if (targetW > 0 && targetH > 0 && (targetW != working.width || targetH != working.height)) {
+                val scaled = Bitmap.createScaledBitmap(working, targetW, targetH, true)
                 if (scaled !== working) {
                     working.recycle()
                     working = scaled
@@ -1037,13 +1186,11 @@ object MediaSearchEngine {
         val working = decodeOrientedSampledBitmap(filePath, mediaUri, context, maxSidePx) ?: return null
         return try {
             tmpDir.mkdirs()
-            val outFile = File(tmpDir, "emb_img_${System.nanoTime()}.jpg")
-            FileOutputStream(outFile).use { fos ->
-                working.compress(Bitmap.CompressFormat.JPEG, 85, fos)
-            }
+            val outFile = File(tmpDir, "emb_img_${System.nanoTime()}.tga")
+            TgaImageCodec.writeBitmapAsTga(working, outFile)
             outFile
         } catch (e: Exception) {
-            Log.w(TAG, "prepareImageForEmbedding compress failed ($filePath): ${e.message}")
+            Log.w(TAG, "prepareImageForEmbedding TGA encode failed ($filePath): ${e.message}")
             null
         } finally {
             if (!working.isRecycled) working.recycle()
@@ -1204,7 +1351,7 @@ object MediaSearchEngine {
         context: Context,
         tmpDir: File,
         hintedDurationMs: Long = 0L,
-        maxSidePx: Int = 512
+        maxSidePx: Int = VIDEO_FRAME_MAX_SIDE_PX
     ): Pair<Long, List<ExtractedVideoFrameFile>> {
         val retriever = MediaMetadataRetriever()
         try {
@@ -1228,22 +1375,18 @@ object MediaSearchEngine {
                     ?: retriever.getFrameAtTime(tsMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
                     ?: return@forEachIndexed
                 try {
-                    val curMax = max(bmp.width, bmp.height)
-                    val finalBmp = if (curMax > maxSidePx) {
-                        val scale = maxSidePx.toFloat() / curMax.toFloat()
-                        Bitmap.createScaledBitmap(
-                            bmp,
-                            max(1, (bmp.width * scale).roundToInt()),
-                            max(1, (bmp.height * scale).roundToInt()),
-                            true
-                        )
+                    val (targetW, targetH) = ExifOrientationHelper.computeAspectPreservingSize(
+                        bmp.width,
+                        bmp.height,
+                        maxSidePx
+                    )
+                    val finalBmp = if (targetW > 0 && targetH > 0 && (targetW != bmp.width || targetH != bmp.height)) {
+                        Bitmap.createScaledBitmap(bmp, targetW, targetH, true)
                     } else {
                         bmp
                     }
-                    val outFile = File(tmpDir, "emb_vframe_${idx}_${System.nanoTime()}.jpg")
-                    FileOutputStream(outFile).use { fos ->
-                        finalBmp.compress(Bitmap.CompressFormat.JPEG, 82, fos)
-                    }
+                    val outFile = File(tmpDir, "emb_vframe_${idx}_${System.nanoTime()}.tga")
+                    TgaImageCodec.writeBitmapAsTga(finalBmp, outFile)
                     if (finalBmp !== bmp) finalBmp.recycle()
                     val endMs = timestamps.getOrNull(idx + 1) ?: max(tsMs + 2000L, durationMs)
                     frames.add(ExtractedVideoFrameFile(idx, tsMs, endMs, outFile))
@@ -1741,41 +1884,78 @@ object MediaSearchEngine {
         filter: MediaModalityFilter = MediaModalityFilter.ALL,
         topK: Int = 24
     ): MediaSearchOutcome = withContext(Dispatchers.IO) {
+        val effectiveFilter = if (filter == MediaModalityFilter.VISUAL) MediaModalityFilter.IMAGE else filter
         val modelPath = nativeEngine.resolveEmbeddingModelPath(requireMultimodal = true)
-        val modelId = if (modelPath.isNotBlank()) nativeEngine.resolveActiveEmbeddingModelId(modelPath) else ""
+        if (modelPath.isBlank() || !File(modelPath).exists()) {
+            return@withContext MediaSearchOutcome(
+                success = false,
+                query = query,
+                filter = effectiveFilter,
+                error = "EmbeddingGemma 2 multimodal model not installed. Please download EmbeddingGemma 2 740M (~462 MB) from Settings > Hugging Face Model Hub."
+            )
+        }
+
+        val embFileName = File(modelPath).name
+        val modelId = nativeEngine.resolveActiveEmbeddingModelId(modelPath)
+        val infoJson = nativeEngine.inspectEmbeddingModelAsync(modelPath)
+            ?: return@withContext MediaSearchOutcome(
+                success = false,
+                query = query,
+                filter = effectiveFilter,
+                modelId = modelId,
+                error = "Inference worker service unavailable while inspecting $embFileName. Please retry."
+            )
+        val isEmb = infoJson.optBoolean("is_embedding", false)
+        val supportsVision = infoJson.optBoolean("vision", false)
+        val supportsAudio = infoJson.optBoolean("audio", false)
+        val requiresVision = effectiveFilter != MediaModalityFilter.AUDIO
+        if (!isEmb || (requiresVision && !supportsVision) || (!requiresVision && !supportsAudio)) {
+            val supportsText = infoJson.optBoolean("text", false)
+            return@withContext MediaSearchOutcome(
+                success = false,
+                query = query,
+                filter = effectiveFilter,
+                modelId = modelId,
+                error = "Embedding model $embFileName does not support required multimodal capabilities (text=$supportsText, vision=$supportsVision, audio=$supportsAudio). Download EmbeddingGemma 2 740M (Omnimodal)."
+            )
+        }
+
         val stats = nativeEngine.getMediaIndexStatsSafe(modelId)
         val totalSegs = stats.optInt("total_segments", 0)
         if (totalSegs == 0) {
-            val anyStats = nativeEngine.getMediaIndexStatsSafe("")
-            if (anyStats.optInt("total_segments", 0) == 0) {
-                return@withContext MediaSearchOutcome(
-                    success = true,
-                    query = query,
-                    filter = filter,
-                    modelId = modelId,
-                    results = emptyList(),
-                    indexEmpty = true
-                )
-            }
+            return@withContext MediaSearchOutcome(
+                success = true,
+                query = query,
+                filter = effectiveFilter,
+                modelId = modelId,
+                results = emptyList(),
+                indexEmpty = true
+            )
         }
 
-        val effectiveModelId = if (totalSegs > 0) modelId else ""
-        val effectiveFilter = if (filter == MediaModalityFilter.VISUAL) MediaModalityFilter.IMAGE else filter
-        val qVecs = if (modelPath.isNotBlank() && File(modelPath).exists()) {
-            nativeEngine.generateEmbeddingsSubBatched(
-                texts = listOf(query),
-                customEmbPath = modelPath,
-                taskMode = InferenceService.TASK_QUERY
+        val qVecs = nativeEngine.generateEmbeddingsSubBatched(
+            texts = listOf(query),
+            customEmbPath = modelPath,
+            taskMode = InferenceService.TASK_NONE
+        )
+        val queryVec = qVecs.firstOrNull()
+        if (queryVec == null || queryVec.isEmpty()) {
+            val workerDetail = nativeEngine.getLastEmbeddingErrorSafe()
+            val detailSuffix = if (workerDetail.isNotBlank()) " ($workerDetail)" else ""
+            return@withContext MediaSearchOutcome(
+                success = false,
+                query = query,
+                filter = effectiveFilter,
+                modelId = modelId,
+                error = "Failed to embed media query with $embFileName.$detailSuffix"
             )
-        } else {
-            emptyList()
         }
-        val queryVec = qVecs.firstOrNull() ?: FloatArray(0)
+
         val rawJson = nativeEngine.searchMediaEmbeddingsSafe(
             queryEmbedding = queryVec,
             modalityFilter = effectiveFilter.sqlFilter,
-            modelId = effectiveModelId,
-            lexicalQuery = query,
+            modelId = modelId,
+            lexicalQuery = "",
             topK = max(topK * 3, 40)
         )
         val parsed = rawJson.map(::parseMediaSearchMatchJson)
@@ -1796,11 +1976,38 @@ object MediaSearchEngine {
             success = true,
             query = query,
             filter = effectiveFilter,
-            modelId = effectiveModelId,
+            modelId = modelId,
             results = ranked,
             indexEmpty = false,
             scannedCount = scannedCount,
             bestRejectedScore = if (ranked.isEmpty()) bestRawCosine else 0f
+        )
+    }
+
+    suspend fun searchMediaByImageUri(
+        context: Context,
+        nativeEngine: NativeEngine,
+        imageUri: Uri,
+        filter: MediaModalityFilter = MediaModalityFilter.IMAGE,
+        topK: Int = 24
+    ): MediaSearchOutcome = withContext(Dispatchers.IO) {
+        val resolvedAsset = resolvePickedUrisToAssets(context, listOf(imageUri)).firstOrNull()
+        val displayLabel = resolvedAsset?.displayName
+            ?.ifBlank { imageUri.lastPathSegment ?: "selected_image" }
+            ?: (imageUri.lastPathSegment ?: "selected_image")
+        val seedPath = resolvedAsset?.mediaPath ?: ""
+        val seedUri = resolvedAsset?.mediaUri?.ifBlank { imageUri.toString() } ?: imageUri.toString()
+
+        searchMediaByImageInternal(
+            context = context,
+            nativeEngine = nativeEngine,
+            filePath = seedPath,
+            mediaUri = seedUri,
+            displayLabel = displayLabel,
+            seedPath = seedPath,
+            seedUri = seedUri,
+            filter = filter,
+            topK = topK
         )
     }
 
@@ -1811,6 +2018,30 @@ object MediaSearchEngine {
         filter: MediaModalityFilter = MediaModalityFilter.IMAGE,
         topK: Int = 24
     ): MediaSearchOutcome = withContext(Dispatchers.IO) {
+        searchMediaByImageInternal(
+            context = context,
+            nativeEngine = nativeEngine,
+            filePath = imageFile.absolutePath,
+            mediaUri = "",
+            displayLabel = imageFile.name,
+            seedPath = imageFile.absolutePath,
+            seedUri = "",
+            filter = filter,
+            topK = topK
+        )
+    }
+
+    private suspend fun searchMediaByImageInternal(
+        context: Context,
+        nativeEngine: NativeEngine,
+        filePath: String,
+        mediaUri: String,
+        displayLabel: String,
+        seedPath: String,
+        seedUri: String,
+        filter: MediaModalityFilter,
+        topK: Int
+    ): MediaSearchOutcome {
         val effectiveFilter = if (filter == MediaModalityFilter.VISUAL || filter == MediaModalityFilter.ALL) {
             MediaModalityFilter.IMAGE
         } else {
@@ -1818,9 +2049,9 @@ object MediaSearchEngine {
         }
         val modelPath = nativeEngine.resolveEmbeddingModelPath(requireMultimodal = true)
         if (modelPath.isBlank() || !File(modelPath).exists()) {
-            return@withContext MediaSearchOutcome(
+            return MediaSearchOutcome(
                 success = false,
-                query = imageFile.name,
+                query = displayLabel,
                 filter = effectiveFilter,
                 error = "EmbeddingGemma 2 multimodal model not installed. Please download EmbeddingGemma 2 740M (~462 MB) from Settings > Hugging Face Model Hub (your Gemma 4 Chat Brain stays active)."
             )
@@ -1828,9 +2059,9 @@ object MediaSearchEngine {
         val embFileName = File(modelPath).name
         val modelId = nativeEngine.resolveActiveEmbeddingModelId(modelPath)
         val infoJson = nativeEngine.inspectEmbeddingModelAsync(modelPath)
-            ?: return@withContext MediaSearchOutcome(
+            ?: return MediaSearchOutcome(
                 success = false,
-                query = imageFile.name,
+                query = displayLabel,
                 filter = effectiveFilter,
                 modelId = modelId,
                 error = "Inference worker service unavailable while inspecting $embFileName. Please retry."
@@ -1840,9 +2071,9 @@ object MediaSearchEngine {
         if (!isEmb || !supportsVision) {
             val supportsText = infoJson.optBoolean("text", false)
             val supportsAudio = infoJson.optBoolean("audio", false)
-            return@withContext MediaSearchOutcome(
+            return MediaSearchOutcome(
                 success = false,
-                query = imageFile.name,
+                query = displayLabel,
                 filter = effectiveFilter,
                 modelId = modelId,
                 error = "Embedding model $embFileName does not support Vision inputs (text=$supportsText, vision=$supportsVision, audio=$supportsAudio).\n\nVisual Search အတွက် Settings > Hugging Face Model Hub မှ EmbeddingGemma 2 740M (Omnimodal) (~462 MB) ကို download လုပ်ပေးပါ (Active Brain က Gemma 4 ပဲ ဆက်ရှိနေမှာဖြစ်ပြီး EmbeddingGemma 2 က On-Demand အလိုအလျောက် တွဲအလုပ်လုပ်ပါမည်)။"
@@ -1857,9 +2088,9 @@ object MediaSearchEngine {
             else -> modelStats.optInt("images", 0)
         }
         if (relevantSegments == 0) {
-            return@withContext MediaSearchOutcome(
+            return MediaSearchOutcome(
                 success = true,
-                query = imageFile.name,
+                query = displayLabel,
                 filter = effectiveFilter,
                 modelId = modelId,
                 indexEmpty = true
@@ -1867,17 +2098,17 @@ object MediaSearchEngine {
         }
 
         val tmpDir = File(context.cacheDir, "media_emb_query_tmp").apply { mkdirs() }
-        val prepImg = prepareImageForEmbedding(imageFile.absolutePath, "", context, tmpDir, maxSidePx = PHOTO_MAX_SIDE_PX)
+        val prepImg = prepareImageForEmbedding(filePath, mediaUri, context, tmpDir, maxSidePx = PHOTO_MAX_SIDE_PX)
         if (prepImg == null) {
-            return@withContext MediaSearchOutcome(
+            return MediaSearchOutcome(
                 success = false,
-                query = imageFile.name,
+                query = displayLabel,
                 filter = effectiveFilter,
-                error = "Could not decode reference image ${imageFile.name}."
+                error = "Could not decode reference image $displayLabel."
             )
         }
 
-        return@withContext try {
+        return try {
             val vecs = nativeEngine.generateMultimodalEmbeddingsBatchSafe(
                 items = listOf(NativeEngine.MultimodalEmbeddingInput("IMAGE_FILE", prepImg.absolutePath)),
                 visionTokensPerImage = PHOTO_VISION_TOKENS,
@@ -1887,12 +2118,12 @@ object MediaSearchEngine {
                 ?: run {
                     val workerDetail = nativeEngine.getLastEmbeddingErrorSafe()
                     val reasonSuffix = if (workerDetail.isNotBlank()) "\n• Detail: $workerDetail" else ""
-                    return@withContext MediaSearchOutcome(
+                    return MediaSearchOutcome(
                         success = false,
-                        query = imageFile.name,
+                        query = displayLabel,
                         filter = effectiveFilter,
                         modelId = modelId,
-                        error = "Vision encoder failed on $embFileName while encoding ${imageFile.name}.$reasonSuffix"
+                        error = "Vision encoder failed on $embFileName while encoding $displayLabel.$reasonSuffix"
                     )
                 }
 
@@ -1901,17 +2132,18 @@ object MediaSearchEngine {
                 modalityFilter = effectiveFilter.sqlFilter,
                 modelId = modelId,
                 lexicalQuery = "",
-                topK = max(topK * 3, 40)
+                topK = max(topK * 3 + 1, 48)
             )
             val parsed = rawJson.map(::parseMediaSearchMatchJson)
-            val scannedCount = parsed.firstOrNull()?.corpusSize ?: parsed.size
-            val bestRawCosine = parsed.maxOfOrNull { it.cosineScore } ?: 0f
-            val relevant = filterRelevantMediaMatches(parsed, MediaSearchQueryMode.IMAGE_TO_VISUAL)
+            val candidatePool = excludeSeedMediaMatches(parsed, seedPath = seedPath, seedUri = seedUri)
+            val scannedCount = max(0, (parsed.firstOrNull()?.corpusSize ?: parsed.size) - (parsed.size - candidatePool.size))
+            val bestRawCosine = candidatePool.maxOfOrNull { it.cosineScore } ?: 0f
+            val relevant = filterRelevantMediaMatches(candidatePool, MediaSearchQueryMode.IMAGE_TO_VISUAL)
             val isolated = enforceStrictModalityIsolation(relevant, allowedModality = "image", allowedAssetType = "image")
             val ranked = deduplicateAndRankMediaMatches(isolated, topK = topK)
             MediaSearchOutcome(
                 success = true,
-                query = "Similar to ${imageFile.name}",
+                query = "Similar to $displayLabel",
                 filter = effectiveFilter,
                 modelId = modelId,
                 results = ranked,

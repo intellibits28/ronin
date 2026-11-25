@@ -421,7 +421,7 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             File(context.filesDir, "embeddinggemma-2-270m.litertlm")
         )
         val orderedCandidates = if (requireMultimodal) {
-            multimodalCandidates + textCandidates
+            multimodalCandidates
         } else {
             listOf(File(modelsDir, configuredEmbeddingTier.fileName)) + multimodalCandidates + textCandidates
         }
@@ -432,8 +432,13 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
             }
         }
         val dynamicMatches = modelsDir.listFiles { f ->
-            f.isFile && f.name.endsWith(".litertlm", true) &&
-                (f.name.contains("embedding", true) || f.name.contains("gecko", true))
+            if (!f.isFile || !f.name.endsWith(".litertlm", true)) return@listFiles false
+            val n = f.name.lowercase()
+            if (requireMultimodal) {
+                (n.contains("embedding") && !(n.contains("270m") || n.contains("text")))
+            } else {
+                n.contains("embedding") || n.contains("gecko")
+            }
         }?.sortedWith(
             compareByDescending<File> { file ->
                 if (requireMultimodal) {
@@ -441,7 +446,6 @@ class NativeEngine(private val context: Context) : ComponentCallbacks2 {
                     when {
                         n.contains("740m") || n.contains("omni") -> 3
                         n.contains("440m") || n.contains("vision") -> 2
-                        n.contains("270m") || n.contains("text") -> 0
                         else -> 1
                     }
                 } else {

@@ -814,7 +814,12 @@ class MainActivity : FragmentActivity() {
     }
 
     fun deleteLocalModel(path: String) { if (File(path).delete()) { Toast.makeText(this, "Deleted", Toast.LENGTH_SHORT).show(); scanLocalModels() } }
-    fun clearModelCache() { File(filesDir, "models/compiled_cache").deleteRecursively(); codeCacheDir.deleteRecursively(); Toast.makeText(this, "Cache Cleared", Toast.LENGTH_SHORT).show() }
+    fun clearModelCache() {
+        File(filesDir, "models/compiled_cache").deleteRecursively()
+        cacheDir.listFiles { f -> f.isDirectory && f.name.startsWith("emb_cache_") }?.forEach { it.deleteRecursively() }
+        codeCacheDir.deleteRecursively()
+        Toast.makeText(this, "Cache Cleared", Toast.LENGTH_SHORT).show()
+    }
     fun getApiKey(provider: String): String = sharedPreferences.getString(provider, "") ?: ""
     fun savePrimaryCloudProvider(name: String) { sharedPreferences.edit().putString("primary_cloud_provider", name).apply(); nativeEngine.setPrimaryCloudProviderSafe(name) }
     fun saveApiKey(provider: String, key: String) { sharedPreferences.edit().putString(provider, key).apply() }
@@ -2892,37 +2897,39 @@ fun RoninChatUI(engine: NativeEngine, chatViewModel: ChatViewModel, brainPicker:
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
-                val cachedFile = copyUriToLocalCache(context, uri, "attachments")
-                if (cachedFile != null) {
-                    chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "🔍 Find media similar to: ${cachedFile.name}"))
-                    chatViewModel.isGenerating = true
-                    val outcome = MediaSearchEngine.searchMediaByImage(context, engine, cachedFile, topK = 24)
-                    val replyMsg = when {
-                        outcome.error != null -> ChatMessage(System.currentTimeMillis() + 1, "Ronin", "❌ ${outcome.error}")
-                        outcome.indexEmpty -> ChatMessage(
-                            System.currentTimeMillis() + 1,
-                            "Ronin",
-                            "📸 Indexed Photos မရှိသေးပါ။\n\nAudio နှင့် Video ဖိုင်တွေသာ Index ဖြစ်နေသေးပါက ဓာတ်ပုံများကို Index ထည့်ရန် /mediaindex ဟု ရိုက်ပို့ပါ (သို့မဟုတ် Menu > Settings > 4.6 Multimodal Media Search > Add Photos / Videos သို့မဟုတ် Index All Photos ကို နှိပ်ပါ)။"
-                        )
-                        outcome.results.isEmpty() -> {
-                            val diag = if (outcome.scannedCount > 0) {
-                                "\n\n(Checked ${outcome.scannedCount} indexed image segments; max similarity ${Math.round(outcome.bestRejectedScore.coerceIn(0f, 1f) * 100f)}% did not meet relevance threshold. Try indexing more albums in Settings > 4.6.)"
-                            } else ""
-                            ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🔍 Indexed Photos ထဲမှာ ${cachedFile.name} နဲ့ ဆင်တူတဲ့ ပုံ မတွေ့သေးပါ။$diag")
-                        }
-                        else -> ChatMessage(
-                            System.currentTimeMillis() + 1,
-                            "Ronin",
-                            "🔍 Similar Image Results (EmbeddingGemma 2 • ${outcome.modelId})\nFound ${outcome.results.size} photo match(es) similar to ${cachedFile.name}:"
-                        ).apply {
-                            mediaSearchResults.addAll(outcome.results)
-                        }
-                    }
-                    chatViewModel.messages.add(replyMsg)
-                    chatViewModel.isGenerating = false
-                } else {
-                    Toast.makeText(context, "Failed to load reference image", Toast.LENGTH_SHORT).show()
+                val queryLabel = withContext(Dispatchers.IO) {
+                    MediaSearchEngine.resolvePickedUrisToAssets(context, listOf(uri))
+                        .firstOrNull()?.displayName?.takeIf { it.isNotBlank() }
+                        ?: getFileNameFromUri(context, uri).takeIf { it.isNotBlank() }
+                        ?: uri.lastPathSegment?.takeIf { it.isNotBlank() }
+                        ?: "selected_image"
                 }
+                chatViewModel.messages.add(ChatMessage(System.currentTimeMillis(), "User", "🔍 Find media similar to: $queryLabel"))
+                chatViewModel.isGenerating = true
+                val outcome = MediaSearchEngine.searchMediaByImageUri(context, engine, uri, topK = 24)
+                val replyMsg = when {
+                    outcome.error != null -> ChatMessage(System.currentTimeMillis() + 1, "Ronin", "❌ ${outcome.error}")
+                    outcome.indexEmpty -> ChatMessage(
+                        System.currentTimeMillis() + 1,
+                        "Ronin",
+                        "📸 Indexed Photos မရှိသေးပါ။\n\nAudio နှင့် Video ဖိုင်တွေသာ Index ဖြစ်နေသေးပါက ဓာတ်ပုံများကို Index ထည့်ရန် /mediaindex ဟု ရိုက်ပို့ပါ (သို့မဟုတ် Menu > Settings > 4.6 Multimodal Media Search > Add Photos / Videos သို့မဟုတ် Index All Photos ကို နှိပ်ပါ)။"
+                    )
+                    outcome.results.isEmpty() -> {
+                        val diag = if (outcome.scannedCount > 0) {
+                            "\n\n(Checked ${outcome.scannedCount} indexed image segments; max similarity ${Math.round(outcome.bestRejectedScore.coerceIn(0f, 1f) * 100f)}% did not meet relevance threshold. Try indexing more albums in Settings > 4.6.)"
+                        } else ""
+                        ChatMessage(System.currentTimeMillis() + 1, "Ronin", "🔍 Indexed Photos ထဲမှာ $queryLabel နဲ့ ဆင်တူတဲ့ ပုံ မတွေ့သေးပါ။$diag")
+                    }
+                    else -> ChatMessage(
+                        System.currentTimeMillis() + 1,
+                        "Ronin",
+                        "🔍 Similar Image Results (EmbeddingGemma 2 • ${outcome.modelId})\nFound ${outcome.results.size} photo match(es) similar to $queryLabel:"
+                    ).apply {
+                        mediaSearchResults.addAll(outcome.results)
+                    }
+                }
+                chatViewModel.messages.add(replyMsg)
+                chatViewModel.isGenerating = false
             }
         }
     }
